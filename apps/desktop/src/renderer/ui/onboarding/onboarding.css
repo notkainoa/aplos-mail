@@ -637,4 +637,7 @@
 .ui-choice-group {
   display: flex;
   flex-direction: column;
+  /* The step's content column left-aligns its children, so the group is told to span it: its hairlines then run the full
+     inner width, like the account list's. */
+  align-self: stretch;
 }

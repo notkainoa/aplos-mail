@@ -102,6 +102,8 @@ export function SearchPage(props: SearchPageProps) {
     />
   );
   const showList = localRows.length > 0 || remoteRows.length > 0;
+  // With nothing typed the rows are the newest mail, not results, so the label does not read like a count of hits.
+  const browsing = model.empty;
   return (
     <div className="search-screen">
       <span className="ui-sr-only" role="status">
@@ -118,7 +120,7 @@ export function SearchPage(props: SearchPageProps) {
               <ListGroup
                 header={{
                   id: 'search-local',
-                  label: 'In your mail',
+                  label: browsing ? 'Recent mail' : 'In your mail',
                   variant: 'section',
                   count: model.localCount,
                 }}

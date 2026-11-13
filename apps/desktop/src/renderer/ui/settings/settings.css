@@ -313,7 +313,8 @@
   white-space: nowrap;
 }
 
-.ui-provider-table__status[data-tone='busy'] {
+.ui-provider-table__status[data-tone='busy'],
+.ui-provider-table__status[data-tone='quiet'] {
   color: var(--dim);
 }
 

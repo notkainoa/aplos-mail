@@ -27,6 +27,8 @@ export const LIST_COMMANDS: readonly CommandSpec[] = [
   {
     id: 'mail.suggested',
     label: 'Run the suggested action',
+    // The palette row wears a glyph like its siblings; Reply is the most common suggestion.
+    icon: 'arrowshape.turn.up.left',
     keys: ['Space'],
     contexts: ['list'],
     group: 'Actions',

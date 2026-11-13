@@ -135,7 +135,14 @@ export const GLOBAL_COMMANDS: readonly CommandSpec[] = [
     contexts: ['global'],
     group: 'Go to',
   },
-  { id: 'nav.sent', label: 'Sent', keys: ['ctrl+5'], contexts: ['global'], group: 'Go to' },
+  {
+    id: 'nav.sent',
+    label: 'Sent',
+    icon: 'paperplane',
+    keys: ['ctrl+5'],
+    contexts: ['global'],
+    group: 'Go to',
+  },
   {
     id: 'nav.calendar',
     label: 'Calendar',
@@ -155,6 +162,7 @@ export const GLOBAL_COMMANDS: readonly CommandSpec[] = [
   {
     id: 'nav.spam',
     label: 'Spam',
+    icon: 'shield',
     keys: ['ctrl+8'],
     contexts: ['global'],
     group: 'Go to',

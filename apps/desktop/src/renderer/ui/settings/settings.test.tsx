@@ -435,6 +435,28 @@ test('ProviderTable local: a refused or unreachable server explains itself like 
   assertCleanCopy(out);
 });
 
+test('ProviderTable local: a server that is not running is a quiet status, not an error line', () => {
+  const out = html(
+    <ProviderTable
+      kind="local"
+      onAddressChange={noop}
+      onAction={noop}
+      rows={[
+        {
+          provider: 'ollama',
+          address: '',
+          defaultAddress: 'http://localhost:11434',
+          running: false,
+          status: { kind: 'notRunning' },
+        },
+      ]}
+    />,
+  );
+  assert.match(out, /data-tone="quiet"/);
+  assert.match(out, />Not running</);
+  assert.doesNotMatch(out, /Couldn&#x27;t reach|ui-provider-table__fix/);
+});
+
 test('SettingRow: the tag is never shrunk by a long meta', () => {
   const out = html(<SettingRow id="r" label="Groq" meta={'m'.repeat(200)} tag="Default" />);
   assert.match(out, /class="ui-setting-row__tag">Default</);

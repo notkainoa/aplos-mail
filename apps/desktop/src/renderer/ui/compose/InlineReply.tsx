@@ -46,7 +46,7 @@ export function InlineReply(props: InlineReplyProps) {
             variant="icon"
             icon="pop-out"
             label="Pop out"
-            hint="Move the reply to its own page"
+            hint="Pop out reply"
             commandId="compose.popOut"
             onPress={() => onPopOut()}
           />

@@ -71,6 +71,8 @@ export type KeySource =
 export type ProviderStatus =
   | { kind: 'ready' }
   | { kind: 'needsKey' }
+  /** A local server that is not running and has not been tested: a quiet --dim "Not running", never red (red follows a failed Test). */
+  | { kind: 'notRunning' }
   | { kind: 'testing' }
   | {
       /** "Works · 0.4 s". */
