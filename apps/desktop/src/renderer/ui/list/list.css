@@ -961,8 +961,6 @@
   flex-direction: column;
   font: var(--type-summary);
   color: var(--dim);
-  animation: ui-summary-placeholder-breathe var(--dur-breathe) var(--ease-inout) infinite alternate;
-  animation-play-state: var(--play-breathe);
 }
 .ui-summary-placeholder__row {
   display: flex;
@@ -975,6 +973,9 @@
   height: var(--space-3);
   border-radius: var(--radius-pill);
   background-color: var(--line);
+  /* Only the lines breathe; the label stays at full contrast. */
+  animation: ui-summary-placeholder-breathe var(--dur-breathe) var(--ease-inout) infinite alternate;
+  animation-play-state: var(--play-breathe);
 }
 .ui-summary-placeholder__bar[data-width='long'] {
   width: 90%;
