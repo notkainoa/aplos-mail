@@ -39,6 +39,11 @@ export interface ComposeState {
   readonly discarding: boolean;
   /** Sends of this draft that ended cancelled in this composer; part of the next send's idempotency key. */
   readonly attempt: number;
+  /**
+   * From moved the text to another account: the draft the engine still holds in the old one. It is destroyed (quietly)
+   * only once the new account's draft is saved, so a failed save never leaves the text in memory alone.
+   */
+  readonly leaving?: string;
   /** The newest engine row seen for this draft (a refused stale save is resolved against it). */
   readonly remote?: Draft;
 }

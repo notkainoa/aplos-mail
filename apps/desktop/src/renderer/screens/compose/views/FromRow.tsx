@@ -8,7 +8,9 @@ import { useId, useRef, useState } from 'react';
 import type { Account } from '../../../data';
 import { Button } from '../../../ui/buttons-keys';
 import type { MenuEntry } from '../../../ui/props';
+import { statusCopy } from '../../../ui/status';
 import { Menu } from '../../../ui/surfaces';
+import { needsReconnect } from '../../../shell/status-map';
 
 /** Props for `FromRow`. */
 export interface FromRowProps {
@@ -19,8 +21,20 @@ export interface FromRowProps {
   readonly onChange: (accountId: string) => void;
 }
 
+/** An account that needs the owner to sign in again cannot send: its row says why and cannot be chosen. */
 function entriesOf(accounts: readonly Account[]): readonly MenuEntry[] {
-  return accounts.map(account => ({ kind: 'item', id: account.id, label: account.address }));
+  return accounts.map(account => {
+    const blocked = needsReconnect(account);
+    const reason = blocked
+      ? statusCopy({ kind: account.health.status.state as 'needsReauth' | 'needsPermission' })?.text
+      : undefined;
+    return {
+      kind: 'item',
+      id: account.id,
+      label: account.address,
+      ...(blocked ? { disabled: true, detail: reason } : {}),
+    };
+  });
 }
 
 /** The From row, or nothing when there is only one account to send from. */

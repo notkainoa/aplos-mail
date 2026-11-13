@@ -415,16 +415,49 @@ function describe_from(): void {
     assert.deepEqual(step.effects, []);
   });
 
-  test('From: a saved draft is destroyed quietly and the same text is saved again in the new account', () => {
-    const { state, effects } = run(saved(), { type: 'setAccount', accountId: 'a2', now: T0 + 10 });
-    assert.equal(state.context.accountId, 'a2');
-    assert.equal(state.fields.body, 'Hello');
-    assert.deepEqual(effects[0], { type: 'destroy', draftId: 'd1', quiet: true });
-    const save = effects.find(e => e.type === 'save');
+  test('From: a saved draft moves: saved again in the new account first, the old one destroyed only after that', () => {
+    const moved = run(saved(), { type: 'setAccount', accountId: 'a2', now: T0 + 10 });
+    assert.equal(moved.state.context.accountId, 'a2');
+    assert.equal(moved.state.fields.body, 'Hello');
+    assert.equal(moved.state.leaving, 'd1');
+    assert.equal(
+      moved.effects.some(e => e.type === 'destroy'),
+      false,
+      'nothing is destroyed before the new draft exists',
+    );
+    const save = moved.effects.find(e => e.type === 'save');
     assert.ok(save && save.type === 'save');
     assert.equal(save.draftId, null, 'a new draft, so the account is the new one');
     assert.equal(save.context.accountId, 'a2');
-    assert.equal(save.fields.body, 'Hello');
+    const landed = run(moved.state, {
+      type: 'saved',
+      seq: save.seq,
+      draft: { id: 'd2', revision: 1, rev: 1 },
+    });
+    assert.deepEqual(landed.effects, [{ type: 'destroy', draftId: 'd1', quiet: true }]);
+    assert.equal(landed.state.leaving, undefined);
+  });
+
+  test('From: if the new account’s save fails, the old draft stays and nothing is destroyed', () => {
+    const moved = run(saved(), { type: 'setAccount', accountId: 'a2', now: T0 + 10 });
+    const failed = run(moved.state, { type: 'saveFailed', seq: 1, now: T0 + 20 });
+    assert.equal(
+      failed.effects.some(e => e.type === 'destroy'),
+      false,
+    );
+    assert.equal(failed.state.leaving, 'd1');
+  });
+
+  test('From: discarding after a move also removes the draft left in the old account', () => {
+    const moved = run(saved(), { type: 'setAccount', accountId: 'a2', now: T0 + 10 });
+    const asked = run(
+      moved.state,
+      { type: 'askDiscard' },
+      { type: 'confirmDiscard' },
+      { type: 'saved', seq: 1, draft: { id: 'd2', revision: 1, rev: 1 } },
+    );
+    const gone = asked.effects.filter(e => e.type === 'destroy').map(e => e.draftId);
+    assert.deepEqual(gone.sort(), ['d1', 'd2']);
   });
 
   test('From: choosing the same account does nothing', () => {
@@ -449,5 +482,28 @@ function describe_from(): void {
     ).state;
     assert.notEqual(sending.send.kind, 'none');
     assert.equal(canChangeAccount(sending), false);
+  });
+
+  test('From: each guard alone refuses the move', () => {
+    const base = saved();
+    const settled = run(base, {
+      type: 'saved',
+      seq: base.save.editSeq,
+      draft: { id: 'd1', revision: 2, rev: 2 },
+    }).state;
+    assert.equal(canChangeAccount(settled), true, 'a settled new message can change account');
+    const refused: Record<string, ComposeState> = {
+      closed: { ...settled, open: false },
+      discarding: { ...settled, discarding: true },
+      forward: { ...settled, context: { ...settled.context, mode: 'forward' } },
+      sending: { ...settled, send: { kind: 'pending', alsoDone: false } as ComposeState['send'] },
+      waiting: { ...settled, save: { ...settled.save, waitingForRemote: true } },
+      flying: { ...settled, save: { ...settled.save, flightSeq: 3 } },
+    };
+    for (const [name, state] of Object.entries(refused)) {
+      assert.equal(canChangeAccount(state), false, name);
+      const step = composeReducer(state, { type: 'setAccount', accountId: 'a2', now: T0 });
+      assert.equal(step.state.context.accountId, state.context.accountId, name);
+    }
   });
 }

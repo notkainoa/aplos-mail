@@ -13,7 +13,7 @@ import {
   retryNow,
   saveIsDue,
 } from './autosave';
-import type { ComposeEvent, ComposeState, Step } from './composeState';
+import type { ComposeEffect, ComposeEvent, ComposeState, Step } from './composeState';
 import { fieldsFromDraft, isBlank, type ComposeFields } from './fields';
 import {
   onAccepted,
@@ -54,12 +54,27 @@ function onEdit(state: ComposeState, event: Event<'edit'>): Step {
   return saveIfDue(next, event.now);
 }
 
+/** The draft From left behind in the old account goes once its replacement is saved (or the composer is discarded). */
+function leavingEffects(state: ComposeState, keep: string | undefined): ComposeEffect[] {
+  const old = state.leaving;
+  return old !== undefined && old !== keep ? [{ type: 'destroy', draftId: old, quiet: true }] : [];
+}
+
 function onSaved(state: ComposeState, event: Event<'saved'>): Step {
-  const next: ComposeState = { ...state, save: finishSave(state.save, event.seq, event.draft) };
+  const next: ComposeState = {
+    ...state,
+    save: finishSave(state.save, event.seq, event.draft),
+    leaving: undefined,
+  };
+  const old = leavingEffects(state, event.draft.id);
   if (state.discarding)
-    return { state: next, effects: [{ type: 'destroy', draftId: event.draft.id }] };
-  if (state.send.kind !== 'pending') return still(next);
-  return isDirty(next.save) ? saveStep(next) : submitStep(next);
+    return {
+      state: next,
+      effects: [...old, { type: 'destroy', draftId: event.draft.id }],
+    };
+  if (state.send.kind !== 'pending') return { state: next, effects: old };
+  const step = isDirty(next.save) ? saveStep(next) : submitStep(next);
+  return { state: step.state, effects: [...old, ...step.effects] };
 }
 
 function onSaveFailed(state: ComposeState, event: Event<'saveFailed'>): Step {
@@ -129,7 +144,7 @@ function onDraft(state: ComposeState, event: Event<'observeDraft'>): Step {
 
 /**
  * From (the account a new message is written in). A draft belongs to one account for good, so one the engine already
- * holds is destroyed quietly and the same text is saved again in the account chosen. Only a new message can change
+ * holds is saved again in the account chosen and only then destroyed (quietly), so the text is never in memory alone. Only a new message can change
  * account (a reply belongs to the thread's), and only while nothing is in flight: a save that is mid-air, a send, a
  * discard or a conflict wait would race the move.
  */
@@ -148,19 +163,17 @@ function onSetAccount(state: ComposeState, event: Event<'setAccount'>): Step {
   if (!canChangeAccount(state) || state.context.accountId === event.accountId) return still(state);
   const context = { ...state.context, accountId: event.accountId };
   const old = state.save.draftId;
+  // Nothing saved yet, or the first save is still being retried: only the account changes (the session mints a new create key).
   if (old === null) return still({ ...state, context });
   const moved: ComposeState = {
     ...state,
     context,
     save: noteEdit(FRESH_SAVE, event.now),
+    leaving: old,
     remote: undefined,
     attempt: 0,
   };
-  const saved = saveIfDue(moved, event.now);
-  return {
-    state: saved.state,
-    effects: [{ type: 'destroy', draftId: old, quiet: true }, ...saved.effects],
-  };
+  return saveIfDue(moved, event.now);
 }
 
 function onEscape(state: ComposeState): Step {
@@ -199,7 +212,11 @@ function onConfirmDiscard(state: ComposeState): Step {
   // A save in flight may be creating the draft: the destroy follows its answer (`onSaved`).
   if (state.save.flightSeq !== null) return still(next);
   const id = state.save.draftId;
-  return id ? { state: next, effects: [{ type: 'destroy', draftId: id }] } : discardedStep(next);
+  const old = leavingEffects(state, id ?? undefined);
+  if (id) return { state: next, effects: [...old, { type: 'destroy', draftId: id }] };
+  return old.length > 0
+    ? { state: next, effects: [...old, ...discardedStep(next).effects] }
+    : discardedStep(next);
 }
 
 function onDiscardFailed(state: ComposeState): Step {

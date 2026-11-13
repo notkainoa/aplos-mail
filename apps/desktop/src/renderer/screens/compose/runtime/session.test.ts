@@ -158,3 +158,35 @@ test('From: a new message moves to the other account, keeps its text, and says n
   assert.equal(htmlToText(kit.draft(moved)!.html), 'Hello there');
   assert.deepEqual(notices, [], 'a move is not a discard');
 });
+
+test('From: a create that was committed but whose reply was lost never binds the composer to the old account', async () => {
+  const kit = await bootStandIn();
+  const other = kit.engine.fixture.store.all('Account').find(a => a.id !== kit.accountId)!;
+  let lost = true;
+  const api = {
+    ...kit.api,
+    saveDraft: async (args: Parameters<typeof kit.api.saveDraft>[0]) => {
+      const answer = await kit.api.saveDraft(args);
+      if (lost) {
+        lost = false;
+        throw new Error('the reply was lost');
+      }
+      return answer;
+    },
+  };
+  const session = createComposeSession(
+    { api, timers: kit.timers },
+    freshCompose({ accountId: kit.accountId, mode: 'new' }),
+  );
+  session.dispatch({ type: 'edit', patch: { body: 'Hello there' }, now: kit.timers.now() });
+  await kit.settle();
+  assert.equal(session.getState().save.draftId, null, 'the first create looked failed');
+  session.dispatch({ type: 'setAccount', accountId: other.id, now: kit.timers.now() });
+  await kit.advance(AUTOSAVE.retryMs[0]);
+  kit.observe(session);
+  const id = session.getState().save.draftId!;
+  assert.ok(id, 'the retry saved');
+  assert.equal(kit.draft(id)!.accountId, other.id, 'the draft is in the account the row shows');
+  assert.equal(htmlToText(kit.draft(id)!.html), 'Hello there');
+  assert.equal(session.getState().save.savedSeq, session.getState().save.editSeq);
+});
