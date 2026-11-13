@@ -120,8 +120,12 @@ export const SETTING_ROWS: readonly RowSpec[] = [
   row('accounts', 'lease', 'Where it syncs', [
     'syncs on this mac',
     'syncs on another mac',
+    'this mac',
+    'another mac',
+    'mac',
     'primary mac',
     'use this mac',
+    'let aplos choose',
     'device',
     'lease',
   ]),

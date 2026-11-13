@@ -393,6 +393,9 @@ describe('conditional rows and palette availability', () => {
     assert.equal(entry.label, 'Where it syncs');
     assert.ok(entry.keywords?.includes('syncs on this mac'));
     assert.ok(entry.keywords?.includes('syncs on another mac'));
+    // The palette matches keywords by prefix only: bare 'mac', 'this mac' and 'another mac' must stay reachable.
+    for (const word of ['mac', 'this mac', 'another mac'])
+      assert.ok(entry.keywords?.includes(word), word);
   });
 
   test('while Account/get has not answered, the per-account rows stay offered', () => {
