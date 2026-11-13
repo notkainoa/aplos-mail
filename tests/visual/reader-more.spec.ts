@@ -49,3 +49,13 @@ test('pressing the top-bar ⋯ again closes the menu', async ({ page }) => {
   await page.locator(BAR_MORE).click();
   await expect(menu).toBeHidden();
 });
+
+test('the . key opens the same menu from the keyboard', async ({ page }) => {
+  await openState(page, HOME, { theme: 'light' });
+  await page.keyboard.press('Enter');
+  await expect(page.locator(LETTER)).toBeVisible();
+  await page.keyboard.press('.');
+  await expect(page.getByRole('menu', { name: 'More' })).toBeVisible();
+  await page.keyboard.press('Escape');
+  await expect(page.getByRole('menu', { name: 'More' })).toBeHidden();
+});

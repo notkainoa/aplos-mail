@@ -261,7 +261,7 @@
   outline-offset: var(--focus-gap);
 }
 .aplos-recipients__to {
-  max-width: 24ch;
+  max-width: 40ch;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;

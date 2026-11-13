@@ -17,6 +17,11 @@ test.describe('many recipients', () => {
     // Two named, then the rest: Alex is among the seven, so "me", one name and five more.
     await expect(button).toHaveText(/^to me, .+ and 5 more$/);
     await expect(button).toHaveAttribute('aria-label', /^to me, .+ and 5 more, show details$/);
+    // What is drawn, not just what is in the DOM: the count at the end must not be clipped.
+    const clipped = await button
+      .locator('.aplos-recipients__to')
+      .evaluate(el => el.scrollWidth - el.clientWidth);
+    expect(clipped, 'the "and 5 more" tail is fully drawn').toBeLessThanOrEqual(0);
   });
 
   for (const theme of ['light', 'dark'] as const)

@@ -69,6 +69,20 @@ export function recipientPeople(message: Message, me: ReadonlySet<string>): read
   return meFirst(arrived ? [...listed, you] : listed);
 }
 
+/** The longest a name runs in the header's line before it is cut, so "and N more" is never the part that is clipped. */
+const MAX_NAME = 16;
+
+function shortName(name: string): string {
+  const chars = Array.from(name);
+  // An address is shown whole (the owner wants to see who it is): only a display name is cut.
+  return !name.includes('@') && chars.length > MAX_NAME
+    ? `${chars
+        .slice(0, MAX_NAME - 1)
+        .join('')
+        .trimEnd()}…`
+    : name;
+}
+
 /**
  * The header's recipients, in plain words: "to me", "to Mina Cho", "to me, Mina Cho and 4 more". A recipient without a
  * display name shows as the address, so the line always says who it went to. It is also the button's accessible name.
@@ -76,7 +90,7 @@ export function recipientPeople(message: Message, me: ReadonlySet<string>): read
 export function recipientLabel(people: readonly Person[]): string {
   // One more than the limit is named too: "and 1 more" would only hide a name that fits.
   const limit = people.length === MAX_NAMED + 1 ? people.length : MAX_NAMED;
-  const shown = people.slice(0, limit).map(p => (p.me ? 'me' : p.name));
+  const shown = people.slice(0, limit).map(p => (p.me ? 'me' : shortName(p.name)));
   if (shown.length === 0) return 'to undisclosed recipients';
   const rest = people.length - shown.length;
   return `to ${rest > 0 ? `${shown.join(', ')} and ${rest} more` : shown.join(', ')}`;

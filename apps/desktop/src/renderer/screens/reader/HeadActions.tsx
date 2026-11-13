@@ -200,7 +200,7 @@ function MoreMenu({ row, suggestion, controls, topBarMore }: HeadActionsProps) {
     // eslint-disable-next-line react-hooks/exhaustive-deps -- `menu.close` only sets state
   }, []);
   const { show, open: isOpen } = menu;
-  // The top bar's ⋯ and the . key run `list.more`: the same menu, under the bar's button; a second press closes it.
+  // The top bar's ⋯ and the . key run `list.more`: the same menu, under the bar's button; a second click of the bar's ⋯ closes it.
   const table = useMemo<CommandHandlerTable>(() => {
     if (!topBarMore) return NO_HANDLERS;
     const run = () => {

@@ -91,6 +91,12 @@ test('the label says who it went to in plain words: "to me", a name, or the addr
     personOf({ name: n, address: `${n}@x.example` }, ME),
   );
   assert.equal(recipientLabel(many), 'to a, b and 3 more', 'a long list never becomes a paragraph');
+  const long = personOf({ name: 'Bartholomew Featherstonehaugh', address: 'b@x.example' }, ME);
+  assert.equal(
+    recipientLabel([long, ...many]),
+    'to Bartholomew Fea…, a and 4 more',
+    'a long name is cut so the count stays whole',
+  );
   assert.ok(MAX_NAMED >= 2);
 });
 
