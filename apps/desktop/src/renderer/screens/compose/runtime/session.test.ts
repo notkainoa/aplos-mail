@@ -136,3 +136,25 @@ test('Discard asks first, then destroys the draft and says so', async () => {
   assert.equal(kit.draft(id), undefined);
   assert.deepEqual(notices, ['discarded']);
 });
+
+test('From: a new message moves to the other account, keeps its text, and says nothing about a discard', async () => {
+  const kit = await bootStandIn();
+  const other = kit.engine.fixture.store.all('Account').find(a => a.id !== kit.accountId)!;
+  const notices: string[] = [];
+  const session = createComposeSession(
+    { api: kit.api, timers: kit.timers, notify: n => notices.push(n) },
+    freshCompose({ accountId: kit.accountId, mode: 'new' }),
+  );
+  await type(kit, session, 'Hello there');
+  const first = session.getState().save.draftId!;
+  assert.equal(kit.draft(first)!.accountId, kit.accountId);
+  session.dispatch({ type: 'setAccount', accountId: other.id, now: kit.timers.now() });
+  await kit.settle();
+  kit.observe(session);
+  const moved = session.getState().save.draftId!;
+  assert.notEqual(moved, first, 'a new draft in the new account');
+  assert.equal(kit.draft(first), undefined, 'the old one is gone');
+  assert.equal(kit.draft(moved)!.accountId, other.id);
+  assert.equal(htmlToText(kit.draft(moved)!.html), 'Hello there');
+  assert.deepEqual(notices, [], 'a move is not a discard');
+});

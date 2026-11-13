@@ -15,7 +15,6 @@ import type {
 import type { ComposeFields } from '../model/fields';
 import type { ComposerControls } from '../runtime/useComposerControls';
 import type { ComposeBinding } from '../runtime/useComposeSession';
-import { canChangeAccount } from '../model/composeReducer';
 import { BodyEditor } from './BodyEditor';
 import { FromRow } from './FromRow';
 import { RecipientRows } from './RecipientRows';
@@ -43,6 +42,19 @@ export interface SharedComposerProps {
   readonly editorRef: RefObject<HTMLTextAreaElement | null>;
 }
 
+/**
+ * From: asks the composer to write in another account. A save that is in flight makes the reducer refuse for the moment
+ * (the draft cannot move mid-save), so the choice is asked again once the queue has settled.
+ */
+function chooseAccount(session: ComposeBinding['session'], accountId: string): void {
+  session.dispatch({ type: 'setAccount', accountId, now: getNow() });
+  if (session.getState().context.accountId === accountId) return;
+  void session.settled().then(() => {
+    if (session.getState().context.accountId !== accountId)
+      session.dispatch({ type: 'setAccount', accountId, now: getNow() });
+  });
+}
+
 export function useSharedComposerProps(
   binding: ComposeBinding,
   controls: ComposerControls,
@@ -61,10 +73,8 @@ export function useSharedComposerProps(
           <FromRow
             accounts={accounts}
             accountId={state.context.accountId}
-            canChange={canChangeAccount(state)}
-            onChange={accountId =>
-              session.dispatch({ type: 'setAccount', accountId, now: getNow() })
-            }
+            canChange={state.context.mode === 'new'}
+            onChange={accountId => chooseAccount(session, accountId)}
           />
         ) : null}
         <RecipientRows

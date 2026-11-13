@@ -14,7 +14,7 @@ import { Menu } from '../../../ui/surfaces';
 export interface FromRowProps {
   readonly accounts: readonly Account[];
   readonly accountId: string;
-  /** False when the account cannot change (a reply, a send in flight). */
+  /** False for good when the account cannot change (a reply or forward). A moment's lockout (a save in flight) keeps the menu: the move waits for it. */
   readonly canChange: boolean;
   readonly onChange: (accountId: string) => void;
 }
@@ -31,7 +31,7 @@ export function FromRow({ accounts, accountId, canChange, onChange }: FromRowPro
   const menuId = useId();
   if (accounts.length < 2) return null;
   const current = accounts.find(account => account.id === accountId);
-  const address = current?.address ?? '';
+  const address = current?.address ?? accountId;
   return (
     <div className="ui-recipient-field aplos-from" role="group" aria-label="From">
       <span className="ui-recipient-field__label" aria-hidden="true">

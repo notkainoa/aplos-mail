@@ -129,6 +129,7 @@
 }
 .aplos-from__address {
   color: var(--ink-2);
-  font: var(--type-base);
-  letter-spacing: var(--track-base);
+  font: var(--type-ui);
+  font-weight: 500;
+  letter-spacing: var(--track-ui);
 }
