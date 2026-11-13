@@ -1,12 +1,11 @@
 import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
 import { render } from '../src/index';
-import { BLOCKED_IMAGE_CAP } from '../src/reading-css';
 
-// A blocked remote image keeps its width but never its height (owner's hands-on pass 2026-11-12: an itinerary that
-// opens with a hero image filled the first screen with a gray slab). The cap must hold against the mail's own CSS.
+// A blocked remote image collapses to nothing (owner's hands-on pass 2026-11-12, round 3: a gray strip per image hid the
+// text of an itinerary). The collapse must hold against the mail's own CSS.
 describe('blocked image placeholder', () => {
-  it('is capped in the protected layer and carries no style of its own', () => {
+  it('is collapsed in the protected layer and carries no style of its own', () => {
     const result = render({
       html: '<img src="https://cdn.example/hero.png" width="640" height="900" alt="Trip" style="min-height:900px;max-height:none!important;padding:400px 0">',
       cids: [],
@@ -19,14 +18,14 @@ describe('blocked image placeholder', () => {
       result.document,
       /<img src="data:image\/gif;base64,[^"]+" class="aplos-blocked" width="640" height="900" alt="Trip">/,
     );
-    // The cap is inside the `aplos-reading` layer (the mail's own !important cannot beat it) and beats min-height.
+    // The collapse is inside the `aplos-reading` layer (the mail's own !important cannot beat it).
     const layer = /@layer aplos-reading\{[^}]*\}[^@]*?img\.aplos-blocked\{([^}]*)\}/.exec(
       result.document,
     );
-    assert.ok(layer, 'the cap rule is in the reading layer');
-    assert.match(layer[1]!, new RegExp(`max-height:${BLOCKED_IMAGE_CAP}px!important`));
-    assert.match(layer[1]!, /min-height:0!important/);
-    assert.ok(BLOCKED_IMAGE_CAP <= 64);
+    assert.ok(layer, 'the collapse rule is in the reading layer');
+    assert.equal(layer[1], 'display:none!important');
+    // No unlayered rule gives it a visible strip back.
+    assert.doesNotMatch(result.document, /img\.aplos-blocked\{background/);
   });
 
   it('keeps the box of an image sized only by its style, as attributes', () => {
