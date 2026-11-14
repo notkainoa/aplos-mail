@@ -87,13 +87,14 @@ const fnv = (parts: readonly string[]): string => {
   return (h >>> 0).toString(16);
 };
 
-/** A small deterministic hash of the thread's summary inputs (a label change must not invalidate it). */
+/** A small deterministic hash of the thread's summary inputs (a label change — or a draft save, whose stored
+ * copy changes message ids without changing what a summary reads — must not invalidate it). */
 export function inputHashOf(
   q: StoreReader,
   threadRowId: number,
 ): { hash: string; messageCount: number } {
   const rows = q.all<{ remote_id: string; internal_date: number; snippet: string | null }>(
-    'SELECT remote_id, internal_date, snippet FROM messages WHERE thread_id = ? ORDER BY id',
+    `SELECT remote_id, internal_date, snippet FROM messages WHERE thread_id = ? AND (flags & ${FLAG.draft}) = 0 ORDER BY id`,
     threadRowId,
   );
   const hash = fnv(rows.map(r => `${r.remote_id}:${r.internal_date}:${r.snippet?.length ?? 0}\n`));
@@ -138,10 +139,12 @@ export function priorityOf(
 /**
  * The lazy half of the ingest enqueue: the `jobs` runner turns a commit's `wake` sentinel into a `summary` job,
  * applying the same rules as the Setup backfill — an `ai_allowed` account, Home-visible or unread Inbox
- * (`priorityOf` 0/1), never Spam/Trash, no non-failed summary for the current input hash. The singleton key makes
- * a re-run a no-op. When the gate is open a `pending` `summaries` row goes in too, so a Home row can show the
- * placeholder while the job sits queued or runs; a paused gate queues the job without one (the row stays
- * collapsed, and a later gate-open fire writes `ready` straight away).
+ * (`priorityOf` 0/1), never Spam/Trash, no `ready` summary for the current input hash. The job row leads: a
+ * missing key enqueues (nonce opId — a retry must land, never replay), a `dead`/`skipped`/`done` row gets a
+ * fresh attempt budget, and a `queued`/`running`/`failed` row is already live. Only then does an open gate
+ * write the `pending` placeholder Home shows while the work sits queued or runs, so a placeholder never
+ * outlives the job behind it; a paused gate queues the job without one (the row stays collapsed, and a later
+ * gate-open fire writes `ready` straight away).
  */
 export function queueSummary(
   services: EngineServices,
@@ -156,17 +159,44 @@ export function queueSummary(
   if (info === undefined || info.priority > 1) return;
   const { hash, messageCount } = services.store.read(q => inputHashOf(q, info.threadRowId));
   if (!messageCount) return;
-  const fresh = services.store.read(q =>
-    q.get(
-      'SELECT 1 AS one FROM summaries WHERE thread_id = ? AND input_hash = ? AND state != ?',
+  const key = `summary:${accountId}:${remoteThreadId}:${hash}`;
+  const { summary, job } = services.store.read(q => ({
+    summary: q.get<{ state: string }>(
+      'SELECT state FROM summaries WHERE thread_id = ? AND input_hash = ?',
       info.threadRowId,
       hash,
-      'failed',
     ),
-  );
-  if (fresh) return;
-  const inputHash = hash;
-  if (backgroundGate(services, 'summaries', accountId).ok) {
+    job: q.get<JobRow>(
+      'SELECT id, kind, key, priority, payload, state, attempts, next_at, last_error FROM jobs WHERE key = ?',
+      key,
+    ),
+  }));
+  // A landed summary for this exact input never re-runs — the `done` job under the same key is the dedupe.
+  if (summary?.state === 'ready') return;
+  if (job === undefined) {
+    enqueue(services, `ai-ingest-${info.threadRowId}-${hash}-${hexId(services.randomBytes, 'q')}`, {
+      kind: 'summary',
+      key,
+      priority: info.priority,
+      nextAt: services.clock.now(),
+      payload: {
+        threadId: `${accountId}:${remoteThreadId}`,
+        accountId,
+        remoteThreadId,
+        inputHash: hash,
+      },
+    });
+  } else if (job.state === 'dead' || job.state === 'skipped' || job.state === 'done') {
+    // A settled row blocks the singleton key forever (INSERT OR IGNORE): a catch-up or a re-armed sentinel
+    // re-queues it with a fresh attempt budget.
+    services.store.commit({
+      opId: `ai-requeue-${job.id}-${hexId(services.randomBytes, 'r')}`,
+      origin: 'system',
+      writes: [{ kind: 'job', action: 'requeue', id: job.id, nextAt: services.clock.now() }],
+    });
+    services.deadlines.changed('jobs');
+  }
+  if (summary?.state !== 'pending' && backgroundGate(services, 'summaries', accountId).ok) {
     // The placeholder carries an older input's text/model when one exists: Home shows it until the re-run lands.
     const prior = services.store.read(q =>
       q.get<{ text: string; model: string; action: string | null }>(
@@ -175,14 +205,14 @@ export function queueSummary(
       ),
     );
     services.store.commit({
-      opId: `ai-pending-${accountId}:${remoteThreadId}:${inputHash}-${hexId(services.randomBytes, 'p')}`,
+      opId: `ai-pending-${accountId}:${remoteThreadId}:${hash}-${hexId(services.randomBytes, 'p')}`,
       origin: 'system',
       writes: [
         {
           kind: 'summary',
           accountId,
           remoteThreadId,
-          inputHash,
+          inputHash: hash,
           model: prior?.model ?? '',
           text: prior?.text ?? '',
           ...(prior?.action !== undefined ? { action: prior.action } : {}),
@@ -191,18 +221,6 @@ export function queueSummary(
       ],
     });
   }
-  enqueue(services, `ai-ingest-${info.threadRowId}-${hash}`, {
-    kind: 'summary',
-    key: `summary:${accountId}:${remoteThreadId}:${hash}`,
-    priority: info.priority,
-    nextAt: services.clock.now(),
-    payload: {
-      threadId: `${accountId}:${remoteThreadId}`,
-      accountId,
-      remoteThreadId,
-      inputHash: hash,
-    },
-  });
 }
 
 /** Enqueue one job under its singleton key; returns the stored row (the winner when it raced). */

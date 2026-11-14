@@ -51,11 +51,13 @@ function candidates(services: EngineServices): Candidate[] {
       if (p === undefined || p.priority > 1) continue;
       const { hash, messageCount } = inputHashOf(q, t.id);
       if (!messageCount) continue;
+      // Only a landed `ready` row skips the thread: `queueSummary` decides the rest — a `pending` row whose
+      // job died re-queues it, and `failed`/`stale` rows get another run.
       const fresh = q.get(
-        'SELECT 1 AS one FROM summaries WHERE thread_id = ? AND input_hash = ? AND state != ?',
+        'SELECT 1 AS one FROM summaries WHERE thread_id = ? AND input_hash = ? AND state = ?',
         t.id,
         hash,
-        'failed',
+        'ready',
       );
       if (fresh) continue;
       out.push({

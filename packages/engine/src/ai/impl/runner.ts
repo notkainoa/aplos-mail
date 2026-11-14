@@ -182,7 +182,12 @@ function logOutcome(
     });
 }
 
-/** A dead/skipped summary job turns its `pending` placeholder into `failed`, so the Home row can collapse. */
+/**
+ * A dead/skipped summary job settles its `pending` placeholder: text it carried survives as `stale` (the Home
+ * row keeps the older summary instead of collapsing to nothing), an empty one becomes `failed`. Only the
+ * placeholder flips — a `ready` row is never overwritten, and a failure with no placeholder (the gate was
+ * closed at queue time) writes nothing, so an empty `failed` row can never hide a good older summary.
+ */
 function failSummary(services: EngineServices, row: JobRow): void {
   try {
     const p = JSON.parse(row.payload) as {
@@ -196,6 +201,20 @@ function failSummary(services: EngineServices, row: JobRow): void {
       typeof p.inputHash !== 'string'
     )
       return;
+    const held = services.store.read(q => {
+      const t = q.get<{ id: number }>(
+        'SELECT id FROM threads WHERE account_id = ? AND remote_id = ?',
+        p.accountId as string,
+        p.remoteThreadId as string,
+      );
+      if (!t) return undefined;
+      return q.get<{ state: string; text: string; model: string; action: string | null }>(
+        'SELECT state, text, model, action FROM summaries WHERE thread_id = ? AND input_hash = ?',
+        t.id,
+        p.inputHash as string,
+      );
+    });
+    if (held?.state !== 'pending') return;
     services.store.commit({
       opId: `ai-failed-${row.id}-${hexId(services.randomBytes, 'f')}`,
       origin: 'system',
@@ -205,9 +224,10 @@ function failSummary(services: EngineServices, row: JobRow): void {
           accountId: p.accountId,
           remoteThreadId: p.remoteThreadId,
           inputHash: p.inputHash,
-          model: '',
-          text: '',
-          state: 'failed',
+          model: held.model,
+          text: held.text,
+          action: held.action,
+          state: held.text ? 'stale' : 'failed',
         },
       ],
     });
@@ -320,6 +340,9 @@ export async function runJobs(services: EngineServices, now: number): Promise<vo
     );
     if (!handled) return;
     // A round finished; loop while more work is due right now — an ingest sentinel's `summary` job lands here.
+    // The yield is a real timer turn, not a microtask: a pass of only sentinels awaits nothing else, and a
+    // first sync's sentinel storm must not starve the event loop between rounds.
+    await new Promise<void>(resolve => setTimeout(resolve, 0));
   }
 }
 

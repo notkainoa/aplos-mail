@@ -70,7 +70,8 @@ function threadMail(q: StoreReader, accountId: string, threadRowId: number): Thr
     snippet: string | null;
     internal_date: number;
   }>(
-    'SELECT remote_id, from_addr, from_name, subject, snippet, internal_date FROM messages WHERE thread_id = ? ORDER BY id',
+    `SELECT remote_id, from_addr, from_name, subject, snippet, internal_date FROM messages
+     WHERE thread_id = ? AND (flags & ${FLAG.draft}) = 0 ORDER BY id`,
     threadRowId,
   );
   const out: ThreadMail[] = [];

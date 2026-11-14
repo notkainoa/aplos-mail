@@ -196,11 +196,12 @@ function jobSettle(write: JobWrite, id: number, sid: string, tx: CommitExtension
 function jobMove(write: JobWrite, id: number, sid: string, tx: CommitExtensionTx): void {
   switch (write.action) {
     case 'requeue':
-      // A fresh retry budget: manual retry, a forced refresh, or a paused `running` row the gate released.
+      // A fresh retry budget: manual retry, a forced refresh, a settled row a catch-up re-arms (queueSummary
+      // requeues `dead`/`skipped`/`done`), or a paused `running` row the gate released.
       return ok(
         tx,
         tx.run(
-          "UPDATE jobs SET state = 'queued', attempts = 0, next_at = ? WHERE id = ? AND state IN ('queued','running','failed','dead','done')",
+          "UPDATE jobs SET state = 'queued', attempts = 0, next_at = ? WHERE id = ? AND state IN ('queued','running','failed','dead','done','skipped')",
           write.nextAt ?? tx.now(),
           id,
         ),
@@ -298,7 +299,8 @@ export const aiBackfillWrite = (nextAt: number): JobWrite => ({
 export const requestAiCatchUp = (store: StorePort, at: number): void => {
   try {
     store.commit({
-      opId: `ai-catchup-${at}`,
+      // The seq keeps the opId fresh: two changes inside one clock tick must each arm the sentinel.
+      opId: `ai-catchup-${at}-${store.seq()}`,
       origin: 'system',
       writes: [aiBackfillWrite(at)],
     });
@@ -308,8 +310,14 @@ export const requestAiCatchUp = (store: StorePort, at: number): void => {
 };
 
 function aiIngest(batch: IngestBatch, tx: CommitExtensionTx): void {
+  // Only mail a live-delivery step first stores arms a sentinel: baseline, backfill and resync pages (and
+  // imports) rely on the bounded `ai:backfill` catch-up instead, and a flag-only update of a known message
+  // changes no summary input — otherwise one first sync writes a sentinel per stored row.
+  if ((batch.step !== undefined && batch.step !== 'incremental') || batch.origin === 'import')
+    return;
   let armed = false;
   for (const m of batch.messages) {
+    if (!m.added) continue;
     const r = tx.run(
       `INSERT INTO jobs(kind, key, priority, payload, state, next_at) VALUES('wake', ?, 5, '{}', 'queued', ?)
        ON CONFLICT(key) DO UPDATE SET state = 'queued', attempts = 0, next_at = excluded.next_at
