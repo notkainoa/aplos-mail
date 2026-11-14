@@ -163,7 +163,7 @@ All tokens live in one source file, `apps/desktop/src/renderer/ui/tokens.json`, 
 | `--fill-ink` | `#ffffff` | `#08111a` | Text on hill, dusk and stamp fills |
 | `--hover` / `--press` | ink at 4 % / 8 % | ink at 5 % / 10 % | Hover and press fills |
 | `--puck` | ink at 6 % | ink at 8 % | Sidebar selection, the keyboard cursor, segmented thumbs |
-| `--today-tint` | accent at 4 % | accent at 6 % | The calendar's today column |
+| `--today-tint` | accent at 4 % | accent at 10 % | The calendar's today column |
 | `--scrim` | ink at 18 % | `#000` at 50 % | Behind dialogs and the palette |
 | `--shadow-ink` | `#1d1e21` | `#000000` | The base colour for every shadow |
 | `--sheen` | none | white at 4 % | The 1 px top sheen on dark panes and cards |
@@ -177,7 +177,7 @@ All tokens live in one source file, `apps/desktop/src/renderer/ui/tokens.json`, 
 | dim on pane / shell / paper / raised / sunken | **5.76** / 5.28 / 5.76 / 5.33 / **5.01** | 6.41 / 6.85 / 6.00 / **5.86** / 7.07 |
 | dim on a bulk-picked row (accent-wash) | 5.07 | 5.19 |
 | dim on the keyboard cursor (puck over pane) / a sidebar count (puck over shell) | 5.12 / 4.71 | 5.23 / 5.70 |
-| dim on hover / on today-tint | 5.33 / 5.41 | 5.68 / 5.82 |
+| dim on hover / on today-tint | 5.33 / 5.41 | 5.68 / 5.40 |
 | faint on pane, non-text only (3:1 needed) | 3.12 | 3.61 |
 | accent text on pane / shell | 7.84 / 7.19 | 7.61 / 8.13 |
 | accent-ink on the accent fill | **7.84** (today 3.73) | 8.30 |

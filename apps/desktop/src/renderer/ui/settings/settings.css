@@ -264,7 +264,7 @@
 
 .ui-provider-table__line {
   display: flex;
-  align-items: center;
+  align-items: baseline;
   gap: var(--space-2);
   font: var(--type-ui);
   letter-spacing: var(--track-ui);
@@ -354,6 +354,13 @@
 .ui-provider-table__local-actions {
   gap: var(--space-2);
   margin-right: calc(-1 * var(--space-2));
+}
+
+/* The address field, its status and Test share one line (no wrapped second line under the field). */
+.ui-provider-table__local-control {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
 }
 
 .ui-provider-table__button {

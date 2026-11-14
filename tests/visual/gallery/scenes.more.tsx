@@ -249,7 +249,7 @@ export function OnboardingScene(): ReactElement {
       onTryDemo={noop}
       footer={{
         dashes: { step: 2, of: 4 },
-        note: 'setupContinues',
+        note: 'none',
         buttons: [quiet('Back', { keys: 'Esc', keyHint: 'hint' })],
       }}
     >

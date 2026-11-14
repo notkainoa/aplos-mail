@@ -169,6 +169,7 @@ export function ReaderMessage(props: ReaderMessageProps) {
         open
           ? {
               blocked: hasImages && !imagesLoaded,
+              present: hasImages,
               onLoad: () => {
                 allowImagesFrom(message);
                 props.onLoadImages(message.id);

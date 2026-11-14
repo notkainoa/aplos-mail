@@ -188,7 +188,7 @@ export function moreEntries(
 
 /** The pane header's ⋯ button, which the reader's top bar draws above the card (the menu opens under it). */
 function headerMoreButton(): HTMLElement | null {
-  return document.querySelector<HTMLElement>('.ui-pane__tools [aria-label="More"]');
+  return document.querySelector<HTMLElement>('.ui-pane__tools [aria-label="Thread actions"]');
 }
 
 function MoreMenu({ row, suggestion, controls, topBarMore }: HeadActionsProps) {
@@ -232,7 +232,7 @@ function MoreMenu({ row, suggestion, controls, topBarMore }: HeadActionsProps) {
         variant="icon"
         size="sm"
         icon="more"
-        label="More"
+        label="Message actions"
         popup={{ kind: 'menu', expanded: menu.open, controls: menu.id }}
         onPress={() => {
           setFrom(null);
@@ -243,7 +243,7 @@ function MoreMenu({ row, suggestion, controls, topBarMore }: HeadActionsProps) {
         id={menu.id}
         open={menu.open}
         anchor={from ?? menu.ref.current}
-        label="More"
+        label={from ? 'Thread actions' : 'Message actions'}
         entries={moreEntries(row, suggestion, controls.replyAll !== undefined)}
         activeId={menu.active}
         onActiveChange={menu.setActive}

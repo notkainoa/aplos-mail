@@ -133,7 +133,7 @@ export function Calendar({ data, actions, host }: SectionProps) {
         <Row
           section="calendar"
           anchor="autoAddPlans"
-          description="Off shows plans from mail as outlines until you confirm them."
+          description="When off, plans found in mail show as outlines until you confirm them."
           control={id => (
             <Switch
               label="Add plans automatically"

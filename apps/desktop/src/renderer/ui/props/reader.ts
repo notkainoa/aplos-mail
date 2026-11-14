@@ -42,6 +42,9 @@ export interface ReaderActionsProps {
 export interface RemoteImages {
   /** Remote images are blocked: shows "Load images from this sender". */
   blocked: boolean;
+  /** The message has remote images at all. The notice strip keeps its height once they are loaded (it then reads
+   * "Images from this sender are shown", with no button), so loading them never moves the heading below it. */
+  present?: boolean;
   /** Load and remember for this sender. */
   onLoad: () => void;
 }

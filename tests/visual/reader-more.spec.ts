@@ -6,7 +6,7 @@ import { openState } from './support/gallery';
 // card's ⋯, under the bar's own button, and Esc closes it without leaving the email.
 const HOME = STATES.find(s => s.id === 'home-full')!;
 const LETTER = '.aplos-reader__letter[data-paper="true"]';
-const BAR_MORE = '.ui-pane__tools [aria-label="More"]';
+const BAR_MORE = '.ui-pane__tools [aria-label="Thread actions"]';
 
 for (const theme of ['light', 'dark'] as const)
   test(`the top bar's ⋯ opens the More menu, ${theme}`, async ({ page }) => {
@@ -15,7 +15,7 @@ for (const theme of ['light', 'dark'] as const)
     await expect(page.locator(LETTER)).toBeVisible();
     const button = page.locator(BAR_MORE);
     await button.click();
-    const menu = page.getByRole('menu', { name: 'More' });
+    const menu = page.getByRole('menu', { name: 'Thread actions' });
     await expect(menu).toBeVisible();
     await expect(menu.getByRole('menuitem', { name: /Bookmark/ })).toBeVisible();
     await expect(menu.getByRole('menuitem', { name: /Move to Trash/ })).toBeVisible();
@@ -44,7 +44,7 @@ test('pressing the top-bar ⋯ again closes the menu', async ({ page }) => {
   await page.keyboard.press('Enter');
   await expect(page.locator(LETTER)).toBeVisible();
   await page.locator(BAR_MORE).click();
-  const menu = page.getByRole('menu', { name: 'More' });
+  const menu = page.getByRole('menu', { name: 'Thread actions' });
   await expect(menu).toBeVisible();
   await page.locator(BAR_MORE).click();
   await expect(menu).toBeHidden();
@@ -55,7 +55,7 @@ test('the . key opens the same menu from the keyboard', async ({ page }) => {
   await page.keyboard.press('Enter');
   await expect(page.locator(LETTER)).toBeVisible();
   await page.keyboard.press('.');
-  await expect(page.getByRole('menu', { name: 'More' })).toBeVisible();
+  await expect(page.getByRole('menu', { name: 'Thread actions' })).toBeVisible();
   await page.keyboard.press('Escape');
-  await expect(page.getByRole('menu', { name: 'More' })).toBeHidden();
+  await expect(page.getByRole('menu', { name: 'Thread actions' })).toBeHidden();
 });

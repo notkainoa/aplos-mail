@@ -206,7 +206,7 @@ function reply(over: Partial<Parameters<typeof InlineReply>[0]> = {}) {
 test('InlineReply: the card, Send with its keycap, draft state, attach, more and pop out', () => {
   const markup = html(reply());
   assert.match(markup, /<section[^>]*class="ui-inline-reply"[^>]*aria-label="Reply"/);
-  assert.match(markup, /aria-label="Pop out"/);
+  assert.match(markup, /aria-label="Pop out reply"/);
   assert.match(markup, /aria-label="Attach"[^>]*title="Attach a file \(⌘⇧A\)"/);
   assert.match(markup, /aria-label="More"[^>]*title="More: format, schedule, discard \(⌘\/\)"/);
   assert.match(markup, /data-variant="filled"[^>]*>.*Send.*<kbd[^>]*>⌘↩<\/kbd>/);
@@ -274,7 +274,7 @@ test('Composer: To row, heading-size subject, body, footer with Send, draft stat
   );
   assert.match(markup, /<footer[^>]*class="ui-composer__foot"/);
   assert.match(markup, /<kbd[^>]*>⌘↩<\/kbd>/);
-  assert.match(markup, /aria-label="Format"[^>]*title="Format \(⌘\/\)"/);
+  assert.match(markup, /aria-label="Formatting"[^>]*title="Formatting \(⌘\/\)"/);
   assert.match(markup, /Draft saved/);
   assert.doesNotMatch(markup, /Polish suggests/);
   assert.doesNotMatch(markup, /is a suggestion/);

@@ -231,7 +231,9 @@
 /* A folded earlier message is a compact card: tighter inside (the card's inset above and below one head and two lines
    of excerpt), its whole surface the button's target, a quiet lift on hover. */
 .aplos-reader[data-cards='a'] .ui-thread-message[data-fold='folded'] {
-  padding-block: var(--space-5);
+  /* The excerpt's 26 px line box leaves a few px of slack under its words that the name's row does not, so the bottom
+     inset is 4 px short of the top and the two read as the same space. */
+  padding-block: var(--space-5) var(--space-4);
 }
 
 /* The pinned bar lifts the toasts: they sit above it, centred over it, never over the buttons. */

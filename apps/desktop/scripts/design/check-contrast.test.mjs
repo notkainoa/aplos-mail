@@ -85,7 +85,7 @@ const DESIGN_TABLE = [
   ['dim-on-puck-over-canvas', 5.12, 5.23],
   ['dim-on-puck-over-shell', 4.71, 5.7],
   ['dim-on-hover-over-canvas', 5.33, 5.68],
-  ['dim-on-today-tint-over-canvas', 5.41, 5.82],
+  ['dim-on-today-tint-over-canvas', 5.41, 5.4],
   ['faint-on-canvas', 3.12, 3.61],
   ['accent-on-canvas', 7.84, 7.61],
   ['accent-on-shell', 7.19, 8.13],

@@ -485,10 +485,6 @@ export function highlightTerms(query: SearchQuery): string[] {
 
 /** How many characters of snippet may come before the first match; the rest of the cell is for the match itself. */
 const SNIPPET_LEAD = 20;
-/** A subject cell is narrower: its match may start this far in before the subject is cut to show it. */
-const SUBJECT_FITS = 18;
-const SUBJECT_LEAD = 6;
-
 /**
  * The snippet with its first match near the left edge, so the one ellipsis the cell draws at its end never hides the
  * matched word. A leading "…" marks the cut; text with no match or a match already near the start is unchanged.
@@ -508,6 +504,15 @@ export function snippetAround(
   const boundary = text.indexOf(' ', at - lead);
   const start = boundary >= 0 && boundary < at ? boundary + 1 : at - lead;
   return `…${text.slice(start)}`;
+}
+
+/** "Hi Alex," or "Dear Dr. Rao," at the start of a snippet: a greeting says nothing about why the thread matched. */
+const GREETING = /^(?:hi|hello|hey|dear|good (?:morning|afternoon|evening))\b[^,\n]{0,30},\s+/i;
+
+/** The snippet without its leading greeting, unless that would leave nothing. */
+export function withoutGreeting(text: string): string {
+  const rest = text.replace(GREETING, '');
+  return rest.length > 0 ? rest : text;
 }
 
 /** One row from a thread. */
@@ -533,10 +538,11 @@ export function resultRow(
     id: `search-row-${thread.id.replace(/[^A-Za-z0-9_-]/g, '_')}`,
     threadId: thread.id,
     sender: thread.fromName || '(no sender)',
-    primary: thread.subject
-      ? snippetAround(thread.subject, highlight, SUBJECT_LEAD, SUBJECT_FITS)
-      : '(no subject)',
-    secondary: thread.snippet ? snippetAround(thread.snippet, highlight) : undefined,
+    // The subject is shown whole (the cell ellipsises its own end); only the snippet is windowed to the match.
+    primary: thread.subject || '(no subject)',
+    secondary: thread.snippet
+      ? snippetAround(withoutGreeting(thread.snippet), highlight)
+      : undefined,
     highlight,
     unread: thread.unread,
     date: toIsoDateTime(thread.lastDate),

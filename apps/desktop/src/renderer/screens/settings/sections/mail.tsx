@@ -8,7 +8,7 @@ import {
   REPLY_ITEMS,
   RETENTION_DAY_OPTIONS,
   RETENTION_SIZE_OPTIONS,
-  retentionLine,
+  RETENTION_LINE,
   UNDO_SEND_OPTIONS,
   withCurrent,
 } from '../settings.model';
@@ -124,7 +124,7 @@ export function Mail({ data, actions }: SectionProps) {
         <Row
           section="mail"
           anchor="retention"
-          description={retentionLine(retention.bodyDays, retention.maxBodyBytes)}
+          description={RETENTION_LINE}
           control={
             <>
               <InlineLabel>for</InlineLabel>

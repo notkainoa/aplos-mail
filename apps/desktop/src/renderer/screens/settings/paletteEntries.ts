@@ -51,7 +51,15 @@ export const SETTING_ROWS: readonly RowSpec[] = [
     'assistants',
   ]),
   row('general', 'tools', 'Connected tools', ['revoke', 'clients', 'permissions']),
-  row('general', 'addTool', 'Add a tool', ['grant', 'allow', 'cli', 'mcp', 'key', 'token']),
+  row('general', 'addTool', 'Connect another tool', [
+    'add a tool',
+    'grant',
+    'allow',
+    'cli',
+    'mcp',
+    'key',
+    'token',
+  ]),
   // Mail
   row('mail', 'undoSend', 'Undo send', ['delay', 'unsend', 'seconds']),
   row('mail', 'followUp', 'Follow up', ['nudge', 'no reply', 'days']),
@@ -109,7 +117,7 @@ export const SETTING_ROWS: readonly RowSpec[] = [
     'reset demo',
     'remove demo',
   ]),
-  row('accounts', 'addAccount', 'Add an account', ['connect', 'google', 'gmail']),
+  row('accounts', 'addAccount', 'More accounts', ['add an account', 'connect', 'google', 'gmail']),
   row('accounts', 'accountAi', 'Use this account’s mail for AI', [
     'privacy',
     'exclude',
@@ -142,7 +150,7 @@ export const SETTING_ROWS: readonly RowSpec[] = [
   // Help & about
   row('help', 'version', 'About Aplos Mail', ['version', 'build', 'update', 'macos']),
   row('help', 'shortcutSheet', 'See every shortcut', ['cheat sheet', 'keys', 'help']),
-  row('help', 'showWelcome', 'Show welcome', ['onboarding', 'setup', 'intro']),
+  row('help', 'showWelcome', 'Welcome window', ['show welcome', 'onboarding', 'setup', 'intro']),
   row('help', 'demoLoad', 'Load demo mail', ['sample', 'try']),
   row('help', 'diagnostics', 'Export diagnostics', ['report', 'logs', 'support']),
   row('help', 'verboseLogging', 'Verbose logging', ['log', 'debug', 'headers', 'support']),

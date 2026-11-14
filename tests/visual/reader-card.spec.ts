@@ -90,8 +90,8 @@ test.describe('reader card header', () => {
       'aria-label',
       /^This email (notified|did not notify) you$/,
     );
-    await page.locator(`${LETTER} button[aria-label="More"]`).click();
-    const menu = page.getByRole('menu', { name: 'More' });
+    await page.locator(`${LETTER} button[aria-label="Message actions"]`).click();
+    const menu = page.getByRole('menu', { name: 'Message actions' });
     for (const name of ['Reply all', 'Later', 'Bookmark', 'Move to Trash'])
       await expect(menu.getByRole('menuitem', { name: new RegExp(name) })).toBeVisible();
     await page.keyboard.press('ArrowDown');

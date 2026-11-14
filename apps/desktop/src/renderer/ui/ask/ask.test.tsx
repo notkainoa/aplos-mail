@@ -675,12 +675,22 @@ test('SearchField: heading-size combobox, the fixed hint when there are no token
   assert.match(markup, /aria-controls="results"/);
   assert.match(markup, /aria-label="Search mail"/);
   assert.match(markup, /placeholder="Search mail"/);
-  assert.match(
-    text(markup),
-    /Narrow with from:, to:, subject:, has:attachment, before:, after:, in:done/,
-  );
+  assert.match(text(markup), /Narrow with/);
+  for (const operator of [
+    'from:',
+    'to:',
+    'subject:',
+    'has:attachment',
+    'before:',
+    'after:',
+    'in:done',
+  ]) {
+    assert.match(
+      markup,
+      new RegExp(`<button[^>]*>.*?<span class="ui-compose-btn__label">${operator}</span>`),
+    );
+  }
   assert.match(text(markup), /All accounts/);
-  assert.doesNotMatch(markup, /<button/);
   clean(markup);
 });
 

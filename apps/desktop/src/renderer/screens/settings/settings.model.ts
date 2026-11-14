@@ -220,11 +220,9 @@ export function withCurrent(
   return options.some(o => o.id === id) ? options : [{ id, label }, ...options];
 }
 
-/** "Keep message text for 90 days, plus anything opened, starred or unread, up to 2 GB." */
-export function retentionLine(days: number, bytes: number): string {
-  const size = bytes % GB === 0 ? `${bytes / GB} GB` : `${(bytes / GB).toFixed(1)} GB`;
-  return `Keeps message text for ${days} days, plus anything opened, starred or unread, up to ${size}.`;
-}
+/** The storage row's description: what is kept and what never goes, without restating the pickers' values. */
+export const RETENTION_LINE =
+  'Keeps full message text on this Mac; opened, starred and unread mail is always kept.';
 
 /* ───────────────────────── Accounts ───────────────────────── */
 

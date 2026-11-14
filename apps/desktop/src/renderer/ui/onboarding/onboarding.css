@@ -409,8 +409,17 @@
 }
 
 .ui-choice-row[data-role='link'] {
-  width: calc(100% + 2 * var(--space-3));
-  margin: 0 calc(-1 * var(--space-3));
+  /* A row that goes somewhere reads as a button: a hairline round it (and the hover fill below), its edges on the
+     column's, the content inset by the row's own padding. Stacked ones sit a step apart instead of sharing a divider. */
+  box-shadow: inset 0 0 0 var(--hairline) var(--line);
+}
+
+.ui-choice-row[data-role='link'] + .ui-choice-row[data-role='link'] {
+  margin-top: var(--space-2);
+}
+
+.ui-choice-row[data-role='link'] + .ui-choice-row[data-role='link']::before {
+  content: none;
 }
 
 .ui-choice-row[data-role='link']:focus-visible {

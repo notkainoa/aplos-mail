@@ -113,7 +113,11 @@
   padding: var(--space-1);
   border-radius: var(--radius-lg);
   background-color: var(--paper);
-  box-shadow: var(--elev-float);
+  /* The ring is --line-strong over whatever scrolls under the pill, so the first layer redraws it as the same ink
+     mixed into --paper: an opaque ring, and no body text or white sheet shows at the pill's edge. */
+  box-shadow:
+    0 0 0 var(--hairline) color-mix(in srgb, var(--ink) 14%, var(--paper)),
+    var(--elev-float);
   pointer-events: auto;
 }
 /* "Replying" is a state, not an action: a muted label (the icon and the word in --dim), with no hover fill. */
@@ -299,14 +303,26 @@
 .ui-thread-message[data-fold='folded'] .ui-thread-message__toggle:focus-visible {
   outline: none;
 }
-.ui-thread-message__images,
+/* The remote-images notice is chrome, not mail text: a quiet hairline strip at the top of the card, one control tall,
+   and it keeps that height once the images are shown (a dim sentence, no button) so the heading below never moves. */
+.ui-thread-message__images {
+  display: flex;
+  align-items: center;
+  box-sizing: border-box;
+  height: var(--control-md);
+  margin-bottom: var(--space-4);
+  padding: 0 var(--space-1);
+  border: var(--hairline) solid var(--line);
+  border-radius: var(--radius-md);
+}
+.ui-thread-message__images-shown {
+  padding: 0 var(--space-2);
+  color: var(--dim);
+  font: var(--type-small);
+  letter-spacing: var(--track-small);
+}
 .ui-thread-message__quoted {
   margin-left: calc(-1 * var(--space-3));
-}
-.ui-thread-message__images {
-  margin-bottom: var(--space-3);
-}
-.ui-thread-message__quoted {
   /* Its 28 px box carries its own 6 px above and below the words: pull the card's bottom edge in by the extra. */
   margin-top: var(--space-2);
   margin-bottom: calc(-1 * var(--space-2));

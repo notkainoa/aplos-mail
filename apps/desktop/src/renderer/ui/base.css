@@ -105,12 +105,13 @@ table {
   outline: none;
 }
 
-/* A filled button and a field draw their own edge, so the ring hugs it: no gap, or the ring reads as border, white
-   gap and ring. Text buttons, icon buttons and rows keep the gap. The three button families name their own focus rule
-   at (0,2,0), so these carry the variant to win. */
-.ui-button[data-variant='filled']:focus-visible,
-.ui-compose-btn[data-variant='filled']:focus-visible,
-.ui-onb-button[data-variant='filled']:focus-visible {
+/* A filled button draws its own edge, so the ring hugs it: no gap, or the ring reads as edge, white gap and ring.
+   Text buttons, icon buttons and rows keep the gap. Every button family names its own focus rule at (0,2,0), so this
+   carries the element type to win and covers any button that sets data-variant='filled' (Button, compose, onboarding,
+   calendar, the surfaces family: the fatal screen's Restart engine). */
+button[data-variant='filled']:focus-visible,
+[role='button'][data-variant='filled']:focus-visible,
+a[data-variant='filled']:focus-visible {
   outline-offset: 0;
 }
 

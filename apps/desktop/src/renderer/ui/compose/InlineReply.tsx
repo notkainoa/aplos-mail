@@ -45,7 +45,7 @@ export function InlineReply(props: InlineReplyProps) {
           <Btn
             variant="icon"
             icon="pop-out"
-            label="Pop out"
+            label="Pop out reply"
             hint="Pop out reply"
             commandId="compose.popOut"
             onPress={() => onPopOut()}

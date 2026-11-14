@@ -35,6 +35,7 @@ import {
   removeToken,
   resultRow,
   snippetAround,
+  withoutGreeting,
   returnReady,
   searchPage,
   submit,
@@ -457,6 +458,31 @@ test('a snippet whose match sits far in starts a few words before it, one leadin
   );
   assert.equal(snippetAround(text, ['printer']), text, 'a match near the start is left alone');
   assert.equal(snippetAround(text, ['nothing']), text, 'no match, no cut');
+});
+
+test('a result keeps its whole subject and windows only the snippet, past a leading greeting', () => {
+  const subject = 'Quarterly invoice reminder for the studio printer lease';
+  const row = resultRow(
+    {
+      id: 't1',
+      fromName: 'Maya',
+      subject,
+      snippet:
+        'Hi Alex, the printer queue was cleared overnight, and the invoice went out before nine',
+      unread: false,
+      lastDate: 0,
+      hasAttachments: false,
+      workflow: { status: 'new', bookmarked: false, hiddenFromHome: false },
+      accountId: 'a1',
+    },
+    toSearchQuery([], 'invoice'),
+    false,
+  );
+  assert.equal(row.primary, subject);
+  assert.ok(row.secondary?.startsWith('…') || row.secondary?.startsWith('the printer'));
+  assert.ok(!row.secondary?.includes('Hi Alex'));
+  assert.equal(withoutGreeting('Hello, world'), 'world');
+  assert.equal(withoutGreeting('Hi,'), 'Hi,', 'a bare greeting is left alone');
 });
 
 test('a saved cursor lands once its row is there, or once the local window has settled (never on a local neighbour early)', () => {

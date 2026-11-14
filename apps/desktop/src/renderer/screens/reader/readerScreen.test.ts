@@ -141,7 +141,7 @@ test('earlier messages are compact cards: head and an excerpt ending in an ellip
       html.slice(html.indexOf(`<article id="${mid}"`)).split('</article>')[0]!;
     assert.match(card(compact, first), /data-fold="folded"/);
     assert.match(card(compact, first), /class="ui-thread-message__toggle" aria-expanded="false"/);
-    assert.match(card(compact, first), /ui-thread-message__excerpt" dir="auto">[^<]+…</);
+    assert.match(card(compact, first), /ui-thread-message__excerpt" dir="auto">[^<]+[.!?…]</);
     assert.doesNotMatch(card(compact, first), /ui-thread-message__body|<iframe/);
     assert.doesNotMatch(
       card(compact, ids.at(-1)!),

@@ -389,3 +389,13 @@
 .ui-menu[aria-label='Accounts'] {
   min-width: calc(var(--menu-min) - var(--space-3));
 }
+/* A long address ends in an ellipsis 12 px short of the row's edge, never touching it; the label's inset is the rows'. */
+.ui-menu[aria-label='Accounts'] .ui-menu__item {
+  padding-right: var(--space-3);
+}
+.ui-menu[aria-label='Accounts'] .ui-menu__item-label {
+  min-width: 0;
+}
+.ui-menu[aria-label='Accounts'] .ui-menu__label {
+  padding-inline: var(--space-2) var(--space-3);
+}

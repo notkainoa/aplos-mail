@@ -148,8 +148,13 @@ describe('LowBand and LowSheet', () => {
     assert.match(m, /Low importance<\/h2><span class="ui-low-sheet__count">3</);
     assert.match(m, /role="listbox"/);
     assert.match(text(m), /Field Notes 1 Unsubscribe/);
-    assert.match(text(m), /Press → twice to mark all 3 done/);
     assert.match(text(m), /Winter light, in five short notes\./);
+    assert.match(text(m), /Mark all 3 done/, 'the sheet has its own button');
+    assert.match(
+      text(render(<LowSheet open {...base} />)),
+      /Press → twice to mark all done/,
+      'the hint shows until a row is hovered',
+    );
     assert.match(
       m,
       /role="dialog" aria-modal="true" aria-labelledby="[^"]+" tabindex="-1"/,

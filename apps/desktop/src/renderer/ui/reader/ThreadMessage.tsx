@@ -11,7 +11,7 @@
 // attachments and the body keep their own clicks.
 
 import type { ReactNode, Ref } from 'react';
-import type { ThreadMessageProps } from '../props';
+import type { RemoteImages, ThreadMessageProps } from '../props';
 import { Chip } from '../list/Chip';
 import { Action } from '../list/internal/Action';
 import { formatFull, formatMessageTime } from '../list/internal/format';
@@ -118,6 +118,29 @@ function FoldButton({ id, from, fold, describedBy }: FoldButtonProps) {
   );
 }
 
+/**
+ * The remote-images notice: a quiet strip at the top of the card (chrome, not mail text). Blocked, it holds the one
+ * button; once the images are shown it keeps its height with a dim sentence, so the heading below never moves.
+ */
+function RemoteImagesStrip({ blocked, present, onLoad }: RemoteImages) {
+  if (!blocked && !present) return null;
+  return (
+    <div className="ui-thread-message__images" data-blocked={blocked ? 'true' : 'false'}>
+      {blocked ? (
+        <Action
+          variant="text"
+          size="sm"
+          icon="eye"
+          label="Load images from this sender"
+          onPress={() => onLoad()}
+        />
+      ) : (
+        <span className="ui-thread-message__images-shown">Images from this sender are shown</span>
+      )}
+    </div>
+  );
+}
+
 /** A full message in the thread. */
 export function ThreadMessage({
   id,
@@ -177,17 +200,7 @@ export function ThreadMessage({
         ) : null}
       </header>
 
-      {remoteImages?.blocked ? (
-        <div className="ui-thread-message__images">
-          <Action
-            variant="text"
-            size="sm"
-            icon="eye"
-            label="Load images from this sender"
-            onPress={() => remoteImages.onLoad()}
-          />
-        </div>
-      ) : null}
+      {remoteImages ? <RemoteImagesStrip {...remoteImages} /> : null}
 
       {folded ? null : (
         <div className="ui-thread-message__body" id={`${id}-content`}>

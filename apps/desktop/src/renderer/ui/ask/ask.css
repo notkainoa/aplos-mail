@@ -702,6 +702,23 @@
   gap: var(--space-1);
   min-width: 0;
 }
+.ui-search-field__hint {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-half);
+}
+/* Each operator is a quiet text button: the hint reads as before, and a press puts the token in the field. */
+.ui-search-field__hint > .ui-compose-btn {
+  padding: 0 var(--space-1);
+  color: var(--dim);
+  font: var(--type-small);
+  font-variant-numeric: var(--num-small);
+  letter-spacing: var(--track-small);
+}
+.ui-search-field__hint > span {
+  margin-right: var(--space-1);
+}
 .ui-search-field__scope {
   flex: none;
   margin-left: auto;

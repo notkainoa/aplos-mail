@@ -4,6 +4,7 @@
  * hover content and never takes focus, but Esc still dismisses it (WCAG 1.4.13). `reveal` in and out.
  */
 import { useEffect, useRef, type KeyboardEvent } from 'react';
+import { realKeySeen } from '../buttons-keys/inputIntent';
 import { motions } from '../generated/motion';
 import type { ComponentPropsMap } from '../props';
 import { useDismiss, useFloating, usePresence } from './parts';
@@ -29,9 +30,12 @@ export function Popover({
   useEffect(() => {
     if (!open || role !== 'dialog') return;
     const el = ref.current;
-    const first = el?.querySelector<HTMLElement>(FOCUSABLE);
+    // Opened from the keyboard, focus lands on the first control. Opened by the pointer (or by script with no
+    // input yet) it lands on the panel itself, so its first button does not wear a ring nobody asked for.
+    const byKey = realKeySeen() && (anchor?.matches(':focus-visible') ?? false);
+    const first = byKey ? el?.querySelector<HTMLElement>(FOCUSABLE) : null;
     (first ?? el)?.focus({ preventScroll: true });
-  }, [open, role, ref]);
+  }, [open, role, ref, anchor]);
 
   // Hover content never holds focus, so its Esc listens on the document while it is open.
   useEffect(() => {

@@ -30,15 +30,15 @@ test.describe('one by one: the email card', () => {
     await open(page);
     await expect(page.locator(`${CARD} .ui-thread-message__subject`)).toHaveCount(0);
     await expect(page.locator(`${CARD} .aplos-recipients__button`)).toBeVisible();
-    await expect(page.locator(`${CARD} button[aria-label="More"]`)).toBeVisible();
+    await expect(page.locator(`${CARD} button[aria-label="Message actions"]`)).toBeVisible();
     await expect(page.locator(`${CARD} .ui-reader-actions`)).toBeVisible();
   });
 
   test('More leaves out Reply all here, and Esc returns focus to its button', async ({ page }) => {
     await open(page);
-    const more = page.locator(`${CARD} button[aria-label="More"]`);
+    const more = page.locator(`${CARD} button[aria-label="Message actions"]`);
     await more.click();
-    const menu = page.getByRole('menu', { name: 'More' });
+    const menu = page.getByRole('menu', { name: 'Message actions' });
     await expect(menu.getByRole('menuitem', { name: /Later/ })).toBeVisible();
     await expect(menu.getByRole('menuitem', { name: /Reply all/ })).toHaveCount(0);
     await page.keyboard.press('Escape');

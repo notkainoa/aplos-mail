@@ -121,14 +121,17 @@ function excerptEnd(text: string): number {
 /**
  * The plain-text excerpt of a folded card (owner review 2026-11-03): the first sentence or two of the message after
  * its salutation, whitespace collapsed, cut at a sentence end when two fit and otherwise at a word (or hard at the
- * limit when there is none), and ending in "…". An abbreviation ("Dr.") is not a sentence. Taken from the message's own
+ * limit when there is none). Whole sentences keep their own punctuation; only a sentence cut short ends in "…", after
+ * the last whole word, never beside a "?" or ".". An abbreviation ("Dr.") is not a sentence. Taken from the message's own
  * snippet, so a folded card never loads its body. A message with no text gives "": the card says "No preview".
  */
 export function excerptOf(message: Pick<Message, 'snippet'>): string {
   const all = message.snippet.replace(/\s+/g, ' ').trim();
   const text = all.replace(SALUTATION, '') || all;
   if (text === '') return '';
-  const excerpt = cutLong(text.slice(0, excerptEnd(text)));
+  const sentences = text.slice(0, excerptEnd(text));
+  const excerpt = cutLong(sentences);
+  if (excerpt === sentences) return excerpt.replace(/[\s,;:、，]+$/u, '');
   return `${excerpt.replace(/[\s.…,;:。！？、，]+$/u, '')}…`;
 }
 

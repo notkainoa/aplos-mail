@@ -1211,16 +1211,37 @@
   /* Room for the listbox's focus ring inside the scroller, which would otherwise clip it. */
   padding: calc(var(--focus-width) + var(--focus-gap));
 }
-.ui-low-sheet__preview {
-  box-sizing: border-box;
-  display: -webkit-box;
+.ui-low-sheet__bar {
+  display: flex;
   flex: none;
-  /* One line, reserved so the sheet holds still on hover, but no taller than the quiet gap above the hint. */
-  height: var(--space-6);
-  margin: var(--space-2) 0 0;
-  padding: var(--space-1) var(--space-3);
-  overflow: hidden;
+  align-items: center;
+  gap: var(--space-3);
+  min-height: var(--control-sm);
+  margin-top: var(--space-2);
+  padding: var(--space-3) var(--space-1) 0 var(--space-3);
   box-shadow: 0 calc(-1 * var(--hairline)) 0 var(--line);
+  box-sizing: content-box;
+}
+.ui-low-sheet__bar > .ui-list-btn {
+  flex: none;
+  margin-left: auto;
+}
+.ui-low-sheet__bar-text {
+  display: grid;
+  flex: 1 1 auto;
+  min-width: 0;
+}
+.ui-low-sheet__bar-text > * {
+  grid-area: 1 / 1;
+}
+.ui-low-sheet__foot[data-covered='true'] {
+  visibility: hidden;
+}
+.ui-low-sheet__preview {
+  display: -webkit-box;
+  min-width: 0;
+  margin: 0;
+  overflow: hidden;
   color: var(--ink-2);
   font: var(--type-small);
   letter-spacing: var(--track-small);
@@ -1228,17 +1249,14 @@
   -webkit-box-orient: vertical;
   -webkit-line-clamp: 1;
 }
-/* Until a row is hovered the slot keeps its room (the sheet holds still) but drops its rule, so no empty band shows. */
-.ui-low-sheet__preview:empty {
-  box-shadow: none;
-}
 .ui-low-sheet__foot {
   display: flex;
+  flex: 1 1 auto;
   flex-wrap: wrap;
   align-items: center;
   gap: var(--space-1);
-  margin: var(--space-2) 0 0;
-  padding: 0 var(--space-3);
+  min-width: 0;
+  margin: 0;
   color: var(--dim);
   font: var(--type-small);
   letter-spacing: var(--track-small);

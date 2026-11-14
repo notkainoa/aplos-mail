@@ -926,9 +926,9 @@
       "min": 4.5,
       "usage": "Text in the calendar's today column",
       "fgHex": "#9a9da4",
-      "bgHex": "#202328",
+      "bgHex": "#242930",
       "fgRgb": [0.603922, 0.615686, 0.643137],
-      "bgRgb": [0.124157, 0.136784, 0.155922]
+      "bgRgb": [0.141569, 0.16, 0.186667]
     },
     {
       "id": "dim-on-today-tint-over-canvas",
@@ -954,9 +954,9 @@
       "min": 4.5,
       "usage": "Text in the calendar's today column",
       "fgHex": "#9a9da4",
-      "bgHex": "#202328",
+      "bgHex": "#242930",
       "fgRgb": [0.603922, 0.615686, 0.643137],
-      "bgRgb": [0.124157, 0.136784, 0.155922]
+      "bgRgb": [0.141569, 0.16, 0.186667]
     },
     {
       "id": "ink-on-selection",

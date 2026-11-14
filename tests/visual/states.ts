@@ -574,7 +574,7 @@ export const STATES: readonly VisualState[] = [
     components: ['LowSheet', 'LowBand'],
     design: '7.2',
     mockup: 'home.html (low sheet)',
-    filled: 0,
+    filled: 1,
   },
   {
     id: 'home-menu',

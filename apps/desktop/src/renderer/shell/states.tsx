@@ -1,6 +1,6 @@
 /**
- * Empty and first-sync states for the screen slot (DESIGN 7.14): one plain sentence, at most one action, no icon in a
- * circle. The wording is the table's; screens other lanes own replace the placeholder with their own content.
+ * Empty and first-sync states for the screen slot (DESIGN 7.14): one small muted mark, one plain sentence, at most one
+ * action, no icon in a circle. The wording is the table's; screens other lanes own replace the placeholder with their own content.
  */
 import { EmptyLine, ErrorLine } from '../ui/list';
 import type { IconName } from '../ui/props';
@@ -42,7 +42,9 @@ export interface FirstSyncLineProps {
 
 /** Home during first sync (DESIGN 7.14): never inbox zero while an account is still reading its first mail. */
 export function FirstSyncLine({ reason }: FirstSyncLineProps) {
-  return <EmptyLine placement="pane" text="Your first mail is on its way" detail={reason} />;
+  return (
+    <EmptyLine placement="pane" icon="mail" text="Your first mail is on its way" detail={reason} />
+  );
 }
 
 /** Props for `NoAccountsLine`. */
@@ -56,6 +58,7 @@ export function NoAccountsLine({ onAddAccount, onTryDemo }: NoAccountsLineProps)
   return (
     <EmptyLine
       placement="pane"
+      icon="user"
       text="Add an account to bring in your mail"
       action={{ label: 'Add an account', icon: 'plus', emphasis: 'filled', onSelect: onAddAccount }}
       secondaryAction={{ label: 'Try demo mail', onSelect: onTryDemo }}

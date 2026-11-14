@@ -99,9 +99,9 @@ export function Composer(props: ComposerProps) {
                   onPress: () => props.onAttach(),
                 },
                 {
-                  label: 'Format',
+                  label: 'Formatting',
                   icon: 'type',
-                  hint: 'Format',
+                  hint: 'Formatting',
                   commandId: commands.more,
                   onPress: props.onFormat,
                 },

@@ -242,9 +242,11 @@
   display: inline-flex;
   flex: none;
 }
+/* The field draws its own 1px edge. The ring overlaps it (offset back by that 1px) and the edge turns accent, so the
+   ring reads as one --focus-width line hugging the field, not edge plus ring. */
 .ui-text-field-box:focus-within {
   outline: var(--focus-width) solid var(--accent);
-  outline-offset: 0;
+  outline-offset: calc(-1 * 1px);
   box-shadow: inset 0 0 0 1px var(--accent);
 }
 .ui-text-field[data-state='invalid'] .ui-text-field-box {

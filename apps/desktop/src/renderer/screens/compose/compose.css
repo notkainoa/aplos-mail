@@ -91,7 +91,8 @@
   padding-block: var(--space-3);
 }
 .aplos-compose:not([data-cards='off']) .ui-composer__editor {
-  min-height: calc(var(--space-10) * 4);
+  /* About 200 px: Send stays close to the words, and the field still grows with them. */
+  min-height: calc(var(--space-10) * 3 + var(--space-2));
   margin-block: var(--space-6);
 }
 .aplos-compose[data-cards='a'] .ui-composer__to:not(:focus-within),
@@ -130,6 +131,8 @@
   align-items: baseline;
   /* The 28 px control sits where the To row's chips do; the label's baseline follows the address's. */
   padding-top: calc((var(--control-lg) - var(--control-sm)) / 2);
+  /* The same hairline the To row draws under itself, on the compose page and in the inline reply. */
+  box-shadow: 0 var(--hairline) 0 var(--line);
 }
 .aplos-from .ui-recipient-field__label {
   padding-top: 0;

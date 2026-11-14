@@ -3,12 +3,13 @@ import type { KeyboardEvent } from 'react';
 import { formatChord } from '../../commands';
 import { chordFromEvent, chordId, parseChord } from '../../commands/internal';
 import type { KeyRecorderProps } from '../props';
+import { displayChord } from '../buttons-keys/keyHints';
 import { SetIcon } from './icons';
 
-/** A chord as a keycap ("shift+r" to "⇧R"). Text that is not a chord (already a display form) is shown as it came. */
+/** A chord as a keycap ("shift+r" to "⇧R", Return as ↩). Text that is not a chord (already a display form) is shown as it came. */
 export function chordText(chord: string): string {
   try {
-    return formatChord(parseChord(chord));
+    return displayChord(formatChord(parseChord(chord)));
   } catch {
     return chord;
   }

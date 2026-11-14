@@ -67,26 +67,27 @@ test('"Reply to Jordan…" names the sender, or whom the owner last wrote to', (
   assert.equal(replyName(message({ id: 'c' }), ME), 'sender');
 });
 
-test('a compact card shows the first sentence or two of the snippet and ends in an ellipsis', () => {
+test('a compact card shows the first sentence or two; only a cut sentence ends in an ellipsis', () => {
   const excerpt = (snippet: string) => excerptOf(message({ id: 'x', snippet }));
-  assert.equal(excerpt('Hi Alex,'), 'Hi Alex…', 'a message that is only a greeting keeps it');
+  assert.equal(excerpt('Hi Alex,'), 'Hi Alex', 'a message that is only a greeting keeps it');
   assert.equal(
     excerpt('Hi Alex, The first pass of the brochure is ready. Tell me what you think. Mina'),
-    'The first pass of the brochure is ready. Tell me what you think…',
-    'the salutation is skipped, two sentences kept',
+    'The first pass of the brochure is ready. Tell me what you think.',
+    'the salutation is skipped, two whole sentences keep their full stop',
   );
-  assert.equal(excerpt('Hello Mina and Jordan, thanks both.'), 'thanks both…');
+  assert.equal(excerpt('Hello Mina and Jordan, thanks both.'), 'thanks both.');
   assert.equal(
-    excerpt('Kicking off. Here is the brief we agreed on Friday. Please read it before Monday.'),
-    'Kicking off. Here is the brief we agreed on Friday. Please read it before Monday…',
+    excerpt('Can you send the first draft by Friday? Mina'),
+    'Can you send the first draft by Friday?',
+    'a whole question keeps its mark, never "Friday?…"',
   );
-  assert.equal(excerpt('Sounds   good\n to me!  Ship it.'), 'Sounds good to me! Ship it…');
-  assert.equal(excerpt('Thanks… and more'), 'Thanks… and more…');
+  assert.equal(excerpt('Sounds   good\n to me!  Ship it.'), 'Sounds good to me! Ship it.');
+  assert.equal(excerpt('Thanks… and more'), 'Thanks… and more');
   assert.equal(excerpt(''), '', 'no text: the card says "No preview"');
   assert.equal(excerpt('  \n\t '), '');
   const long = excerpt(`${'word '.repeat(60)}end.`);
   assert.ok(long.endsWith('…') && long.length <= 151, 'a long first sentence is cut at a word');
-  assert.doesNotMatch(long, / …$/, 'no dangling space before the ellipsis');
+  assert.doesNotMatch(long, / …$|[.?!]…$/, 'no dangling space or full stop before the ellipsis');
 });
 
 test('trackers: nothing when none, singular and plural otherwise', () => {
@@ -208,16 +209,16 @@ test('CJK sentence ends close an excerpt, and an abbreviation is not a sentence'
   const excerpt = (snippet: string) => excerptOf(message({ id: 'x', snippet }));
   assert.equal(
     excerpt('了解しました。明日の朝までに送ります。よろしくお願いします。'),
-    '了解しました。明日の朝までに送ります…',
+    '了解しました。明日の朝までに送ります。',
   );
-  assert.equal(excerpt('今日は晴れです！'), '今日は晴れです…');
+  assert.equal(excerpt('今日は晴れです！'), '今日は晴れです！');
   assert.equal(
     excerpt('Dr. Okafor will join the call on Thursday. Please send the notes before then.'),
-    'Dr. Okafor will join the call on Thursday. Please send the notes before then…',
+    'Dr. Okafor will join the call on Thursday. Please send the notes before then.',
   );
   assert.match(
     excerpt('Ok. Sounds good to me, I will bring the samples on Monday morning.'),
     /^Ok\. Sounds good/,
   );
-  assert.equal(excerpt('e.g. the north wall.'), 'e.g. the north wall…');
+  assert.equal(excerpt('e.g. the north wall.'), 'e.g. the north wall.');
 });

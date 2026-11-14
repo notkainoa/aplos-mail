@@ -388,31 +388,29 @@ export function ProviderTable(props: ProviderTableProps): ReactNode {
             label={name}
             description={localDescription(row)}
             control={
-              <input
-                className="ui-provider-table__address"
-                type="text"
-                value={row.address}
-                placeholder={row.defaultAddress || 'https://your-server.example/v1'}
-                spellCheck={false}
-                autoComplete="off"
-                aria-label={`${name} address`}
-                aria-describedby={`${id}-description`}
-                onChange={e => onAddressChange(row.provider, e.target.value)}
-              />
+              <span className="ui-provider-table__local-control">
+                <input
+                  className="ui-provider-table__address"
+                  type="text"
+                  value={row.address}
+                  placeholder={row.defaultAddress || 'https://your-server.example/v1'}
+                  spellCheck={false}
+                  autoComplete="off"
+                  aria-label={`${name} address`}
+                  aria-describedby={`${id}-description`}
+                  onChange={e => onAddressChange(row.provider, e.target.value)}
+                />
+                {actions}
+              </span>
             }
             below={
-              actions || (onAction && row.status) ? (
-                <>
-                  {actions}
-                  {onAction && row.status ? (
-                    <Fix
-                      name={name}
-                      source={source}
-                      status={row.status}
-                      onAction={action => onAction(row.provider, action)}
-                    />
-                  ) : null}
-                </>
+              onAction && row.status ? (
+                <Fix
+                  name={name}
+                  source={source}
+                  status={row.status}
+                  onAction={action => onAction(row.provider, action)}
+                />
               ) : undefined
             }
           />

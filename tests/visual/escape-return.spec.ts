@@ -243,7 +243,7 @@ test.describe('Esc from an open email returns to the same spot', () => {
     await page.locator(ROWS).nth(2).click();
     await openWithEnter(page);
     const menu = page.locator('[role="menu"]');
-    await page.locator('button[aria-haspopup="menu"][aria-label="More"]').click();
+    await page.locator('button[aria-haspopup="menu"][aria-label="Message actions"]').click();
     await expect(menu.first()).toBeVisible();
     await page.keyboard.press('Escape');
     await expect(menu).toHaveCount(0);

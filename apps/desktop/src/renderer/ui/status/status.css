@@ -103,7 +103,7 @@
 }
 .ui-progress-segments__importing b {
   color: var(--ink-2);
-  font-weight: 500;
+  font-weight: 400;
 }
 .ui-progress-segments__track {
   position: relative;
@@ -116,6 +116,14 @@
   background: var(
     --line-strong
   ); /* --line vanishes on the white pane; the ring token reads as a track */
+}
+/* At the very start the fill would be a hairline: the track keeps a 6 px mark at its left end, so it reads as begun. */
+.ui-progress-segments[data-variant='importing'] .ui-progress-segments__track::before {
+  content: '';
+  position: absolute;
+  inset: 0 auto 0 0;
+  width: calc(var(--space-1) + var(--space-half));
+  background: var(--ink-2);
 }
 .ui-progress-segments[data-variant='waiting'] .ui-progress-segments__track {
   margin-top: 0;

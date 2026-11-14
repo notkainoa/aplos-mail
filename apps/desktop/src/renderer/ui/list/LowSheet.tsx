@@ -193,23 +193,39 @@ export function LowSheet({
                 })}
               </ListBox>
             </div>
-            <p className="ui-low-sheet__preview" aria-live="off">
-              {preview ? preview.text : null}
-            </p>
-            {/* With the shell's announcer the armed line is spoken once through it; otherwise this line is the live region. */}
-            <p
-              className="ui-low-sheet__foot"
-              role={announce ? undefined : 'status'}
-              data-armed={armed ? 'true' : undefined}
-            >
-              {armed ? (
-                armedLine(key, total)
-              ) : (
-                <>
-                  Press <Keycap chord={key} /> twice to mark all {formatCount(total)} done
-                </>
-              )}
-            </p>
+            {/* One row under the list, so hovering a row never moves anything: the hint (or the armed line; the
+                hovered row's preview is drawn over it, the hint keeping its box) on the left, the sheet's own button on the right. With the shell's announcer the
+                armed line is spoken once through it; otherwise the line is the live region. */}
+            <div className="ui-low-sheet__bar">
+              <span className="ui-low-sheet__bar-text">
+                <p
+                  className="ui-low-sheet__foot"
+                  role={announce ? undefined : 'status'}
+                  data-armed={armed ? 'true' : undefined}
+                  data-covered={preview && !armed ? 'true' : undefined}
+                >
+                  {armed ? (
+                    armedLine(key, total)
+                  ) : (
+                    <>
+                      Press <Keycap chord={key} /> twice to mark all done
+                    </>
+                  )}
+                </p>
+                {preview && !armed ? (
+                  <p className="ui-low-sheet__preview" aria-live="off">
+                    {preview.text}
+                  </p>
+                ) : null}
+              </span>
+              <Action
+                variant="filled"
+                size="sm"
+                label={`Mark all ${formatCount(total)} done`}
+                keycap={key}
+                onPress={() => onCommitAll()}
+              />
+            </div>
           </>
         )}
       </div>
