@@ -30,6 +30,8 @@ import {
   suggestedCommand,
   type HomeItem,
   type HomeLayout,
+  movedHome,
+  settleHome,
 } from './homeModel';
 
 interface RowInit {
@@ -470,4 +472,29 @@ test('a row with no sender name and no subject still reads something', () => {
   const named = { ...blank, subject: '  Lunch ', fromName: 'Ada' } as ThreadRow;
   assert.equal(senderOf(named), 'Ada');
   assert.equal(primaryOf(named), 'Lunch');
+});
+
+test('a bulk action that includes the card moves the cursor on, and Undo hands the card back', () => {
+  const ids = ['a', 'b', 'c', 'd'];
+  const before = buildItems(layoutOf({ do: ids }));
+  const after = buildItems(layoutOf({ do: ['a', 'd'] }));
+  // The card is on b; the pick is b and c; the survivor the bulk path chooses is d.
+  const notes = movedHome([], 'b', 'd', 'b', 0);
+  assert.deepEqual(notes, [{ key: 'b', to: 'd', at: 0 }]);
+  const gone = settleHome(before, after, 'd', notes, 1_000);
+  assert.equal(gone.key, 'd', 'the pick leaving does not disturb the cursor');
+  assert.deepEqual(gone.displaced, notes, 'the note is kept while the mail is away');
+  const back = settleHome(after, before, 'd', gone.displaced, 2_000);
+  assert.equal(back.key, 'b', 'Undo puts the card back on the mail it was on');
+  assert.deepEqual(back.displaced, []);
+});
+
+test('moving the cursor by hand, or waiting out the undo window, forgets the way back', () => {
+  const before = buildItems(layoutOf({ do: ['a', 'b', 'c', 'd'] }));
+  const after = buildItems(layoutOf({ do: ['a', 'd'] }));
+  const notes = movedHome([], 'b', 'd', 'b', 0);
+  assert.deepEqual(movedHome(notes, 'd', 'a', undefined, 1), [], 'a hand move clears the notes');
+  assert.equal(movedHome(notes, 'd', 'd', undefined, 1), notes, 'a bump that stays put keeps them');
+  const late = settleHome(after, before, 'd', notes, 31_000);
+  assert.equal(late.key, 'd', 'a mail that returns after the window came back for another reason');
 });
