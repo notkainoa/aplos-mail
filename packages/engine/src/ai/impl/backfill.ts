@@ -8,6 +8,7 @@ import {
   inputHashOf,
   lastSentHashOf,
   priorityOf,
+  queueSummary,
 } from './jobs';
 import './ai-writes';
 
@@ -50,11 +51,13 @@ function candidates(services: EngineServices): Candidate[] {
       if (p === undefined || p.priority > 1) continue;
       const { hash, messageCount } = inputHashOf(q, t.id);
       if (!messageCount) continue;
+      // Only a landed `ready` row skips the thread: `queueSummary` decides the rest — a `pending` row whose
+      // job died re-queues it, and `failed`/`stale` rows get another run.
       const fresh = q.get(
-        'SELECT 1 AS one FROM summaries WHERE thread_id = ? AND input_hash = ? AND state != ?',
+        'SELECT 1 AS one FROM summaries WHERE thread_id = ? AND input_hash = ? AND state = ?',
         t.id,
         hash,
-        'failed',
+        'ready',
       );
       if (fresh) continue;
       out.push({
@@ -69,24 +72,31 @@ function candidates(services: EngineServices): Candidate[] {
   });
 }
 
+/**
+ * The settings-change catch-up: `Setup/end` backfills once and the store's ingest hook queues on new mail, but
+ * neither sees mail that already exists when AI is switched on later — a Summaries provider picked, `ai.background`
+ * enabled, or an account's `ai_allowed` flipped. Re-runs the same bounded scan; a failure is logged, never thrown
+ * into a settings commit.
+ */
+export function catchUpSummaries(services: EngineServices): void {
+  try {
+    backfillSummaries(services);
+  } catch (error) {
+    try {
+      services.log.event('ai.backfill_failed', {
+        detail: (error instanceof Error ? error.message : String(error)).slice(0, 200),
+      });
+    } catch {
+      // A logless host keeps the queue honest anyway — the catch-up must never throw into a commit's caller.
+    }
+  }
+}
+
 /** Queue a `summary` job per eligible thread; idempotent — the singleton key makes a re-run a no-op. */
 export function backfillSummaries(services: EngineServices): number {
-  const now = services.clock.now();
   let queued = 0;
   for (const c of candidates(services)) {
-    const { hash } = services.store.read(q => inputHashOf(q, c.threadRowId));
-    enqueue(services, `ai-backfill-${c.threadRowId}-${hash}`, {
-      kind: 'summary',
-      key: `summary:${c.accountId}:${c.remoteId}:${hash}`,
-      priority: c.priority,
-      nextAt: now,
-      payload: {
-        threadId: `${c.accountId}:${c.remoteId}`,
-        accountId: c.accountId,
-        remoteThreadId: c.remoteId,
-        inputHash: hash,
-      },
-    });
+    queueSummary(services, c.accountId, c.remoteId);
     queued++;
   }
   sweepFollowups(services);

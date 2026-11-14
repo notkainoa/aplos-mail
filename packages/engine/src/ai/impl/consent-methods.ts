@@ -88,6 +88,22 @@ export function grant(args: Input<'Consent/grant'>, ctx: MethodContext): Output<
       },
       { kind: 'meta', key: CONSENT_KEY_META, value: current },
       { kind: 'job', action: 'wake' },
+      // A grant can open the gate for mail that dead-lettered while it waited — the catch-up re-queues it.
+      ...(args.scope === 'background'
+        ? [
+            {
+              kind: 'job' as const,
+              action: 'enqueue' as const,
+              job: {
+                kind: 'wake',
+                key: 'ai:backfill',
+                priority: 5,
+                payload: '{}',
+                nextAt: ctx.services.clock.now(),
+              },
+            },
+          ]
+        : []),
       ...auditWrites(ctx.caller, 'Consent/grant', args.scope),
     ],
   });

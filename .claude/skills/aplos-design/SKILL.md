@@ -64,7 +64,7 @@ Use `var(--token)` in CSS and the imports from `ui/generated/motion.ts` in TS. N
 | `--faint` | Non-text only, on the pane: disabled icons, dividers. On the shell use `--dim`. |
 | `--line` / `--line-strong` | Hairlines / card and field rings |
 | `--control-edge` | Checkbox, radio and switch-off edges only |
-| `--accent` (ink blue) | Only: the one filled button, focus ring, cursor bar, unread dot, links, today's date badge |
+| `--accent` (ink blue) | Only: the one filled button, focus ring, cursor bar, links, today's date badge |
 | `--accent-ink` | Text on an accent fill |
 | `--accent-wash` | Bulk-picked rows only |
 | `--hill` | Done and success, only where it means Done |
@@ -78,13 +78,13 @@ Use `var(--token)` in CSS and the imports from `ui/generated/motion.ts` in TS. N
 | `--scrim` | Behind dialogs and the palette |
 | `--shadow-ink` / `--sheen` | Shadow base / the 1 px top sheen on dark panes and cards |
 | `--press-hi` / `--press-lo` | The filled button's top inset highlight / bottom inset shade |
-| `--tag-sky`, `--tag-hill`, `--tag-stamp`, `--tag-dusk`, `--tag-sand`, `--tag-ember` | Accounts, labels and calendars, as marks only. An account dot shows only when two or more accounts are connected. |
+| `--tag-sky`, `--tag-hill`, `--tag-stamp`, `--tag-dusk`, `--tag-sand`, `--tag-ember` | Accounts, labels and calendars, as marks only. No account dot on rows (owner, 2026-11-13); the colour shows in the account picker and Settings → Accounts. |
 | `--event-fill` | A calendar event's fill: its tag colour at this percentage (12 %, dark 20 %) |
 
 Rules:
 
 - Colour is rare. Everything else is gray, black or white.
-- A read row is a 400 `--ink-2` sender and a `--dim` summary. An unread row is a 600 `--ink` sender, an `--ink-2` summary and the 6 px accent dot.
+- A read row is a 400 `--ink-2` sender and a `--dim` summary. An unread row is a 600 `--ink` sender and a 500 `--ink-2` summary, with no dot (owner, 2026-11-13).
 - The keyboard cursor is `--puck` plus a 2 px accent bar on the leading edge. Never use opacity for text.
 - Disabled text is `--dim` and disabled icons are `--faint`.
 - Dark-theme large fills (the swipe underlay) are capped at a 70 % mix over paper. Small commit chips are solid.
@@ -216,7 +216,7 @@ Durations come from `--dur-*` / `motion.ts`, curves from `--ease-*` and `--sprin
 4. Keys are never dropped. A capture-phase queue replays keys that arrive during a mount or transition.
 5. Interrupt means finish or retarget. A new key finishes a running ghost. A gesture continues from the drawn value and velocity.
 6. **The list holds still.** New mail and re-ranks wait under `hold`, then `arrive`. An emptied section label stays, showing 0, until `hold` releases.
-7. **Never animate layout:** no `width`, `height`, `padding`, `margin`, `inset` or `font-size`. The focus letter has a fixed height. Rows close with FLIP. The reader double-buffers.
+7. **Never animate layout:** no `width`, `height`, `padding`, `margin`, `inset` or `font-size`. The focus letter has a fixed height (a card with no summary coming fits its content, 2026-11-13). Rows close with FLIP. The reader double-buffers.
 8. Navigation is instant.
 9. Prefetch on intent: after 80 ms of keyboard focus or 120 ms of hover, prefetch the body and both neighbours. Cancel if you move on.
 10. Double-buffer the reader. The previous letter stays until the next is laid out (1.5 s deadline), then a 12 px "Loading …" line appears. Never a blank pane.
@@ -337,7 +337,7 @@ How Home behaves:
 
 - **Do now order:** the due band first (overdue or today, tomorrow, within 7 days, later or none), then important before normal, then the soonest due, then the newest.
 - **Sorting rule:** respond → Do now; only need to see it → Important updates; don't need to see it → Low importance. It is decided by the conversation, never the sender.
-- The focus letter is a fixed-height `--elev-card`. It holds the meta line, the serif summary (two lines at most on Home) and the action row: the filled suggestion with its Space keycap, then Later and Done as text buttons, then ⋯. There is no subject.
+- The focus letter is a fixed-height `--elev-card` (it fits its content when no summary is coming). It holds the meta line, the serif summary (two lines at most on Home; while it is being written, a quiet two-line placeholder with "Summarizing…") and the action row: the filled suggestion with its Space keycap, then Later and Done as text buttons, then ⋯. There is no subject.
 - Empty sections don't render, except while held.
 - The sidebar count is Do now plus Important updates.
 - With no AI, rows show the subject, the focus letter shows the subject at `summary` size in SF, and there is no error.

@@ -4,7 +4,7 @@
  * registry's handlers attach once; everything that changes is read when a key arrives.
  */
 import { useEffect, useMemo, useRef, useState, type RefObject } from 'react';
-import type { CommandContext, Registry } from '../../commands';
+import type { Registry } from '../../commands';
 import { api, undoStack, type HoldController, type ThreadId } from '../../data';
 import {
   dismissToast,
@@ -21,7 +21,6 @@ import {
   type HomeDeps,
   type HomeSnapshot,
   type OpenHow,
-  type RunStatus,
 } from './homeActions';
 import type { HomeBulkDeps } from './homeBulk';
 import { commandsForHome } from './homeCommands';
@@ -29,8 +28,6 @@ import { commandsForHome } from './homeCommands';
 /** The screen's inputs to its actions. */
 export interface HomeActionInputs {
   readonly snapshot: RefObject<HomeSnapshot>;
-  /** The command context a command run from here (Space on a reply) gets. */
-  readonly context: () => CommandContext;
   readonly hold: HoldController;
   /** The bulk pick and its confirmation; absent where the screen cannot pick (the one-by-one view). */
   readonly bulk?: HomeBulkDeps;
@@ -56,19 +53,6 @@ export interface HomeKeyInputs extends HomeActionInputs {
 export interface HomeActionState {
   readonly actions: HomeActions;
   readonly remindOffer: boolean;
-}
-
-function statusOf(result: ReturnType<Registry['run']>): RunStatus {
-  switch (result.status) {
-    case 'ran':
-    case 'failed':
-    case 'unknown':
-    case 'unhandled':
-    case 'disabled':
-      return result.status;
-    default:
-      return 'other';
-  }
 }
 
 /** Whether the toast that offers the reminder is still on screen; an offer with no toast of its own never lives. */
@@ -133,7 +117,6 @@ export function useHomeActionState(inputs: HomeActionInputs): HomeActionState {
       },
       openDatePicker: id => now().openDatePicker(id),
       reminderOffer: () => offer.current,
-      runCommand: id => statusOf(registry.run(id, now().context())),
       openThread: (id, how) => now().openThread(id, how),
       openLow: () => now().openLow(),
       oneByOne: () => now().oneByOne(),

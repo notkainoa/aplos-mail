@@ -18,7 +18,6 @@ import {
   returnKeyOf,
   usePaneHeaderPart,
   useCommandTarget,
-  useCurrentTarget,
   useRegisterCommands,
   useReturnRestore,
   useReturnSource,
@@ -26,8 +25,7 @@ import {
   type PaneHeaderPart,
 } from '../../shell';
 import type { Density } from '../../ui/props';
-import type { HomeSnapshot } from './homeActions';
-import { homeRunContext } from './homeCommands';
+import type { HomeSnapshot, OpenHow } from './homeActions';
 import { laneOf, stepLane, type MovableLane, type SectionKey } from './homeModel';
 import { rowDomId } from './HomeList';
 import { densityOf, failurePhrase, senderOf, subjectOf } from './homeRows';
@@ -60,7 +58,7 @@ export interface OneByOneScreenProps {
   /** Back to Home (Esc, the header's back button, the finish line's button). */
   readonly onExit: () => void;
   /** Return, O and R: open the thread in the reader. Absent until the reader lands. */
-  readonly onOpen?: (id: ThreadId) => void;
+  readonly onOpen?: (id: ThreadId, how?: OpenHow) => void;
 }
 
 /** "Couldn't <op>." with Retry, as Home's rows word it; a retry is a commit, so the walk steps on again. */
@@ -127,7 +125,6 @@ export function useOneByOne({ accountId, onExit, onOpen }: OneByOneScreenProps):
   }));
   const hold = useHold('oneByOne');
   const density = densityOf(useSettings()?.ui.density);
-  const target = useCurrentTarget();
   const row = walk.ready && walk.shown !== null ? home.rows.get(walk.shown) : undefined;
   const section: SectionKey =
     row && doNowIdsOf(home).fromLater.includes(row.id) ? 'fromLater' : 'do';
@@ -165,26 +162,17 @@ export function useOneByOne({ accountId, onExit, onOpen }: OneByOneScreenProps):
   }, []);
 
   const datePicker = useHomeDatePicker(hold, () => letterOf(snapshot.current.key));
-  const keyState = useRef({ remindOffer: false, target });
   const { actions, remindOffer } = useHomeActionState({
     snapshot,
-    context: () =>
-      homeRunContext(
-        keyState.current.target,
-        false,
-        keyState.current.remindOffer,
-        document.activeElement,
-      ),
     hold,
     setCursor: ignore,
     commit: (_kind, _ids, rowId) => walk.acted(rowId),
-    openThread: id => props.current.onOpen?.(id),
+    openThread: (id, how) => props.current.onOpen?.(id, how),
     openLow: ignore,
     oneByOne: ignore,
     openMore,
     openDatePicker: datePicker.open,
   });
-  keyState.current = { remindOffer, target };
 
   const { acted, step } = walk;
   const lane = useCallback(

@@ -8,6 +8,7 @@
 import { useCallback, useEffect, useMemo, useReducer, useRef } from 'react';
 import { api, useRow, type ThreadRow } from '../../data';
 import {
+  clearPendingReply,
   closeThread,
   dismissToast,
   openCompose,
@@ -18,6 +19,7 @@ import {
   useOpenThread,
   useOpenThreadContext,
   usePaneHeaderPart,
+  usePendingReply,
   useRegisterCommands,
   useShellKeyLayer,
   useShellRegistry,
@@ -41,6 +43,7 @@ import { commandsForReader, relayToShell } from './readerCommands';
 import {
   PLAIN_REPLY,
   freshUi,
+  replyRequestOf,
   reduceFor,
   uiFor,
   type ReplyRequest,
@@ -238,6 +241,13 @@ function OpenReader(props: OpenProps & { readonly source: readonly string[] }) {
     (request: ReplyRequest) => dispatchShown({ type: 'openReply', request }),
     [dispatchShown],
   );
+  // A thread opened for a reply (R, ⇧R, hold R or the nudge on Home or one by one) shows its reply card at once.
+  const pending = usePendingReply();
+  useEffect(() => {
+    if (pending === null || shown !== pending.id) return;
+    openReply(replyRequestOf(pending.reply));
+    clearPendingReply();
+  }, [pending, shown, openReply]);
   const closeFind = useCallback(() => {
     if (shown === null || uiFor(ui, shown).find === null) return false;
     send({ threadId: shown, event: { type: 'closeFind' } });

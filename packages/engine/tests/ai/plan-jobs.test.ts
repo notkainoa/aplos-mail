@@ -7,7 +7,7 @@ import { openStore } from '../../src/store';
 import { detachedTransport, type AiChatRequest, type AiTransport } from '../../src/ai/host';
 import { runJobs } from '../../src/ai/impl/runner';
 import { ACCOUNT, accountWrite, folderWrites, msg, tempDb } from '../store/helpers';
-import { manualClock } from '../runtime.helpers';
+import { manualClock, silentDeadlines } from '../runtime.helpers';
 
 function stubTransport(answer: string | string[]): AiTransport & { calls: AiChatRequest[] } {
   const calls: AiChatRequest[] = [];
@@ -46,6 +46,8 @@ async function world(transport: AiTransport) {
       resident: true,
       capabilities: { desktop: true },
     },
+    // The queue's own deadline never fires on its own here: tests drive it with explicit `runJobs` calls.
+    ports: { deadlines: silentDeadlines() },
   });
   engine.services.ai.useTransport(transport);
   const window = engine.connect();
@@ -57,12 +59,15 @@ async function world(transport: AiTransport) {
 const EVENT_ANSWER =
   '{"events":[{"title":"Garden day","start":"2026-11-14T10:00:00Z","end":"2026-11-14T11:00:00Z","allDay":false,"location":"Community garden","quote":"this Saturday at 10 am"}]}';
 
-const seed = (w: Awaited<ReturnType<typeof world>>, spam = false) =>
+const seed = (w: Awaited<ReturnType<typeof world>>, spam = false) => {
+  // Mail lands while the account is still kept out of AI so the ingest enqueue stays out, and seen+done keeps the
+  // thread below the summary queue's Home-visible/unread bar so the Settings/set catch-up in `consentNow` queues
+  // nothing either — a summary job would be legitimate but spends a scripted answer.
   w.store.commit({
     opId: 'seed',
     origin: 'sync',
     writes: [
-      { ...accountWrite, aiAllowed: true },
+      { ...accountWrite, aiAllowed: false },
       ...folderWrites.map(f => ({ ...f })),
       ...(spam
         ? [
@@ -79,10 +84,23 @@ const seed = (w: Awaited<ReturnType<typeof world>>, spam = false) =>
       msg('m1', 'T-plans', 5, {
         subject: 'Garden day',
         snippet: 'We are gathering this Saturday at 10 am.',
+        flags: { seen: true, flagged: false, draft: false, fromMe: false },
         ...(spam ? { folders: [{ folder: 'INBOX' }, { folder: 'SPAM' }] } : {}),
       }),
+      {
+        kind: 'workflow',
+        accountId: ACCOUNT,
+        remoteThreadId: 'T-plans',
+        patch: { status: 'done' },
+      },
     ],
   });
+  w.store.commit({
+    opId: 'ai-on',
+    origin: 'sync',
+    writes: [{ kind: 'account', id: ACCOUNT, aiAllowed: true }],
+  });
+};
 
 const consentNow = async (w: Awaited<ReturnType<typeof world>>) => {
   await w.call('Settings/set', { opId: 'bg', patch: { ai: { background: true } } });
@@ -140,7 +158,9 @@ test('Ai/request: a summary job never swallows a plan or suggestAction request (
     threadId: 'acct-1:T-plans',
   });
   const rows = w.engine.services.store.read(q =>
-    q.all<{ kind: string; key: string }>('SELECT kind, key FROM jobs ORDER BY id'),
+    q.all<{ kind: string; key: string }>(
+      "SELECT kind, key FROM jobs WHERE kind != 'wake' ORDER BY id",
+    ),
   );
   assert.deepEqual(
     rows.map(r => r.kind).sort(),
@@ -278,7 +298,9 @@ test('plan job: the owner zone reaches the prompt; the job shares the in-flight 
 test('suggestAction job: mail that moved since the request means no draft call', async () => {
   const SUMMARY_REPLY =
     '{"summary":"They asked a question.","action":{"kind":"reply","label":"Reply"}}';
-  const t = stubTransport([SUMMARY_REPLY, '{"draft":"unused"}']);
+  // The new message legitimately re-queues a summary under the new hash — a second summary call runs;
+  // the draft answer stays unconsumed.
+  const t = stubTransport([SUMMARY_REPLY, SUMMARY_REPLY, '{"draft":"unused"}']);
   const w = await world(t);
   seed(w);
   await consentNow(w);
@@ -310,7 +332,11 @@ test('suggestAction job: mail that moved since the request means no draft call',
     q.get<{ value: string }>('SELECT value FROM meta WHERE key = ?', 'replydraft:acct-1:T-plans'),
   );
   assert.equal(draft, undefined, 'no draft was written for stale mail');
-  assert.equal(t.calls.length, 1, 'only the summary call ran');
+  assert.equal(
+    t.calls.length,
+    2,
+    'two summary calls — the new input re-summarized; no draft call ran',
+  );
   w.file.cleanup();
 });
 

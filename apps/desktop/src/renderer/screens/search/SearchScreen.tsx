@@ -220,7 +220,7 @@ function SearchBody(props: SearchBodyProps): ReactElement {
     accountId ?? 'all',
   );
 
-  const showAccountDot = accounts.length >= 2;
+  const showAccount = accounts.length >= 2;
   const rowFor = (id: string, remote: boolean) => {
     const thread = local.rows.get(id);
     return thread
@@ -228,7 +228,7 @@ function SearchBody(props: SearchBodyProps): ReactElement {
           thread,
           model.query,
           remote,
-          showAccountDot ? accountMark(thread.accountId, accounts) : undefined,
+          showAccount ? accountMark(thread.accountId, accounts) : undefined,
         )
       : null;
   };
@@ -431,7 +431,6 @@ function SearchBody(props: SearchBodyProps): ReactElement {
         remoteRows={remoteRows}
         cursorId={cursorRow?.id}
         density={density}
-        showAccountDot={showAccountDot}
         scopeLabel={scoped?.name ?? 'All accounts'}
         handlers={handlers}
         inputRef={inputRef}

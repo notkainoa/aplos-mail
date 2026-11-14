@@ -1,9 +1,22 @@
 import type { Frame, LogRecord } from '@aplos/contract';
 import { createLogger } from '../src/diag/log';
 import { createEngine, type Engine, type EngineOptions } from '../src/index';
-import type { Clock, Timer } from '../src/ports';
+import type { Clock, DeadlineRegistry, Timer } from '../src/ports';
 import { openStore, type StorePort } from '../src/store';
 import { T0, tempDb } from './store/helpers';
+
+/**
+ * A deadline registry that never fires on its own: `changed` marks are recorded in `told`, sources register and
+ * unregister, but no fire runs until a test calls `runJobs` itself. Keeps AI-queue tests deterministic — a queued
+ * job cannot race a scripted provider answer.
+ */
+export function silentDeadlines(told: string[] = []): DeadlineRegistry & { told: string[] } {
+  return {
+    told,
+    register: () => () => {},
+    changed: id => void told.push(id),
+  };
+}
 
 /** A manual clock until `eng-time`'s fake clock lands: timers fire only when a test advances it. */
 export function manualClock(start = T0) {

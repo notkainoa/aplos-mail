@@ -36,12 +36,12 @@ Answered questions carry the date. Open ones use their default unless you say ot
 | 8 | How do key hints appear? | Open, default applies (revised 2026-10-27) | (a) In tooltips, as badges while ⌘ is held, or always with the "Show all key hints" setting. Main actions always show their key. Hover never reveals a keycap | Screens stay calm and nothing moves on hover. |
 | 9 | Should the Ask dock start closed? | Open, default applies | (a) Closed on first run, then remembered | The first screen is not a large blank panel. |
 | 10 | Should ⌘K become a real command palette, with `/` for search? | Open, default applies | (a) Yes | Every command is reachable without memorising keys. |
-| 11 | Should the Home focus letter have a fixed height, with the summary cut at two lines? | Open, default applies | (a) Fixed, 180 px at the default density | The list cannot jump. Summaries are cut only on Home, never in the reader. |
+| 11 | Should the Home focus letter have a fixed height, with the summary cut at two lines? | Open, default applies; amended 2026-11-13 | (a) Fixed, 180 px at the default density, except that a card with no summary coming fits its content | The list cannot jump while a summary is shown or being made. Summaries are cut only on Home, never in the reader. |
 | 12 | A margin rail beside the reader? | Answered 2026-10-27 | No. One reading column; the rail's contents live in ⋯ and ⌘K | The reader shows four things and nothing beside them. |
 | 13 | The app icon inside the app? | Answered 2026-10-27 | Dropped everywhere, including Welcome. A new logo comes later | No sky is left in the product. |
 | 14 | The website and its stripe? | Answered 2026-10-27 | The full site redesign waits for the new logo (§2.4) | This spec covers the app only. |
 | 15 | The design system's name? | Answered 2026-10-27 | Paper | Never user-visible; it stops agents drifting back toward a sky. |
-| 16 | Account colour on rows? | Answered 2026-10-27 | A dot shows only when two or more accounts are connected | With one account, rows stay colourless. |
+| 16 | Account colour on rows? | Answered 2026-10-27; superseded 2026-11-13 | A dot showed only when two or more accounts were connected. The owner removed it: no row carries an account dot or an unread dot | The account colour stays in the account picker and Settings → Accounts; the row tooltip names the account. |
 | 17 | Home's section order? | Answered 2026-10-27 | Do now, Important updates, Low importance, then Follow up last (§7.2) | |
 | 18 | Where does a person's mail with nothing to act on go? | Answered 2026-10-27 | The respond, see or skip rule (§7.2): a thank-you you'd answer is Do now; a reply that only closes the conversation is Low | |
 | 19 | What does Home's sidebar count show? | Answered 2026-10-27 | Do now plus Important updates | |
@@ -78,7 +78,7 @@ Paper takes its principles from Notion, Notion Calendar and Redakt: neutral surf
 | **The shell** | The window background, `--shell`, a light neutral gray (night: near-black). The sidebar sits directly on it with no fill of its own. |
 | **The pane** | One white surface, `--canvas`, floating 8 px inside the window with a 12 px radius. Lists, the reader, compose and settings sit on it. The Ask dock is a second pane beside it. |
 | **Cards** | Only the thing in your hand is a card: the Home focus letter, the inline reply, an Ask proposal, a dialog, a menu. List rows and the reader are not cards. |
-| **Ink blue** | The one action colour: the one filled button, the focus ring, the cursor bar, the unread dot and links. |
+| **Ink blue** | The one action colour: the one filled button, the focus ring, the cursor bar and links. |
 | **Hill green, dusk blue, stamp red** | Done, Later and danger. They appear only where they carry that meaning. |
 | **The serif voice** | Aplos's own words (summaries and Ask answers) are set in Newsreader. Everything else, including display lines, is the system sans. |
 | **Type and space** | Roomy type, generous space and few elements carry the identity. There is no decoration. |
@@ -152,7 +152,7 @@ All tokens live in one source file, `apps/desktop/src/renderer/ui/tokens.json`, 
 | `--line` | ink at 9 % | ink at 8 % | Hairlines: the pane edge, separators, the calendar grid |
 | `--line-strong` | ink at 14 % | ink at 12 % | Card and field rings |
 | `--control-edge` | ink at 48 % | ink at 40 % | Checkbox, radio and switch-off edges only |
-| `--accent` (ink blue) | `#0b5394` | `#88aee0` | The one filled button, the focus ring, the cursor bar, the unread dot, links, today's date badge |
+| `--accent` (ink blue) | `#0b5394` | `#88aee0` | The one filled button, the focus ring, the cursor bar, links, today's date badge |
 | `--accent-ink` | `#ffffff` | `#08111a` | Text on an `--accent` fill |
 | `--accent-wash` | accent at 8 % | accent at 12 % | Bulk-picked rows only |
 | `--hill` (Done) | `#2f6f2a` | `#86b86a` | Done fills, success |
@@ -194,7 +194,7 @@ All tokens live in one source file, `apps/desktop/src/renderer/ui/tokens.json`, 
 - **No raw colour in components.** Lint enforces this (§12.2).
 - **Colour is rare.** The accent appears only in the roles above. Hill, dusk and stamp appear only where they mean Done, Later or danger. Everything else is gray, black or white.
 - **Hover and press** are ink at 4 % and 8 % (dark 5 % and 10 %), mixed with `color-mix` from tokens.
-- **Rows.** A read row is a 400 `--ink-2` sender and a `--dim` summary. An unread row is a 600 `--ink` sender and an `--ink-2` summary, plus the 6 px accent dot. There is no distance fade; hierarchy comes from read and unread weight and colour. Opacity is never used for text.
+- **Rows.** A read row is a 400 `--ink-2` sender and a `--dim` summary. An unread row is a 600 `--ink` sender and a 500 `--ink-2` summary, with no dot (owner decision 2026-11-13: rows carry no unread dot and no account dot; screen readers still hear "Unread"). There is no distance fade; hierarchy comes from read and unread weight and colour. Opacity is never used for text.
 - **The keyboard cursor is neutral:** a `--puck` fill plus a 2 px accent bar on the row's leading edge. `--accent-wash` is only for bulk-picked rows.
 - **Disabled** text is `--dim` and disabled icons are `--faint`.
 - **Dark commit fills.** Small fills (the commit chip) are solid. Large fills (the swipe underlay) are capped at a 70 % mix over paper, which keeps text at 4.70:1 or better. A full-saturation flood at night is a known failure (`ui/avec.md` §6) [V].
@@ -216,7 +216,7 @@ Six pairs, assigned by a stable hash of the name, with a manual override in Sett
 | Ember | `#b4531f` | `#e08a5a` |
 
 - **As marks** (8 px dots, chip outlines, 2 px calendar event rules, sidebar calendar swatches), each colour is at least 5.00:1 on the pane in light (4.59 on the shell) and 6.59:1 in dark [V: `c.py`].
-- **Account dots on rows** show only when two or more accounts are connected (decision 16). With one account they are hidden. The account always appears in the row tooltip and on hover over the reader's sender line.
+- **Account colour never marks a row** (owner decision 2026-11-13, replacing decision 16's row dot). The account's colour stays in the account picker and Settings → Accounts; with two or more accounts the account name is in the row tooltip and on hover over the reader's sender line.
 - **Calendar event fills** use the colour at 12 % (light) or 20 % (dark), composited over `--canvas` and never transparent, so grid lines never cross the text. Titles are `--ink`. Times are `--dim` in light and `--ink-2` in dark.
 - **No avatars in mail** (except the reader card's calm sender mark, a monogram until photos exist, owner override 2026-11-10 amended 2026-11-12, §16). Rainbow letter avatars are removed (`renderer/bridge.ts:20` `avatarColor`) [V], and no mail row shows one. The only other monogram is the account switcher's, ink on `--raised`.
 
@@ -401,7 +401,7 @@ The proposal's slide spring (400 / 32 / 1) actually settles in 361 ms at 0.5 %, 
 1. **Keydown, frame 0.** State commits, focus moves to the next item, and the screen-reader live region announces "Done. Next: Maple Library, items ready for pickup".
 2. **0–60 ms (`commit`).** A 3 px `--hill` edge grows on the leaving edge of the letter. A commit chip (26 px tall, solid hill, a white check plus "Done", `--radius-sm`) appears in its top-trailing corner. The body is **not** flooded; a whole-card flood is Avec's signature (`ui/avec.md` §4 row 4) [V].
 3. **40–260 ms (`flight`).** A ghost copy of the letter (the focus letter on Home, the reader column in the reader) flies right and slightly up with a 2° tilt, like a letter caught by wind. It replaces today's `perspective(1400px) rotateY(±14deg)` fling (`styles.css:352-358`) [V].
-4. **On Home, the slot holds still.** The focus letter is a fixed-height slot. The next letter's content is *dealt* into it (`deal`). The next row's old 40 px line below empties under `hold`, then closes once you pause (`close`).
+4. **On Home, the slot holds still.** The focus letter is a fixed-height slot (except a card with no summary coming, which fits its content, 2026-11-13). The next letter's content is *dealt* into it (`deal`). The next row's old 40 px line below empties under `hold`, then closes once you pause (`close`).
 
 **Later** is the same move in `--dusk` with a clock, flying left and slightly down, as if set aside for the evening.
 
@@ -425,7 +425,7 @@ These are requirements, not preferences. Each one has a test in the budget suite
 4. **Keys are never dropped.** A window-level capture listener queues keys that arrive during a mount or transition and replays them on the next frame.
 5. **Interrupt means finish or retarget.** A new key finishes a running ghost. A new gesture during a spring starts from the drawn value and velocity.
 6. **The list holds still.** `hold` pins rows during bursts and while the pointer is over the list. New mail never moves the row under the cursor; it waits under `hold`, then arrives. A section label stays in place, showing 0, until `hold` releases, so emptying a section never makes the rest jump.
-7. **Never animate layout.** No `width`, `height`, `padding`, `margin`, `inset` or `font-size` transitions. The Home focus letter has a fixed height per density. Rows close with FLIP. The reader swaps with a double buffer.
+7. **Never animate layout.** No `width`, `height`, `padding`, `margin`, `inset` or `font-size` transitions. The Home focus letter has a fixed height per density (a card with no summary coming fits its content). Rows close with FLIP. The reader swaps with a double buffer.
 8. **Navigation is instant.** There is no page-transition token.
 9. **Prefetch on intent.** After 80 ms of keyboard focus or 120 ms of hover, prefetch the body and both neighbours, and cancel if you move on. The engine keeps an LRU of 12 rendered bodies [V: SYNTH-ui §1 #3; Instrument].
 10. **Double-buffer the reader.** The previous letter stays until the next body is laid out and measured, with a 1.5 s deadline. After that, keep the previous letter and show a 12 px "Loading Maple Library…" line. Never show a blank pane.
@@ -469,14 +469,14 @@ Every screen is built from these components in `src/renderer/ui/`. Screens never
 | `Menu`, `Popover` | Rework | Opaque `--paper`, `--elev-float`, radius 12, 32 px items, at least 220 px wide. Number keys 1–9 pick in short menus. The double-blink on the chosen item is removed. |
 | `Dialog` / `Confirm` | Rework | `--elev-dialog`, `settle`. Confirmations are two key rows; destructive ones default to Cancel (§7.9). |
 | `Puck` (segmented / selection) | New | One shared indicator per group, moved by `slide`. Used by the sidebar, D/W/M, Ask/Today, Settings nav and Later \| Bookmarks. Replaces the tab indicator that animates width and height (baseline §4). |
-| `ListRow` | Rework | Fixed height per density. Unread dot (6 px accent), sender, summary or subject, due chip, date. An 8 px account dot only with two or more accounts. No avatar. Hosts the cursor layer, bulk-pick wash, swipe underlay and hover actions that overlay the date column. Option: a fixed stamp column ("Done 9:41 AM") with the hover action to its left. |
+| `ListRow` | Rework | Fixed height per density. Sender, summary or subject, due chip, date; unread is weight alone (no dot) and no account dot (owner decision 2026-11-13). No avatar. Hosts the cursor layer, bulk-pick wash, swipe underlay and hover actions that overlay the date column. Option: a fixed stamp column ("Done 9:41 AM") with the hover action to its left. |
 | `SectionHeader` | Rework | `ui` 600 `--ink` label + `--dim` count + one optional quiet text action. A sub-label variant (`small` 500 `--dim`) for "Back from Later". Tab / ⇧Tab target. Stays, showing 0, until `hold` releases. |
-| `FocusSlot` / `FocusLetter` | New | A fixed-height card on Home (`--elev-card`): meta line, a two-line summary and an action row; supports `deal` |
+| `FocusSlot` / `FocusLetter` | New | A fixed-height card on Home (`--elev-card`): meta line, a two-line summary or its placeholder and an action row; fits its content when no summary is coming; supports `deal` |
 | `LowBand` | Rework | The low-importance band on `--raised` (§7.2) |
 | `ReaderHead` | New | The reader's sender line, summary and action row (§7.5) |
 | `EarlierMessages` | New | One collapsed line for earlier messages ("3 earlier messages from Jordan, you and Mina"); O expands |
 | `ReplyStub` | New | The quiet "Reply to Jordan…" field with an R keycap |
-| `Summary` | New | Serif `summary` text with pending (`breathe`, subject in SF), ready, absent and provenance-on-hover states |
+| `Summary` | New | Serif `summary` text with pending (`breathe`, subject in SF), ready, absent and provenance-on-hover states. The Home focus card draws its pending state as `SummaryPlaceholder` instead (owner decision 2026-11-13). |
 | `Why` | New | Opened from ⋯ as "Why it's here": one sentence + a quote + the two lane-correction keys (⌥↑ / ⌥↓) |
 | `CommitChip` / `CommitEdge` | New | Solid hill / dusk / stamp chip (26 px) and 3 px edge (§4.9) |
 | `Chip` | Rework | Due, label and operator token. 24 px, radius 6, `--raised` fill; overdue chips use `--stamp-tint` with `--stamp-ink`; pill only for operator tokens. A due date found by AI says "from the email" on hover. |
@@ -620,9 +620,10 @@ The Back from Later block uses the same order, below the new items. Rows in Do n
 
 - A card (`--elev-card`) with a fixed height: 180 px by default (roomy 196, compact 164).
 - The meta line holds the sender (`base` 600), the due chip if any, and the relative date.
-- Below it is the **serif summary**, the one big line, two lines at most on Home.
+- Below it is the **serif summary**, the one big line, two lines at most on Home. While it is being written (a provider is set, the account is allowed for AI, a job is queued or running) the same space holds a quiet placeholder: two soft lines about 90 % and 65 % wide and a small muted "Summarizing…", never moving the buttons; the summary replaces it in place with a short opacity fade. With no summary coming (no provider, Summaries off, the account excluded from AI, generation failed, or no result after 20 s) the space collapses entirely: the card is the meta line, the subject in SF, then the buttons, with no placeholder and no error (owner decision 2026-11-13).
 - The action row: the suggestion as the one filled button (action icon + verb + Space keycap), then Later and Done as text buttons (Done is omitted when the suggestion is Done), then one ⋯ (.) for bookmark, trash and "Why it's here". Their keys show in tooltips.
-- There is no subject, no todo line and no bookmark icon on the card [V: baseline §6.2].
+- There is no subject (except as the collapsed card's one line above), no todo line and no bookmark icon on the card [V: baseline §6.2].
+- **Every list key works on the card, whatever its suggestion is** (owner decision 2026-11-13). The button is lane-specific (Reply on Do now, Done on Important updates, the nudge on Follow up), but → and E are Done, ← and L are Later, R is Reply, ⇧R is Reply all, hold R dictates, D, B, #, U, ⌥↑ / ⌥↓ and the rest act on the card's thread, and Space runs the suggestion the button shows. The same holds one by one and in the reader, for the keys each has (the reader has no D). The buttons keep their own key hints; the filled one keeps "Space".
 
 **Rows, the band and the rest**
 
@@ -658,7 +659,7 @@ The Back from Later block uses the same order, below the new items. Rows in Do n
 *Mockups: `inbox.html` (default, bulk), `done.html`, `empty.html` (drafts, trash, spam).*
 
 - **One list component, one row, no focus letter.** The cursor layer moves with `cursor`. Arrow keys only move the cursor here (decision 7).
-- **Rows** follow §4.1's read and unread rules and the neutral keyboard cursor. The account dot shows only with two or more accounts.
+- **Rows** follow §4.1's read and unread rules and the neutral keyboard cursor. No row carries an unread dot or an account dot (owner decision 2026-11-13).
 - **Date groups** in All mail and Done use section labels.
 - **Hover actions** overlay the date column and never reflow the row.
 - **Bulk select:** X, ⇧X, ⌘A. The pane header shows "3 selected · Done · Later · Trash · More · Esc". Bulk-picked rows take `--accent-wash`. Destructive bulk actions use a two-row confirm and give an 8 s undo.
@@ -704,7 +705,7 @@ One 640 px column, top to bottom, with no card and nothing beside it (superseded
 - **Threads.** J/K moves between threads with `swap` and the double buffer. ⌘F finds in the message.
 - **HTML mail** renders in a sandboxed iframe with no scripts, on a light surface that keeps the email's own background even in dark mode. Plain text follows the theme. Remote images are off by default, with "Load images from this sender" (`gaps/electron-email-html-isolation.md`).
 - **States:**
-  - Summary pending: the subject in SF in the summary slot, breathing (`breathe`), until the summary lands in serif.
+  - Summary pending: the subject in SF in the summary slot, breathing (`breathe`), until the summary lands in serif. (On Home's focus card the owner replaced this on 2026-11-13 with the quiet placeholder described in §7.2.)
   - No provider: the subject takes the summary slot in SF, and nothing else changes. "Couldn't summarize this email" is removed (`Reader.tsx:227`).
   - Body loading past 1.5 s: the previous letter stays, with a 12 px line.
   - Body failed: an `ErrorLine` in the column ("Couldn't load this email · Try again").
@@ -976,7 +977,7 @@ Both Reconnect actions open the reconnect sheet (§7.1). "Aplos needs a moment."
 |---|---|
 | 1 | **The voice is the mark.** Summaries and Ask prose are set in Newsreader. No glyph, badge, label, colour or glow says "AI". |
 | 2 | **Suggestions wear their action's icon** (reply, calendar, link, paperclip, cart, phone). The verb is literal: "View invoice", "Reply with times", "Add to calendar", "Reply with a nudge". |
-| 3 | **Working = breathing text.** The pending line shows the subject in SF and breathes (`breathe`, `--ink-2`) until the summary lands. There is no gradient glimmer (`styles/reader.css:82-94`, `styles/focus.css:330`), no pulsing dot, no shimmer, no typewriter and no per-character blur. |
+| 3 | **Working = breathing text.** The pending line shows the subject in SF and breathes (`breathe`, `--ink-2`) until the summary lands (on Home's focus card, from 2026-11-13, a quiet two-line placeholder with "Summarizing…" instead). There is no gradient glimmer (`styles/reader.css:82-94`, `styles/focus.css:330`), no pulsing dot, no shimmer, no typewriter and no per-character blur. |
 | 4 | **Reasons on request.** "Why it's here" (⋯ or I) gives one sentence and a quote from the mail, with ⌥↑ / ⌥↓ lane corrections that write deterministic sender rules and confirm with an Undo toast. Model names, scores and schema stay behind a developer toggle. |
 | 5 | **Provenance on hover only:** "Summary by Groq"; local models say "on this Mac". A due date the AI found says "from the email". |
 | 6 | **Drafts are ordinary text.** AI drafts and follow-up nudges are dim, editable suggestions with Tab / Esc and neutral controls. Polish is a diff that never overwrites your text. Nothing sends or writes to the calendar without a confirmation row. |
@@ -1038,7 +1039,7 @@ A wording change to any of these is a visible change: re-show the owner.
 
 ## 11. Accessibility
 
-1. **Contrast.** All text is 4.5:1 or better, and non-text 3:1, in both themes and in Increase Contrast, with one exception at rest: text-field rings (decision 20), which switch to the 3:1 edge under Increase Contrast. This is enforced by CI on every declared pair (§12.4). Colour is never the only signal: Done is a check plus a word, Later a clock plus a word, overdue an icon plus text, unread a dot plus weight, a plan a dashed outline plus a label, and a found due date a hover note.
+1. **Contrast.** All text is 4.5:1 or better, and non-text 3:1, in both themes and in Increase Contrast, with one exception at rest: text-field rings (decision 20), which switch to the 3:1 edge under Increase Contrast. This is enforced by CI on every declared pair (§12.4). Colour is never the only signal: Done is a check plus a word, Later a clock plus a word, overdue an icon plus text, unread weight and ink (and the words "Unread" for screen readers; no dot since 2026-11-13), a plan a dashed outline plus a label, and a found due date a hover note.
 2. **Focus.** A 2 px `--accent` ring with a 2 px gap (7.84:1 light, 7.61:1 dark), 3 px under Increase Contrast. It is never removed; the search field shows its focus as a 2 px accent underline. Focus is never lost on commit, view change or dock toggle; it moves to the next row, the reader's back button, or the palette input.
 3. **VoiceOver.**
    - Lists are a `listbox` with `aria-activedescendant`, and the reader is an `article` with landmarks for the summary and the message.

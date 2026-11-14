@@ -67,6 +67,8 @@ export interface ReaderActions {
   later(): void;
   trash(): void;
   bookmark(): void;
+  /** U: marks the thread read or unread; the reader stays on it. */
+  toggleRead(): void;
   /** The Importance menu: moves the thread to a lane (the same absolute move as Home's ⌥↑ / ⌥↓); the reader stays on it. */
   lane(to: MovableLane): void;
   /** Z: undoes the newest change; a Done, Later or Trash of this reading brings its thread back, however it is undone. */
@@ -211,6 +213,17 @@ export function createReaderActions(deps: ReaderDeps): ReaderActions {
     );
   }
 
+  function toggleRead(): void {
+    const row = current();
+    if (!row) return;
+    const unread = row.unread;
+    actOn(
+      row,
+      { type: unread ? 'read' : 'unread' },
+      { kind: 'info', message: unread ? 'Marked read' : 'Marked unread' },
+    );
+  }
+
   /** "Always do this for X": the same move, as a sender rule. A refusal says so instead of going unheard. */
   function setRule(id: string, to: MovableLane): void {
     const action = { type: 'lane', lane: to, alsoForSender: true } as const;
@@ -251,6 +264,7 @@ export function createReaderActions(deps: ReaderDeps): ReaderActions {
     later,
     trash,
     bookmark,
+    toggleRead,
     lane,
     undo: () => {
       const outcome = undoStack.undoLast();

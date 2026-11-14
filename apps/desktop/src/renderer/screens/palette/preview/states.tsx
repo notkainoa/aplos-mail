@@ -139,7 +139,6 @@ function SearchScene({
           .filter(Boolean)
           .map(t => resultRow(t as Row, QUERY as never, true))}
         density="comfortable"
-        showAccountDot={false}
         scopeLabel="All accounts"
         handlers={SEARCH_HANDLERS}
       />

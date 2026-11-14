@@ -175,7 +175,20 @@ function coreServices(options: EngineOptions, hub: ReturnType<typeof createFrame
   const randomBytes =
     options.randomBytes ?? ((n: number) => globalThis.crypto.getRandomValues(new Uint8Array(n)));
   const services = {
-    store: observeCommits(options.store, hub),
+    // A commit that wrote job rows (a `job` write, the ingest sentinel) pokes the `jobs` deadline, so the queue
+    // actually drains instead of waiting for its next scheduled re-read.
+    store: observeCommits(options.store, {
+      ...hub,
+      changed: types => {
+        if ('AiJob' in types && !isAbsent(services.deadlines))
+          try {
+            services.deadlines.changed('jobs');
+          } catch {
+            // The source re-reads on its own schedule; a registry fault never fails a commit's caller.
+          }
+        hub.changed(types);
+      },
+    }),
     clock: options.clock,
     log: options.log,
     frames: Object.freeze({ emit: hub.emit, changed: hub.changed, reset: hub.reset }),

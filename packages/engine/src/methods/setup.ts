@@ -160,9 +160,10 @@ function end(args: Input<'Setup/end'>, ctx: MethodContext): Output<'Setup/end'> 
       });
   }
   // The one-shot AI backfill of unsummarised threads queues here (F1/F2/F5/F6); the queue's own gate decides when
-  // they run, so a setup ending before consent just leaves the jobs waiting.
+  // they run, so a setup ending before consent just leaves the jobs waiting. `catchUpSummaries` logs a failure
+  // instead of swallowing it — a silent drop is why this bug went unseen.
   void import('../ai/impl/backfill')
-    .then(m => m.backfillSummaries(ctx.services))
+    .then(m => m.catchUpSummaries(ctx.services))
     .catch(() => undefined);
   setupId = undefined;
   return { ok: true };

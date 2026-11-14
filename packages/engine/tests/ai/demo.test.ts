@@ -8,7 +8,7 @@ import { createLogger } from '../../src/diag/log';
 import { createEngine, laneExtensions } from '../../src/index';
 import type { Caller } from '../../src/methods/types';
 import { openStore, StoreError, type StorePort } from '../../src/store';
-import { manualClock } from '../runtime.helpers';
+import { manualClock, silentDeadlines } from '../runtime.helpers';
 import { ACCOUNT, T0, accountWrite, folderWrites, msg, tempDb } from '../store/helpers';
 
 /**
@@ -24,7 +24,9 @@ async function demoEngine(wrapStore: (store: StorePort) => StorePort = s => s) {
   const clock = manualClock();
   const records: LogRecord[] = [];
   const log = createLogger({ sink: { write: r => records.push(r) }, salt: 'demo-test', clock });
-  const engine = await createEngine({ store, clock, log });
+  // The queue's own deadline never fires on its own here: demo-load's ingest-queued summary jobs stay queued,
+  // so commit and seq counts are deterministic.
+  const engine = await createEngine({ store, clock, log, ports: { deadlines: silentDeadlines() } });
   return {
     engine,
     store,

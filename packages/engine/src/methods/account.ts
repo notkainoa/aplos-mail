@@ -14,6 +14,7 @@ import {
   connectionOpensOnboarding,
   noteOnboardingConnection,
 } from '../sync/connect-sessions';
+import { requestAiCatchUp } from '../ai/writes';
 import type { StorePort } from '../store/port';
 import type { AreaHandlers, EngineServices, MethodContext } from './types';
 
@@ -86,6 +87,8 @@ function set(args: Input<'Account/set'>, ctx: MethodContext): Output<'Account/se
       },
     ],
   });
+  // Switching AI on for an account with stored mail catches it up; the sentinel is idempotent.
+  if (aiAllowed === true) requestAiCatchUp(store, ctx.services.clock.now());
   return {
     account: requireAccount(ctx.services, accountId),
     receipt: {

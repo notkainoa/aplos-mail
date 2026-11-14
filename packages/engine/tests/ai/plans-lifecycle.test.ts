@@ -9,7 +9,7 @@ import { type AiChatRequest, type AiTransport } from '../../src/ai/host';
 import '../../src/ai/impl/ai-writes';
 import { extractThread, writePlans, type Extracted } from '../../src/ai/impl/plans';
 import { accountWrite, folderWrites, msg, tempDb } from '../store/helpers';
-import { manualClock } from '../runtime.helpers';
+import { manualClock, silentDeadlines } from '../runtime.helpers';
 
 /**
  * Confirm/extract lifecycle pins: claim replay after a refused put, a mid-flight dismiss, the
@@ -53,7 +53,8 @@ async function world(transport: AiTransport, ports?: { calendar: unknown }) {
       resident: true,
       capabilities: { desktop: true },
     },
-    ...(ports ? { ports: ports as never } : {}),
+    // The queue's own deadline never fires on its own here: tests drive it with explicit `runJobs` calls.
+    ports: { deadlines: silentDeadlines(), ...(ports ?? {}) } as never,
   });
   engine.services.ai.useTransport(transport);
   const window = engine.connect();

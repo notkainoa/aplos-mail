@@ -145,6 +145,9 @@ const lazyModules = [
   join(src, 'calendar', 'write-errors.ts'),
   // Held calendar writes (a write that tells guests waits its undo window): the working half loads on the first hold.
   join(src, 'calendar', 'holds.ts'),
+  // The SQLite self-check has no caller yet (it is kept for the Diagnostics surface): no import path reaches it,
+  // so like the recurrence edit writes above it does not belong to the startup bundle.
+  join(src, 'selftest.ts'),
 ];
 // Whole folders that are lazy: eng-ai's implementation (ask loop, jobs runner, prompts, usage) is reached only through
 // `import()` from the thin dispatchers in `ai/module.ts` and `methods/`, so a new file there needs no entry above.

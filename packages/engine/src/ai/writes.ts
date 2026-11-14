@@ -1,4 +1,4 @@
-import type { CommitExtension, CommitExtensionTx } from '../store/port';
+import type { CommitExtension, CommitExtensionTx, IngestBatch, StorePort } from '../store/port';
 import { StoreError } from '../store/port';
 
 declare module '../store/port' {
@@ -48,7 +48,8 @@ export interface SummaryWrite {
   text: string;
   /** A `SuggestedAction` serialized; `null` clears. */
   action?: string | null;
-  state: 'ready' | 'stale' | 'failed';
+  /** `pending` is the queued-work placeholder a Home row shows until the job's `ready`/`failed` write lands. */
+  state: 'ready' | 'stale' | 'failed' | 'pending';
 }
 
 /**
@@ -195,11 +196,12 @@ function jobSettle(write: JobWrite, id: number, sid: string, tx: CommitExtension
 function jobMove(write: JobWrite, id: number, sid: string, tx: CommitExtensionTx): void {
   switch (write.action) {
     case 'requeue':
-      // A fresh retry budget: manual retry, a forced refresh, or a paused `running` row the gate released.
+      // A fresh retry budget: manual retry, a forced refresh, a settled row a catch-up re-arms (queueSummary
+      // requeues `dead`/`skipped`/`done`), or a paused `running` row the gate released.
       return ok(
         tx,
         tx.run(
-          "UPDATE jobs SET state = 'queued', attempts = 0, next_at = ? WHERE id = ? AND state IN ('queued','running','failed','dead','done')",
+          "UPDATE jobs SET state = 'queued', attempts = 0, next_at = ? WHERE id = ? AND state IN ('queued','running','failed','dead','done','skipped')",
           write.nextAt ?? tx.now(),
           id,
         ),
@@ -276,9 +278,64 @@ function apply(write: { kind: string }, tx: CommitExtensionTx): void {
   }
 }
 
+/**
+ * Seam 2 (the missing summary trigger): a commit that stores mail drops one `wake` sentinel per touched thread.
+ * The sentinel's key never changes, so `ON CONFLICT` dedupes a live one and re-arms a settled one; eligibility,
+ * priority and the real `summary` job are all decided by the `jobs` runner's lazy pass (`ai/impl/jobs.ts`), so
+ * this eagerly-loaded hook runs no AI SQL. `ok`'s `AiJob` mark wakes the `jobs` deadline once the commit lands.
+ */
+/** The `wake` job that makes the runner catch existing mail up after an AI settings or `ai_allowed` change. */
+export const aiBackfillWrite = (nextAt: number): JobWrite => ({
+  kind: 'job',
+  action: 'enqueue',
+  job: { kind: 'wake', key: 'ai:backfill', priority: 5, payload: '{}', nextAt },
+});
+
+/**
+ * Arms the `ai:backfill` sentinel in its own commit. It cannot ride the caller's commit: a store opened without
+ * the eng-ai lane has no `job` writer, and the catch-up must never fail the caller. The runner deletes the row
+ * when it fires, so the next settings/account/consent change re-arms it.
+ */
+export const requestAiCatchUp = (store: StorePort, at: number): void => {
+  try {
+    store.commit({
+      // The seq keeps the opId fresh: two changes inside one clock tick must each arm the sentinel.
+      opId: `ai-catchup-${at}-${store.seq()}`,
+      origin: 'system',
+      writes: [aiBackfillWrite(at)],
+    });
+  } catch {
+    /* no eng-ai lane on this store: no jobs table use means nothing to catch up */
+  }
+};
+
+function aiIngest(batch: IngestBatch, tx: CommitExtensionTx): void {
+  // Only mail a live-delivery step first stores arms a sentinel: baseline, backfill and resync pages (and
+  // imports) rely on the bounded `ai:backfill` catch-up instead, and a flag-only update of a known message
+  // changes no summary input — otherwise one first sync writes a sentinel per stored row.
+  if ((batch.step !== undefined && batch.step !== 'incremental') || batch.origin === 'import')
+    return;
+  let armed = false;
+  for (const m of batch.messages) {
+    if (!m.added) continue;
+    const r = tx.run(
+      `INSERT INTO jobs(kind, key, priority, payload, state, next_at) VALUES('wake', ?, 5, '{}', 'queued', ?)
+       ON CONFLICT(key) DO UPDATE SET state = 'queued', attempts = 0, next_at = excluded.next_at
+       WHERE jobs.state NOT IN ('queued', 'running')`,
+      `ingest:${m.accountId}:${m.remoteThreadId}`,
+      tx.now(),
+    );
+    if (r.changes) armed = true;
+  }
+  // One mark per commit no matter the page size: the `AiJob` change row is what pokes the `jobs` deadline
+  // (`observeCommits` in runtime/engine), and a bulk sync must not turn one row per message into a row storm.
+  if (armed) tx.mark('AiJob', 'ingest', 'u');
+}
+
 export const aiWritesExtension: CommitExtension = {
   lane: 'eng-ai',
   kinds: ['job', 'summary', 'aiUsage', 'conversation', 'plan'],
   changeTypes: ['AiJob', 'Conversation', 'Plan'],
   apply,
+  ingest: aiIngest,
 };

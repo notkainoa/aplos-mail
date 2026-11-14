@@ -10,7 +10,7 @@ import type { Caller } from '../../src/methods/types';
 import '../../src/ai/impl/ai-writes';
 import { extractThread, writePlans, type Extracted } from '../../src/ai/impl/plans';
 import { ACCOUNT, accountWrite, folderWrites, msg, tempDb } from '../store/helpers';
-import { manualClock } from '../runtime.helpers';
+import { manualClock, silentDeadlines } from '../runtime.helpers';
 
 function stubTransport(answer: string | string[]): AiTransport & { calls: AiChatRequest[] } {
   const calls: AiChatRequest[] = [];
@@ -49,7 +49,8 @@ async function world(transport: AiTransport, ports?: { calendar: unknown }) {
       resident: true,
       capabilities: { desktop: true },
     },
-    ...(ports ? { ports: ports as never } : {}),
+    // The queue's own deadline never fires on its own here: tests drive it with explicit `runJobs` calls.
+    ports: { deadlines: silentDeadlines(), ...(ports ?? {}) } as never,
   });
   engine.services.ai.useTransport(transport);
   const window = engine.connect();

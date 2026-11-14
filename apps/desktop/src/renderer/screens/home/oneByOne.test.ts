@@ -20,7 +20,7 @@ import { harnessClock } from '../../data/clock';
 import { shellRegistryFor } from '../../shell/ShellRegistry';
 import { getToasts, resetToasts } from '../../shell/store-toast';
 import { dismissToast, pushToast } from '../../shell';
-import { createHomeActions, type HomeDeps, type HomeSnapshot } from './homeActions';
+import { createHomeActions, describeHow, type HomeDeps, type HomeSnapshot } from './homeActions';
 import { commandsForHome } from './homeCommands';
 import { menuEntries } from './HomeMenu';
 import { isStaleWhy, restoreListFocus } from './WhyHost';
@@ -99,7 +99,6 @@ function inertDeps(): HomeDeps {
     offerReminder: nothing,
     reminderOffer: () => null,
     openDatePicker: nothing,
-    runCommand: () => 'unhandled',
     openThread: nothing,
     openLow: nothing,
     oneByOne: nothing,
@@ -138,11 +137,7 @@ function walkerOver(world: World) {
     offerReminder: () => undefined,
     reminderOffer: () => null,
     openDatePicker: () => undefined,
-    runCommand: id => {
-      log.push(`run:${id}`);
-      return 'unhandled';
-    },
-    openThread: (id, how) => void log.push(`open:${how}:${id}`),
+    openThread: (id, how) => void log.push(`open:${describeHow(how)}:${id}`),
     openLow: () => undefined,
     oneByOne: () => undefined,
     openMore: () => undefined,
@@ -197,7 +192,7 @@ test('S on Home goes one by one, and I opens Why it is here', () => {
   detach();
 });
 
-test('the one-by-one keys run the right actions: J/K step, E and L commit, Space acts, R opens, Esc exits', async () => {
+test('the one-by-one keys run the right actions: J/K step, E and L commit, Space acts, R and ⇧R open the reply, Esc exits', async () => {
   resetToasts();
   const world = await boot();
   try {
@@ -221,19 +216,13 @@ test('the one-by-one keys run the right actions: J/K step, E and L commit, Space
       assert.ok(resolution, `${key} resolves`);
       return registry.run(resolution.commandId, context).status;
     };
-    for (const key of ['j', 'k', 'r', 'o', 'i', '.', 'Escape'])
-      assert.equal(press(key), 'ran', key);
+    for (const key of ['j', 'k', 'o', 'i', '.', 'Escape']) assert.equal(press(key), 'ran', key);
+    const card = walker.shown()!;
+    assert.equal(press('r'), 'ran');
+    assert.equal(press('R', { shiftKey: true }), 'ran');
+    assert.deepEqual(walker.log, [`open:reply:${card}`, `open:replyAll:${card}`]);
     assert.equal(press('ArrowDown', { altKey: true }), 'ran');
-    assert.deepEqual(calls, [
-      'step:1',
-      'step:-1',
-      'open',
-      'open',
-      'why',
-      'more',
-      'back',
-      'lane:down',
-    ]);
+    assert.deepEqual(calls, ['step:1', 'step:-1', 'open', 'why', 'more', 'back', 'lane:down']);
     const first = walker.shown()!;
     assert.equal(press('e'), 'ran');
     assert.ok(!doNow(world).do.includes(first), 'E sent it to Done');

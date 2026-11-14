@@ -5,7 +5,7 @@
  * the side-effects as `HomeDeps`, so this file has no React and the tests drive it with the stand-in engine.
  */
 import type { AccountId, DataApi, Id, State, ThreadId, ThreadRow } from '../../data';
-import type { PushedToast } from '../../shell';
+import type { PushedToast, ThreadReply } from '../../shell';
 import type { CommitKind } from '../../ui/props';
 import {
   HOLD_RADIUS,
@@ -39,11 +39,25 @@ export interface HomeSnapshot {
   readonly picked?: readonly ThreadId[];
 }
 
-/** What a command run reports back (the registry's `RunResult` status). */
-export type RunStatus = 'ran' | 'failed' | 'unknown' | 'unhandled' | 'disabled' | 'other';
+/** How a thread is opened from Home or one by one: a plain open, or the reader with its reply card already up. */
+export type OpenHow = 'open' | ThreadReply;
 
-/** How a thread is opened when the reader is not mounted by this lane: plain open, or reply. */
-export type OpenHow = 'open' | 'reply';
+/** A short word for a way of opening a thread (logs and tests). */
+export function describeHow(how: OpenHow): string {
+  if (how === 'open') return how;
+  if (how.nudge) return 'nudge';
+  if (how.replyAll) return 'replyAll';
+  return how.dictate ? 'dictate' : 'reply';
+}
+
+/** R. */
+export const REPLY: ThreadReply = { replyAll: false, dictate: false, nudge: false };
+/** ⇧R. */
+export const REPLY_ALL: ThreadReply = { ...REPLY, replyAll: true };
+/** Holding R. */
+export const DICTATE: ThreadReply = { ...REPLY, dictate: true };
+/** Space on a Follow up row: the reply card starts with the dim nudge. */
+export const NUDGE: ThreadReply = { ...REPLY, nudge: true };
 
 /** The screen's side of the actions. */
 export interface HomeDeps {
@@ -64,9 +78,7 @@ export interface HomeDeps {
   reminderOffer(): ThreadId | null;
   /** Opens the Later date presets for this thread (D on the cursor row, or "Set a date" on its Later toast). */
   openDatePicker(id: ThreadId): void;
-  /** Runs a registry command (Space on a reply runs `mail.reply`, which the reader lane owns). */
-  runCommand(id: string): RunStatus;
-  /** Fallback when a command is not handled yet. */
+  /** Opens the thread in the reader, or in its reply card (the reader lane owns both). */
   openThread(id: ThreadId, how: OpenHow): void;
   openLow(): void;
   oneByOne(): void;
@@ -110,6 +122,10 @@ export interface HomeActions {
   clearFromHome(): void;
   /** `.`: the bulk More menu while rows are picked, else the cursor row's ⋯ menu. */
   more(): void;
+  /** R, ⇧R, hold R: opens the row under the cursor in the reader with its reply card up. */
+  reply(how?: ThreadReply): void;
+  /** U: marks the row under the cursor read or unread. */
+  toggleRead(): void;
   /** R, or "Remind me if no reply" on that thread's own Done toast. */
   remind(id?: ThreadId): void;
   /** D on the cursor row, or "Set a date" on that thread's own Later toast: opens the date presets. */
@@ -335,8 +351,31 @@ export function createHomeActions(deps: HomeDeps): HomeActions {
     const command = suggestedCommand(target.row, target.section);
     if (command === 'mail.done') return done(target.row.id);
     if (command === 'mail.open') return deps.openThread(target.row.id, 'open');
-    const status = deps.runCommand(command);
-    if (status === 'unhandled' || status === 'unknown') deps.openThread(target.row.id, 'reply');
+    deps.openThread(target.row.id, target.section === 'follow' ? NUDGE : REPLY);
+  }
+
+  function reply(how: ThreadReply = REPLY): void {
+    const target = targetOf(deps.snapshot());
+    if (target) deps.openThread(target.row.id, how);
+  }
+
+  function toggleRead(): void {
+    const target = targetOf(deps.snapshot());
+    if (!target) return;
+    const { row } = target;
+    const { opId, receipt } = deps.act({
+      ids: [row.id],
+      action: { type: row.unread ? 'read' : 'unread' },
+    });
+    deps.push({
+      id: opId,
+      kind: 'info',
+      message: row.unread ? 'Marked read' : 'Marked unread',
+      undoable: true,
+      actions: [UNDO_ACTION],
+      onAction: undoHandler(opId),
+    });
+    failOnReject(opId, receipt);
   }
 
   function clearFromHome(): void {
@@ -402,6 +441,8 @@ export function createHomeActions(deps: HomeDeps): HomeActions {
     trash,
     bookmark,
     suggested,
+    reply,
+    toggleRead,
     open,
     clearFromHome,
     more: () => (bulk?.picks() && deps.openBulkMore ? deps.openBulkMore() : deps.openMore()),

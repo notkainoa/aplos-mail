@@ -32,7 +32,6 @@ export function row(over: Partial<ListRowProps> = {}): ListRowProps {
       'Lunch for six tomorrow. Leah asks you to pick somewhere quiet with vegetarian options.',
     unread: false,
     date: '2026-10-27T09:30:00-07:00',
-    showAccountDot: false,
     cursor: false,
     picked: false,
     picking: false,

@@ -43,14 +43,22 @@ import type { SidebarSlot } from './store-sidebar';
 import { getScope, setScope, subscribeScope } from './store-scope';
 import {
   getOpenThread,
+  clearPendingReply,
   getOpenThreadContext,
+  getPendingReply,
   leaveOpenThread,
   OPEN_THREAD_SCREEN,
   setOpenThread,
   subscribeOpenThread,
   subscribeOpenThreadContext,
+  subscribePendingReply,
 } from './store-thread';
-import type { OpenThreadContext, OpenThreadOptions } from './store-thread';
+import type {
+  OpenThreadContext,
+  OpenThreadOptions,
+  PendingReply,
+  ThreadReply,
+} from './store-thread';
 import { dropReturnPoints, saveReturnPoints } from './store-return';
 import { getComposeRequest, subscribeComposeRequest } from './store-compose';
 import { getCalendarTarget, subscribeCalendarTarget } from './store-calendar';
@@ -417,7 +425,13 @@ export function useOpenThreadContext(): OpenThreadContext {
   );
 }
 
-export type { OpenThreadContext, OpenThreadOptions };
+/** The reply the open thread was asked to start with (R, ⇧R, hold R or the nudge on Home or one by one); null when none. */
+export function usePendingReply(): PendingReply | null {
+  return useSyncExternalStore(subscribePendingReply, getPendingReply, getPendingReply);
+}
+
+export { clearPendingReply };
+export type { OpenThreadContext, OpenThreadOptions, PendingReply, ThreadReply };
 
 /** Where a surface was when a thread opened over it, so Esc puts it back (additive): `useReturnSource`, `useReturnRestore`, `useRestoreScroll`. */
 export { scrollTopOf, useRestoreScroll, useReturnRestore, useReturnSource } from './return';
@@ -455,13 +469,18 @@ export type { CalendarTarget } from './store-calendar';
 /** What Home takes from the shell: the scope's account (undefined for All accounts), and the two openers. */
 export interface HomeShellProps {
   readonly accountId: AccountId | undefined;
-  readonly onOpen: (id: ThreadId) => void;
+  /** A reply (R, ⇧R, hold R, the nudge) opens the reader with its reply card up; 'open' (or none) is a plain open. */
+  readonly onOpen: (id: ThreadId, how?: 'open' | ThreadReply) => void;
   /** Opens a thread from the one-by-one walk: Esc in the reader comes back to the walk, on that thread. */
-  readonly onOpenFromWalk: (id: ThreadId) => void;
+  readonly onOpenFromWalk: (id: ThreadId, how?: 'open' | ThreadReply) => void;
   readonly onOneByOne: () => void;
 }
 
 const ONE_BY_ONE_SCREEN = { label: 'one by one' } as const;
+
+function openOptions(from: Screen, how: 'open' | ThreadReply | undefined): OpenThreadOptions {
+  return how === undefined || how === 'open' ? { from } : { from, reply: how };
+}
 
 /** The props Home needs from the shell: `<HomeScreen {...useHomeShellProps()} />`. Stable between scope changes. */
 export function useHomeShellProps(): HomeShellProps {
@@ -469,8 +488,8 @@ export function useHomeShellProps(): HomeShellProps {
   return useMemo(
     () => ({
       accountId: scope ?? undefined,
-      onOpen: id => openThread(id, { from: 'home' }),
-      onOpenFromWalk: id => openThread(id, { from: ONE_BY_ONE_SCREEN }),
+      onOpen: (id, how) => openThread(id, openOptions('home', how)),
+      onOpenFromWalk: (id, how) => openThread(id, openOptions(ONE_BY_ONE_SCREEN, how)),
       onOneByOne: () => navigate(ONE_BY_ONE_SCREEN),
     }),
     [scope],

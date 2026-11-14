@@ -47,8 +47,6 @@ export interface SearchPageProps {
   readonly remoteRows: readonly ResultRow[];
   readonly cursorId?: string;
   readonly density: Density;
-  /** Two or more accounts are connected (DESIGN decision 16). */
-  readonly showAccountDot: boolean;
   readonly scopeLabel: string;
   readonly handlers: SearchPageHandlers;
   readonly inputRef?: Ref<HTMLInputElement>;
@@ -72,7 +70,6 @@ function Row({ row, props }: { row: ResultRow; props: SearchPageProps }) {
       date={row.date}
       marks={row.marks}
       account={row.account}
-      showAccountDot={props.showAccountDot}
       cursor={props.cursorId === row.id}
       picked={false}
       picking={false}

@@ -223,17 +223,18 @@ html.cmd-held [data-key]::after {
 }
 .row:hover { background: var(--hover); --row-bg: color-mix(in srgb, var(--canvas), var(--ink) 4%); }
 .row .dot { width: var(--unread-dot); height: var(--unread-dot); border-radius: 50%; justify-self: center; }
-.row.unread .dot { background: var(--accent); }
+/* Owner decision 2026-11-13: no unread dot; unread reads by weight (sender 600, line 500). */
 .row .sender { color: var(--ink-2); font-weight: 400; }
 .row.unread .sender { color: var(--ink); font-weight: 600; }
 .row .line { color: var(--dim); display: flex; align-items: center; gap: var(--space-2); min-width: 0; }
-.row.unread .line { color: var(--ink-2); }
+.row.unread .line { color: var(--ink-2); font-weight: 500; }
 .row .line .subj { color: inherit; flex: none; max-width: 45%; }
 .row .line .snip { color: var(--dim); }
 .row .meta { display: flex; align-items: center; gap: var(--space-2); font: var(--type-small); color: var(--dim); justify-self: end; }
 .row .meta .ic { color: var(--faint); width: var(--icon-sm); height: var(--icon-sm); }
 /* account marks show only when two or more accounts are connected (owner decision); hidden with one account */
-.row .mark { width: var(--mark-dot); height: var(--mark-dot); border-radius: 50%; display: inline-block; flex: none; }
+/* Owner decision 2026-11-13: no account dot on a row; the colour stays in the account picker and Settings. */
+.row .mark { display: none; }
 html.one-account .row .mark { display: none; }
 .row.is-cursor { background: var(--puck); --row-bg: color-mix(in srgb, var(--canvas), var(--ink) 6%); }
 .row.is-cursor::before { content: ""; position: absolute; left: 0; top: var(--space-3); bottom: var(--space-3); width: var(--select-bar); border-radius: var(--select-bar); background: var(--accent); }

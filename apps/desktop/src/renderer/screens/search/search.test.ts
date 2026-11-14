@@ -324,7 +324,6 @@ test('the page renders the announce sentence in a hidden live region', () => {
       localRows: [],
       remoteRows: [],
       density: 'comfortable',
-      showAccountDot: false,
       scopeLabel: 'All accounts',
       handlers: {
         onChange: () => undefined,

@@ -22,18 +22,17 @@ describe('ListRow', () => {
     assert.match(m, /class="ui-list-row__actions"/);
     assert.match(m, /aria-label="Later" title="Later · ←" aria-hidden="true"/);
     assert.match(m, /aria-label="Done" title="Done · →" aria-hidden="true"/);
-    assert.doesNotMatch(m, /ui-list-row__account/, 'one account: no dot');
+    assert.doesNotMatch(m, /ui-list-row__account|ui-list-row__dot/, 'no dots on a row');
   });
 
-  test('unread, cursor, due chip and the account dot only with two or more accounts', () => {
+  test('unread, cursor, due chip: no unread dot and no account dot, "Unread" stays for screen readers', () => {
     const m = render(
       <ListRow
         {...row({
           unread: true,
           cursor: true,
           due: TOMORROW,
-          account: { label: 'alex@fernworks.studio', color: 'hill' },
-          showAccountDot: true,
+          account: { label: 'alex@fernworks.studio' },
         })}
       />,
     );
@@ -41,21 +40,11 @@ describe('ListRow', () => {
     assert.match(m, /data-unread="true" data-cursor="true"/);
     assert.match(m, /Unread\./);
     assert.match(m, /data-kind="due"[^>]*>.*Tomorrow/);
-    assert.match(m, /class="ui-list-row__account" style="--swatch:var\(--tag-hill\)"/);
+    assert.doesNotMatch(m, /ui-list-row__account|ui-list-row__dot|--swatch/, 'no dots on a row');
     assert.match(m, /title="alex@fernworks.studio"/, 'account always in the row tooltip');
-    const hidden = render(
-      <ListRow
-        {...row({
-          account: { label: 'alex@fernworks.studio', color: 'hill' },
-          showAccountDot: false,
-        })}
-      />,
-    );
-    assert.doesNotMatch(hidden, /ui-list-row__account/);
-    assert.match(hidden, /title="alex@fernworks.studio"/);
   });
 
-  test('bulk picking: pick box replaces the dot and aria-selected follows the pick', () => {
+  test('bulk picking: pick box shows only while picking and aria-selected follows the pick', () => {
     const m = render(
       <ListRow {...row({ layout: 'list', picking: true, picked: true, cursor: false })} />,
     );
@@ -368,16 +357,16 @@ describe('FocusSlot and FocusLetter', () => {
     assert.doesNotMatch(m, />Space<\/kbd>/);
   });
 
-  test('pending and absent summaries show the subject in SF; narrow drops labels but keeps the verb', () => {
+  test('pending shows the placeholder, absent the subject alone; narrow drops labels but keeps the verb', () => {
     const pending = render(
       <FocusLetter
         {...letter({ summary: { state: 'pending', subject: 'A quieter home' }, narrow: true })}
       />,
     );
-    assert.match(
-      pending,
-      /data-state="pending" data-clamp="two-lines" aria-busy="true">A quieter home</,
-    );
+    assert.match(pending, /class="ui-summary-placeholder"/);
+    assert.match(pending, /class="ui-focus-letter"[^>]*aria-busy="true"/);
+    assert.match(pending, /Summarizing…/);
+    assert.doesNotMatch(pending, /ui-summary"/, 'no subject line in the space while pending');
     assert.match(pending, /data-narrow="true"/);
     assert.match(pending, /data-label-hidden="true" aria-label="Later"/);
     assert.match(pending, />Reply<\/span>/);
@@ -385,7 +374,7 @@ describe('FocusSlot and FocusLetter', () => {
       <FocusLetter {...letter({ summary: { state: 'absent', subject: WORST.subject } })} />,
     );
     assert.match(absent, /data-state="absent"/);
-    assert.doesNotMatch(absent, /Summary by/);
+    assert.doesNotMatch(absent, /Summary by|ui-summary-placeholder|Summarizing/);
   });
 
   test('key hints: ⌘ held shows a badge on More; Later and Done show their caps always', () => {

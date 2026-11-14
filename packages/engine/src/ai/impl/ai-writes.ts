@@ -119,9 +119,12 @@ function summary(write: SummaryWrite, tx: CommitExtensionTx): void {
     typeof write.inputHash !== 'string' ||
     !write.inputHash ||
     typeof write.model !== 'string' ||
-    !write.model ||
     typeof write.text !== 'string' ||
-    (write.state !== 'ready' && write.state !== 'stale' && write.state !== 'failed')
+    (write.state !== 'ready' &&
+      write.state !== 'stale' &&
+      write.state !== 'failed' &&
+      write.state !== 'pending') ||
+    (write.state === 'ready' && !write.model)
   )
     bad();
   tx.run(
