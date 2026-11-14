@@ -322,6 +322,11 @@ describe('FocusSlot and FocusLetter', () => {
       'a name cut short in the card can still be read in full',
     );
     assert.match(m, /data-kind="due"[^>]*>.*Tomorrow/);
+    assert.match(
+      m,
+      /ui-focus-letter__meta[\s\S]*<\/time><\/div><div class="ui-focus-letter__summary[^"]*"[^>]*><p[^>]*class="ui-summary"[^>]*><span class="ui-summary__lead"><span class="ui-chip" data-kind="due"/,
+      'the chip leads the summary line, where a row puts it before the subject, not after the sender',
+    );
     assert.match(m, /10:00 AM<\/time>/);
     assert.match(
       m,
@@ -366,6 +371,11 @@ describe('FocusSlot and FocusLetter', () => {
     assert.match(pending, /class="ui-summary-placeholder"/);
     assert.match(pending, /class="ui-focus-letter"[^>]*aria-busy="true"/);
     assert.match(pending, /Summarizing…/);
+    assert.match(
+      pending,
+      /ui-summary-placeholder__row"><span class="ui-chip" data-kind="due"/,
+      'the due chip leads the placeholder too',
+    );
     assert.doesNotMatch(pending, /ui-summary"/, 'no subject line in the space while pending');
     assert.match(pending, /data-narrow="true"/);
     assert.match(pending, /data-label-hidden="true" aria-label="Later"/);

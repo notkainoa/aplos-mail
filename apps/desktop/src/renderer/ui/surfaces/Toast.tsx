@@ -9,6 +9,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { themeHooks, timing, timingReduced } from '../generated/motion';
 import type { ComponentPropsMap, IconName, ToastData, ToastKind } from '../props';
+import { ToastMessage } from './ToastMessage';
 import { PartButton, PartIcon, PartKeys, prefersReducedMotion, useKeysFor } from './parts';
 
 const KIND: Record<ToastKind, { icon: IconName; tone?: 'hill' | 'dusk' | 'stamp' }> = {
@@ -136,7 +137,7 @@ export function Toast({
       <span className="ui-toast__icon" data-tone={look.tone}>
         <PartIcon name={look.icon} />
       </span>
-      <span className="ui-toast__message">{message}</span>
+      <ToastMessage message={message} />
       {actions.slice(0, 3).map(action => (
         <button
           key={action.id}

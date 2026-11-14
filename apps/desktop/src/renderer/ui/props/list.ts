@@ -184,6 +184,8 @@ export type SummaryProps = SummaryContent & {
   clamp?: 'two-lines' | 'none';
   /** DOM id for the reader's summary landmark (DESIGN §11.3). */
   id?: string;
+  /** A chip that leads the line, inline before the text: the Home card puts its Later or due chip here, where a list row puts it before the subject. */
+  lead?: ReactNode;
 };
 
 /** The Home focus letter card (`--elev-card`): meta line, two-line serif summary, action row; no subject line and no bookmark icon (DESIGN §7.2 The focus letter). Mockups: home.html, demo.html. Plain + refines: ui-foundation; used by ui-home. */

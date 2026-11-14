@@ -7,7 +7,8 @@ import type { SummaryProps } from '../props';
 
 /** The summary slot in its pending, absent or ready state. */
 export function Summary(props: SummaryProps) {
-  const { clamp = 'none', id } = props;
+  const { clamp = 'none', id, lead } = props;
+  const leading = lead ? <span className="ui-summary__lead">{lead}</span> : null;
   if (props.state === 'ready') {
     const { provider, local } = props.provenance;
     const provenance = `Summary by ${provider}${local ? ' on this Mac' : ''}`;
@@ -20,6 +21,7 @@ export function Summary(props: SummaryProps) {
         data-clamp={clamp}
         title={provenance}
       >
+        {leading}
         {props.text}
         <span className="ui-summary__subject"> Subject: {props.subject}</span>
       </p>
@@ -34,6 +36,7 @@ export function Summary(props: SummaryProps) {
       data-clamp={clamp}
       aria-busy={props.state === 'pending' ? true : undefined}
     >
+      {leading}
       {props.subject}
     </p>
   );

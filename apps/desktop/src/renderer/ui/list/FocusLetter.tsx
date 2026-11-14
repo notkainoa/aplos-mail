@@ -1,11 +1,12 @@
 // FocusLetter (DESIGN §4.6, §7.2 The focus letter, §9). Mockups: home.html, demo.html.
-// A card (--elev-card) that fills the fixed FocusSlot: the meta line (sender `base` 600, due chip, relative
-// date), the serif summary cut at two lines, and the action row: the suggestion as the one filled button
-// (icon + verb + Space keycap), Later and Done as text buttons (Done omitted when the suggestion is Done),
-// then ⋯. No subject, no bookmark icon. The buttons are pointer duplicates of their keys inside the option.
+// A card (--elev-card) that fills the fixed FocusSlot: the meta line (sender `base` 600, relative date), the
+// serif summary cut at two lines and led by the due chip (where a row puts it, before the subject), and the
+// action row: the suggestion as the one filled button (icon + verb + Space keycap), Later and Done as text
+// buttons (Done omitted when the suggestion is Done), then ⋯. No subject, no bookmark icon. The buttons are
+// pointer duplicates of their keys inside the option.
 
 import type { FocusLetterProps } from '../props';
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { Summary } from '../reader/Summary';
 import { SummaryPlaceholder } from './SummaryPlaceholder';
 import { Chip } from './Chip';
@@ -19,7 +20,11 @@ import { useKeycapFor, useTooltipText } from './internal/keys';
  * The summary space: a quiet placeholder while it is being written, the serif line when it lands (a short fade
  * only when it replaces the placeholder), or the subject alone when no summary will come (the slot then fits it).
  */
-function SummarySpace({ id, summary }: Pick<FocusLetterProps, 'id' | 'summary'>) {
+function SummarySpace({
+  id,
+  summary,
+  lead,
+}: Pick<FocusLetterProps, 'id' | 'summary'> & { lead?: ReactNode }) {
   const before = useRef<{ id: string; state: string } | null>(null);
   // The fade is latched until it ends, so a re-render for any other reason cannot cut it short.
   const [fading, setFading] = useState<string | null>(null);
@@ -31,14 +36,15 @@ function SummarySpace({ id, summary }: Pick<FocusLetterProps, 'id' | 'summary'>)
   useEffect(() => {
     if (arrived) setFading(id);
   }, [arrived, id]);
-  if (summary.state === 'pending') return <SummaryPlaceholder subject={summary.subject} />;
+  if (summary.state === 'pending')
+    return <SummaryPlaceholder subject={summary.subject} lead={lead} />;
   return (
     <div
       className="ui-focus-letter__summary"
       data-arrive={arrived || fading === id ? 'true' : undefined}
       onAnimationEnd={() => setFading(null)}
     >
-      <Summary {...summary} clamp="two-lines" />
+      <Summary {...summary} clamp="two-lines" lead={lead} />
     </div>
   );
 }
@@ -87,13 +93,16 @@ export function FocusLetter({
         <span className="ui-focus-letter__sender" dir="auto" title={sender}>
           {sender}
         </span>
-        {due ? <Chip kind="due" due={due} format="short" /> : null}
         <time className="ui-focus-letter__date" dateTime={date} title={formatFull(date)}>
           {formatListDate(date)}
         </time>
       </div>
 
-      <SummarySpace id={id} summary={summary} />
+      <SummarySpace
+        id={id}
+        summary={summary}
+        lead={due ? <Chip kind="due" due={due} format="short" /> : undefined}
+      />
 
       {rejected ? (
         <ErrorLine
