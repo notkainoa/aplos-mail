@@ -31,7 +31,7 @@ export interface HomeActionInputs {
   readonly hold: HoldController;
   /** The bulk pick and its confirmation; absent where the screen cannot pick (the one-by-one view). */
   readonly bulk?: HomeBulkDeps;
-  readonly setCursor: (key: string | null) => void;
+  readonly setCursor: (key: string | null, departed?: string) => void;
   /** Draws a commit on the row that is leaving (the one acted on, not necessarily under the cursor) and extends the hold. */
   readonly commit: (kind: CommitKind, holdIds: readonly string[], rowId: ThreadId) => void;
   readonly openThread: (id: ThreadId, how: OpenHow) => void;
@@ -104,7 +104,7 @@ export function useHomeActionState(inputs: HomeActionInputs): HomeActionState {
     };
     const deps: HomeDeps = {
       snapshot: () => now().snapshot.current ?? EMPTY,
-      setCursor: key => now().setCursor(key),
+      setCursor: (key, departed) => now().setCursor(key, departed),
       act: args => api.thread.act(args),
       push: pushToast,
       dismiss: dismissToast,
