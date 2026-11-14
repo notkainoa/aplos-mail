@@ -13,7 +13,7 @@ import {
 } from '../../src/ai/host';
 import { runJobs } from '../../src/ai/impl/runner';
 import { ACCOUNT, accountWrite, folderWrites, msg, tempDb } from '../store/helpers';
-import { manualClock } from '../runtime.helpers';
+import { manualClock, silentDeadlines } from '../runtime.helpers';
 
 /** A scripted provider: `chat` answers every call with `answer`, or throws `fail` when set. */
 function stubTransport(opts: {
@@ -59,6 +59,9 @@ async function world(transport?: AiTransport) {
       resident: true,
       capabilities: { desktop: true },
     },
+    // The queue's own deadline never fires on its own here: tests drive it with explicit `runJobs` calls,
+    // so an ingest-queued summary job cannot race a scripted answer.
+    ports: { deadlines: silentDeadlines() },
   });
   engine.services.ai.useTransport(transport ?? stubTransport({}));
   const window = engine.connect();
@@ -104,12 +107,15 @@ const DAY_MS = 24 * 60 * 60_000;
 const seedFollow = (
   w: Awaited<ReturnType<typeof world>>,
   opts: { aiAllowed?: boolean; spam?: boolean } = {},
-) =>
+) => {
+  // Mail lands while the account is still kept out of AI so the ingest enqueue stays out, and seen+done keeps
+  // the thread below the summary queue's Home-visible/unread bar so `consentNow`'s catch-up queues nothing
+  // either — the lane's `followup` job is the queue's only one.
   w.store.commit({
     opId: 'seed-f',
     origin: 'sync',
     writes: [
-      { ...accountWrite, aiAllowed: opts.aiAllowed ?? true },
+      { ...accountWrite, aiAllowed: false },
       ...folderWrites.map(f => ({ ...f })),
       {
         kind: 'folder' as const,
@@ -134,6 +140,7 @@ const seedFollow = (
       msg('f-in', 'T-follow', -7 * 24 * 60, {
         subject: 'Invoice question',
         snippet: 'Could you send the invoice?',
+        flags: { seen: true, flagged: false, draft: false, fromMe: false },
         ...(opts.spam ? { folders: [{ folder: 'INBOX' }, { folder: 'SPAM' }] } : {}),
       }),
       msg('f-out', 'T-follow', -4 * 24 * 60, {
@@ -147,19 +154,28 @@ const seedFollow = (
         kind: 'workflow' as const,
         accountId: ACCOUNT,
         remoteThreadId: 'T-follow',
-        patch: { replyStatus: 'awaitingReply' as const },
+        patch: { status: 'done' as const, replyStatus: 'awaitingReply' as const },
       },
     ],
   });
+  if (opts.aiAllowed ?? true)
+    w.store.commit({
+      opId: 'ai-on',
+      origin: 'sync',
+      writes: [{ kind: 'account', id: ACCOUNT, aiAllowed: true }],
+    });
+};
 
 test('Ai/request: unknown thread and a kept-out account refuse before anything queues', async () => {
   const w = await world();
   seedMail(w);
+  // The ingest enqueue is legitimate here: it queued the thread's own summary job; the refusals add nothing.
+  const before = (await w.call('Ai/jobs', {})).list.length;
   await assert.rejects(
     () => w.call('Ai/request', { opId: 'r1', kind: 'summary', threadId: 'acct-1:nope' }),
     (e: unknown) => e instanceof ContractError && e.type === 'notFound',
   );
-  // Turn the account's AI off and re-seed a fresh thread: the refusal names the setting.
+  // Turn the account's AI off: the refusal names the setting.
   w.store.commit({
     opId: 'off',
     origin: 'sync',
@@ -173,7 +189,7 @@ test('Ai/request: unknown thread and a kept-out account refuse before anything q
       e.body.reasonCode === 'ai.accountExcluded',
   );
   const jobs = await w.call('Ai/jobs', {});
-  assert.equal(jobs.list.length, 0);
+  assert.equal(jobs.list.length, before);
 });
 
 test('Ai/polish + Ask/run: an accountId left out of AI refuses before any mail is read', async () => {

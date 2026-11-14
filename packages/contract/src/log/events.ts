@@ -325,6 +325,9 @@ export const logEvents = {
     error: f.error(),
   }),
   'ai.budget_exhausted': event('info', ['eng-ai'], { used: f.count(), limit: f.count() }),
+  // The Setup/end backfill or the ingest enqueue failed inside its own catch — without it no summary job is
+  // ever queued and nothing else says why.
+  'ai.backfill_failed': event('warn', ['eng-ai'], { detail: f.text() }),
 
   // Store (ARCH 3, plan 10 E2).
   'store.opened': event('info', ['eng-store'], {

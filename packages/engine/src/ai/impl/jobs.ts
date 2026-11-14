@@ -4,6 +4,8 @@ import type { StoreReader } from '../../store/port';
 import { FLAG } from '../../store/commit';
 import type { EngineServices } from '../../runtime/services';
 import { splitId } from '../../views/compile';
+import { hexId } from '../../sync/connect-sessions';
+import { backgroundGate } from './gate';
 
 /**
  * Job queue helpers (ARCH 8.1). Singleton keys `summary:<thread>:<input_hash>` make a second enqueue of the same
@@ -131,6 +133,76 @@ export function priorityOf(
   const home = t.status === 'new' && t.hidden_from_home !== 1;
   const priority = home ? 0 : t.unread > 0 && roles.includes('inbox') ? 1 : 2;
   return { priority, threadRowId: t.id, lastDate: t.last_date };
+}
+
+/**
+ * The lazy half of the ingest enqueue: the `jobs` runner turns a commit's `wake` sentinel into a `summary` job,
+ * applying the same rules as the Setup backfill — an `ai_allowed` account, Home-visible or unread Inbox
+ * (`priorityOf` 0/1), never Spam/Trash, no non-failed summary for the current input hash. The singleton key makes
+ * a re-run a no-op. When the gate is open a `pending` `summaries` row goes in too, so a Home row can show the
+ * placeholder while the job sits queued or runs; a paused gate queues the job without one (the row stays
+ * collapsed, and a later gate-open fire writes `ready` straight away).
+ */
+export function queueSummary(
+  services: EngineServices,
+  accountId: string,
+  remoteThreadId: string,
+): void {
+  const acc = services.store.read(q =>
+    q.get<{ ai_allowed: number }>('SELECT ai_allowed FROM accounts WHERE id = ?', accountId),
+  );
+  if (acc?.ai_allowed !== 1) return;
+  const info = services.store.read(q => priorityOf(q, accountId, remoteThreadId));
+  if (info === undefined || info.priority > 1) return;
+  const { hash, messageCount } = services.store.read(q => inputHashOf(q, info.threadRowId));
+  if (!messageCount) return;
+  const fresh = services.store.read(q =>
+    q.get(
+      'SELECT 1 AS one FROM summaries WHERE thread_id = ? AND input_hash = ? AND state != ?',
+      info.threadRowId,
+      hash,
+      'failed',
+    ),
+  );
+  if (fresh) return;
+  const inputHash = hash;
+  if (backgroundGate(services, 'summaries', accountId).ok) {
+    // The placeholder carries an older input's text/model when one exists: Home shows it until the re-run lands.
+    const prior = services.store.read(q =>
+      q.get<{ text: string; model: string; action: string | null }>(
+        'SELECT text, model, action FROM summaries WHERE thread_id = ? ORDER BY created_at DESC LIMIT 1',
+        info.threadRowId,
+      ),
+    );
+    services.store.commit({
+      opId: `ai-pending-${accountId}:${remoteThreadId}:${inputHash}-${hexId(services.randomBytes, 'p')}`,
+      origin: 'system',
+      writes: [
+        {
+          kind: 'summary',
+          accountId,
+          remoteThreadId,
+          inputHash,
+          model: prior?.model ?? '',
+          text: prior?.text ?? '',
+          ...(prior?.action !== undefined ? { action: prior.action } : {}),
+          state: 'pending',
+        },
+      ],
+    });
+  }
+  enqueue(services, `ai-ingest-${info.threadRowId}-${hash}`, {
+    kind: 'summary',
+    key: `summary:${accountId}:${remoteThreadId}:${hash}`,
+    priority: info.priority,
+    nextAt: services.clock.now(),
+    payload: {
+      threadId: `${accountId}:${remoteThreadId}`,
+      accountId,
+      remoteThreadId,
+      inputHash: hash,
+    },
+  });
 }
 
 /** Enqueue one job under its singleton key; returns the stored row (the winner when it raced). */

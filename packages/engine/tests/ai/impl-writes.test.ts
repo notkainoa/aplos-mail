@@ -6,7 +6,7 @@ import { createEngine, laneExtensions } from '../../src/index';
 import { openStore } from '../../src/store';
 import type { AiChatRequest, AiTransport } from '../../src/ai/host';
 import { accountWrite, folderWrites, msg, tempDb } from '../store/helpers';
-import { manualClock } from '../runtime.helpers';
+import { manualClock, silentDeadlines } from '../runtime.helpers';
 
 /**
  * The impl-only write kinds (summary, aiUsage, conversation, plan) register through `ai/impl/ai-writes`
@@ -50,6 +50,8 @@ async function world(transport: AiTransport) {
       resident: true,
       capabilities: { desktop: true },
     },
+    // The queue's own deadline never fires on its own here: tests drive it with explicit `runJobs` calls.
+    ports: { deadlines: silentDeadlines() },
   });
   engine.services.ai.useTransport(transport);
   const window = engine.connect();

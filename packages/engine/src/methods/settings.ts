@@ -1,6 +1,7 @@
 import type { Input, Output } from '@aplos/contract';
 import { ContractError } from '@aplos/contract/contract-error';
 import { auditWrites } from '../host/audit';
+import { requestAiCatchUp } from '../ai/writes';
 import { parseStored, withDefaults } from '../runtime/settings';
 import type { MethodContext } from './types';
 import type { AreaHandlers } from './types';
@@ -79,6 +80,8 @@ function applySettings(args: Input<'Settings/set'>, ctx: MethodContext): Output<
       ...auditWrites(ctx.caller, 'Settings/set'),
     ],
   });
+  // An `ai` patch can open summaries for mail that is already stored: the sentinel makes the runner catch up.
+  if (args.patch.ai) requestAiCatchUp(store, ctx.services.clock.now());
   const settings = withDefaults(readDoc(ctx));
   // main follows the theme (nativeTheme) from the host channel; a repeat of the same theme says nothing.
   const theme = args.patch.ui?.theme;
