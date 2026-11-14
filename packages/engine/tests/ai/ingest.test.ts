@@ -144,8 +144,9 @@ test('sync ingest queues work for the thread; the run lands ready', async () => 
   assert.equal(row.state, 'ready');
   assert.equal(row.text, 'Ada asked about the invoice.');
   assert.equal(transport.calls.length, 1);
-  // The sentinel settled and the summary job ran; the done event is logged — the pipeline is no longer silent.
-  assert.equal(jobsOf(w, 'wake').filter(j => j.key.startsWith('ingest:'))[0].state, 'done');
+  // The sentinel fired and is gone (wake rows delete, never accumulate); the summary job ran and the done
+  // event is logged — the pipeline is no longer silent.
+  assert.equal(jobsOf(w, 'wake').filter(j => j.key.startsWith('ingest:')).length, 0);
   assert.equal(jobsOf(w, 'summary')[0].state, 'done');
   assert.ok(w.lines.some(l => l.event === 'ai.job.done'));
 });

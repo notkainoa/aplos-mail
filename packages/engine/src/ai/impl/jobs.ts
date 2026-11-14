@@ -5,7 +5,7 @@ import { FLAG } from '../../store/commit';
 import type { EngineServices } from '../../runtime/services';
 import { splitId } from '../../views/compile';
 import { hexId } from '../../sync/connect-sessions';
-import { backgroundGate } from './gate';
+import { aiSettings, backgroundGate } from './gate';
 
 /**
  * Job queue helpers (ARCH 8.1). Singleton keys `summary:<thread>:<input_hash>` make a second enqueue of the same
@@ -174,6 +174,9 @@ export function queueSummary(
   // A landed summary for this exact input never re-runs — the `done` job under the same key is the dedupe.
   if (summary?.state === 'ready') return;
   if (job === undefined) {
+    // The model goes in the payload so a settled row logs the model it ran under, not the one Settings
+    // happens to hold later (`logOutcome`), and `jobOf` surfaces it as `AiJob.model`.
+    const model = aiSettings(services).features.summaries;
     enqueue(services, `ai-ingest-${info.threadRowId}-${hash}-${hexId(services.randomBytes, 'q')}`, {
       kind: 'summary',
       key,
@@ -184,15 +187,26 @@ export function queueSummary(
         accountId,
         remoteThreadId,
         inputHash: hash,
+        ...(model ? { model } : {}),
       },
     });
   } else if (job.state === 'dead' || job.state === 'skipped' || job.state === 'done') {
     // A settled row blocks the singleton key forever (INSERT OR IGNORE): a catch-up or a re-armed sentinel
-    // re-queues it with a fresh attempt budget.
+    // re-queues it. A `dead` row keeps its spent budget — every settings/consent touch would otherwise hand a
+    // failing provider five fresh calls per thread — while `skipped`/`done` rows, which spent nothing, get a
+    // fresh budget.
     services.store.commit({
       opId: `ai-requeue-${job.id}-${hexId(services.randomBytes, 'r')}`,
       origin: 'system',
-      writes: [{ kind: 'job', action: 'requeue', id: job.id, nextAt: services.clock.now() }],
+      writes: [
+        {
+          kind: 'job',
+          action: 'requeue',
+          id: job.id,
+          nextAt: services.clock.now(),
+          attempts: job.state === 'dead' ? job.attempts : 0,
+        },
+      ],
     });
     services.deadlines.changed('jobs');
   }
