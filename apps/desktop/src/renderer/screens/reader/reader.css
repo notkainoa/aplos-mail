@@ -18,28 +18,12 @@
   flex-direction: column;
   width: min(var(--reader-w), calc(100% - 2 * var(--gutter)));
   margin: 0 auto;
-  /* No bottom padding: the pinned bar's wrapper (tray, pill, 16 px) is the last thing in the letter. */
+  /* No bottom padding: the pinned bar's strip (pill, 12 px either side) is the last thing in the letter. */
   padding: var(--space-7) 0 0;
 }
 /* The last card and the reply stub scroll fully clear of the pinned pill: the thread keeps room under it. */
 .aplos-reader:not([data-stage='one-by-one']) .aplos-reader__thread {
   margin-bottom: var(--space-6);
-}
-/* A dark pane under a white HTML sheet: the pane-coloured tray would read as a dark band across the sheet, so the sheet
-   scrolls under the pill with no scrim (only the pill is opaque). */
-:root[data-theme='dark']
-  .aplos-reader:has(.aplos-mailframe__frame[data-sheet='paper'])
-  .ui-reader-actions::before {
-  content: none;
-}
-/* The same pill then crosses a white sheet as well as the dark pane: its 14 % ring vanishes against both, so here the
-   1 px ring is the ink mixed 40 % into --paper, a mid tone that reads on the dark pane and on the white sheet. */
-:root[data-theme='dark']
-  .aplos-reader:has(.aplos-mailframe__frame[data-sheet='paper'])
-  .ui-reader-actions__bar {
-  box-shadow:
-    0 0 0 var(--hairline) color-mix(in srgb, var(--ink) 40%, var(--paper)),
-    var(--elev-float);
 }
 .aplos-reader__letter[data-paper='true'] {
   display: flex;
@@ -185,14 +169,18 @@
   margin-top: var(--space-6);
 }
 .aplos-reader:not([data-cards='off']) .ui-inline-reply__head {
-  padding-left: var(--space-6);
+  /* The hairlines under From and To are the head's own shadow, so they take the card's 24 px inset at both ends, as
+     the compose page's do. */
+  margin-inline: var(--space-6);
+  padding-inline: 0;
 }
 .aplos-reader:not([data-cards='off']) .ui-inline-reply__body,
 .aplos-reader:not([data-cards='off']) .ui-inline-reply > .ui-compose-blocked {
   padding-inline: var(--space-6);
 }
 .aplos-reader:not([data-cards='off']) .ui-inline-reply > .ui-compose-footer {
-  padding: 0 var(--space-4) var(--space-4) var(--space-6);
+  /* The compose page's footer insets (24 left, 20 right), so the icon cluster ends on the same edge in both. */
+  padding: 0 var(--space-5) var(--space-4) var(--space-6);
 }
 /* In a card the invitation is not a second card: no fill, the card's text edge, a wider gap before the email (no rule:
    the body's reading measure is narrower than the card, so a rule there would end short of the card's other rules). */
@@ -248,9 +236,9 @@
   padding-block: var(--space-5) var(--space-4);
 }
 
-/* The pinned bar lifts the toasts: they sit above it, centred over it, never over the buttons. */
+/* The pinned bar lifts the toasts: they sit above its strip (12 px, the pill, 12 px), centred over it, never over the buttons. */
 .ui-pane:has(.aplos-reader .ui-reader-actions) .ui-toast-stack {
-  bottom: calc(var(--space-4) + var(--control-lg) + var(--space-3));
+  bottom: calc(var(--space-6) + var(--control-lg) + var(--space-2));
 }
 
 /* Dark: cards are lifted by --raised (--elev-pane adds the sheen). */
@@ -473,17 +461,15 @@
 }
 /* The card is a centred reading column (owner feedback 2026-11-11, reference card about 625 px): it shrinks with the pane,
    keeps a 16 to 24 px side margin and never grows past `--card-w`, so a wide window leaves margins, not long lines. The
-   header, hairline and the pinned bar are the column's own, so they stay aligned to it. */
+   header and hairline are the column's own, so they stay aligned to it; the pinned bar's strip spans the pane. */
 .aplos-reader[data-stage='one-by-one'] {
   width: min(calc(100% - 2 * clamp(var(--space-4), 3%, var(--space-6))), var(--card-w));
   padding-top: var(--space-2);
-  /* The pinned bar's scrim reaches 24 px either side of the column, past the pane at a narrow width, and would make the pane
-     scroll sideways: it is clipped 8 px out (room for the cards' rings), a clip that is not a scroll container. */
-  overflow-x: clip;
-  overflow-clip-margin: var(--space-2);
 }
 .aplos-reader[data-stage='one-by-one'] .aplos-reader__thread {
   margin-top: 0;
+  /* The card reaches down to the pinned bar's strip and keeps its rounded bottom edge above the strip's hairline. */
+  margin-bottom: var(--space-3);
 }
 
 /* In the dark theme the mark is a soft lift of the card, not the near-black --sunken (opaque). */

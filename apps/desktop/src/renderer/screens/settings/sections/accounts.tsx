@@ -103,6 +103,7 @@ export function Accounts({ data, view, actions, host }: SectionProps) {
                       />
                       <Button
                         variant="text"
+                        tone="danger"
                         label="Remove"
                         disabled={view.busy.demo === true}
                         onPress={() => actions.askRemoveDemo()}
@@ -111,6 +112,7 @@ export function Accounts({ data, view, actions, host }: SectionProps) {
                   ) : (
                     <Button
                       variant="text"
+                      tone="danger"
                       label="Remove"
                       onPress={() => actions.askRemoveAccount(r.id)}
                     />

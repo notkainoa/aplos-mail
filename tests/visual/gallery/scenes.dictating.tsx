@@ -54,6 +54,7 @@ export function DictatingScene(): ReactElement {
         commands={COMMANDS}
         onSend={noop}
         onAttach={noop}
+        onFormat={noop}
         onMore={noop}
       />
     </Column>

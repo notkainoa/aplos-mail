@@ -106,6 +106,7 @@ export function Mail({ data, actions }: SectionProps) {
               control={
                 <Button
                   variant="text"
+                  tone="danger"
                   label="Remove"
                   onPress={() =>
                     void set(

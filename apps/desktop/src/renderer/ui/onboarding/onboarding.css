@@ -207,6 +207,16 @@
   padding-top: 0;
 }
 
+/* A step that is only its head and one choice row (a single provider) would leave the window's lower half empty:
+   the block centres in the body instead, `safe` so a taller one still anchors at the top. Other steps stay
+   top-anchored so their titles do not move between steps. */
+.ui-onboarding-step__body[data-layout='step']:has(
+    > .ui-onboarding-step__content > .ui-choice-row:nth-child(2):last-child
+  ) {
+  justify-content: safe center;
+  padding-top: 0;
+}
+
 .ui-onboarding-step__content {
   display: flex;
   flex-direction: column;

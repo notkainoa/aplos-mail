@@ -46,6 +46,55 @@ export interface FooterAction {
   onPress: (anchor: HTMLElement) => void;
 }
 
+/**
+ * The footer's icon buttons, one anatomy for the compose page and the inline reply: attach, Formatting, Pop out (only
+ * where the card can be popped out, so the inline reply), then ⋯. Both menu buttons open the one compose menu.
+ */
+export function footerActions(parts: {
+  commands: ComposeCommands;
+  onAttach: () => void;
+  onFormat: (anchor: HTMLElement) => void;
+  onMore: (anchor: HTMLElement) => void;
+  onPopOut?: () => void;
+}): readonly FooterAction[] {
+  const { commands, onAttach, onFormat, onMore, onPopOut } = parts;
+  const popOut: FooterAction[] = onPopOut
+    ? [
+        {
+          label: 'Pop out reply',
+          icon: 'pop-out',
+          hint: 'Pop out reply',
+          commandId: 'compose.popOut',
+          onPress: () => onPopOut(),
+        },
+      ]
+    : [];
+  return [
+    {
+      label: 'Attach',
+      icon: 'paperclip',
+      hint: 'Attach a file',
+      commandId: commands.attach,
+      onPress: () => onAttach(),
+    },
+    {
+      label: 'Formatting',
+      icon: 'type',
+      hint: 'Formatting',
+      commandId: commands.more,
+      onPress: onFormat,
+    },
+    ...popOut,
+    {
+      label: 'More',
+      icon: 'more',
+      hint: 'More: schedule, discard',
+      commandId: 'compose.more',
+      onPress: onMore,
+    },
+  ];
+}
+
 /** Send (always with its keycap), the draft line or the dictation line, and the trailing icon buttons. */
 export function ComposeFooter(props: {
   commands: ComposeCommands;

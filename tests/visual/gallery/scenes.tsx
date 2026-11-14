@@ -424,6 +424,7 @@ function InlineReplyScene(): ReactElement {
         commands={COMPOSE_COMMANDS}
         onSend={noop}
         onAttach={noop}
+        onFormat={noop}
         onMore={noop}
       />
     </Column>
@@ -461,6 +462,7 @@ function ComposeScene(): ReactElement {
         onSend={noop}
         onAttach={noop}
         onFormat={noop}
+        onMore={noop}
       />
     </Column>
   );

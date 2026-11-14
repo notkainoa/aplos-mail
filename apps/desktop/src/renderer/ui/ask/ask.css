@@ -682,6 +682,8 @@
 }
 .ui-search-field__input::placeholder {
   color: var(--dim);
+  /* The heading face is 600; a placeholder at 600 reads as typed text. */
+  font-weight: 400;
 }
 .ui-search-field__meta {
   display: flex;

@@ -68,6 +68,8 @@ export interface ComposerProps {
   onAttach: () => void;
   /** Format menu. */
   onFormat: (anchor: HTMLElement) => void;
+  /** ⋯ (schedule, discard): the same footer as the inline reply's. */
+  onMore: (anchor: HTMLElement) => void;
 }
 
 /** The inline reply card under the message (`--elev-card`, `settle`): To line with Cc and Pop out, `read` text, Send (⌘↩), draft state, attach and ⋯; owns the filled button while open (DESIGN §6 InlineReply, §7.6). Mockups: reply.html (reply, reply-all, dictating). Plain + refines: ui-foundation; used by ui-reader. */
@@ -96,7 +98,9 @@ export interface InlineReplyProps {
   onSend: () => void;
   /** Attach a file. */
   onAttach: () => void;
-  /** ⋯ (format, schedule, discard). */
+  /** Format menu. */
+  onFormat: (anchor: HTMLElement) => void;
+  /** ⋯ (schedule, discard). */
   onMore: (anchor: HTMLElement) => void;
   /** Element ref for `settle` in and out. */
   ref?: Ref<HTMLElement>;

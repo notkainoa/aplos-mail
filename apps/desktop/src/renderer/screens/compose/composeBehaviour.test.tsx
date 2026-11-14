@@ -274,6 +274,7 @@ test('hold R: the level meter and "Listening. Release R to keep, Esc to cancel."
       return createElement(InlineReply, {
         ...shared,
         onPopOut: () => undefined,
+        onFormat: () => undefined,
         onMore: () => undefined,
       });
     }

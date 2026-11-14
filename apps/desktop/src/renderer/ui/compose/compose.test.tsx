@@ -198,6 +198,7 @@ function reply(over: Partial<Parameters<typeof InlineReply>[0]> = {}) {
       commands={commands}
       onSend={noop}
       onAttach={noop}
+      onFormat={noop}
       onMore={noop}
       {...over}
     />
@@ -210,7 +211,10 @@ test('InlineReply: the card, Send with its keycap, draft state, attach, more and
   assert.match(markup, /aria-label="Pop out reply"/);
   // Pop out lives in the footer, after Attach and before More, like the compose page's footer icons; the head has none.
   const footer = markup.slice(markup.indexOf('ui-compose-footer'));
-  assert.ok(footer.indexOf('aria-label="Attach"') < footer.indexOf('aria-label="Pop out reply"'));
+  assert.ok(footer.indexOf('aria-label="Attach"') < footer.indexOf('aria-label="Formatting"'));
+  assert.ok(
+    footer.indexOf('aria-label="Formatting"') < footer.indexOf('aria-label="Pop out reply"'),
+  );
   assert.ok(footer.indexOf('aria-label="Pop out reply"') < footer.indexOf('aria-label="More"'));
   assert.doesNotMatch(markup.slice(0, markup.indexOf('ui-compose-footer')), /Pop out reply/);
   // The tips are the real Tooltip (hover and keyboard focus), not a native title: only the names are in the markup.
@@ -268,6 +272,7 @@ function composer(over: Partial<Parameters<typeof Composer>[0]> = {}) {
       onSend={noop}
       onAttach={noop}
       onFormat={noop}
+      onMore={noop}
       {...over}
     />
   );

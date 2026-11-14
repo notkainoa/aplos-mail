@@ -76,11 +76,13 @@
 /* ---------- Reader actions: the pinned bar ----------
    In the flow at the end of the letter, so nothing ever hides behind it at the end of a thread; it sticks to the pane's
    bottom while the letter is taller than the pane, and `margin-top: auto` rests it on the pane's bottom edge when the
-   letter is short. Its wrapper is the bar's height plus 24 px above and 16 px below; a flat, opaque pane-coloured tray
-   (--canvas, no fade) spans the column behind the pill and reaches 12 px above it, so text stops cleanly above the pill
-   instead of running under its edge.
-   The wrapper and the scrim take no pointer events, only the pill does. Keycap badges overlay the buttons' corners and
-   take no space. */
+   letter is short. The wrapper is a reserved strip: the pill's height plus 12 px above and below, drawn opaque (--canvas)
+   across the reader's column (and 8 px past each side, room for the cards' rings and shadows) with a 1 px hairline at
+   its top. The letter scrolls under it and stops at that edge, so no text, card or white sheet is ever drawn behind or
+   beside the pill. A flat fill, no fade or gradient (DESIGN 2.4); 8 px is within the pane's gutter, so it never makes
+   the pane scroll sideways.
+   The wrapper takes no pointer events, only the pill does. Keycap badges overlay the buttons' corners and take no
+   space. */
 
 .ui-reader-actions {
   position: sticky;
@@ -89,19 +91,21 @@
   display: flex;
   justify-content: center;
   margin-top: auto;
-  padding: var(--space-6) 0 var(--space-4);
+  padding: var(--space-3) 0;
   pointer-events: none;
 }
-.ui-reader-actions::before {
+.ui-reader-actions::before,
+.ui-reader-actions::after {
   content: '';
   position: absolute;
-  /* The wrapper pads 24 px above the pill, so this starts 12 px above it. */
-  top: calc(var(--space-6) - var(--space-3));
-  bottom: 0;
-  /* The column's own width: all the text and card edges there are, so the tray never shows as a box wider than the
-     cards. A hard edge, no blur or gradient (DESIGN 2.4). */
-  inset-inline: 0;
+  inset: 0 calc(-1 * var(--space-2));
   background: var(--canvas);
+}
+/* The edge: the scroller's cut reads as a line, not a sawn-off card. */
+.ui-reader-actions::after {
+  bottom: auto;
+  height: var(--hairline);
+  background: var(--line);
 }
 .ui-reader-actions__bar {
   box-sizing: border-box;
@@ -132,7 +136,8 @@
   position: relative;
   bottom: auto;
 }
-.ui-reader-actions[data-demoted='true']::before {
+.ui-reader-actions[data-demoted='true']::before,
+.ui-reader-actions[data-demoted='true']::after {
   content: none;
 }
 .ui-reader-actions[data-demoted='true'] .ui-reader-actions__bar {

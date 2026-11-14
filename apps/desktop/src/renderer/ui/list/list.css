@@ -723,14 +723,15 @@
   color: var(--dim);
 }
 .ui-list-row__hit {
-  /* Bold, a soft wash and a hairline accent underline, so a match shows on the plain row, on the cursor row's
-     --puck and on an already bold subject, in both themes (the wash alone is under 1.1:1 on --puck). */
+  /* Bold, a soft wash and a hairline underline in a reduced-strength accent (a full-strength one read like a link),
+     so a match shows on the plain row, on the cursor row's --puck and on an already bold subject, in both themes
+     (the wash alone is under 1.1:1 on --puck). */
   border-radius: var(--radius-xs);
   background: var(--accent-wash);
   color: var(--ink);
   font-weight: 600;
   text-decoration: underline;
-  text-decoration-color: var(--accent);
+  text-decoration-color: color-mix(in srgb, var(--accent) 45%, transparent);
   text-decoration-thickness: var(--hairline);
   text-underline-offset: var(--space-half);
   -webkit-box-decoration-break: clone;

@@ -203,6 +203,7 @@ function Tools({ data, actions }: Pick<SectionProps, 'data' | 'actions'>) {
               variant="text"
               label="Add a tool"
               disabled={!enabled}
+              disabledReason="Turn on tools first"
               onPress={() => actions.openAddTool()}
             />
           }

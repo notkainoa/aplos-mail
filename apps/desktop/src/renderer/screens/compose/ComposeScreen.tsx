@@ -168,6 +168,7 @@ export function ComposePageView({
             session.dispatch({ type: 'edit', patch: { subject }, now: getNow() })
           }
           onFormat={anchor => controls.setMenuAnchor(anchor)}
+          onMore={anchor => controls.setMenuAnchor(anchor)}
         />
       </div>
       <ComposeMenu
