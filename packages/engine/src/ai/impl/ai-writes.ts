@@ -2,8 +2,8 @@
  * `ai/writes.ts` binds them at module load, so `laneExtensions` stays sync. */
 import { ContractError } from '@aplos/contract/contract-error';
 import { StoreError } from '../../store/port';
-import { registerAiWrites } from '../writes';
-import type { CommitExtensionTx } from '../../store/port';
+import { BACKFILL_WAKE_SQL, registerAiWrites } from '../writes';
+import type { CommitExtensionTx, IngestBatch } from '../../store/port';
 import type { AiUsageWrite, ConversationWrite, PlanWrite, SummaryWrite } from '../writes';
 
 const bad = (): never => {
@@ -191,4 +191,43 @@ function conversation(write: ConversationWrite, tx: CommitExtensionTx): void {
   tx.mark('Conversation', write.id, 'u');
 }
 
-registerAiWrites({ plan: planWrite, summary, aiUsage, conversation });
+/** A live-mail sentinel: the EXISTS joins the account row so an AI-kept-out account arms nothing. */
+const THREAD_WAKE_SQL = `INSERT INTO jobs(kind,key,priority,payload,state,next_at) SELECT 'wake',?,5,'{}','queued',? WHERE EXISTS(SELECT 1 FROM accounts WHERE id=? AND ai_allowed=1) ON CONFLICT(key) DO UPDATE SET state='queued',attempts=0,next_at=?`;
+
+/**
+ * The ingest hook's body — `ai/writes.ts#aiIngest` runs it inside `SAVEPOINT ai_i`, so a slip here rolls back
+ * only these writes. Only mail a live-delivery step first stores arms a per-thread sentinel (baseline, backfill
+ * and resync pages and imports arm one bounded `ai:backfill` sentinel instead — a first sync must not write a
+ * row per stored thread), and only where it can lead: not a stored search hit, not a draft, not Spam/Trash mail.
+ */
+function ingest(batch: IngestBatch, tx: CommitExtensionTx): void {
+  const incremental =
+    (batch.step === undefined || batch.step === 'incremental') && batch.origin !== 'import';
+  let armed = false;
+  if (!incremental) {
+    if (batch.messages.some(m => m.added)) armed = tx.run(BACKFILL_WAKE_SQL, tx.now()).changes > 0;
+  } else
+    for (const m of batch.messages) {
+      if (
+        !m.added ||
+        m.origin === 'search' ||
+        m.flags.draft ||
+        m.roles.includes('spam') ||
+        m.roles.includes('trash')
+      )
+        continue;
+      const r = tx.run(
+        THREAD_WAKE_SQL,
+        `ingest:${m.accountId}:${m.remoteThreadId}`,
+        tx.now(),
+        m.accountId,
+        tx.now(),
+      );
+      if (r.changes) armed = true;
+    }
+  // One mark per commit no matter the page size: the `AiJob` change row is what pokes the `jobs` deadline
+  // (`observeCommits` in runtime/engine), and a bulk sync must not turn one row per message into a row storm.
+  if (armed) tx.mark('AiJob', 'ingest', 'u');
+}
+
+registerAiWrites({ plan: planWrite, summary, aiUsage, conversation, ingest });

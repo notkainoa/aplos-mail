@@ -114,6 +114,8 @@ export interface AiWriteImpls {
   summary: (write: SummaryWrite, tx: CommitExtensionTx) => void;
   aiUsage: (write: AiUsageWrite, tx: CommitExtensionTx) => void;
   conversation: (write: ConversationWrite, tx: CommitExtensionTx) => void;
+  /** The ingest hook's body; `aiIngest` runs it inside `SAVEPOINT ai_i`. Absent until `ai/impl` first loads. */
+  ingest: (batch: IngestBatch, tx: CommitExtensionTx) => void;
 }
 let impls: AiWriteImpls | undefined;
 export const registerAiWrites = (i: AiWriteImpls): void => {
@@ -284,8 +286,9 @@ function apply(write: { kind: string }, tx: CommitExtensionTx): void {
 /**
  * Seam 2 (the missing summary trigger): a commit that stores mail drops one `wake` sentinel per touched thread.
  * The sentinel's key never changes, so `ON CONFLICT` dedupes a live one and re-arms a settled one; eligibility,
- * priority and the real `summary` job are all decided by the `jobs` runner's lazy pass (`ai/impl/jobs.ts`), so
- * this eagerly-loaded hook runs no AI SQL. `ok`'s `AiJob` mark wakes the `jobs` deadline once the commit lands.
+ * priority and the real `summary` job are all decided by the `jobs` runner's lazy pass (`ai/impl/jobs.ts`). The
+ * hook's body lives with the other impl writes (`ai/impl/ai-writes`) for the core budget; the `AiJob` mark wakes
+ * the `jobs` deadline once the commit lands.
  */
 /** The `wake` job that makes the runner catch existing mail up after an AI settings or `ai_allowed` change. */
 export const aiBackfillWrite = (nextAt: number): JobWrite => ({
@@ -312,55 +315,33 @@ export const requestAiCatchUp = (store: StorePort, at: number): void => {
   }
 };
 
-const BACKFILL_WAKE_SQL = `INSERT OR IGNORE INTO jobs(kind,key,priority,payload,state,next_at) VALUES('wake','ai:backfill',9,'{}','queued',?)`;
+export const BACKFILL_WAKE_SQL = `INSERT OR IGNORE INTO jobs(kind,key,priority,payload,state,next_at) VALUES('wake','ai:backfill',9,'{}','queued',?)`;
 
 function aiIngest(batch: IngestBatch, tx: CommitExtensionTx): void {
-  // Only mail a live-delivery step first stores arms a sentinel: baseline, backfill and resync pages (and
-  // imports) rely on the bounded `ai:backfill` catch-up instead, and a flag-only update of a known message
-  // changes no summary input — otherwise one first sync writes a sentinel per stored row.
-  const incremental =
-    (batch.step === undefined || batch.step === 'incremental') && batch.origin !== 'import';
   // A slip inside this hook must cost only the sentinel writes, never the caller's mail: the savepoint scopes
   // the rollback, and the bounded `ai:backfill` sentinel still asks the runner for a catch-up over whatever
-  // this batch missed (the runner logs a catch-up failure under `ai.backfill_failed`).
+  // this batch missed (the runner logs a catch-up failure under `ai.backfill_failed`). The hook's body —
+  // per-thread sentinels for live mail, the same catch-up arm for bulk pages — is `ai/impl/ai-writes#ingest`
+  // (the core budget's seam, like the impl write kinds). A commit before `ai/impl` first loads still arms the
+  // catch-up here so the mail is found once the runner is up.
   try {
     tx.run('SAVEPOINT ai_i');
-    let armed = false;
-    if (!incremental) {
-      // Bulk mail (baseline/resync/import pages) gets one bounded catch-up sentinel per commit, not a row per
-      // thread — the runner's BACKFILL_LIMIT scan covers it, and a newly added account's first sync is how
-      // its already-stored mail gets queued at all.
-      if (batch.messages.some(m => m.added))
-        armed = tx.run(BACKFILL_WAKE_SQL, tx.now()).changes > 0;
-    } else
-      for (const m of batch.messages) {
-        // A sentinel is written only where it can lead: new mail on an AI-allowed account (the EXISTS joins the
-        // account row into the insert) — not a stored search hit, not a draft, not mail filed into Spam/Trash.
-        if (
-          !m.added ||
-          m.origin === 'search' ||
-          m.flags.draft ||
-          m.roles.includes('spam') ||
-          m.roles.includes('trash')
-        )
-          continue;
-        const r = tx.run(
-          `INSERT INTO jobs(kind,key,priority,payload,state,next_at) SELECT 'wake',?,5,'{}','queued',? WHERE EXISTS(SELECT 1 FROM accounts WHERE id=? AND ai_allowed=1) ON CONFLICT(key) DO UPDATE SET state='queued',attempts=0,next_at=?`,
-          `ingest:${m.accountId}:${m.remoteThreadId}`,
-          tx.now(),
-          m.accountId,
-          tx.now(),
-        );
-        if (r.changes) armed = true;
-      }
-    // One mark per commit no matter the page size: the `AiJob` change row is what pokes the `jobs` deadline
-    // (`observeCommits` in runtime/engine), and a bulk sync must not turn one row per message into a row storm.
-    if (armed) tx.mark('AiJob', 'ingest', 'u');
+    if (impls) impls.ingest(batch, tx);
+    else if (batch.messages.some(m => m.added) && tx.run(BACKFILL_WAKE_SQL, tx.now()).changes)
+      tx.mark('AiJob', 'ingest', 'u');
     tx.run('RELEASE ai_i');
-  } catch {
+  } catch (err) {
     try {
       tx.run('ROLLBACK TO SAVEPOINT ai_i');
       tx.run('RELEASE ai_i');
+    } catch {
+      // SQLite already rolled the whole transaction back itself (disk full, an I/O error, a trigger's
+      // RAISE(ROLLBACK)): there is no savepoint to return to, and every write from here on would commit
+      // outside any transaction — change rows and a `commits` row for mail that no longer exists. The
+      // original error is what the caller must see; the commit fails and rolls back cleanly.
+      throw err;
+    }
+    try {
       // The thread-level detail is gone — arm the bounded catch-up so a retry can still find this mail.
       tx.run(BACKFILL_WAKE_SQL, tx.now());
       tx.mark('AiJob', 'ingest', 'u');

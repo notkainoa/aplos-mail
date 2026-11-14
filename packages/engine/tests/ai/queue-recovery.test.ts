@@ -546,6 +546,56 @@ test('a slip in the ingest hook rolls back only its own writes; mail still lands
   }
 });
 
+test('a transaction-killing slip inside the hook fails the whole commit — nothing is recorded', async () => {
+  const w = await world(stubTransport({}));
+  seedMail(w);
+  const seqBefore = w.engine.services.store.seq();
+  const raw = openSqlite(w.file.path);
+  const read = <T extends Record<string, string | number | null | Uint8Array>>(
+    sql: string,
+    ...params: (string | number)[]
+  ) => w.engine.services.store.read(q => q.get<T>(sql, ...params));
+  try {
+    // RAISE(ROLLBACK) makes SQLite roll the whole transaction back inside the hook: the savepoint no longer
+    // exists, so the catch must rethrow instead of writing on — change rows, the seq bump and the `commits`
+    // row would land in autocommit and bury the rolled-back mail under a spent op id.
+    raw.exec(
+      `CREATE TRIGGER fail_jobs BEFORE INSERT ON jobs BEGIN SELECT RAISE(ROLLBACK, 'forced'); END`,
+    );
+    assert.throws(() =>
+      w.engine.services.store.commit({
+        opId: 'doomed',
+        origin: 'sync',
+        step: 'incremental',
+        writes: [msg('m9', 'T-late', 9)],
+      }),
+    );
+    // Nothing was recorded: no `commits` row (a retry is not a replay), no change rows, seq unmoved, no mail.
+    assert.equal(read('SELECT seq FROM commits WHERE op_id = ?', 'doomed'), undefined);
+    assert.equal(
+      read<{ n: number }>('SELECT COUNT(*) AS n FROM changes WHERE seq > ?', seqBefore)?.n,
+      0,
+    );
+    assert.equal(w.engine.services.store.seq(), seqBefore);
+    assert.equal(read("SELECT remote_id FROM messages WHERE remote_id = 'm9'"), undefined);
+  } finally {
+    raw.exec('DROP TRIGGER IF EXISTS fail_jobs');
+    raw.close();
+  }
+  // A retry under the same op id is not a replay: it stores the mail and arms the sentinel.
+  w.engine.services.store.commit({
+    opId: 'doomed',
+    origin: 'sync',
+    step: 'incremental',
+    writes: [msg('m9', 'T-late', 9)],
+  });
+  assert.equal(
+    read<{ remote_id: string }>("SELECT remote_id FROM messages WHERE remote_id = 'm9'")?.remote_id,
+    'm9',
+  );
+  assert.equal(jobsOf(w, 'wake').find(j => j.key === `ingest:${ACCOUNT}:T-late`)?.state, 'queued');
+});
+
 test('an account id containing a colon still resolves through the sentinel', async () => {
   const w = await world(stubTransport({}));
   const COLON = 'acct:one';
@@ -578,4 +628,28 @@ test('the queued job carries its model and the done log reports it', async () =>
   );
   const done = w.lines.find(l => l.event === 'ai.job.done');
   assert.equal(done?.data.model, 'openai/gpt-oss-120b');
+});
+
+test('a settle logs the model stamped in the job payload, not the current setting', async () => {
+  const w = await world(stubTransport({}));
+  seedMail(w);
+  // The settings model is openai/gpt-oss-120b; the job is stamped under another — the log must say the stamp.
+  await consentNow(w);
+  enqueue(w.engine.services, 'stamped', {
+    kind: 'summary',
+    key: `summary:${ACCOUNT}:T-thread:stamped`,
+    priority: 0,
+    nextAt: w.clock.now(),
+    payload: {
+      threadId: `${ACCOUNT}:T-thread`,
+      accountId: ACCOUNT,
+      remoteThreadId: 'T-thread',
+      inputHash: 'h-stamped',
+      model: { provider: 'other', model: 'stamped-model' },
+    },
+  });
+  await runJobs(w.engine.services, w.clock.now());
+  const done = w.lines.find(l => l.event === 'ai.job.done');
+  assert.equal(done?.data.provider, 'other');
+  assert.equal(done?.data.model, 'stamped-model');
 });
