@@ -354,6 +354,23 @@ test('a bulk Done that leaves the card alone names no departed row', async () =>
   }
 });
 
+test('a bulk Bookmark that includes the card names no departed row: its mail never left', async () => {
+  resetToasts();
+  const world = await boot();
+  try {
+    const bulk = bulkHome(world);
+    bulk.actions.select();
+    bulk.actions.move(1);
+    bulk.actions.select();
+    bulk.actions.move(-1);
+    bulk.state.departed.length = 0;
+    bulk.actions.bookmark();
+    assert.deepEqual(bulk.state.departed, [undefined], 'nothing left, so nothing to hand back');
+  } finally {
+    world.connection.close();
+  }
+});
+
 test('a bulk commit flies at most six rows', async () => {
   resetToasts();
   const world = await boot();

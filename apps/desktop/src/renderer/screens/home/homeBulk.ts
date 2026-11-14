@@ -84,11 +84,12 @@ function commitPicks(
     count: picked.length,
     settle: () => {
       bulk.selection.clear();
-      // The card's mail is among the picks: the cursor leaves it, and Undo should bring the card back to it.
-      deps.setCursor(
-        cursorAfter,
-        snapshot.key !== null && picked.includes(snapshot.key) ? snapshot.key : undefined,
-      );
+      // The card's mail is among the picks and leaves Home (Done, Later, Trash): Undo should bring the card back to it.
+      // A Bookmark leaves every mail where it is, so there is nothing to hand back.
+      const leaves = verb.action.type !== 'bookmark';
+      const cardKey =
+        snapshot.key !== null && picked.includes(snapshot.key) ? snapshot.key : undefined;
+      deps.setCursor(cursorAfter, leaves ? cardKey : undefined);
     },
   });
 }
