@@ -41,6 +41,11 @@
   -webkit-box-orient: vertical;
   -webkit-line-clamp: 2;
 }
+.ui-summary__lead {
+  /* Inline before the words, on the text baseline: the 24 px chip sits in the first line without growing it. */
+  display: inline-block;
+  margin-right: var(--space-2);
+}
 .ui-summary__subject {
   position: absolute;
   width: 1px;
