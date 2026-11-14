@@ -203,6 +203,42 @@ export function settleCursor(
   return keyAt(after, at);
 }
 
+/** A row the cursor was on that left the list, and the row the cursor settled on instead. */
+export interface Displaced {
+  readonly key: string;
+  readonly to: string;
+}
+
+/** What `settleHome` returns: where the cursor is now, and the departures it can still hand back. */
+export interface HomeSettled {
+  readonly key: string | null;
+  readonly displaced: readonly Displaced[];
+}
+
+const MAX_DISPLACED = 50;
+
+/**
+ * `settleCursor` that also remembers where the cursor came from. A row that leaves under the cursor (Done, Later,
+ * Trash, a lane move) is noted with the neighbour that took the cursor; when it comes back (Undo) while the cursor
+ * has not been moved since, the cursor goes back to it, so the focus card is the same mail it was. Moving the cursor
+ * by hand forgets the notes (the caller clears them).
+ */
+export function settleHome(
+  before: readonly HomeItem[],
+  after: readonly HomeItem[],
+  key: string | null,
+  displaced: readonly Displaced[],
+): HomeSettled {
+  const last = displaced.at(-1);
+  if (last && key === last.to && indexOfKey(after, last.key) >= 0) {
+    return { key: last.key, displaced: displaced.slice(0, -1) };
+  }
+  const next = settleCursor(before, after, key);
+  const left = key !== null && next !== null && next !== key && indexOfKey(after, key) < 0;
+  if (!left) return { key: next, displaced };
+  return { key: next, displaced: [...displaced, { key, to: next }].slice(-MAX_DISPLACED) };
+}
+
 /** One step of J/K or the arrows; stops at the ends. */
 export function stepCursor(
   items: readonly HomeItem[],
