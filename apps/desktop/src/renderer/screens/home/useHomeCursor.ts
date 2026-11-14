@@ -8,6 +8,7 @@ import { restoreKey, type ReturnPoint } from '../../shell';
 import {
   keyOf,
   settleCursor,
+  movedHome,
   settleHome,
   type Displaced,
   type HomeItem,
@@ -45,7 +46,8 @@ export interface HomeCursor {
   /** The list the key was settled against. */
   readonly items: readonly HomeItem[];
   /** Moves the cursor now. */
-  setCursor(key: string | null): void;
+  /** `departed` names the row the cursor leaves because its mail went (a bulk action), so Undo can hand it back. */
+  setCursor(key: string | null, departed?: string): void;
 }
 
 /** The settled state after a render: a pending return lands on its row once there are rows, and waits for them until then. */
@@ -78,13 +80,13 @@ export function useHomeCursor(
   if (state.items !== items || state.key !== key || landed) {
     setState({ key, items, restore: landed ? null : state.restore, displaced });
   }
-  const setCursor = useCallback((next: string | null) => {
+  const setCursor = useCallback((next: string | null, departed?: string) => {
     setState(current => ({
       ...current,
       key: next,
       restore: null,
       // A bump at the end of the list leaves the cursor where it was, so what it remembers still holds.
-      displaced: next === current.key ? current.displaced : [],
+      displaced: movedHome(current.displaced, current.key, next, departed, Date.now()),
     }));
   }, []);
   return { key, items, setCursor };

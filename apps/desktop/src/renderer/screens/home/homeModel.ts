@@ -246,6 +246,26 @@ export function settleHome(
   return { key: next, displaced: [...kept, { key, to: next, at: now }].slice(-MAX_DISPLACED) };
 }
 
+/**
+ * The notes after the cursor is moved to `next`. A move by hand forgets them (nothing is handed back to a cursor the
+ * owner placed), except a bump that stays put. `departed` names the row the cursor left because its mail went (a bulk
+ * Done, Later or Trash that includes the card): that departure is noted like one `settleHome` sees, so an Undo can hand
+ * the card back.
+ */
+export function movedHome(
+  displaced: readonly Displaced[],
+  current: string | null,
+  next: string | null,
+  departed: string | undefined,
+  now: number,
+): readonly Displaced[] {
+  if (departed !== undefined && next !== null && departed !== next) {
+    const fresh = displaced.filter(note => now - note.at <= UNDO_WINDOW_MS);
+    return [...fresh, { key: departed, to: next, at: now }].slice(-MAX_DISPLACED);
+  }
+  return next === current ? displaced : [];
+}
+
 function isBack(after: readonly HomeItem[], note: Displaced): boolean {
   return indexOfKey(after, note.key) >= 0;
 }

@@ -98,6 +98,7 @@ function bulkHome(world: World, start: string | null = null) {
     committed: [] as string[],
     held: 0,
     more: [] as string[],
+    departed: [] as (string | undefined)[],
   };
   const rowOf = (id: string) => world.home.snapshot().rows.get(id) as ThreadRow | undefined;
   const itemsNow = (): HomeItem[] =>
@@ -121,8 +122,9 @@ function bulkHome(world: World, start: string | null = null) {
         picked: picked.length > 0 ? picked : undefined,
       };
     },
-    setCursor: key => {
+    setCursor: (key, departed) => {
       cursor.key = key;
+      state.departed.push(departed);
     },
     act: args => {
       state.acted.push(args);
@@ -301,6 +303,52 @@ test('Done on a pick sends one act and one toast; Undo brings every row back', a
       'Undo restored all three',
     );
     await settleAll(() => undefined);
+  } finally {
+    world.connection.close();
+  }
+});
+
+test('a bulk Done that includes the card names the card as the row that left, so Undo can hand it back', async () => {
+  resetToasts();
+  const world = await boot();
+  try {
+    const bulk = bulkHome(world);
+    const before = bulk.idsNow();
+    bulk.actions.select();
+    bulk.actions.move(1);
+    bulk.actions.select();
+    bulk.actions.move(-1);
+    assert.equal(bulk.cursor.key, before[0], 'the card is on the first picked mail');
+    bulk.state.departed.length = 0;
+    bulk.actions.done();
+    assert.deepEqual(
+      bulk.state.departed,
+      [before[0]],
+      'the cursor moved because the card mail left',
+    );
+  } finally {
+    world.connection.close();
+  }
+});
+
+test('a bulk Done that leaves the card alone names no departed row', async () => {
+  resetToasts();
+  const world = await boot();
+  try {
+    const bulk = bulkHome(world);
+    const before = bulk.idsNow();
+    bulk.actions.move(1);
+    bulk.actions.move(1);
+    bulk.actions.select();
+    bulk.actions.move(1);
+    bulk.actions.select();
+    bulk.actions.move(-1);
+    bulk.actions.move(-1);
+    bulk.actions.move(-1);
+    bulk.state.departed.length = 0;
+    bulk.actions.done();
+    assert.ok(before.length > 3);
+    assert.deepEqual(bulk.state.departed, [undefined], 'the card was not among the picks');
   } finally {
     world.connection.close();
   }
