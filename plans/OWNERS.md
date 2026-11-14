@@ -64,7 +64,7 @@ Every path in the repo belongs to exactly one lane, and each lane belongs to one
 
 | Owner | Paths |
 |---|---|
-| `integrator` | `plans/**` (except `plans/STATUS.md`, below, and each thread's own planning folder: `plans/engine/**` to `eng-contract`, `plans/providers/**` to `prov-gov`, `plans/ui-core/**` to `ui-foundation`, `plans/ui-screens/**` to `ui-onboard`, `plans/platform/**` to `plat-ci`), `AGENTS.md`, `README.md`, `SPEC.md`, `VISION.md`, `MOBILE.md`, `.env.example` (lanes request new key names; the file never holds a value), `.github/**` not listed above, any new top-level folder or new workspace under `packages/`, `packages/.gitkeep`, the root `vercel.json` (the `aplos-mockups` Vercel project's deploy settings; `apps/web/vercel.json` is `web`'s) |
+| `integrator` | `plans/**` (except `plans/STATUS.md`, below, and each thread's own planning folder: `plans/engine/**` to `eng-contract`, `plans/providers/**` to `prov-gov`, `plans/ui-core/**` to `ui-foundation`, `plans/ui-screens/**` to `ui-onboard`, `plans/platform/**` to `plat-ci`), `AGENTS.md`, `README.md`, `SPEC.md`, `VISION.md`, `MOBILE.md`, `.env.example` (lanes request new key names; the file never holds a value), `.github/**` not listed above, any new top-level folder or new workspace under `packages/`, `packages/.gitkeep`, the root `vercel.json` (the `aplos-mockups` Vercel project's deploy settings; `apps/web/vercel.json` is `web`'s), `mockups/**` (read-only visual target: only the integrator edits it, and only to record an owner decision that changes the target, each edit called out in DECISIONS; first used for the 2026-11-13 no-dots decision in #518) |
 
 ## Shared files
 
@@ -77,7 +77,7 @@ Every path in the repo belongs to exactly one lane, and each lane belongs to one
 | `AGENTS.md` | `ui-foundation` adds the design rule from plan 30 U0 by PR; the integrator approves. |
 | Legacy folders: `packages/engine/src/legacy/**`, `packages/contract/src/legacy/**`, `apps/desktop/src/renderer/legacy/**`, and today's files left in `apps/desktop/src/main/` | Read-only reference after the restructure. A lane edits a legacy file only when it moves that file's code into its own paths. The integrator deletes them in Phase 2 with each owning lane (roadmap 2.6). |
 | Today's tests, `apps/desktop/tests/*.test.ts` and `apps/desktop/tests/fixtures/**` | Kept green as long as their legacy code exists. Edited only by the restructure and by the lane that replaces the code under test; deleted in Phase 2 with that code. |
-| `mockups/**`, `research/**` | Read-only reference. Nobody edits them in this round. |
+| `research/**` | Read-only reference. Nobody edits it in this round. (`mockups/**` is the integrator's row above: an owner-decision edit only.) |
 | `packages/engine/src/methods/<area>.ts` not listed above | F5 creates one stub per contract area. If F5 adds an area this file does not name, `eng-contract` names the owning lane in its PR and the integrator adds it here. |
 
 ## Owner pings
