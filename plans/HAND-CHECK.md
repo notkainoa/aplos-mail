@@ -1,6 +1,6 @@
 # Hand-check: the packaged app in 10 minutes
 
-The app to check (built 2026-11-14 from `revamp` `0816151`, includes the go-live flip and every
+The app to check (built 2026-11-14 from `revamp` `d1171a2`, includes the go-live flip and every
 earlier fix batch plus: calendar accounts UI + "No calendars" vs "Syncing…" #356/#364/#365, the
 real AI path #369–#383 — Ask with citations, background summaries, follow-up nudges, the consent
 card, Settings → AI provider setup — the one-by-one card #421/#426/#451, Home low-importance lanes
