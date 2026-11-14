@@ -467,6 +467,24 @@ test('a committed thread that leaves and comes back with a rejected write is sho
   assert.equal(settleSession(back, live, new Set(['a'])), back, 'and nothing steps again');
 });
 
+test('a thread Undo brought back ahead of the walk does not pull it back once the walk has passed it', () => {
+  let session = beginSession(['a', 'b', 'c', 'd']);
+  session = stepSession(session, new Set(['a', 'b', 'c', 'd']), 1);
+  session = markActed(session, 'b');
+  session = settleSession(session, new Set(['a', 'c', 'd']), NONE);
+  const all = new Set(['a', 'b', 'c', 'd']);
+  session = stepSession(session, new Set(['a', 'c', 'd']), -1);
+  session = settleSession(session, all, NONE);
+  assert.equal(shownId(session, all), 'a', 'b is ahead: the walk stays');
+  session = stepSession(stepSession(session, all, 1), all, 1);
+  session = stepSession(session, all, 1);
+  assert.equal(
+    shownId(settleSession(session, all, NONE), all),
+    'd',
+    'and walking past b stays past it',
+  );
+});
+
 test('a thread still live after a J past it is not mistaken for an undo', () => {
   let session = beginSession(['a', 'b', 'c']);
   session = markActed(session, 'a');

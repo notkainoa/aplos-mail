@@ -103,15 +103,17 @@ function noteLeft(session: Session, live: ReadonlySet<string>): Session {
 function undone(session: Session, live: ReadonlySet<string>): Session {
   const { queue } = session.walk;
   const at = indexOfShown(session, live);
-  const back = session.acted.findLast(
-    id => session.left.includes(id) && live.has(id) && queue.indexOf(id) < at,
-  );
-  if (back === undefined) return session;
+  const behind = (id: string) => live.has(id) && queue.indexOf(id) < at;
+  const back = session.acted.findLast(id => session.left.includes(id) && behind(id));
+  // One back ahead of the walk is reached by walking on, so its note must not fire later from behind.
+  const left = session.left.filter(id => id !== back && !(live.has(id) && !behind(id)));
+  if (back === undefined)
+    return left.length === session.left.length ? session : { ...session, left };
   return {
     walk: { ...session.walk, index: queue.indexOf(back) },
     pending: null,
     acted: session.acted.filter(id => id !== back),
-    left: session.left.filter(id => id !== back),
+    left,
   };
 }
 

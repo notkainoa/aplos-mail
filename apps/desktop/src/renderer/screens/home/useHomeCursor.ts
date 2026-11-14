@@ -79,7 +79,13 @@ export function useHomeCursor(
     setState({ key, items, restore: landed ? null : state.restore, displaced });
   }
   const setCursor = useCallback((next: string | null) => {
-    setState(current => ({ ...current, key: next, restore: null, displaced: [] }));
+    setState(current => ({
+      ...current,
+      key: next,
+      restore: null,
+      // A bump at the end of the list leaves the cursor where it was, so what it remembers still holds.
+      displaced: next === current.key ? current.displaced : [],
+    }));
   }, []);
   return { key, items, setCursor };
 }
