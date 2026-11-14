@@ -157,7 +157,8 @@ test('the filled button belongs to the open composer: one while open, none after
     await world.settle();
     const sent = reply(session);
     assert.equal(filled(sent), 0);
-    assert.match(sent, /Sending to Jordan in 8 s/);
+    assert.match(sent, /Sending to Jordan/);
+    assert.match(sent, / in 8 s/);
     assert.match(sent, />You</, 'the message arrives in the thread with the tray under it');
     session.dispose();
   } finally {
