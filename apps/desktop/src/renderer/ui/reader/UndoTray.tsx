@@ -7,6 +7,7 @@ import { useEffect, useRef, type CSSProperties } from 'react';
 import { motions } from '../generated/motion';
 import type { UndoTrayAction, UndoTrayProps, UndoTrayState } from '../props';
 import { Action } from '../list/internal/Action';
+import { splitCountdown } from '../surfaces/ToastMessage';
 import { formatReaderTime } from '../list/internal/format';
 import { useKeycapFor, useTooltipText } from '../list/internal/keys';
 
@@ -58,6 +59,20 @@ function announcement(state: UndoTrayState, undoKey: string): string {
   return copyFor(state).text;
 }
 
+/** The tray's words; a countdown keeps " in 8 s" together and shortens the recipients with an ellipsis. */
+function TrayText({ text }: { text: string }) {
+  const split = splitCountdown(text);
+  if (!split) return <span className="ui-undo-tray__text">{text}</span>;
+  return (
+    <span className="ui-undo-tray__text" data-countdown="">
+      <span className="ui-undo-tray__lead" title={split.lead}>
+        {split.lead}
+      </span>
+      <span className="ui-undo-tray__tail">{split.tail}</span>
+    </span>
+  );
+}
+
 /** The undo-send line and its follow-up notices. */
 export function UndoTray({
   state,
@@ -103,7 +118,7 @@ export function UndoTray({
       aria-label={state.kind === 'sending' ? 'Undo send' : undefined}
     >
       <div className="ui-undo-tray__inner">
-        <span className="ui-undo-tray__text">{text}</span>
+        <TrayText text={text} />
         {actions.length > 0 ? (
           <span className="ui-undo-tray__actions">
             {actions.map(({ action, label }) => (

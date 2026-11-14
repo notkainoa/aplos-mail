@@ -619,7 +619,7 @@ The Back from Later block uses the same order, below the new items. Rows in Do n
 **The focus letter**
 
 - A card (`--elev-card`) with a fixed height: 180 px by default (roomy 196, compact 164).
-- The meta line holds the sender (`base` 600), the due chip if any, and the relative date.
+- The meta line holds the sender (`base` 600) and the relative date. The due chip, if any, leads the summary line, inline before the words, where a list row puts it before the subject (it follows the placeholder and the collapsed subject line the same way); it is the same 24 px chip as in rows (orchestrator's hands-on test, round 4, 2026-11-13).
 - Below it is the **serif summary**, the one big line, two lines at most on Home. While it is being written (a provider is set, the account is allowed for AI, a job is queued or running) the same space holds a quiet placeholder: two soft lines about 90 % and 65 % wide and a small muted "Summarizing…", never moving the buttons; the summary replaces it in place with a short opacity fade. With no summary coming (no provider, Summaries off, the account excluded from AI, generation failed, or no result after 20 s) the space collapses entirely: the card is the meta line, the subject in SF, then the buttons, with no placeholder and no error (owner decision 2026-11-13).
 - The action row: the suggestion as the one filled button (action icon + verb + Space keycap), then Later and Done as text buttons (Done is omitted when the suggestion is Done), then one ⋯ (.) for bookmark, trash and "Why it's here". Their keys show in tooltips.
 - There is no subject (except as the collapsed card's one line above), no todo line and no bookmark icon on the card [V: baseline §6.2].

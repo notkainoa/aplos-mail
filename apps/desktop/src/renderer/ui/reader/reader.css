@@ -44,7 +44,7 @@
 .ui-summary__lead {
   /* Inline before the words, on the text baseline: the 24 px chip sits in the first line without growing it. */
   display: inline-block;
-  margin-right: var(--space-2);
+  margin-inline-end: var(--space-2);
 }
 .ui-summary__subject {
   position: absolute;
@@ -463,6 +463,21 @@
   min-width: 0;
   font-variant-numeric: tabular-nums;
   overflow-wrap: anywhere;
+}
+.ui-undo-tray__text[data-countdown] {
+  display: flex;
+  align-items: baseline;
+}
+.ui-undo-tray__lead {
+  flex: 0 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.ui-undo-tray__tail {
+  flex: none;
+  white-space: pre;
 }
 .ui-undo-tray__actions {
   display: flex;
