@@ -5,7 +5,7 @@ import { Suggestion } from './Suggestion';
 
 /**
  * The inline reply card under the message (`--elev-card`; the `settle` in and out is the motion runtime's, through
- * `ref`): the To line with Cc and Bcc, the text in `read`, then Send (⌘↩), the draft line, Esc closes, attach, Formatting, Pop out and ⋯ (DESIGN §6
+ * `ref`): the To line with Cc and Bcc, the text in `read`, then Send (⌘↩), the draft line, Esc closes, attach, Pop out and ⋯ (formatting lives in ⋯) (DESIGN §6
  * InlineReply, §7.6). While it is open it owns the filled button. The draft strip (`Suggestion`) is the card's sibling
  * right after it, hanging off its bottom edge, never inside it.
  */
@@ -64,7 +64,6 @@ export function InlineReply(props: InlineReplyProps) {
           trailing={footerActions({
             commands,
             onAttach: props.onAttach,
-            onFormat: props.onFormat,
             onMore: props.onMore,
             onPopOut,
           })}

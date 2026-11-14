@@ -76,13 +76,10 @@
 /* ---------- Reader actions: the pinned bar ----------
    In the flow at the end of the letter, so nothing ever hides behind it at the end of a thread; it sticks to the pane's
    bottom while the letter is taller than the pane, and `margin-top: auto` rests it on the pane's bottom edge when the
-   letter is short. The wrapper is a reserved strip: the pill's height plus 12 px above and below, drawn opaque (--canvas)
-   across the reader's column (and 8 px past each side, room for the cards' rings and shadows) with a 1 px hairline at
-   its top. The letter scrolls under it and stops at that edge, so no text, card or white sheet is ever drawn behind or
-   beside the pill. A flat fill, no fade or gradient (DESIGN 2.4); 8 px is within the pane's gutter, so it never makes
-   the pane scroll sideways.
-   The wrapper takes no pointer events, only the pill does. Keycap badges overlay the buttons' corners and take no
-   space. */
+   letter is short. Its wrapper is the bar's height plus 24 px above and 16 px below; a pane-coloured scrim (--canvas, with a
+   soft blurred edge) spans the column and a margin either side behind it, so text never shows beside or through the pill.
+   The wrapper and the scrim take no pointer events, only the pill does. Keycap badges overlay the buttons' corners and
+   take no space. */
 
 .ui-reader-actions {
   position: sticky;
@@ -91,21 +88,21 @@
   display: flex;
   justify-content: center;
   margin-top: auto;
-  padding: var(--space-3) 0;
+  padding: var(--space-6) 0 var(--space-4);
   pointer-events: none;
 }
-.ui-reader-actions::before,
-.ui-reader-actions::after {
+.ui-reader-actions::before {
   content: '';
   position: absolute;
-  inset: 0 calc(-1 * var(--space-2));
+  top: var(--space-6);
+  bottom: 0;
+  /* The column's own width: all the text and card edges there are, so the fade never shows as a box wider than the
+     cards (a wider scrim lifted the pane's own colour beside them in the dark theme). */
+  inset-inline: 0;
   background: var(--canvas);
-}
-/* The edge: the scroller's cut reads as a line, not a sawn-off card. */
-.ui-reader-actions::after {
-  bottom: auto;
-  height: var(--hairline);
-  background: var(--line);
+  /* The soft edge is a blurred shadow in the same colour (DESIGN 2.4 forbids gradients): solid 12 px above the pill,
+     fading over 24, with no spread sideways past the column. */
+  box-shadow: 0 calc(-1 * var(--space-6)) var(--space-6) calc(-1 * var(--space-3)) var(--canvas);
 }
 .ui-reader-actions__bar {
   box-sizing: border-box;
@@ -136,8 +133,7 @@
   position: relative;
   bottom: auto;
 }
-.ui-reader-actions[data-demoted='true']::before,
-.ui-reader-actions[data-demoted='true']::after {
+.ui-reader-actions[data-demoted='true']::before {
   content: none;
 }
 .ui-reader-actions[data-demoted='true'] .ui-reader-actions__bar {
@@ -293,6 +289,11 @@
   text-wrap: pretty;
   -webkit-box-orient: vertical;
   -webkit-line-clamp: 2;
+}
+/* A short message the folded card shows whole: no line clamp, so nothing is ever hidden on a card with nothing to open. */
+.ui-thread-message[data-complete='true'] .ui-thread-message__excerpt {
+  display: block;
+  -webkit-line-clamp: unset;
 }
 .ui-thread-message__toggle:focus-visible {
   outline: var(--focus-width) solid var(--accent);

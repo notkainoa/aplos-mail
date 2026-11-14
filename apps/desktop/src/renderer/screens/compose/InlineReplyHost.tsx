@@ -200,7 +200,6 @@ export function InlineReplyView({
         <InlineReply
           {...shared}
           onPopOut={() => onPop?.()}
-          onFormat={anchor => controls.setMenuAnchor(anchor)}
           onMore={anchor => controls.setMenuAnchor(anchor)}
         />
       ) : (

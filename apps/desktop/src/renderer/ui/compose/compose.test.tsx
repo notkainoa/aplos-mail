@@ -198,7 +198,6 @@ function reply(over: Partial<Parameters<typeof InlineReply>[0]> = {}) {
       commands={commands}
       onSend={noop}
       onAttach={noop}
-      onFormat={noop}
       onMore={noop}
       {...over}
     />
@@ -209,13 +208,13 @@ test('InlineReply: the card, Send with its keycap, draft state, attach, more and
   const markup = html(reply());
   assert.match(markup, /<section[^>]*class="ui-inline-reply"[^>]*aria-label="Reply"/);
   assert.match(markup, /aria-label="Pop out reply"/);
-  // Pop out lives in the footer, after Attach and before More, like the compose page's footer icons; the head has none.
+  // Pop out lives in the footer, after Attach and before More; the head has none. Formatting is in ⋯, so the reply has
+  // no Formatting button of its own (owner call 2026-11-14: no extra buttons).
   const footer = markup.slice(markup.indexOf('ui-compose-footer'));
-  assert.ok(footer.indexOf('aria-label="Attach"') < footer.indexOf('aria-label="Formatting"'));
-  assert.ok(
-    footer.indexOf('aria-label="Formatting"') < footer.indexOf('aria-label="Pop out reply"'),
-  );
+  assert.ok(footer.indexOf('aria-label="Attach"') < footer.indexOf('aria-label="Pop out reply"'));
   assert.ok(footer.indexOf('aria-label="Pop out reply"') < footer.indexOf('aria-label="More"'));
+  assert.doesNotMatch(footer, /aria-label="Formatting"/);
+  assert.match(footer, /closes/, 'the quiet "Esc closes" line stays');
   assert.doesNotMatch(markup.slice(0, markup.indexOf('ui-compose-footer')), /Pop out reply/);
   // The tips are the real Tooltip (hover and keyboard focus), not a native title: only the names are in the markup.
   assert.match(markup, /aria-label="Attach"/);
@@ -272,7 +271,6 @@ function composer(over: Partial<Parameters<typeof Composer>[0]> = {}) {
       onSend={noop}
       onAttach={noop}
       onFormat={noop}
-      onMore={noop}
       {...over}
     />
   );
@@ -288,6 +286,10 @@ test('Composer: To row, heading-size subject, body, footer with Send, draft stat
   assert.match(markup, /<footer[^>]*class="ui-composer__foot"/);
   assert.match(markup, /<kbd[^>]*>⌘↩<\/kbd>/);
   assert.match(markup, /aria-label="Formatting"/);
+  // The page's ⋯ is in the pane header, so the footer has no second one (owner call 2026-11-14: no extra buttons).
+  const footer = markup.slice(markup.indexOf('ui-composer__foot'));
+  assert.doesNotMatch(footer, /aria-label="More"/);
+  assert.match(footer, /closes/, 'the quiet "Esc closes" line stays');
   assert.match(markup, /Draft saved/);
   assert.doesNotMatch(markup, /Polish suggests/);
   assert.doesNotMatch(markup, /is a suggestion/);

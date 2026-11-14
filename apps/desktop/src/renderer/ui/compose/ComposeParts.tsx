@@ -53,23 +53,14 @@ export interface FooterAction {
 export function footerActions(parts: {
   commands: ComposeCommands;
   onAttach: () => void;
-  onFormat: (anchor: HTMLElement) => void;
-  onMore: (anchor: HTMLElement) => void;
+  /** The compose page's Format button (T). The inline reply has none: its ⋯ holds formatting. */
+  onFormat?: (anchor: HTMLElement) => void;
+  /** The inline reply's ⋯ (format, schedule, discard). The compose page keeps its ⋯ in the pane header. */
+  onMore?: (anchor: HTMLElement) => void;
   onPopOut?: () => void;
 }): readonly FooterAction[] {
   const { commands, onAttach, onFormat, onMore, onPopOut } = parts;
-  const popOut: FooterAction[] = onPopOut
-    ? [
-        {
-          label: 'Pop out reply',
-          icon: 'pop-out',
-          hint: 'Pop out reply',
-          commandId: 'compose.popOut',
-          onPress: () => onPopOut(),
-        },
-      ]
-    : [];
-  return [
+  const actions: FooterAction[] = [
     {
       label: 'Attach',
       icon: 'paperclip',
@@ -77,22 +68,32 @@ export function footerActions(parts: {
       commandId: commands.attach,
       onPress: () => onAttach(),
     },
-    {
+  ];
+  if (onFormat)
+    actions.push({
       label: 'Formatting',
       icon: 'type',
       hint: 'Formatting',
       commandId: commands.more,
       onPress: onFormat,
-    },
-    ...popOut,
-    {
+    });
+  if (onPopOut)
+    actions.push({
+      label: 'Pop out reply',
+      icon: 'pop-out',
+      hint: 'Pop out reply',
+      commandId: 'compose.popOut',
+      onPress: () => onPopOut(),
+    });
+  if (onMore)
+    actions.push({
       label: 'More',
       icon: 'more',
-      hint: 'More: schedule, discard',
-      commandId: 'compose.more',
+      hint: 'More: format, schedule, discard',
+      commandId: commands.more,
       onPress: onMore,
-    },
-  ];
+    });
+  return actions;
 }
 
 /** Send (always with its keycap), the draft line or the dictation line, and the trailing icon buttons. */

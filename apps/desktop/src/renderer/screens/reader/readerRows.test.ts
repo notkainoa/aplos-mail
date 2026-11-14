@@ -8,6 +8,7 @@ import type { Message } from '../../data';
 import {
   attachmentChips,
   excerptOf,
+  excerptView,
   fromName,
   joinRecipients,
   replyName,
@@ -207,9 +208,25 @@ test('an excerpt with no space to cut at is cut hard at 150 code points, never t
 
 test('CJK sentence ends close an excerpt, and an abbreviation is not a sentence', () => {
   const excerpt = (snippet: string) => excerptOf(message({ id: 'x', snippet }));
+  // With an attachment the card is never whole, so the first two sentences show and the dropped third earns " …".
   assert.equal(
-    excerpt('了解しました。明日の朝までに送ります。よろしくお願いします。'),
-    '了解しました。明日の朝までに送ります。',
+    excerptOf(
+      message({
+        id: 'x',
+        snippet: '了解しました。明日の朝までに送ります。よろしくお願いします。',
+        attachments: [
+          {
+            id: 'f',
+            name: 'a.pdf',
+            mime: 'application/pdf',
+            size: 1,
+            inline: false,
+            state: 'absent',
+          },
+        ],
+      }),
+    ),
+    '了解しました。明日の朝までに送ります。 …',
   );
   assert.equal(excerpt('今日は晴れです！'), '今日は晴れです！');
   assert.equal(
@@ -221,4 +238,47 @@ test('CJK sentence ends close an excerpt, and an abbreviation is not a sentence'
     /^Ok\. Sounds good/,
   );
   assert.equal(excerpt('e.g. the north wall.'), 'e.g. the north wall.');
+});
+
+test('a short message the folded card shows whole is complete: no "…", nothing to open', () => {
+  const view = (snippet: string, over: Partial<Message> = {}) =>
+    excerptView(message({ id: 'x', snippet, ...over }));
+  assert.deepEqual(
+    view('Hi Alex, Thanks both. Two directions coming tomorrow: one quieter, one denser. Jordan'),
+    {
+      text: 'Thanks both. Two directions coming tomorrow: one quieter, one denser.',
+      complete: true,
+    },
+  );
+  assert.deepEqual(
+    view('Sounds good. I will bring the samples. See you Monday. Best, Mina Cho'),
+    { text: 'Sounds good. I will bring the samples. See you Monday.', complete: true },
+    'three short sentences are shown whole; the sign-off is left out like the salutation',
+  );
+  const attached = view('Here is the brief.', {
+    attachments: [
+      { id: 'f', name: 'a.pdf', mime: 'application/pdf', size: 1, inline: false, state: 'absent' },
+    ],
+  });
+  assert.equal(attached.complete, false, 'an attachment is something to open');
+  assert.equal(attached.text, 'Here is the brief.', 'only the sign-off-free text, so no "…"');
+  const near = `${'Word '.repeat(23)}end. More here.`;
+  assert.equal(
+    view(near).complete,
+    false,
+    'a snippet near the provider limit may be cut: keep the chevron',
+  );
+  assert.equal(view('').complete, false, 'no text: "No preview" and a chevron');
+});
+
+test('"…" marks text left out: a sentence cut short, or whole sentences dropped', () => {
+  const long =
+    'The layout review moved to Thursday at two in the Oak room. Please bring the printed boards. ' +
+    'Mina will send the agenda tonight, and Jordan has the projector booked for the whole afternoon.';
+  const text = excerptOf(message({ id: 'x', snippet: long }));
+  assert.equal(
+    text,
+    'The layout review moved to Thursday at two in the Oak room. Please bring the printed boards. …',
+  );
+  assert.match(excerptOf(message({ id: 'x', snippet: 'x'.repeat(400) })), /x…$/);
 });

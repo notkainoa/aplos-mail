@@ -21,7 +21,7 @@ import { SenderMark } from './SenderMark';
 import { allowImagesFrom, fetchAttachment } from './readerEffects';
 import {
   attachmentChips,
-  excerptOf,
+  excerptView,
   fromName,
   toLabel,
   trackersLine,
@@ -104,8 +104,8 @@ function useOriginal(invited: boolean, finding: boolean) {
 const FOLD_COMMAND = 'reader.expand' as const;
 
 /** The fold, with O's command: an earlier message folds and opens with a click, Enter, Space or O on its card. */
-function foldOf(fold: ReaderMessageProps['fold']) {
-  return fold ? { ...fold, commandId: FOLD_COMMAND } : undefined;
+function foldOf(fold: ReaderMessageProps['fold'], complete: boolean) {
+  return fold ? { ...fold, commandId: FOLD_COMMAND, complete } : undefined;
 }
 
 /**
@@ -118,6 +118,7 @@ function foldOf(fold: ReaderMessageProps['fold']) {
 export function ReaderMessage(props: ReaderMessageProps) {
   const { message, me, imagesLoaded, onFrame, fold } = props;
   const open = !fold || fold.open;
+  const excerpt = open ? undefined : excerptView(message);
   const body = useMessageBody(open ? message.id : undefined);
   const [trackers, setTrackers] = useState<number | undefined>(undefined);
   const chips = useDownloads(message);
@@ -159,8 +160,8 @@ export function ReaderMessage(props: ReaderMessageProps) {
       headActions={fold ? undefined : props.headActions}
       date={toIsoDateTime(message.date)}
       cursor={props.cursor}
-      fold={foldOf(fold)}
-      excerpt={open ? undefined : excerptOf(message)}
+      fold={foldOf(fold, excerpt?.complete === true)}
+      excerpt={excerpt?.text}
       body={frame}
       quoted={open && original.shown ? quoted.toggle : undefined}
       original={open ? original.toggle : undefined}

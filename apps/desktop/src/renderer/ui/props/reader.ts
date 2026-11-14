@@ -70,7 +70,14 @@ export interface ThreadMessageProps {
   /** The message body from `renderer/mailframe` (sandboxed iframe or plain text); absent while the card is compact. */
   body?: ReactNode;
   /** An earlier message the card can fold: the head is a button (`aria-expanded`), a click or O opens or closes it. Absent: always open (the latest message). */
-  fold?: { open: boolean; onToggle: () => void; onFocus?: () => void; commandId: CommandId };
+  fold?: {
+    open: boolean;
+    onToggle: () => void;
+    onFocus?: () => void;
+    commandId: CommandId;
+    /** The folded card already shows the whole message: no chevron and no click target (O still opens it). */
+    complete?: boolean;
+  };
   /** Compact (folded) card: the plain-text first sentence or two, already ending in "…". Shown under the head while `fold.open` is false; an empty string reads "No preview" in dim text. */
   excerpt?: string;
   /** Attachment chips under the body. */

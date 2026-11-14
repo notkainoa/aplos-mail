@@ -4,7 +4,7 @@
 // attachments, and the undo-send line under a message you just sent. The 2 px accent rail marks the cursor.
 // An earlier message is a compact card (owner review 2026-11-03; owner feedback 2026-11-11): its row shows who, when and the
 // message's own first sentence or two (never an AI summary: those are per thread), with a bare chevron
-// at the right edge (its name is "Show full, message from …"). The row's one `button` (`aria-expanded`) is that hint, stretched by a pseudo-element over the whole card, so a
+// at the right edge (its name is "Show full, message from …"); a short message the card already shows whole has no chevron. The row's one `button` (`aria-expanded`) is that hint, stretched by a pseudo-element over the whole card, so a
 // click anywhere on a folded card, Enter, Space or O opens the full message in place with the same header row (the sender's
 // mark, the name, the time, the "To" circles) and the same button now reads "Show less". The button is one DOM node,
 // last in the head, folded or open, so keyboard focus survives a fold; once open only it is the target, so links,
@@ -141,6 +141,17 @@ function RemoteImagesStrip({ blocked, present, onLoad }: RemoteImages) {
   );
 }
 
+/** The fold's three states as the card draws them: folded or not, whole (nothing to open), and the `data-fold` value. */
+function foldState(fold: ThreadMessageProps['fold']) {
+  const folded = fold !== undefined && !fold.open;
+  return {
+    folded,
+    // A short message the folded card shows whole has nothing to open: no chevron, no click target.
+    whole: folded && fold.complete === true,
+    attr: fold ? (fold.open ? 'open' : 'folded') : undefined,
+  };
+}
+
 /** A full message in the thread. */
 export function ThreadMessage({
   id,
@@ -163,7 +174,7 @@ export function ThreadMessage({
 }: ThreadMessageProps) {
   const tip = useTooltipText();
   const fromId = `${id}-from`;
-  const folded = fold !== undefined && !fold.open;
+  const { folded, whole, attr } = foldState(fold);
   const excerptId = `${id}-excerpt`;
   const head = (
     <HeadLine
@@ -185,12 +196,13 @@ export function ThreadMessage({
       id={id}
       className="ui-thread-message"
       data-cursor={cursor ? 'true' : undefined}
-      data-fold={fold ? (fold.open ? 'open' : 'folded') : undefined}
+      data-fold={attr}
+      data-complete={whole ? 'true' : undefined}
       aria-labelledby={fromId}
     >
       <header className="ui-thread-message__head" data-fold={fold ? 'true' : undefined}>
         {head}
-        {fold ? (
+        {fold && !whole ? (
           <FoldButton
             id={id}
             from={from}

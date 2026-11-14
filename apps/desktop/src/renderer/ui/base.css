@@ -94,8 +94,8 @@ table {
   font-variant-numeric: tabular-nums;
 }
 
-/* One focus ring everywhere (DESIGN 4.6, 11): 2px accent with a 2px gap (none on a filled button or a field, below),
-   3px under Increase Contrast through --focus-width. Pointer focus shows no ring. */
+/* One focus ring everywhere (DESIGN 4.6, 11): 2px accent with a 2px gap, 3px
+   under Increase Contrast through --focus-width. Pointer focus shows no ring. */
 :focus-visible {
   outline: var(--focus-width) solid var(--accent);
   outline-offset: var(--focus-gap);
@@ -103,21 +103,6 @@ table {
 
 :focus:not(:focus-visible) {
   outline: none;
-}
-
-/* A filled button draws its own edge, so the ring hugs it: no gap, or the ring reads as edge, white gap and ring.
-   Text buttons, icon buttons and rows keep the gap. Every button family names its own focus rule at (0,2,0), so this
-   carries the element type to win and covers any button that sets data-variant='filled' (Button, compose, onboarding,
-   calendar, the surfaces family: the fatal screen's Restart engine). The ring is the fill's own colour, so the inset
-   sheen and shade (--press-hi / --press-lo) would read as a second, inner edge: a focused filled button drops them and
-   shows the fill plus one flush 2px ring. The unfocused look and the :active swap are untouched. */
-button[data-variant='filled']:focus-visible,
-[role='button'][data-variant='filled']:focus-visible,
-a[data-variant='filled']:focus-visible {
-  /* Half the ring sits over the fill's own edge: at offset 0 the two anti-aliased curves meet at the corners and leave a
-     faint seam inside the ring. */
-  outline-offset: calc(-0.5 * var(--focus-width));
-  box-shadow: none;
 }
 
 /* Selected text turns ink on the accent tint. --selection is opaque (the
