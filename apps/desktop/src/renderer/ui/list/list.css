@@ -933,7 +933,8 @@
   margin-top: var(--space-2);
 }
 /* A summary lands in place of the placeholder: opacity only, no layout (owner decision 2026-11-13). */
-.ui-focus-letter__summary[data-arrive='true'] {
+.ui-focus-letter__summary[data-arrive='true']:not(:has(.ui-summary__lead)),
+.ui-focus-letter__summary[data-arrive='true'] .ui-summary__text {
   animation: ui-summary-arrive var(--dur-arrive) var(--ease-out) both;
 }
 @keyframes ui-summary-arrive {

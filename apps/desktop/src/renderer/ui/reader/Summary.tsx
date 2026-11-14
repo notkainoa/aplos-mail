@@ -9,6 +9,8 @@ import type { SummaryProps } from '../props';
 export function Summary(props: SummaryProps) {
   const { clamp = 'none', id, lead } = props;
   const leading = lead ? <span className="ui-summary__lead">{lead}</span> : null;
+  // With a lead, the words get their own span so a fade can reach them and leave the chip standing.
+  const words = (text: string) => (lead ? <span className="ui-summary__text">{text}</span> : text);
   if (props.state === 'ready') {
     const { provider, local } = props.provenance;
     const provenance = `Summary by ${provider}${local ? ' on this Mac' : ''}`;
@@ -22,7 +24,7 @@ export function Summary(props: SummaryProps) {
         title={provenance}
       >
         {leading}
-        {props.text}
+        {words(props.text)}
         <span className="ui-summary__subject"> Subject: {props.subject}</span>
       </p>
     );
@@ -37,7 +39,7 @@ export function Summary(props: SummaryProps) {
       aria-busy={props.state === 'pending' ? true : undefined}
     >
       {leading}
-      {props.subject}
+      {words(props.subject)}
     </p>
   );
 }

@@ -194,7 +194,7 @@ export interface FocusLetterProps {
   id: string;
   /** Sender in `base` 600. */
   sender: string;
-  /** Due chip, if any. */
+  /** Due chip, if any: it leads the summary line (before the words), like a row's chip before the subject. */
   due?: DueInfo;
   /** Relative date on the right. */
   date: IsoDateTime;

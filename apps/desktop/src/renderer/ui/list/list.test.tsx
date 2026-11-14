@@ -327,6 +327,11 @@ describe('FocusSlot and FocusLetter', () => {
       /ui-focus-letter__meta[\s\S]*<\/time><\/div><div class="ui-focus-letter__summary[^"]*"[^>]*><p[^>]*class="ui-summary"[^>]*><span class="ui-summary__lead"><span class="ui-chip" data-kind="due"/,
       'the chip leads the summary line, where a row puts it before the subject, not after the sender',
     );
+    assert.match(
+      m,
+      /<span class="ui-summary__text">Two layout/,
+      'with a chip the words sit in their own span, so the arrival fade leaves the chip standing',
+    );
     assert.match(m, /10:00 AM<\/time>/);
     assert.match(
       m,
