@@ -62,7 +62,8 @@ export const NUDGE: ThreadReply = { ...REPLY, nudge: true };
 /** The screen's side of the actions. */
 export interface HomeDeps {
   snapshot(): HomeSnapshot;
-  setCursor(key: string | null): void;
+  /** `departed`: the row the cursor leaves because its mail went (a bulk action); Undo then hands the card back. */
+  setCursor(key: string | null, departed?: string): void;
   /** `api.thread.act`. */
   act: DataApi['thread']['act'];
   push(toast: PushedToast): string;

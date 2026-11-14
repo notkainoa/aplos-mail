@@ -84,7 +84,11 @@ function commitPicks(
     count: picked.length,
     settle: () => {
       bulk.selection.clear();
-      deps.setCursor(cursorAfter);
+      // The card's mail is among the picks: the cursor leaves it, and Undo should bring the card back to it.
+      deps.setCursor(
+        cursorAfter,
+        snapshot.key !== null && picked.includes(snapshot.key) ? snapshot.key : undefined,
+      );
     },
   });
 }
