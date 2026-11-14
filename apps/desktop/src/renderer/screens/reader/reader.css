@@ -18,21 +18,25 @@
   flex-direction: column;
   width: min(var(--reader-w), calc(100% - 2 * var(--gutter)));
   margin: 0 auto;
-  /* No bottom padding: the pinned bar's wrapper (fade, pill, 16 px) is the last thing in the letter. */
+  /* No bottom padding: the pinned bar's wrapper (tray, pill, 16 px) is the last thing in the letter. */
   padding: var(--space-7) 0 0;
 }
 /* The last card and the reply stub scroll fully clear of the pinned pill: the thread keeps room under it. */
 .aplos-reader:not([data-stage='one-by-one']) .aplos-reader__thread {
   margin-bottom: var(--space-6);
 }
-/* A dark pane under a white HTML sheet: the pane-coloured fade would read as a dark band across the sheet, so the sheet
+/* A dark pane under a white HTML sheet: the pane-coloured tray would read as a dark band across the sheet, so the sheet
    scrolls under the pill with no scrim (only the pill is opaque). */
-:root[data-theme='dark'] .aplos-reader:has(.aplos-mailframe__frame) .ui-reader-actions::before {
+:root[data-theme='dark']
+  .aplos-reader:has(.aplos-mailframe__frame[data-sheet='paper'])
+  .ui-reader-actions::before {
   content: none;
 }
 /* The same pill then crosses a white sheet as well as the dark pane: its 14 % ring vanishes against both, so here the
    1 px ring is the ink mixed 40 % into --paper, a mid tone that reads on the dark pane and on the white sheet. */
-:root[data-theme='dark'] .aplos-reader:has(.aplos-mailframe__frame) .ui-reader-actions__bar {
+:root[data-theme='dark']
+  .aplos-reader:has(.aplos-mailframe__frame[data-sheet='paper'])
+  .ui-reader-actions__bar {
   box-shadow:
     0 0 0 var(--hairline) color-mix(in srgb, var(--ink) 40%, var(--paper)),
     var(--elev-float);

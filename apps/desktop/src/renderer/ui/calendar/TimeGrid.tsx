@@ -59,6 +59,21 @@ interface DragRun {
   pointerId: number;
 }
 
+/**
+ * The hour label the scroller's bottom edge would cut in half sits just below the edge instead: the grid opens a few
+ * pixels earlier, so the visible window ends between two labels. Opening only; scrolling afterwards is the reader's.
+ */
+function clearLabelAtEdge(scroller: HTMLElement): void {
+  const edge = scroller.getBoundingClientRect().bottom;
+  for (const label of scroller.querySelectorAll('.ui-calendar-grid__hour')) {
+    const box = label.getBoundingClientRect();
+    if (box.top < edge && box.bottom > edge) {
+      scroller.scrollTop = Math.max(0, scroller.scrollTop - (edge - box.top) - 1);
+      return;
+    }
+  }
+}
+
 /** Pixels the pointer must travel before a press becomes a drag, so a click still selects. */
 const DRAG_SLOP = 4;
 
@@ -119,14 +134,20 @@ export function TimeGrid(props: CalendarGridProps) {
       const perHour = track.offsetHeight / DAY_HOURS;
       if (perHour <= 0) return false;
       scroller.scrollTop = perHour * opensAt.current;
+      // The pane settles after the first layout (header rows, fonts), so the edge is checked again a frame later.
+      frame = requestAnimationFrame(() => clearLabelAtEdge(scroller));
       return true;
     };
-    if (open() || typeof ResizeObserver === 'undefined') return;
+    let frame = 0;
+    if (open() || typeof ResizeObserver === 'undefined') return () => cancelAnimationFrame(frame);
     const observer = new ResizeObserver(() => {
       if (open()) observer.disconnect();
     });
     observer.observe(track);
-    return () => observer.disconnect();
+    return () => {
+      observer.disconnect();
+      cancelAnimationFrame(frame);
+    };
   }, [view]);
 
   useEffect(() => {

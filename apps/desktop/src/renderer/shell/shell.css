@@ -265,6 +265,10 @@
   margin-top: 0;
   padding-top: var(--space-2);
 }
+/* One notice at a time: while a send has failed (the error wins), the quiet demo-mail line steps aside. */
+.aplos-outbox + .aplos-sidebar__foot .ui-status-slot[data-status='demo'] {
+  display: none;
+}
 
 .aplos-rail {
   display: flex;

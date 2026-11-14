@@ -75,8 +75,8 @@ test('EventDetail: title, the when line with the comma day, swatch, video, invit
   assert.match(out, />Invite from Priya</);
   assert.match(out, /Open the invite email · O/);
   assert.match(out, />Guests</);
-  assert.match(out, /organizer/);
-  assert.match(out, />you</);
+  assert.match(out, />Organizer</);
+  assert.match(out, />\(you\)</);
   assert.match(out, /Going/);
   assert.match(out, /Maybe/);
   assert.match(out, /Not answered/);
@@ -153,7 +153,7 @@ test('EventDetail worst case: long title and place, unbreakable name, one-letter
     { reply: reply(null) },
   );
   assert.ok(out.includes('T'.repeat(300)));
-  assert.match(out, /you, organizer/);
+  assert.match(out, /\(you\) · Organizer/);
   assert.match(out, /Declined/);
   assert.ok(out.includes('田中 さん') && out.includes('مينا') && out.includes('🎉'));
 });

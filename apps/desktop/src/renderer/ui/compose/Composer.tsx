@@ -90,6 +90,7 @@ export function Composer(props: ComposerProps) {
               onRetrySave={onRetrySave}
               dictation={dictation}
               onSend={props.onSend}
+              closeHint
               trailing={[
                 {
                   label: 'Attach',

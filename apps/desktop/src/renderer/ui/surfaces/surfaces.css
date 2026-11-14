@@ -1250,6 +1250,8 @@ html[data-real-key] .ui-part-tipwrap:has(> :focus-visible) > .ui-part-tip {
   -webkit-line-clamp: 2;
   overflow: hidden;
   overflow-wrap: anywhere;
+  /* A two-line message splits evenly, so no lone word hangs on the second line. */
+  text-wrap: balance;
 }
 /* A countdown keeps its number and unit on one line; a long recipient list shortens with an ellipsis. */
 .ui-toast__message[data-countdown] {

@@ -77,9 +77,9 @@ export function firstNameOf(from: string): string {
 }
 
 function guestRole(guest: EventGuest): string | undefined {
-  if (guest.isYou && guest.isOrganizer) return 'you, organizer';
-  if (guest.isYou) return 'you';
-  if (guest.isOrganizer) return 'organizer';
+  if (guest.isYou && guest.isOrganizer) return '(you) · Organizer';
+  if (guest.isYou) return '(you)';
+  if (guest.isOrganizer) return 'Organizer';
   return undefined;
 }
 

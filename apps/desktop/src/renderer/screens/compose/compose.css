@@ -91,8 +91,12 @@
   padding-block: var(--space-3);
 }
 .aplos-compose:not([data-cards='off']) .ui-composer__editor {
-  /* About 200 px: Send stays close to the words, and the field still grows with them. */
-  min-height: calc(var(--space-10) * 3 + var(--space-2));
+  /* About 40 % of the pane's height, at least 200 px and at most 384, so the card reaches down the pane instead of
+     hugging its top; the field still grows with the words. */
+  min-height: min(
+    max(calc(var(--space-10) * 3 + var(--space-2)), 40cqh),
+    calc(var(--space-10) * 6 + var(--space-6))
+  );
   margin-block: var(--space-6);
 }
 .aplos-compose[data-cards='a'] .ui-composer__to:not(:focus-within),
@@ -143,4 +147,19 @@
   font: var(--type-ui);
   font-weight: 500;
   letter-spacing: var(--track-ui);
+}
+
+/* The pane's own height is the container the editor's 40 % is taken from. */
+.aplos-compose .ui-composer__scroll {
+  container-type: size;
+}
+
+/* One From row in the compose page and the inline reply: the labels are as wide as the compose page's, so both values
+   start on the same edge; the address (a menu button with a chevron when 2+ accounts can be picked, plain text in a reply)
+   reads in the same type, and the button's own padding hangs into the label gap so its text lines up with the To value. */
+.ui-inline-reply .ui-recipient-field__label {
+  min-width: var(--space-8);
+}
+.aplos-from > .ui-button {
+  margin-left: calc(-1 * var(--space-3));
 }

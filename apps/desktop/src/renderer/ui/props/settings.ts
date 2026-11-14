@@ -10,7 +10,7 @@ export interface SettingRowProps {
   /** Setting name. */
   label: string;
   /** What the setting does, `small` `--dim`. */
-  description?: string;
+  description?: ReactNode;
   /** 'attention' shows the description with an alert icon in `--stamp-ink` (an account that needs reconnecting). */
   descriptionTone?: 'default' | 'attention';
   /** Quiet tag after the label, e.g. "Default". */

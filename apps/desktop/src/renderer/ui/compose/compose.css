@@ -721,17 +721,6 @@
   flex: 1;
   min-width: 0;
 }
-.ui-inline-reply__head > .ui-compose-btn {
-  margin-top: calc((var(--control-lg) - var(--control-sm)) / 2);
-}
-/* With a From row, Pop out floats at the head's top right, beside From: the To row below runs the full width, so Cc and
-   Bcc reach the gutter. Without one, Pop out stays in the To row, after Cc and Bcc. */
-.ui-inline-reply__head:has(.aplos-from) > .ui-compose-btn {
-  position: absolute;
-  top: calc((var(--control-lg) - var(--control-sm)) / 2);
-  right: var(--space-3);
-  margin-top: 0;
-}
 .ui-inline-reply__to .ui-recipient-field {
   font: var(--type-ui);
   letter-spacing: var(--track-ui);

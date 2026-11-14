@@ -208,6 +208,11 @@ test('InlineReply: the card, Send with its keycap, draft state, attach, more and
   const markup = html(reply());
   assert.match(markup, /<section[^>]*class="ui-inline-reply"[^>]*aria-label="Reply"/);
   assert.match(markup, /aria-label="Pop out reply"/);
+  // Pop out lives in the footer, after Attach and before More, like the compose page's footer icons; the head has none.
+  const footer = markup.slice(markup.indexOf('ui-compose-footer'));
+  assert.ok(footer.indexOf('aria-label="Attach"') < footer.indexOf('aria-label="Pop out reply"'));
+  assert.ok(footer.indexOf('aria-label="Pop out reply"') < footer.indexOf('aria-label="More"'));
+  assert.doesNotMatch(markup.slice(0, markup.indexOf('ui-compose-footer')), /Pop out reply/);
   // The tips are the real Tooltip (hover and keyboard focus), not a native title: only the names are in the markup.
   assert.match(markup, /aria-label="Attach"/);
   assert.match(markup, /aria-label="More"/);

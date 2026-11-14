@@ -35,6 +35,7 @@ import {
   removeToken,
   resultRow,
   snippetAround,
+  snippetFit,
   withoutGreeting,
   returnReady,
   searchPage,
@@ -249,7 +250,7 @@ test('the offer row sits under local results; a no-match carries the offer itsel
   assert.equal(hit.remoteLine?.kind, 'offer');
   assert.equal(hit.noMatch, null);
   const miss = searchPage(state, LOCAL([]), 1_000);
-  assert.equal(miss.noMatch, 'No mail matches ‘dentist’');
+  assert.equal(miss.noMatch, 'No mail matches “dentist”');
   assert.equal(miss.noMatchOffer, true);
   assert.equal(miss.remoteLine, null);
 });
@@ -458,6 +459,22 @@ test('a snippet whose match sits far in starts a few words before it, one leadin
   );
   assert.equal(snippetAround(text, ['printer']), text, 'a match near the start is left alone');
   assert.equal(snippetAround(text, ['nothing']), text, 'no match, no cut');
+});
+
+test('a snippet is cut after a whole word, keeps its match, and short text is left alone', () => {
+  const text = '…can close out the project. The two layout directions are ready';
+  assert.equal(snippetFit(text, ['project']), '…can close out the project…');
+  assert.equal(
+    snippetFit('Our project review is Friday at ten', ['project']),
+    'Our project review is…',
+  );
+  assert.equal(snippetFit('A short line', ['line']), 'A short line');
+  const long = 'Replacement parts arrive in the supercalifragilisticexpialidocious crate';
+  assert.ok(
+    snippetFit(long, ['supercalifragilisticexpialidocious']).includes(
+      'supercalifragilisticexpialidocious',
+    ),
+  );
 });
 
 test('a result keeps its whole subject and windows only the snippet, past a leading greeting', () => {

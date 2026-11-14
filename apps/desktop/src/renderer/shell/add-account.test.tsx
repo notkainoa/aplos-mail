@@ -54,7 +54,8 @@ test('the choose state has the address field, the Google row and Cancel, and no 
   const out = html({});
   assert.match(out, /Add an account/);
   assert.match(out, /placeholder="name@example.com"/);
-  assert.match(out, /Or choose a provider/);
+  assert.doesNotMatch(out, /Or choose a provider/, 'one provider row needs no label');
+  assert.match(out, /Google/);
   assert.match(out, />Cancel</);
   assert.doesNotMatch(out, /Continue with Google/);
 });

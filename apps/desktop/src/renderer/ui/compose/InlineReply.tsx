@@ -1,12 +1,11 @@
 import { Fragment, useId } from 'react';
 import type { InlineReplyProps } from '../props';
 import { BlockedLine, ComposeFooter, ConflictBar } from './ComposeParts';
-import { Btn } from './parts';
 import { Suggestion } from './Suggestion';
 
 /**
  * The inline reply card under the message (`--elev-card`; the `settle` in and out is the motion runtime's, through
- * `ref`): the To line with Cc and Pop out, the text in `read`, then Send (⌘↩), the draft line, attach and ⋯ (DESIGN §6
+ * `ref`): the To line with Cc and Bcc, the text in `read`, then Send (⌘↩), the draft line, Esc closes, attach, Pop out and ⋯ (DESIGN §6
  * InlineReply, §7.6). While it is open it owns the filled button. The draft strip (`Suggestion`) is the card's sibling
  * right after it, hanging off its bottom edge, never inside it.
  */
@@ -42,14 +41,6 @@ export function InlineReply(props: InlineReplyProps) {
           >
             {recipients}
           </div>
-          <Btn
-            variant="icon"
-            icon="pop-out"
-            label="Pop out reply"
-            hint="Pop out reply"
-            commandId="compose.popOut"
-            onPress={() => onPopOut()}
-          />
         </div>
         {blocked?.field === 'to' ? blockedLine : null}
         <div className="ui-inline-reply__body">
@@ -77,6 +68,13 @@ export function InlineReply(props: InlineReplyProps) {
               hint: 'Attach a file',
               commandId: commands.attach,
               onPress: () => props.onAttach(),
+            },
+            {
+              label: 'Pop out reply',
+              icon: 'pop-out',
+              hint: 'Pop out reply',
+              commandId: 'compose.popOut',
+              onPress: () => onPopOut(),
             },
             {
               label: 'More',

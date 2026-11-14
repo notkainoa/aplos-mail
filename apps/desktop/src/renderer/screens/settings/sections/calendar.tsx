@@ -10,6 +10,7 @@ import { Switch } from '../../../ui/controls';
 import {
   CALENDAR_ACCESS_COPY,
   calendarAccessOf,
+  calendarCountLine,
   calendarEditingOf,
   calendarWriteRefused,
   EDITING_COPY,
@@ -25,6 +26,12 @@ import {
 import type { SectionProps } from './types';
 
 const WEEK_DAYS = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
+
+/** The account's calendar count when there is no access line to show (demo and non-Google accounts), else undefined. */
+function ownCalendars(data: SectionProps['data'], accountId: string): string | undefined {
+  const count = data.calendars?.filter(c => c.accountId === accountId).length ?? 0;
+  return count > 0 ? calendarCountLine(count) : undefined;
+}
 
 export function Calendar({ data, actions, host }: SectionProps) {
   const { calendar, ui } = data.settings;
@@ -60,7 +67,7 @@ export function Calendar({ data, actions, host }: SectionProps) {
               ? `${access?.line ?? ''} · ${
                   editing === 'on' ? CALENDAR_EDITING_COPY.on : CALENDAR_EDITING_COPY.off
                 }`
-              : access?.line;
+              : (access?.line ?? ownCalendars(data, a.id));
           const attention =
             refused || access?.kind === 'not-allowed' || access?.kind === 'needs-signin';
           const action = refused

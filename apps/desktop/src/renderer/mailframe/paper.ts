@@ -80,3 +80,11 @@ export function sheetOf(
     borderRadius: '0',
   };
 }
+
+/**
+ * Whether the frame is a light sheet (`paper`, which stands out on a dark pane) or sits on the card's own surface (`app`).
+ * A hook for the screen's CSS (the pinned bar's tray); never read back by script.
+ */
+export function sheetKind(plain: boolean, bg: string): 'paper' | 'app' {
+  return sheetOf(plain, bg).background === FRAME_PAPER.paper ? 'paper' : 'app';
+}

@@ -178,10 +178,13 @@ function AddressField(
   );
 }
 
+/** Google is the only provider row today, so the "Or choose a provider" label shows only once a second one exists. */
+const PROVIDER_COUNT = 1;
+
 function GoogleChoice({ onChooseGoogle }: Pick<AccountsStepProps, 'onChooseGoogle'>) {
   return (
     <div className="onb-group">
-      <Text variant="label">Or choose a provider</Text>
+      {PROVIDER_COUNT > 1 ? <Text variant="label">Or choose a provider</Text> : null}
       <div className="onb-rows">
         <ChoiceRow
           id="onb-provider-google"

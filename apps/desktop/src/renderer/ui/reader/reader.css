@@ -76,8 +76,9 @@
 /* ---------- Reader actions: the pinned bar ----------
    In the flow at the end of the letter, so nothing ever hides behind it at the end of a thread; it sticks to the pane's
    bottom while the letter is taller than the pane, and `margin-top: auto` rests it on the pane's bottom edge when the
-   letter is short. Its wrapper is the bar's height plus 24 px above and 16 px below; a pane-coloured scrim (--canvas, with a
-   soft blurred edge) spans the column and a margin either side behind it, so text never shows beside or through the pill.
+   letter is short. Its wrapper is the bar's height plus 24 px above and 16 px below; a flat, opaque pane-coloured tray
+   (--canvas, no fade) spans the column behind the pill and reaches 12 px above it, so text stops cleanly above the pill
+   instead of running under its edge.
    The wrapper and the scrim take no pointer events, only the pill does. Keycap badges overlay the buttons' corners and
    take no space. */
 
@@ -94,15 +95,13 @@
 .ui-reader-actions::before {
   content: '';
   position: absolute;
-  top: var(--space-6);
+  /* The wrapper pads 24 px above the pill, so this starts 12 px above it. */
+  top: calc(var(--space-6) - var(--space-3));
   bottom: 0;
-  /* The column's own width: all the text and card edges there are, so the fade never shows as a box wider than the
-     cards (a wider scrim lifted the pane's own colour beside them in the dark theme). */
+  /* The column's own width: all the text and card edges there are, so the tray never shows as a box wider than the
+     cards. A hard edge, no blur or gradient (DESIGN 2.4). */
   inset-inline: 0;
   background: var(--canvas);
-  /* The soft edge is a blurred shadow in the same colour (DESIGN 2.4 forbids gradients): solid 12 px above the pill,
-     fading over 24, with no spread sideways past the column. */
-  box-shadow: 0 calc(-1 * var(--space-6)) var(--space-6) calc(-1 * var(--space-3)) var(--canvas);
 }
 .ui-reader-actions__bar {
   box-sizing: border-box;

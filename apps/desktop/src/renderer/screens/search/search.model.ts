@@ -286,7 +286,7 @@ export interface SearchPageModel {
   readonly localCount: number;
   /** "From Google": ids that joined the window after Return, only hits not already local. */
   readonly remoteIds: readonly string[];
-  /** "No mail matches ‘dentist’." when nothing local matches and Google has nothing new. */
+  /** "No mail matches “dentist”." when nothing local matches and Google has nothing new. */
   readonly noMatch: string | null;
   /** The no-match line carries "Search all mail on Google · Return" itself (DESIGN §7.14). */
   readonly noMatchOffer: boolean;
@@ -430,7 +430,7 @@ export function searchPage(
   // A failed window is not "no mail": the error line says so, and the region announces nothing wrong.
   const nothing = settled && !localFailed && localCount === 0 && remoteIds.length === 0;
   const shown = formatSearch(currentSearch(state.field, state.tokens).tokens, query.text);
-  const noMatch = !empty && nothing ? `No mail matches ‘${shown}’` : null;
+  const noMatch = !empty && nothing ? `No mail matches “${shown}”` : null;
   // The no-match line carries the offer itself (EmptyLine's action), so the separate offer row hides.
   const line = noMatch && remoteLine?.kind === 'offer' ? null : remoteLine;
 
@@ -506,6 +506,27 @@ export function snippetAround(
   return `…${text.slice(start)}`;
 }
 
+/** About how many characters of snippet the cell shows; the cut falls on a word so no word is left half-drawn. */
+const SNIPPET_FIT = 25;
+/**
+ * The snippet cut after a whole word, with a "…" when text follows. The match always stays inside the kept text, so
+ * the cell's own ellipsis rarely has to cut a word in half.
+ */
+export function snippetFit(text: string, terms: readonly string[], fit = SNIPPET_FIT): string {
+  if (text.length <= fit) return text;
+  const lower = text.toLowerCase();
+  const ends = terms
+    .map(t => t.trim().toLowerCase())
+    .filter(t => t.length > 0 && lower.includes(t))
+    .map(t => lower.indexOf(t) + t.length);
+  const matchEnd = Math.max(0, ...ends);
+  const back = matchEnd <= fit ? text.lastIndexOf(' ', fit) : -1;
+  const forward = text.indexOf(' ', Math.max(fit, matchEnd));
+  const end = back >= fit / 2 ? back : forward;
+  if (end < 0) return text;
+  return `${text.slice(0, end).replace(/[\s,;:.\u2013\u2014-]+$/, '')}…`;
+}
+
 /** "Hi Alex," or "Dear Dr. Rao," at the start of a snippet: a greeting says nothing about why the thread matched. */
 const GREETING = /^(?:hi|hello|hey|dear|good (?:morning|afternoon|evening))\b[^,\n]{0,30},\s+/i;
 
@@ -541,7 +562,7 @@ export function resultRow(
     // The subject is shown whole (the cell ellipsises its own end); only the snippet is windowed to the match.
     primary: thread.subject || '(no subject)',
     secondary: thread.snippet
-      ? snippetAround(withoutGreeting(thread.snippet), highlight)
+      ? snippetFit(snippetAround(withoutGreeting(thread.snippet), highlight), highlight)
       : undefined,
     highlight,
     unread: thread.unread,

@@ -54,7 +54,7 @@ export function ComposeFooter(props: {
   dictation?: DictationState;
   onSend: () => void;
   trailing: readonly FooterAction[];
-  /** The inline reply's "Esc closes" line: Esc closes the card and keeps the draft. */
+  /** The quiet "Esc closes" line, in the inline reply and the compose page alike: Esc closes and keeps the draft. */
   closeHint?: boolean;
 }) {
   const { commands, draftState, onRetrySave, dictation, onSend, trailing, closeHint } = props;
