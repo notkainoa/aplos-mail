@@ -1,5 +1,7 @@
 import type { EngineServices } from '../../runtime/services';
 import { setupSessionOpen } from '../../methods/setup';
+import { StoreError } from '../../store/port';
+import { splitId } from '../../views/compile';
 import { catchUpSummaries, sweepFollowups } from './backfill';
 import { hexId } from '../../sync/connect-sessions';
 import type { ModelRef } from '@aplos/contract';
@@ -18,6 +20,8 @@ import { featureOf, nextFollowAt, queueSummary, type JobRow } from './jobs';
  */
 
 const CONCURRENCY = 2;
+/** Due rows read per round: provider jobs still cap at CONCURRENCY, but wake sentinels batch in one pass. */
+const ROUND_LIMIT = 128;
 const MAX_ATTEMPTS = 5;
 /** Gate-paused passes retry the whole queue this far out. */
 const PAUSE_MS = 30 * 60_000;
@@ -158,7 +162,16 @@ function logOutcome(
   started: number,
 ): void {
   const feature = featureOf(row.kind);
-  const model = aiSettings(services).features[feature] as ModelRef | undefined;
+  // The model the job was queued under, not whatever Settings holds at settle time — the payload stamp is
+  // what `AiJob.model` already surfaces; a job enqueued without one falls back to the configured feature.
+  let model: ModelRef | undefined;
+  try {
+    const stamped = (JSON.parse(row.payload) as { model?: unknown }).model;
+    if (typeof stamped === 'object' && stamped !== null) model = stamped as ModelRef;
+  } catch {
+    /* a malformed payload falls through to the settings read */
+  }
+  model ??= aiSettings(services).features[feature];
   if (outcome.state === 'done')
     services.log.event('ai.job.done', {
       job: String(row.id),
@@ -236,19 +249,6 @@ function failSummary(services: EngineServices, row: JobRow): void {
   }
 }
 
-/** Removes a job row outright — the `ai:backfill` sentinel's one-shot lifecycle. */
-function drop(services: EngineServices, row: JobRow): void {
-  try {
-    services.store.commit({
-      opId: `ai-drop-${row.id}-${hexId(services.randomBytes, 'd')}`,
-      origin: 'system',
-      writes: [{ kind: 'job', action: 'delete', id: row.id }],
-    });
-  } catch {
-    // A leftover row just blocks the next backfill enqueue until it is cleaned up — never fails the run.
-  }
-}
-
 const resetDone = new WeakSet<object>();
 /** The day a `budget_exhausted` event was last logged, per engine — a spent cap warns once, then sleeps till tomorrow. */
 const budgetWarned = new WeakMap<object, string>();
@@ -273,7 +273,7 @@ export async function runJobs(services: EngineServices, now: number): Promise<vo
     /* the wake sentinel and the sweep re-arm together at the next pass */
   }
   for (;;) {
-    const rows = dueJobs(services, now, CONCURRENCY);
+    const rows = dueJobs(services, now, ROUND_LIMIT);
     if (!rows.length) return;
     // An open setup session means the backfill is still being composed — don't race it. Push the due rows out a
     // minute (like the cap pause) so the timer loop sleeps instead of re-firing on rows that are still due.
@@ -303,40 +303,61 @@ export async function runJobs(services: EngineServices, now: number): Promise<vo
       return;
     }
     let handled = 0;
-    await Promise.all(
-      rows.map(async row => {
-        if (!claim(services, row, now)) return;
-        // A due 'wake' sentinel never spends the provider path: a 'followup-wake' only meant "a thread may have
-        // aged into Follow up" (the pass-top sweep already did that); an 'ingest:' sentinel asks for the touched
-        // thread's eligibility check (`queueSummary` decides whether a `summary` job is due), and 'ai:backfill'
-        // a settings/account change left behind catches existing mail up.
-        if (row.kind === 'wake') {
-          // 'ai:backfill' is deleted after it fires, not settled: its singleton key must accept the NEXT
-          // settings/account/consent change (an INSERT OR IGNORE over a settled row would never re-run).
-          const backfill = row.key === 'ai:backfill';
+    // Due 'wake' sentinels run in one batched pass: every wake action is idempotent under the job/summary
+    // singleton keys, so there is no claim, and the whole set is deleted in a single commit — a delivery
+    // burst must not spend a claim-plus-settle pair per touched thread. Deleting (not settling) is the whole
+    // lifecycle: a sentinel has no retry state worth keeping, `settle` only writes over `running` rows, and
+    // every re-arm path (`aiIngest`'s upsert, `ensureFollowWake`, `requestAiCatchUp`) inserts fresh anyway —
+    // so a fired wake row is dropped, not left to accumulate.
+    const wakes = rows.filter(r => r.kind === 'wake');
+    if (wakes.length) {
+      const drops: { kind: 'job'; action: 'delete'; id: number }[] = [];
+      for (const row of wakes) {
+        try {
+          if (row.key.startsWith('ingest:')) {
+            // `splitId`, not a delimiter cut: account ids may carry a ':' of their own.
+            const ref = services.store.read(q => splitId(q, row.key.slice(7)));
+            if (ref) queueSummary(services, ref.accountId, ref.remoteId);
+          } else if (row.key === 'ai:backfill') catchUpSummaries(services);
+        } catch (error) {
           try {
-            if (row.key.startsWith('ingest:')) {
-              const i = row.key.indexOf(':', 7);
-              if (i > 7) queueSummary(services, row.key.slice(7, i), row.key.slice(i + 1));
-            } else if (backfill) catchUpSummaries(services);
+            services.log.event('ai.backfill_failed', {
+              code: error instanceof StoreError ? error.code : 'ai.ingest',
+            });
           } catch {
-            /* a sentinel that cannot queue settles done; the next ingest or settings change re-arms it */
+            /* a logless host keeps the pass moving */
           }
-          handled++;
-          if (backfill) drop(services, row);
-          else settle(services, row, { state: 'done' });
-          return;
         }
-        handled++;
-        const started = services.clock.now();
-        const outcome = await executeJob(services, row, now);
-        logOutcome(services, row, outcome, started);
-        settle(services, row, outcome);
-        // A summary job that will not run again clears its `pending` placeholder to `failed` (a Home row
-        // collapses); a retryable 'failed' attempt keeps it while the queue retries.
-        if (row.kind === 'summary' && (outcome.state === 'dead' || outcome.state === 'skipped'))
-          failSummary(services, row);
-      }),
+        drops.push({ kind: 'job', action: 'delete', id: row.id });
+      }
+      try {
+        services.store.commit({
+          opId: `ai-wakes-${now}-${hexId(services.randomBytes, 'w')}`,
+          origin: 'system',
+          writes: drops,
+        });
+        handled += wakes.length;
+      } catch {
+        // The rows stay queued and fire again next pass (every wake action is idempotent); NOT counting them
+        // also means a store that persistently refuses the commit ends the run instead of spinning.
+      }
+    }
+    await Promise.all(
+      rows
+        .filter(row => row.kind !== 'wake')
+        .slice(0, CONCURRENCY)
+        .map(async row => {
+          if (!claim(services, row, now)) return;
+          handled++;
+          const started = services.clock.now();
+          const outcome = await executeJob(services, row, now);
+          logOutcome(services, row, outcome, started);
+          settle(services, row, outcome);
+          // A summary job that will not run again clears its `pending` placeholder to `failed` (a Home row
+          // collapses); a retryable 'failed' attempt keeps it while the queue retries.
+          if (row.kind === 'summary' && (outcome.state === 'dead' || outcome.state === 'skipped'))
+            failSummary(services, row);
+        }),
     );
     if (!handled) return;
     // A round finished; loop while more work is due right now — an ingest sentinel's `summary` job lands here.

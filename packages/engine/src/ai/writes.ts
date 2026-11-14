@@ -315,21 +315,46 @@ function aiIngest(batch: IngestBatch, tx: CommitExtensionTx): void {
   // changes no summary input — otherwise one first sync writes a sentinel per stored row.
   if ((batch.step !== undefined && batch.step !== 'incremental') || batch.origin === 'import')
     return;
-  let armed = false;
-  for (const m of batch.messages) {
-    if (!m.added) continue;
-    const r = tx.run(
-      `INSERT INTO jobs(kind, key, priority, payload, state, next_at) VALUES('wake', ?, 5, '{}', 'queued', ?)
-       ON CONFLICT(key) DO UPDATE SET state = 'queued', attempts = 0, next_at = excluded.next_at
-       WHERE jobs.state NOT IN ('queued', 'running')`,
-      `ingest:${m.accountId}:${m.remoteThreadId}`,
-      tx.now(),
-    );
-    if (r.changes) armed = true;
+  // A slip inside this hook must cost only the sentinel writes, never the caller's mail: the savepoint scopes
+  // the rollback, and the bounded `ai:backfill` sentinel still asks the runner for a catch-up over whatever
+  // this batch missed (the runner logs a catch-up failure under `ai.backfill_failed`).
+  try {
+    tx.run('SAVEPOINT ai_i');
+    let armed = false;
+    for (const m of batch.messages) {
+      // A sentinel is written only where it can lead: new mail on an AI-allowed account (the EXISTS joins the
+      // account row into the insert) — not a stored search hit, not a draft, not mail filed into Spam/Trash.
+      if (!m.added || m.origin === 'search' || m.flags.draft) continue;
+      if (m.roles.includes('spam') || m.roles.includes('trash')) continue;
+      const r = tx.run(
+        `INSERT INTO jobs(kind,key,priority,payload,state,next_at)
+         SELECT 'wake',?,5,'{}','queued',? WHERE EXISTS(SELECT 1 FROM accounts WHERE id=? AND ai_allowed=1)
+         ON CONFLICT(key) DO UPDATE SET state='queued',attempts=0,next_at=excluded.next_at
+         WHERE jobs.state NOT IN ('queued','running')`,
+        `ingest:${m.accountId}:${m.remoteThreadId}`,
+        tx.now(),
+        m.accountId,
+      );
+      if (r.changes) armed = true;
+    }
+    // One mark per commit no matter the page size: the `AiJob` change row is what pokes the `jobs` deadline
+    // (`observeCommits` in runtime/engine), and a bulk sync must not turn one row per message into a row storm.
+    if (armed) tx.mark('AiJob', 'ingest', 'u');
+    tx.run('RELEASE ai_i');
+  } catch {
+    try {
+      tx.run('ROLLBACK TO SAVEPOINT ai_i');
+      tx.run('RELEASE ai_i');
+      // The thread-level detail is gone — arm the bounded catch-up so a retry can still find this mail.
+      tx.run(
+        `INSERT OR IGNORE INTO jobs(kind,key,priority,payload,state,next_at) VALUES('wake','ai:backfill',9,'{}','queued',?)`,
+        tx.now(),
+      );
+      tx.mark('AiJob', 'ingest', 'u');
+    } catch {
+      /* even the fallback slipped — the mail commit still lands */
+    }
   }
-  // One mark per commit no matter the page size: the `AiJob` change row is what pokes the `jobs` deadline
-  // (`observeCommits` in runtime/engine), and a bulk sync must not turn one row per message into a row storm.
-  if (armed) tx.mark('AiJob', 'ingest', 'u');
 }
 
 export const aiWritesExtension: CommitExtension = {

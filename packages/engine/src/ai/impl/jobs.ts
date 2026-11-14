@@ -5,7 +5,7 @@ import { FLAG } from '../../store/commit';
 import type { EngineServices } from '../../runtime/services';
 import { splitId } from '../../views/compile';
 import { hexId } from '../../sync/connect-sessions';
-import { backgroundGate } from './gate';
+import { aiSettings, backgroundGate } from './gate';
 
 /**
  * Job queue helpers (ARCH 8.1). Singleton keys `summary:<thread>:<input_hash>` make a second enqueue of the same
@@ -174,6 +174,9 @@ export function queueSummary(
   // A landed summary for this exact input never re-runs — the `done` job under the same key is the dedupe.
   if (summary?.state === 'ready') return;
   if (job === undefined) {
+    // The model goes in the payload so a settled row logs the model it ran under, not the one Settings
+    // happens to hold later (`logOutcome`), and `jobOf` surfaces it as `AiJob.model`.
+    const model = aiSettings(services).features.summaries;
     enqueue(services, `ai-ingest-${info.threadRowId}-${hash}-${hexId(services.randomBytes, 'q')}`, {
       kind: 'summary',
       key,
@@ -184,6 +187,7 @@ export function queueSummary(
         accountId,
         remoteThreadId,
         inputHash: hash,
+        ...(model ? { model } : {}),
       },
     });
   } else if (job.state === 'dead' || job.state === 'skipped' || job.state === 'done') {

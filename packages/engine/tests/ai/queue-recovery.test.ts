@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import type { EngineMethodName, Frame, Input, Output } from '@aplos/contract';
 import type { LogRecord } from '@aplos/contract/log/events';
+import { openSqlite } from '../../../../apps/desktop/src/host/sqlite';
 import { createLogger } from '../../src/diag/log';
 import { createEngine, laneExtensions } from '../../src/index';
 import { openStore } from '../../src/store';
@@ -384,4 +385,102 @@ test('the sentinel -> runner -> queueSummary path writes pending end to end', as
   const row = await threadSummary(w);
   assert.equal(row.state, 'ready');
   assert.equal(row.text, 'Ada asked about the invoice.');
+});
+
+test('write-side eligibility: kept-out accounts, search hits, drafts and Spam/Trash mail arm nothing', async () => {
+  const w = await world(stubTransport({}));
+  w.engine.services.store.commit({
+    opId: 'mixed',
+    origin: 'sync',
+    step: 'incremental',
+    writes: [
+      { ...accountWrite, aiAllowed: false },
+      { ...accountWrite, id: 'acct-2', aiAllowed: true },
+      {
+        kind: 'folder',
+        accountId: 'acct-2',
+        remoteId: 'SPAM',
+        name: 'Spam',
+        role: 'spam',
+        folderKind: 'system',
+      },
+      ...folderWrites.map(f => ({ ...f })),
+      // An AI-off account never sees a sentinel, even for live incremental mail.
+      msg('m1', 'T-kept', 5),
+      // A stored server-search hit, a draft and Spam-only mail never arm one either.
+      msg('m2', 'T-search', 6, { accountId: 'acct-2', origin: 'search' }),
+      msg('m3', 'T-draft', 7, {
+        accountId: 'acct-2',
+        flags: { seen: true, flagged: false, draft: true, fromMe: true },
+      }),
+      msg('m4', 'T-spam', 8, { accountId: 'acct-2', folders: [{ folder: 'SPAM' }] }),
+      // The one message that can lead somewhere arms its thread.
+      msg('m5', 'T-real', 9, { accountId: 'acct-2' }),
+    ],
+  });
+  assert.deepEqual(
+    jobsOf(w, 'wake').map(j => j.key),
+    ['ingest:acct-2:T-real'],
+  );
+});
+
+test('a slip in the ingest hook rolls back only its own writes; mail still lands and the catch-up arms', async () => {
+  const w = await world(stubTransport({}));
+  seedMail(w);
+  // A second connection plants a booby trap: every `ingest:` sentinel insert aborts inside the hook.
+  const raw = openSqlite(w.file.path);
+  try {
+    raw.exec(`CREATE TRIGGER fail_ingest BEFORE INSERT ON jobs WHEN NEW.key LIKE 'ingest:%'
+              BEGIN SELECT RAISE(ABORT, 'forced'); END`);
+    w.engine.services.store.commit({
+      opId: 'during-fault',
+      origin: 'sync',
+      step: 'incremental',
+      writes: [msg('m9', 'T-late', 9)],
+    });
+    // The mail commit landed anyway — the savepoint contained the hook's failure.
+    const stored = w.engine.services.store.read(q =>
+      q.get<{ remote_id: string }>("SELECT remote_id FROM messages WHERE remote_id = 'm9'"),
+    );
+    assert.equal(stored?.remote_id, 'm9');
+    // And the bounded catch-up sentinel stands in for the thread-level detail the slip dropped.
+    assert.equal(jobsOf(w, 'wake').find(j => j.key === 'ai:backfill')?.state, 'queued');
+  } finally {
+    raw.exec('DROP TRIGGER IF EXISTS fail_ingest');
+    raw.close();
+  }
+});
+
+test('an account id containing a colon still resolves through the sentinel', async () => {
+  const w = await world(stubTransport({}));
+  const COLON = 'acct:one';
+  w.engine.services.store.commit({
+    opId: 'colon',
+    origin: 'sync',
+    step: 'incremental',
+    writes: [
+      { ...accountWrite, id: COLON, aiAllowed: true },
+      ...folderWrites.map(f => ({ ...f, accountId: COLON })),
+      msg('c1', 'T-colon', 5, { accountId: COLON }),
+    ],
+  });
+  await consentNow(w);
+  await runJobs(w.engine.services, w.clock.now());
+  assert.equal((await threadSummary(w, 'T-colon', COLON)).state, 'ready');
+});
+
+test('the queued job carries its model and the done log reports it', async () => {
+  const w = await world(stubTransport({}));
+  seedMail(w);
+  await consentNow(w);
+  await runJobs(w.engine.services, w.clock.now());
+  const payload = w.engine.services.store.read(
+    q => q.get<{ payload: string }>("SELECT payload FROM jobs WHERE kind = 'summary'")?.payload,
+  );
+  assert.equal(
+    (JSON.parse(payload ?? '{}') as { model?: { model?: string } }).model?.model,
+    'openai/gpt-oss-120b',
+  );
+  const done = w.lines.find(l => l.event === 'ai.job.done');
+  assert.equal(done?.data.model, 'openai/gpt-oss-120b');
 });
