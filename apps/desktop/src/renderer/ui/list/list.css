@@ -1268,6 +1268,8 @@
   flex: 1 1 auto;
   flex-wrap: wrap;
   align-items: center;
+  /* One line is always reserved, so the hovered row's preview (drawn in this slot) never changes the bar's height. */
+  min-height: 1lh;
   gap: var(--space-1);
   min-width: 0;
   margin: 0;
