@@ -6,6 +6,7 @@
 import type { MouseEvent, ReactNode, Ref } from 'react';
 import type { CommandId, IconName, LiteralKey } from '../props';
 import { displayChord } from '../buttons-keys/keyHints';
+import { Tooltip } from '../buttons-keys/Tooltip';
 import { Icon } from './icons';
 import { keycapsFor } from './keycaps';
 
@@ -70,8 +71,7 @@ export function Btn(props: BtnProps) {
   } = props;
   const caps = keys ? [keys as string] : keycapsFor(commandId);
   const base = props.hint ?? (variant === 'icon' ? label : undefined);
-  const tooltip = base ? (caps.length ? `${base} (${caps.join(' ')})` : base) : undefined;
-  return (
+  const button = (
     <button
       type="button"
       ref={props.ref}
@@ -84,7 +84,6 @@ export function Btn(props: BtnProps) {
       aria-pressed={props.pressed}
       aria-controls={props.controls}
       aria-expanded={props.expanded}
-      title={tooltip}
       disabled={props.disabled}
       tabIndex={props.tabIndex}
       onClick={(event: MouseEvent<HTMLButtonElement>) => props.onPress(event.currentTarget)}
@@ -96,5 +95,13 @@ export function Btn(props: BtnProps) {
         <Keycaps commandId={commandId} literal={keys} />
       ) : null}
     </button>
+  );
+  // The real Tooltip, not a native title: it shows on hover and on keyboard focus, carries the keycaps, and flips to
+  // the side with room so a footer at the window's edge never clips it.
+  if (!base) return button;
+  return (
+    <Tooltip label={base} commandId={commandId} keys={keys} placement="above">
+      {button}
+    </Tooltip>
   );
 }

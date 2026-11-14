@@ -387,6 +387,9 @@
 .ui-empty-line__copy > .ui-list-icon {
   color: var(--faint);
 }
+:root[data-theme='dark'] .ui-empty-line__copy > .ui-list-icon {
+  color: var(--dim); /* --faint is 3.6:1 here; the mark takes the AA text step */
+}
 .ui-empty-line__text,
 .ui-empty-line__detail {
   margin: 0;
@@ -509,8 +512,10 @@
 }
 
 .ui-list-group + .ui-list-group,
+.ui-list-group + .ui-low-band,
 .ui-low-band + .ui-list-group,
 .ui-focus-slot + .ui-list-group {
+  /* One gap between Home's sections (DESIGN 7.2 pins none), the Low band included. */
   margin-top: var(--group-gap);
 }
 .ui-list-group .ui-list-group {
@@ -708,8 +713,13 @@
   color: var(--dim);
 }
 .ui-list-row__hit {
+  /* Bold plus a soft wash, so a match still shows on an already bold subject, in both themes. */
+  border-radius: var(--radius-xs);
+  background: var(--accent-wash);
   color: var(--ink);
   font-weight: 600;
+  -webkit-box-decoration-break: clone;
+  box-decoration-break: clone;
 }
 
 .ui-list-row__meta {
@@ -1182,6 +1192,10 @@
 }
 .ui-low-sheet__panel .ui-list-row {
   --ui-row-base: var(--paper);
+}
+/* The sheet's slab is a rounded run of rows on the paper card: the cursor bar sits well inside it, clear of the curve. */
+.ui-low-sheet__row .ui-list-row[data-cursor='true']::before {
+  left: var(--space-2);
 }
 .ui-low-sheet__head {
   display: flex;

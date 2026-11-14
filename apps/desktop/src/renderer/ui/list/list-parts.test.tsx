@@ -150,10 +150,10 @@ describe('LowBand and LowSheet', () => {
     assert.match(text(m), /Field Notes 1 Unsubscribe/);
     assert.match(text(m), /Winter light, in five short notes\./);
     assert.match(text(m), /Mark all 3 done/, 'the sheet has its own button');
-    assert.match(
+    assert.doesNotMatch(
       text(render(<LowSheet open {...base} />)),
-      /Press → twice to mark all done/,
-      'the hint shows until a row is hovered',
+      /twice to mark all done/,
+      'no hint line: the filled button already names the key',
     );
     assert.match(
       m,

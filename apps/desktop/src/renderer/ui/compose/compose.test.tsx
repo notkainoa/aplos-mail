@@ -159,7 +159,8 @@ test('RecipientField is a combobox with a labelled listbox, removable people and
   assert.match(demo, /id="to-list"[^>]*role="listbox"/);
   assert.match(demo, /id="to-list-hana"[^>]*role="option"[^>]*aria-selected="true"/);
   assert.match(demo, /aria-label="Remove Jordan Park"/);
-  assert.match(demo, /title="Add Cc or Bcc \(⌘⇧C\)"/);
+  assert.match(demo, />Cc</);
+  assert.doesNotMatch(demo, /title="Add Cc or Bcc/);
   assert.match(demo, /value="ha"/);
   clean(demo);
 
@@ -207,8 +208,10 @@ test('InlineReply: the card, Send with its keycap, draft state, attach, more and
   const markup = html(reply());
   assert.match(markup, /<section[^>]*class="ui-inline-reply"[^>]*aria-label="Reply"/);
   assert.match(markup, /aria-label="Pop out reply"/);
-  assert.match(markup, /aria-label="Attach"[^>]*title="Attach a file \(⌘⇧A\)"/);
-  assert.match(markup, /aria-label="More"[^>]*title="More: format, schedule, discard \(⌘\/\)"/);
+  // The tips are the real Tooltip (hover and keyboard focus), not a native title: only the names are in the markup.
+  assert.match(markup, /aria-label="Attach"/);
+  assert.match(markup, /aria-label="More"/);
+  assert.doesNotMatch(markup, /title="Attach a file/);
   assert.match(markup, /data-variant="filled"[^>]*>.*Send.*<kbd[^>]*>⌘↩<\/kbd>/);
   assert.equal((markup.match(/data-variant="filled"/g) ?? []).length, 1, 'one filled button');
   assert.match(markup, /Draft saved/);
@@ -274,7 +277,7 @@ test('Composer: To row, heading-size subject, body, footer with Send, draft stat
   );
   assert.match(markup, /<footer[^>]*class="ui-composer__foot"/);
   assert.match(markup, /<kbd[^>]*>⌘↩<\/kbd>/);
-  assert.match(markup, /aria-label="Formatting"[^>]*title="Formatting \(⌘\/\)"/);
+  assert.match(markup, /aria-label="Formatting"/);
   assert.match(markup, /Draft saved/);
   assert.doesNotMatch(markup, /Polish suggests/);
   assert.doesNotMatch(markup, /is a suggestion/);

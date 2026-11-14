@@ -35,6 +35,19 @@ const reply = (answer: 'yes' | 'maybe' | 'no' | null): NonNullable<EventDetailPr
 const detail = (event: CalendarEventData, over: Partial<EventDetailProps> = {}): string =>
   html(<EventDetail event={event} presentation="popover" onMore={noop} onClose={noop} {...over} />);
 
+test('EventDetail guests: one shared answer is said once in the heading, not on every row', () => {
+  const same = ev('same', 'Offsite', '2026-10-30T11:00:00', '2026-10-30T12:00:00', {
+    guests: [
+      { name: 'Priya Raman', status: 'going', isOrganizer: true },
+      { name: 'Mina Cho', status: 'going' },
+    ],
+  });
+  const out = detail(same);
+  assert.match(out, /All going/);
+  assert.doesNotMatch(out, /ui-event-detail__status/, 'no per-row chip');
+  assert.doesNotMatch(detail(Q4), /All going/, 'mixed answers keep their rows');
+});
+
 test('EventDetail rsvp: nothing chosen, "Send reply" disabled until you choose, keys in the tooltips', () => {
   const out = detail(Q4, { reply: reply(null) });
   assert.match(out, /<h3[^>]*>Going\?<\/h3>/);

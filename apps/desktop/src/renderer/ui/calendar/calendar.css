@@ -460,10 +460,23 @@
   height: var(--space-5);
 }
 
+/* Bars take a deeper tint step than a timed tile; dark takes a deeper one still, so a quiet calendar (dusk) is not the
+   same muddy slate as the pane. */
+:root {
+  --bar-step: 1.5;
+}
+:root[data-theme='dark'] {
+  --bar-step: 2;
+}
+
 /* All-day and multi-day bars take a deeper step of their calendar's tint than a timed tile (1.5 times the event fill),
    so a calendar of a quiet colour still reads as that colour and not as grey. */
 .ui-calendar-grid__strip .ui-event-block[data-kind='event'] {
-  --ev-fill: color-mix(in srgb, var(--cal) calc(var(--event-fill) * 1.5), var(--canvas));
+  --ev-fill: color-mix(
+    in srgb,
+    var(--cal) calc(var(--event-fill) * var(--bar-step)),
+    var(--canvas)
+  );
 }
 
 /* A multi-day entry reads as one bar: each segment bridges the gap to the next column, and a continuing
@@ -932,7 +945,7 @@
   font: var(--type-small);
   letter-spacing: var(--track-small);
   font-variant-numeric: tabular-nums;
-  font-weight: 500;
+  font-weight: 600; /* in-month digits carry weight, so the month edge reads against the dim 400 digits beside it */
   color: var(--ink);
 }
 
@@ -1016,7 +1029,11 @@
 /* A multi-day entry is one bar through its week row: its calendar's tint and 2 px leading rule, each cell bridging the
    cell padding to the next, and a continuing cell drops the rule, its left corners and its repeated title. */
 .ui-calendar-grid__mev[data-bar='true'] {
-  --ev-fill: color-mix(in srgb, var(--cal) calc(var(--event-fill) * 1.5), var(--canvas));
+  --ev-fill: color-mix(
+    in srgb,
+    var(--cal) calc(var(--event-fill) * var(--bar-step)),
+    var(--canvas)
+  );
   --bridge: 0px;
   width: calc(100% + var(--bridge));
   padding-left: var(--space-2);
@@ -1270,6 +1287,18 @@
   font-weight: 500;
   letter-spacing: var(--track-small);
   color: var(--dim);
+}
+
+.ui-event-detail__label-note {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+  margin-left: var(--space-2);
+}
+
+.ui-event-detail__label-note .ui-cal-icon {
+  width: var(--icon-sm);
+  height: var(--icon-sm);
 }
 
 .ui-event-detail__plan {

@@ -7,7 +7,7 @@
 import { useEffect, useId, useLayoutEffect, useRef, type KeyboardEvent } from 'react';
 import type { LowSheetProps } from '../props';
 import { EmptyLine } from './EmptyLine';
-import { Action, Keycap } from './internal/Action';
+import { Action } from './internal/Action';
 import { formatCount } from './internal/format';
 import { useKeycapFor } from './internal/keys';
 import { ListBox } from './ListBox';
@@ -193,8 +193,8 @@ export function LowSheet({
                 })}
               </ListBox>
             </div>
-            {/* One row under the list, so hovering a row never moves anything: the hint (or the armed line; the
-                hovered row's preview is drawn over it, the hint keeping its box) on the left, the sheet's own button on the right. With the shell's announcer the
+            {/* One row under the list, so hovering a row never moves anything: the armed line, or the hovered row's preview
+                drawn in its place, on the left (no hint while idle: the button beside it names the key), the sheet's own button on the right. With the shell's announcer the
                 armed line is spoken once through it; otherwise the line is the live region. */}
             <div className="ui-low-sheet__bar">
               <span className="ui-low-sheet__bar-text">
@@ -204,13 +204,7 @@ export function LowSheet({
                   data-armed={armed ? 'true' : undefined}
                   data-covered={preview && !armed ? 'true' : undefined}
                 >
-                  {armed ? (
-                    armedLine(key, total)
-                  ) : (
-                    <>
-                      Press <Keycap chord={key} /> twice to mark all done
-                    </>
-                  )}
+                  {armed ? armedLine(key, total) : null}
                 </p>
                 {preview && !armed ? (
                   <p className="ui-low-sheet__preview" aria-live="off">

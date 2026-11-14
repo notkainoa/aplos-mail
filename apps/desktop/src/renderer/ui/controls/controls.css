@@ -42,6 +42,12 @@
 .ui-switch[data-state='on'] .ui-switch-thumb {
   transform: translateX(calc(var(--switch-w) - var(--switch-thumb) - 2 * var(--switch-pad)));
 }
+/* Dark: the off track is the 3:1 control edge as a solid fill, so the whole switch reads against the pane, not only a
+   hairline round a 1.4:1 fill. The thumb stays --paper, a clear step darker than the track. */
+:root[data-theme='dark'] .ui-switch:not([data-state='on'], :disabled, [aria-disabled='true']) {
+  background: var(--control-edge);
+  box-shadow: none;
+}
 .ui-switch:focus-visible {
   outline: var(--focus-width) solid var(--accent);
   outline-offset: var(--focus-gap);

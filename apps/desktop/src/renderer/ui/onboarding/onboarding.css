@@ -325,6 +325,13 @@
   margin-right: var(--space-2);
 }
 
+/* The footer is one quiet size: a text button there (Back) reads at the same `small` size as "Step N of 4". */
+.ui-onboarding-step__foot .ui-onb-button[data-variant='text'] {
+  font: var(--type-small);
+  font-weight: 500;
+  letter-spacing: var(--track-small);
+}
+
 /* The words say where you are. */
 .ui-onboarding-step__where {
   font: var(--type-small);
@@ -374,6 +381,12 @@
 
 .ui-choice-row[data-has-detail='true'] .ui-choice-row__end {
   align-self: flex-start;
+}
+
+/* A row that goes somewhere ends in a chevron that belongs to the whole row, not to its first line: centred on the row
+   even when the row has a second line. */
+.ui-choice-row[data-role='link'][data-has-detail='true'] .ui-choice-row__end {
+  align-self: center;
 }
 
 .ui-choice-row[data-has-detail='true'] .ui-choice-row__icon,

@@ -79,8 +79,8 @@ function crumbOf(
 ): PaneHeaderPart {
   return {
     lead: { kind: 'back', label: 'Back to Home', commandId: 'nav.back', onPress: onExit },
-    // The walk is Do now only, so the crumb says so; the sidebar's Home badge also counts Important updates.
-    crumb: { label: 'Do now', position: progress ?? undefined },
+    // The walk is Do now plus Back from Later, not the sidebar's Home badge, so the crumb names the walk, never a list.
+    crumb: { label: 'One by one', position: progress ?? undefined },
   };
 }
 

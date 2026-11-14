@@ -1288,8 +1288,15 @@ html[data-real-key] .ui-part-tipwrap:has(> :focus-visible) > .ui-part-tip {
     background-color var(--dur-hover) var(--ease-std),
     color var(--dur-hover) var(--ease-std);
 }
+/* Message left, actions right: the message fills the row, so every toast's last action ends on the same right edge and
+   the chips line up down a stack. The gap from the message to its first action is one 16 px (the 8 px flex gap plus this
+   8 px); a toast with no actions keeps the same 16 px right inset as one whose last chip ends there (the chip's own
+   8 px padding plus the toast's 8 px). */
 .ui-toast__message + .ui-toast__action {
   margin-left: var(--space-2);
+}
+.ui-toast__message:last-child {
+  padding-right: var(--space-2);
 }
 .ui-toast__action:focus-visible {
   outline: var(--focus-width) solid var(--accent);

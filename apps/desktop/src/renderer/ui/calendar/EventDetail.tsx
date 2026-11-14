@@ -14,6 +14,20 @@ const GUEST_STATUS = {
   none: { icon: 'circle', word: 'Not answered' },
 } as const;
 
+const ALL_WORD = {
+  going: 'All going',
+  maybe: 'All maybe',
+  declined: 'All declined',
+  none: 'None answered',
+} as const;
+
+/** One answer shared by two or more guests is said once, in the heading, instead of on every row. */
+function sharedAnswer(guests: readonly EventGuest[]): EventGuest['status'] | null {
+  const first = guests[0];
+  if (!first || guests.length < 2) return null;
+  return guests.every(guest => guest.status === first.status) ? first.status : null;
+}
+
 const ANSWERS: ReadonlyArray<{ id: RsvpAnswer; label: string; command: 'yes' | 'maybe' | 'no' }> = [
   { id: 'yes', label: 'Yes', command: 'yes' },
   { id: 'maybe', label: 'Maybe', command: 'maybe' },
@@ -91,6 +105,7 @@ export function EventDetail({
   const rsvpLabelId = `${uid}-going`;
   const isPlan = event.kind === 'plan';
   const guests = event.guests ?? [];
+  const shared = sharedAnswer(guests);
   const more = moreLabel(event);
   const answerRefs = useRef<Array<HTMLButtonElement | null>>([]);
 
@@ -262,7 +277,15 @@ export function EventDetail({
 
       {guests.length > 0 ? (
         <>
-          <h3 className="ui-event-detail__label">Guests</h3>
+          <h3 className="ui-event-detail__label">
+            Guests
+            {shared ? (
+              <span className="ui-event-detail__label-note">
+                <CalIcon name={GUEST_STATUS[shared].icon} />
+                {ALL_WORD[shared]}
+              </span>
+            ) : null}
+          </h3>
           <ul className="ui-event-detail__guests">
             {guests.map(guest => {
               const status = GUEST_STATUS[guest.status];
@@ -273,10 +296,12 @@ export function EventDetail({
                     {guest.name}
                     {role ? <span className="ui-event-detail__role">{role}</span> : null}
                   </span>
-                  <span className="ui-event-detail__status">
-                    <CalIcon name={status.icon} />
-                    {status.word}
-                  </span>
+                  {shared ? null : (
+                    <span className="ui-event-detail__status">
+                      <CalIcon name={status.icon} />
+                      {status.word}
+                    </span>
+                  )}
                 </li>
               );
             })}

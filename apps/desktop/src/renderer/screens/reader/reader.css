@@ -30,6 +30,13 @@
 :root[data-theme='dark'] .aplos-reader:has(.aplos-mailframe__frame) .ui-reader-actions::before {
   content: none;
 }
+/* The same pill then crosses a white sheet as well as the dark pane: its 14 % ring vanishes against both, so here the
+   1 px ring is the ink mixed 40 % into --paper, a mid tone that reads on the dark pane and on the white sheet. */
+:root[data-theme='dark'] .aplos-reader:has(.aplos-mailframe__frame) .ui-reader-actions__bar {
+  box-shadow:
+    0 0 0 var(--hairline) color-mix(in srgb, var(--ink) 40%, var(--paper)),
+    var(--elev-float);
+}
 .aplos-reader__letter[data-paper='true'] {
   display: flex;
   flex: 1 0 auto;
@@ -170,7 +177,8 @@
 /* The inline reply stays the --elev-card card it always is; inside it, its rows take the cards' 24 px inset so its
    text lines up with the messages' text above it. */
 .aplos-reader:not([data-cards='off']) .ui-inline-reply {
-  margin-top: var(--space-4);
+  /* 24 px under the message card (and its "Show quoted text" link), so the two read as separate things. */
+  margin-top: var(--space-6);
 }
 .aplos-reader:not([data-cards='off']) .ui-inline-reply__head {
   padding-left: var(--space-6);
