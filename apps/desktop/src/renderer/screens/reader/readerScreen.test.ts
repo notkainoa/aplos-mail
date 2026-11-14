@@ -128,7 +128,7 @@ test('the letter is the email card, then the stub and the pinned bar: no summary
 
 const EARLIER_THREAD = 'demo-work:design';
 
-test('earlier messages are compact cards: head and an excerpt ending in an ellipsis; a click or O opens one, aria-expanded says so', async () => {
+test('earlier messages are compact cards; a short one shown whole has no chevron, and O still opens it, aria-expanded says so', async () => {
   const world = await boot(EARLIER_THREAD);
   try {
     const id = EARLIER_THREAD;
@@ -140,8 +140,12 @@ test('earlier messages are compact cards: head and an excerpt ending in an ellip
     const card = (html: string, mid: string) =>
       html.slice(html.indexOf(`<article id="${mid}"`)).split('</article>')[0]!;
     assert.match(card(compact, first), /data-fold="folded"/);
-    assert.match(card(compact, first), /class="ui-thread-message__toggle" aria-expanded="false"/);
-    assert.match(card(compact, first), /ui-thread-message__excerpt" dir="auto">[^<]+[.!?…]</);
+    // The demo's earlier messages are short: the folded card shows each whole, so it has nothing to open (owner call
+    // 2026-11-14): no chevron, no "…".
+    assert.match(card(compact, first), /data-complete="true"/);
+    assert.doesNotMatch(card(compact, first), /ui-thread-message__toggle/);
+    assert.match(card(compact, first), /ui-thread-message__excerpt" dir="auto">[^<]+[.!?]</);
+    assert.doesNotMatch(card(compact, first), /…</);
     assert.doesNotMatch(card(compact, first), /ui-thread-message__body|<iframe/);
     assert.doesNotMatch(
       card(compact, ids.at(-1)!),
