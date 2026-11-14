@@ -169,7 +169,11 @@ test('ProposalCard: the one card, the filled button with Return, Not now with Es
   assert.match(pending, /aria-labelledby/);
   assert.match(pending, /--swatch:var\(--tag-ember\)/);
   assert.match(pending, /data-variant="filled"[^>]*>.*Add.*<kbd[^>]*>↩<\/kbd>/);
-  assert.match(pending, /title="Not now \(Esc\)"[^>]*>.*Not now/);
+  // The hint is the real Tooltip now (hover and keyboard focus), so the markup carries the label only.
+  assert.match(
+    pending,
+    /data-variant="text"[^>]*><span class="ui-compose-btn__label">Not now<\/span>/,
+  );
   assert.doesNotMatch(pending, /Not now<\/span><kbd/);
   assert.equal((pending.match(/data-variant="filled"/g) ?? []).length, 1);
   assert.match(text(pending), /Add to CalendarDesign reviewThu 2:00–2:30 PM · Hollow Creek/);
@@ -384,7 +388,7 @@ test('AskDock: header with an Ask | Today tablist and a labelled close', () => {
   assert.match(markup, /role="tablist"[^>]*aria-label="Ask or Today"/);
   assert.match(markup, /role="tab"[^>]*aria-selected="true"[^>]*tabindex="0"[^>]*>Ask</);
   assert.match(markup, /role="tab"[^>]*aria-selected="false"[^>]*tabindex="-1"[^>]*>Today</);
-  assert.match(markup, /aria-label="Close"[^>]*title="Close Ask \(⌘J\)"/);
+  assert.match(markup, /aria-label="Close"/);
   assert.match(markup, /role="tabpanel"/);
   assert.match(markup, /role="separator"[^>]*aria-valuenow="360"/);
   clean(markup);
@@ -711,7 +715,10 @@ test('SearchField tokens replace the hint and are removable; a scope picker beco
   assert.match(markup, /aria-label="Remove from: jordan"/);
   assert.match(markup, /aria-label="Remove has: attachment"/);
   assert.match(markup, /aria-label="Remove in: done"/);
-  assert.match(markup, /<button[^>]*title="Search scope"[^>]*>.*All accounts/);
+  assert.match(
+    markup,
+    /<button[^>]*data-variant="text"[^>]*><span class="ui-compose-btn__label">All accounts<\/span>/,
+  );
 });
 
 test('SearchField and OperatorToken survive an 80-character address, CJK, Arabic, one letter', () => {

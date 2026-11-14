@@ -82,12 +82,13 @@ describe('AccountsBody draws only the connect flow, never the step frame', () =>
 });
 
 describe('AccountsStep keeps the OnboardingStep frame around the body', () => {
-  test('choose: title, footer note and the "Step 2 of 4" words are present, with no dashes', () => {
+  test('choose: title and the "Step 2 of 4" words are present, with no dashes and no background note yet', () => {
     const html = step('choose');
     for (const mark of FRAME) assert.ok(html.includes(mark), mark);
     assert.ok(html.includes('Add your mail'));
     assert.ok(html.includes('>Step 2 of 4<'));
-    assert.ok(html.includes('Setup continues in the background.'), 'a later step keeps the note');
+    // The note is true only once an account is connected, so the step that is still choosing one does not say it.
+    assert.ok(!html.includes('Setup continues in the background.'));
     assert.ok(!html.includes('ui-onboarding-step__dashes'));
     assert.ok(html.includes('onb-address'));
   });
