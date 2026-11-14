@@ -1,4 +1,5 @@
 import type { EngineServices } from '../../runtime/services';
+import { StoreError } from '../../store/port';
 import { hexId } from '../../sync/connect-sessions';
 import {
   enqueue,
@@ -84,7 +85,7 @@ export function catchUpSummaries(services: EngineServices): void {
   } catch (error) {
     try {
       services.log.event('ai.backfill_failed', {
-        detail: (error instanceof Error ? error.message : String(error)).slice(0, 200),
+        code: error instanceof StoreError ? error.code : 'ai.backfill',
       });
     } catch {
       // A logless host keeps the queue honest anyway — the catch-up must never throw into a commit's caller.
