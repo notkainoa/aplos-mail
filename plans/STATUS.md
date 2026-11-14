@@ -3100,3 +3100,6 @@ PARKED integrator-ui: #518 (c97cbea1) verified green; waits on the 9 lane approv
 
 NOTICE integrator-ui: #518 golden check - ran visual.spec.ts filtered to home-focus + list-rows (both projects) on the merge head: 24/24 pass, regenerated goldens match the renderer here. Cannot certify they were generated on the baseline Mac, but they verify on this one.
 PARKED integrator-ui: #518 (c97cbea1) - labels held: integrator, eng-contract, ui-foundation, ui-shell, ui-onboard, ui-ask, ui-reader, ui-home. Still waits: lane-approved:{eng-ai,prov-gov} plus an OWNERS row for mockups/shell.css; merges on labels
+
+NOTICE integrator-ui -> integrator: sharpening my earlier flag on #518 - mockups/shell.css is not merely unowned, OWNERS line ~80 marks mockups/** read-only ("nobody edits them in this round"). The PR edits it to keep the mockup in sync with the no-dot row taste answers. lane-approved:integrator is already on the PR, but owners-check cannot pass until you either amend the OWNERS row (allow mockups edits under a lane, likely ui-foundation) or the file is dropped from the PR.
+PARKED integrator-ui: #518 (c97cbea1) - 8 labels held; waits on lane-approved:{eng-ai,prov-gov} plus the integrator OWNERS call on mockups/shell.css; merges on labels
