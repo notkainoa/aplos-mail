@@ -476,6 +476,18 @@ describe('Why', () => {
 });
 
 describe('UndoTray', () => {
+  test('a long recipient list shortens and keeps " in 8 s" together', () => {
+    const state = {
+      kind: 'sending' as const,
+      recipients: 'a-very-long-address@some-long-domain.example',
+      secondsLeft: 8,
+      totalSeconds: 8,
+    };
+    const m = render(<UndoTray {...tray({ state })} />);
+    assert.match(m, /class="ui-undo-tray__lead"[^>]*>Sending to a-very-long/);
+    assert.match(m, /class="ui-undo-tray__tail"> in 8 s</);
+  });
+
   test('sending: "Sending to Jordan in 8 s · Undo Z · Send now" with the neutral drain', () => {
     const m = render(<UndoTray {...tray()} />);
     assert.match(

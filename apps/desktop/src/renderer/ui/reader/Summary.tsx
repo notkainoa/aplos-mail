@@ -8,7 +8,11 @@ import type { SummaryProps } from '../props';
 /** The summary slot in its pending, absent or ready state. */
 export function Summary(props: SummaryProps) {
   const { clamp = 'none', id, lead } = props;
-  const leading = lead ? <span className="ui-summary__lead">{lead}</span> : null;
+  const leading = lead ? (
+    <span className="ui-summary__lead" dir="ltr">
+      {lead}
+    </span>
+  ) : null;
   // With a lead, the words get their own span so a fade can reach them and leave the chip standing.
   const words = (text: string) => (lead ? <span className="ui-summary__text">{text}</span> : text);
   if (props.state === 'ready') {

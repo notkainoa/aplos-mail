@@ -324,7 +324,7 @@ describe('FocusSlot and FocusLetter', () => {
     assert.match(m, /data-kind="due"[^>]*>.*Tomorrow/);
     assert.match(
       m,
-      /ui-focus-letter__meta[\s\S]*<\/time><\/div><div class="ui-focus-letter__summary[^"]*"[^>]*><p[^>]*class="ui-summary"[^>]*><span class="ui-summary__lead"><span class="ui-chip" data-kind="due"/,
+      /ui-focus-letter__meta[\s\S]*<\/time><\/div><div class="ui-focus-letter__summary[^"]*"[^>]*><p[^>]*class="ui-summary"[^>]*><span class="ui-summary__lead" dir="ltr"><span class="ui-chip" data-kind="due"/,
       'the chip leads the summary line, where a row puts it before the subject, not after the sender',
     );
     assert.match(
