@@ -192,11 +192,21 @@ export function queueSummary(
     });
   } else if (job.state === 'dead' || job.state === 'skipped' || job.state === 'done') {
     // A settled row blocks the singleton key forever (INSERT OR IGNORE): a catch-up or a re-armed sentinel
-    // re-queues it with a fresh attempt budget.
+    // re-queues it. A `dead` row keeps its spent budget — every settings/consent touch would otherwise hand a
+    // failing provider five fresh calls per thread — while `skipped`/`done` rows, which spent nothing, get a
+    // fresh budget.
     services.store.commit({
       opId: `ai-requeue-${job.id}-${hexId(services.randomBytes, 'r')}`,
       origin: 'system',
-      writes: [{ kind: 'job', action: 'requeue', id: job.id, nextAt: services.clock.now() }],
+      writes: [
+        {
+          kind: 'job',
+          action: 'requeue',
+          id: job.id,
+          nextAt: services.clock.now(),
+          attempts: job.state === 'dead' ? job.attempts : 0,
+        },
+      ],
     });
     services.deadlines.changed('jobs');
   }

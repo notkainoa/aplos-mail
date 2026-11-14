@@ -13,7 +13,8 @@ import {
   type AiTransport,
 } from '../../src/ai/host';
 import { runJobs } from '../../src/ai/impl/runner';
-import { queueSummary } from '../../src/ai/impl/jobs';
+import { enqueue, queueSummary } from '../../src/ai/impl/jobs';
+import { requestAiCatchUp } from '../../src/ai/writes';
 import { ACCOUNT, accountWrite, folderWrites, msg, tempDb } from '../store/helpers';
 import { manualClock, silentDeadlines } from '../runtime.helpers';
 
@@ -262,6 +263,100 @@ test('a skipped job with a pending placeholder keeps its carried text as stale',
   const stale = await threadSummary(w);
   assert.equal(stale.state, 'stale');
   assert.equal(stale.text, 'Ada asked about the invoice.');
+});
+
+test('a catch-up re-arm of a dead job keeps its spent budget — one call, not five', async () => {
+  const transport = stubTransport({ fail: new AiCallError('unreachable', 'ai.server') });
+  const w = await world(transport);
+  seedMail(w);
+  await consentNow(w);
+  await drainFailing(w);
+  assert.equal(jobsOf(w, 'summary')[0]?.state, 'dead');
+  const calls = transport.calls.length;
+  // A settings/consent touch re-arms the dead row, but with its spent budget: a still-failing provider
+  // costs one call, not five fresh attempts.
+  requestAiCatchUp(w.engine.services.store, w.clock.now());
+  for (let i = 0; i < 3; i++) {
+    await runJobs(w.engine.services, w.clock.now());
+    w.clock.advance(90 * 60_000);
+  }
+  assert.equal(jobsOf(w, 'summary')[0].state, 'dead');
+  assert.equal(transport.calls.length, calls + 1);
+});
+
+test('a bulk sync arms one bounded catch-up sentinel — no row per thread', async () => {
+  const w = await world(stubTransport({}));
+  seedMail(w);
+  await consentNow(w);
+  await runJobs(w.engine.services, w.clock.now());
+  assert.equal(jobsOf(w, 'wake').length, 0);
+  // A baseline page storing new mail writes exactly the `ai:backfill` sentinel, nothing per-thread.
+  w.engine.services.store.commit({
+    opId: 'base',
+    origin: 'sync',
+    step: 'baseline',
+    writes: [msg('m3', 'T-bulk', 7), msg('m4', 'T-bulk-2', 8)],
+  });
+  assert.deepEqual(
+    jobsOf(w, 'wake').map(x => x.key),
+    ['ai:backfill'],
+  );
+  await runJobs(w.engine.services, w.clock.now());
+  // The catch-up found the baseline threads and summarised them through the normal bounded path.
+  assert.equal((await threadSummary(w, 'T-bulk')).state, 'ready');
+  assert.equal(jobsOf(w, 'wake').length, 0);
+});
+
+test('a dead job never overwrites a held summary row (M22)', async () => {
+  const w = await world(stubTransport({ fail: new AiCallError('unreachable', 'ai.server') }));
+  seedMail(w);
+  await consentNow(w);
+  w.engine.services.store.commit({
+    opId: 'held',
+    origin: 'system',
+    writes: [
+      {
+        kind: 'summary',
+        accountId: ACCOUNT,
+        remoteThreadId: 'T-thread',
+        inputHash: 'h1',
+        model: 'm1',
+        text: 'keep me',
+        state: 'ready',
+      },
+      {
+        kind: 'summary',
+        accountId: ACCOUNT,
+        remoteThreadId: 'T-thread',
+        inputHash: 'h2',
+        model: 'm1',
+        text: '',
+        state: 'pending',
+      },
+    ],
+  });
+  for (const hash of ['h1', 'h2'])
+    enqueue(w.engine.services, `held-${hash}`, {
+      kind: 'summary',
+      key: `summary:${ACCOUNT}:T-thread:${hash}`,
+      priority: 0,
+      nextAt: w.clock.now(),
+      payload: { accountId: ACCOUNT, remoteThreadId: 'T-thread', inputHash: hash },
+    });
+  for (let i = 0; i < 10 && jobsOf(w, 'summary').some(j => j.state !== 'dead'); i++) {
+    await runJobs(w.engine.services, w.clock.now());
+    w.clock.advance(90 * 60_000);
+  }
+  const held = w.engine.services.store.read(q =>
+    q.all<{ input_hash: string; state: string; text: string }>(
+      `SELECT input_hash, state, text FROM summaries WHERE input_hash IN ('h1','h2') ORDER BY input_hash`,
+    ),
+  );
+  assert.equal(held.length, 2);
+  assert.equal(held[0].state, 'ready');
+  assert.equal(held[0].text, 'keep me');
+  assert.equal(held[1].state, 'failed');
+  assert.equal(held[1].text, '');
 });
 
 test('three draft saves on a summarised thread make no new provider call', async () => {
