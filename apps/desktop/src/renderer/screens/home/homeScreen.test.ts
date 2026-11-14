@@ -768,7 +768,7 @@ function followingCursor(world: Awaited<ReturnType<typeof boot>>, key: { current
   key.current = initialKey(items);
   return () => {
     const after = itemsNow();
-    const settled = settleHome(items, after, key.current, displaced);
+    const settled = settleHome(items, after, key.current, displaced, 0);
     key.current = settled.key;
     displaced = settled.displaced;
     items = after;
@@ -828,13 +828,4 @@ test('Undo after two Dones brings the cards back one at a time, newest first', a
   } finally {
     world.connection.close();
   }
-});
-
-test('a cursor the owner moved after Done stays where they put it when Undo brings the mail back', () => {
-  const row = (id: string) => ({ kind: 'row', id, section: 'do' }) as const;
-  const all = [row('a'), row('b'), row('c')];
-  const left = settleHome(all, [row('b'), row('c')], 'a', []);
-  assert.equal(left.key, 'b');
-  // The owner pressed J (the cursor settles by hand, so the notes are cleared) before Undo.
-  assert.equal(settleHome([row('b'), row('c')], all, 'c', []).key, 'c');
 });

@@ -457,6 +457,16 @@ test('Undo on a thread committed mid-walk steps the walk back to it, and a secon
   assert.equal(shownId(settleSession(first, all, NONE), all), 'a', 'Undo of a shows a');
 });
 
+test('a committed thread that leaves and comes back with a rejected write is shown once, not stepped to twice', () => {
+  let session = beginSession(['a', 'b', 'c']);
+  session = markActed(session, 'a');
+  session = settleSession(session, new Set(['b', 'c']), NONE);
+  const live = new Set(['a', 'b', 'c']);
+  const back = settleSession(session, live, new Set(['a']));
+  assert.equal(shownId(back, live), 'a', 'the failed thread shows with its error');
+  assert.equal(settleSession(back, live, new Set(['a'])), back, 'and nothing steps again');
+});
+
 test('a thread still live after a J past it is not mistaken for an undo', () => {
   let session = beginSession(['a', 'b', 'c']);
   session = markActed(session, 'a');

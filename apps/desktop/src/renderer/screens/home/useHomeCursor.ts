@@ -5,7 +5,14 @@
  */
 import { useCallback, useRef, useState } from 'react';
 import { restoreKey, type ReturnPoint } from '../../shell';
-import { keyOf, settleCursor, settleHome, type Displaced, type HomeItem } from './homeModel';
+import {
+  keyOf,
+  settleCursor,
+  settleHome,
+  type Displaced,
+  type HomeItem,
+  type HomeSettled,
+} from './homeModel';
 
 interface CursorState {
   readonly key: string | null;
@@ -42,8 +49,9 @@ export interface HomeCursor {
 }
 
 /** The settled state after a render: a pending return lands on its row once there are rows, and waits for them until then. */
-function settledAfter(state: CursorState, items: readonly HomeItem[]) {
-  if (state.restore === null) return settleHome(state.items, items, state.key, state.displaced);
+function settledAfter(state: CursorState, items: readonly HomeItem[]): HomeSettled {
+  if (state.restore === null)
+    return settleHome(state.items, items, state.key, state.displaced, Date.now());
   if (items.length === 0) return { key: state.key, displaced: state.displaced };
   const restored = restoreKey(state.restore, items.map(keyOf));
   if (restored !== null) return { key: restored, displaced: [] };
