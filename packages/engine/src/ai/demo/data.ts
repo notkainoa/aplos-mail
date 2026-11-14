@@ -381,6 +381,7 @@ function accountWrites(account: DemoAccountSpec, now: number): StoreWrite[] {
       grantedScopes: [],
       status: { state: 'ok' },
       baselineDoneAt: now,
+      calendarListedAt: now,
       aiAllowed: true,
       colorTag: account.colorTag,
       settings: { colorTag: account.colorTag, notifications: true },
@@ -516,10 +517,132 @@ function draftWrites(account: DemoAccountSpec, now: number): StoreWrite[] {
   ];
 }
 
+/** One demo calendar per account: its remote id, name and tag colour (a `TagColor`, so the grid paints it). */
+const DEMO_CALENDARS: Record<
+  'work' | 'personal',
+  { remoteId: string; name: string; color: string }
+> = {
+  work: { remoteId: 'demo-work-cal', name: 'Studio', color: 'sky' },
+  personal: { remoteId: 'demo-personal-cal', name: 'Home', color: 'sand' },
+};
+
+interface DemoEvent {
+  key: string;
+  slot: 'work' | 'personal';
+  title: string;
+  /** Days after this week's Monday (UTC), so 7 is next Monday. */
+  day: number;
+  /** UTC hours and minutes; a missing start makes the event all-day. */
+  start?: [number, number];
+  minutes?: number;
+  location?: string;
+  guests?: Address[];
+}
+
+/** Events across this week and next, so the week on screen is never empty: one all-day, one overlapping pair. */
+const demoEvents: readonly DemoEvent[] = [
+  { key: 'sync', slot: 'work', title: 'Weekly sync', day: 0, start: [17, 0], minutes: 30 },
+  {
+    key: 'layout',
+    slot: 'work',
+    title: 'Layout review',
+    day: 2,
+    start: [18, 0],
+    minutes: 60,
+    guests: [{ name: 'Jordan Park', address: 'jordan@studio.example' }],
+  },
+  { key: 'critique', slot: 'work', title: 'Design critique', day: 3, start: [22, 0], minutes: 60 },
+  { key: 'dentist', slot: 'personal', title: 'Dentist', day: 3, start: [22, 30], minutes: 60 },
+  {
+    key: 'gallery',
+    slot: 'personal',
+    title: 'Gallery with Mira',
+    day: 4,
+    start: [19, 0],
+    minutes: 120,
+    location: 'City gallery',
+  },
+  { key: 'offsite', slot: 'work', title: 'Planning day', day: 7 },
+  { key: 'nadia', slot: 'personal', title: 'Call with Nadia', day: 8, start: [20, 0], minutes: 30 },
+  { key: 'review', slot: 'work', title: 'Quarterly review', day: 9, start: [18, 0], minutes: 90 },
+  { key: 'sync2', slot: 'work', title: 'Weekly sync', day: 10, start: [17, 0], minutes: 30 },
+];
+
+/** The UTC midnight of this week's Monday. */
+function mondayStart(now: number): number {
+  const today = Math.floor(now / DAY) * DAY;
+  return today - ((new Date(today).getUTCDay() + 6) % 7) * DAY;
+}
+
+function eventWrite(event: DemoEvent, account: DemoAccountSpec, now: number): StoreWrite {
+  const day = mondayStart(now) + event.day * DAY;
+  const at = event.start;
+  const allDay = at === undefined;
+  const start = at === undefined ? day : day + at[0] * HOUR + at[1] * MIN;
+  const end = allDay ? day + DAY : start + (event.minutes ?? 60) * MIN;
+  const date = (t: number) => new Date(t).toISOString().slice(0, 10);
+  const stamp = (t: number) => ({ dateTime: new Date(t).toISOString() });
+  const data = {
+    summary: event.title,
+    status: 'confirmed',
+    start: allDay ? { date: date(start) } : stamp(start),
+    end: allDay ? { date: date(end) } : stamp(end),
+    ...(event.location ? { location: event.location } : {}),
+    organizer: { email: account.address, displayName: OWNER_NAME, self: true },
+    attendees: [
+      { email: account.address, displayName: OWNER_NAME, self: true, responseStatus: 'accepted' },
+      ...(event.guests ?? []).map(g => ({
+        email: g.address,
+        displayName: g.name,
+        responseStatus: 'accepted',
+      })),
+    ],
+  };
+  return {
+    kind: 'event',
+    accountId: account.id,
+    calendarRemoteId: DEMO_CALENDARS[event.slot].remoteId,
+    remoteId: `demo-ev-${event.key}`,
+    rows: [
+      {
+        status: 'confirmed',
+        startUtc: start,
+        endUtc: end,
+        allDay,
+        data: JSON.stringify(data),
+      },
+    ],
+  };
+}
+
+/** A read-only calendar per account (the demo has no provider to write to) and the sample events on them. */
+function calendarWrites(now: number): StoreWrite[] {
+  const writes: StoreWrite[] = DEMO_ACCOUNTS.map((account, index) => {
+    const calendar = DEMO_CALENDARS[index === 0 ? 'work' : 'personal'];
+    return {
+      kind: 'calendar',
+      accountId: account.id,
+      remoteId: calendar.remoteId,
+      name: calendar.name,
+      color: calendar.color,
+      primary: true,
+      hidden: false,
+      selected: true,
+      readOnly: true,
+    };
+  });
+  for (const event of demoEvents)
+    writes.push(
+      eventWrite(event, DEMO_ACCOUNTS[event.slot === 'work' ? 0 : 1] as DemoAccountSpec, now),
+    );
+  return writes;
+}
+
 /** The whole demo mailbox as one commit's writes: accounts and folders first, then every thread. */
 export function demoWrites(now: number): StoreWrite[] {
   const writes = DEMO_ACCOUNTS.flatMap(account => accountWrites(account, now));
   rows.forEach((row, index) => writes.push(...threadWrites(row, index, now)));
   writes.push(...draftWrites(DEMO_ACCOUNTS[0], now));
+  writes.push(...calendarWrites(now));
   return writes;
 }

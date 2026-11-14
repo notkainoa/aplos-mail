@@ -13,6 +13,7 @@
 import { useEffect, useRef, type CSSProperties, type ReactElement } from 'react';
 import type { ComponentPropsMap, ToastData, ToastStackProps, UndoTrayAction } from '../props';
 import { Toast } from './Toast';
+import { ToastMessage } from './ToastMessage';
 import { PartIcon, PartKeys, formatTime, useKeysFor } from './parts';
 
 const MAX_VISIBLE = 3;
@@ -114,7 +115,7 @@ function UndoSendNotice({
       <span className="ui-toast__icon">
         <PartIcon name="send" />
       </span>
-      <span className="ui-toast__message">{message}</span>
+      <ToastMessage message={message} />
       {verbs}
       {state.kind === 'sending' && !reducedMotion ? (
         <span

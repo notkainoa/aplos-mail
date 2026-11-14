@@ -1220,6 +1220,22 @@ html[data-real-key] .ui-part-tipwrap:has(> :focus-visible) > .ui-part-tip {
   overflow: hidden;
   overflow-wrap: anywhere;
 }
+/* A countdown keeps its number and unit on one line; a long recipient list shortens with an ellipsis. */
+.ui-toast__message[data-countdown] {
+  display: flex;
+  align-items: baseline;
+}
+.ui-toast__lead {
+  flex: 0 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.ui-toast__tail {
+  flex: none;
+  white-space: pre;
+}
 .ui-toast__action {
   display: inline-flex;
   align-items: center;

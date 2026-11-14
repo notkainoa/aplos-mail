@@ -8,6 +8,7 @@ import type { ToastData } from '../props';
 import { Confirm, Dialog, Popover, Puck, Toast, ToastStack } from './index';
 import { planToasts, visibleToasts, wholeSeconds } from './ToastStack';
 import { toastLife } from './Toast';
+import { splitCountdown } from './ToastMessage';
 import { timing } from '../generated/motion';
 import {
   SUBJECT_300,
@@ -313,6 +314,27 @@ describe('Toast', () => {
       />,
     );
     assert.ok(!html.includes('Dismiss'));
+  });
+  it('a countdown keeps its number and unit together; a long address gives way, not the unit', () => {
+    assert.deepEqual(splitCountdown('Sending to Jordan in 10 s'), {
+      lead: 'Sending to Jordan',
+      tail: ' in 10 s',
+    });
+    assert.equal(splitCountdown('Moved to Later'), null);
+    const long = 'a-very-long-address-for-someone-with-a-lot-to-say@some-long-domain.example';
+    const html = render(
+      <Toast
+        id="h2"
+        kind="info"
+        message={`Sending to ${long} in 10 s`}
+        undoable
+        persistent
+        onAction={noop}
+        onDismiss={noop}
+      />,
+    );
+    assert.match(html, /class="ui-toast__lead"[^>]*>Sending to a-very-long/);
+    assert.match(html, /class="ui-toast__tail"> in 10 s</);
   });
   it('lifetimes: plain 4 s, Undo and error 8 s, persistent none', () => {
     assert.equal(toastLife({ kind: 'info', undoable: false }), timing.toast);

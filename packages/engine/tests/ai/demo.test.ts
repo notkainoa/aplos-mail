@@ -639,6 +639,51 @@ test('every address and domain in the demo dataset is .example', async () => {
   }
 });
 
+test('Demo/load seeds a calendar per account and sample events across the next two weeks', async () => {
+  const t = await demoEngine();
+  try {
+    await t.window().call('Demo/load', {});
+    const { list: calendars } = (await t.window().call('Calendar/get', {})) as {
+      list: { accountId: string; shown: boolean; readOnly: boolean }[];
+    };
+    assert.deepEqual(calendars.map(c => c.accountId).sort(), [...DEMO_ACCOUNT_IDS].sort());
+    assert.ok(
+      calendars.every(c => c.shown && c.readOnly),
+      'shown, and read-only: nothing to write to',
+    );
+    const win = (await t.window().call('View/watch', {
+      spec: { kind: 'events', from: T0 - 7 * 86_400_000, to: T0 + 15 * 86_400_000 },
+    })) as {
+      ids: string[];
+    };
+    type Time = { type: string; utc?: number };
+    const { list: events } = (await t.window().call('Event/get', { ids: [...win.ids] })) as {
+      list: { title: string; allDay: boolean; start: Time; end: Time }[];
+    };
+    assert.ok(events.length >= 6, 'events on this week and next week');
+    assert.ok(
+      events.some(e => e.allDay),
+      'one all-day event',
+    );
+    const timed = events.filter(e => !e.allDay);
+    const ms = (v: Time) => (v.type === 'utc' ? (v.utc ?? 0) : 0);
+    const overlaps = timed.some(a =>
+      timed.some(b => a !== b && ms(a.start) < ms(b.end) && ms(b.start) < ms(a.end)),
+    );
+    assert.ok(overlaps, 'one overlapping pair');
+    assert.ok(events.every(e => e.title.length > 0));
+    await t.window().call('Demo/remove', {});
+    assert.equal(
+      count(t.store, 'SELECT count(*) AS n FROM events'),
+      0,
+      'removing the demo takes its events',
+    );
+    assert.equal(count(t.store, 'SELECT count(*) AS n FROM calendars'), 0);
+  } finally {
+    await t.cleanup();
+  }
+});
+
 test('a listener without admin scope is refused Demo/load through dispatch', async () => {
   const t = await demoEngine();
   try {
