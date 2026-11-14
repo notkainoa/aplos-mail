@@ -205,7 +205,7 @@ export function useOneByOne({ accountId, onExit, onOpen }: OneByOneScreenProps):
       step,
       open: () => {
         const id = snapshot.current.key;
-        if (id !== null) props.current.onOpen?.(id, queueRef.current);
+        if (id !== null) props.current.onOpen?.(id, undefined, queueRef.current);
       },
       more: openMore,
       why: openWhy,

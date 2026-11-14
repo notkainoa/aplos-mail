@@ -34,7 +34,6 @@ function markupFor(field: string): string {
       localRows: [row],
       remoteRows: [],
       density: 'comfortable',
-      showAccountDot: false,
       scopeLabel: 'All accounts',
       handlers: {
         onChange: () => undefined,
