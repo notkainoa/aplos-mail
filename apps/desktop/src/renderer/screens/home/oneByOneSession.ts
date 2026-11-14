@@ -13,11 +13,13 @@ export interface Session {
   readonly pending: string | null;
   /** Threads this walk committed, for a rejected write to bring back. */
   readonly acted: readonly string[];
+  /** Threads this walk committed that were seen leaving Do now, so one that is live again was undone. */
+  readonly left: readonly string[];
 }
 
 /** A new session at the first Do-now id. */
 export function beginSession(ids: readonly string[]): Session {
-  return { walk: startWalk(ids), pending: null, acted: [] };
+  return { walk: startWalk(ids), pending: null, acted: [], left: [] };
 }
 
 /** A session at the thread the owner was reading when the reader opened over the walk (`at`: its place in `ids`). */
@@ -39,7 +41,7 @@ export function sessionProgress(session: Session, live: ReadonlySet<string>) {
 /** E, L, Space, # or a lane move is about to take `id` out of Do now: the walk steps on once it has left. */
 export function markActed(session: Session, id: string): Session {
   const acted = session.acted.includes(id) ? session.acted : [...session.acted, id];
-  return { ...session, pending: id, acted };
+  return { ...session, pending: id, acted, left: session.left.filter(seen => seen !== id) };
 }
 
 /** J (+1) and K (−1). With nowhere to go the session is returned untouched, so a bump costs no render. */
@@ -73,6 +75,7 @@ function rewind(session: Session, live: ReadonlySet<string>, failed: ReadonlySet
     walk: { ...session.walk, index: queue.indexOf(back) },
     pending: null,
     acted: session.acted.filter(id => id !== back),
+    left: session.left.filter(id => id !== back),
   };
 }
 
@@ -86,17 +89,42 @@ function revive(session: Session, live: ReadonlySet<string>): Session {
     walk: { ...session.walk, index: queue.indexOf(back) },
     pending: null,
     acted: session.acted.filter(id => id !== back),
+    left: session.left.filter(id => id !== back),
+  };
+}
+
+/** Notes the committed threads that have left `live`; the same object when there is nothing new. */
+function noteLeft(session: Session, live: ReadonlySet<string>): Session {
+  const gone = session.acted.filter(id => !live.has(id) && !session.left.includes(id));
+  return gone.length === 0 ? session : { ...session, left: [...session.left, ...gone] };
+}
+
+/** A thread this walk committed and saw leave is live again (Undo) behind the one showing: step back to it. */
+function undone(session: Session, live: ReadonlySet<string>): Session {
+  const { queue } = session.walk;
+  const at = indexOfShown(session, live);
+  const behind = (id: string) => live.has(id) && queue.indexOf(id) < at;
+  const back = session.acted.findLast(id => session.left.includes(id) && behind(id));
+  // One back ahead of the walk is reached by walking on, so its note must not fire later from behind.
+  const left = session.left.filter(id => id !== back && !(live.has(id) && !behind(id)));
+  if (back === undefined)
+    return left.length === session.left.length ? session : { ...session, left };
+  return {
+    walk: { ...session.walk, index: queue.indexOf(back) },
+    pending: null,
+    acted: session.acted.filter(id => id !== back),
+    left,
   };
 }
 
 /**
  * Brings the session up to the live data, once per render: steps on past a committed thread, goes back to one whose
- * write failed, and reopens a finished walk when a committed thread returns. Returns the same object when nothing changed, so it is safe to store from a render.
+ * write failed or that Undo brought back, and reopens a finished walk when a committed thread returns. Returns the same object when nothing changed, so it is safe to store from a render.
  */
 export function settleSession(
   session: Session,
   live: ReadonlySet<string>,
   failed: ReadonlySet<string>,
 ): Session {
-  return revive(rewind(advance(session, live), live, failed), live);
+  return undone(revive(rewind(noteLeft(advance(session, live), live), live, failed), live), live);
 }

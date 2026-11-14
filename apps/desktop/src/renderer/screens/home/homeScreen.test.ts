@@ -33,7 +33,9 @@ import {
   initialKey,
   layoutOf as homeLayoutOf,
   orderLayout,
+  settleHome,
   suggestedCommand,
+  type Displaced,
   type HomeLayout,
   type SectionKey,
 } from './homeModel';
@@ -755,4 +757,75 @@ test('the date presets hang from the row, else from the row under the cursor, el
     ),
     null,
   );
+});
+
+/** The cursor as `useHomeCursor` keeps it: settled against Home's list after each change, remembering what left. */
+function followingCursor(world: Awaited<ReturnType<typeof boot>>, key: { current: string | null }) {
+  const rowOf = (id: string) => world.home.snapshot().rows.get(id) as ThreadRow | undefined;
+  const itemsNow = () => buildItems(orderLayout(layoutOf(world.home.snapshot()), rowOf, false));
+  let items = itemsNow();
+  let displaced: readonly Displaced[] = [];
+  key.current = initialKey(items);
+  return () => {
+    const after = itemsNow();
+    const settled = settleHome(items, after, key.current, displaced, 0);
+    key.current = settled.key;
+    displaced = settled.displaced;
+    items = after;
+    return { key: key.current, ids: layoutOf(world.home.snapshot()).do };
+  };
+}
+
+for (const [name, run] of [
+  ['Done', (actions: ReturnType<typeof createHomeActions>) => actions.done()],
+  ['Later', (actions: ReturnType<typeof createHomeActions>) => actions.later()],
+  ['Trash', (actions: ReturnType<typeof createHomeActions>) => actions.trash()],
+] as const) {
+  test(`Undo after ${name} on the focus card puts the same mail back on the card, in its place`, async () => {
+    resetToasts();
+    const world = await boot();
+    try {
+      const key = { current: null as string | null };
+      const { deps } = depsOver(world, key);
+      const actions = createHomeActions(deps);
+      const settle = followingCursor(world, key);
+      const before = settle();
+      const card = before.key;
+      assert.ok(card, 'the card is on a mail');
+      run(actions);
+      const gone = settle();
+      assert.notEqual(gone.key, card, `${name} moves the card on`);
+      assert.ok(!gone.ids.includes(card), 'the mail left Do now');
+      assert.ok(undoStack.undoLast(), 'there is an operation to undo');
+      const back = settle();
+      assert.equal(back.key, card, 'the restored mail is the card again');
+      assert.deepEqual(back.ids, before.ids, 'in its original place');
+      await world.flush();
+    } finally {
+      world.connection.close();
+    }
+  });
+}
+
+test('Undo after two Dones brings the cards back one at a time, newest first', async () => {
+  resetToasts();
+  const world = await boot();
+  try {
+    const key = { current: null as string | null };
+    const { deps } = depsOver(world, key);
+    const actions = createHomeActions(deps);
+    const settle = followingCursor(world, key);
+    const first = settle().key;
+    actions.done();
+    const second = settle().key;
+    actions.done();
+    settle();
+    undoStack.undoLast();
+    assert.equal(settle().key, second);
+    undoStack.undoLast();
+    assert.equal(settle().key, first);
+    await world.flush();
+  } finally {
+    world.connection.close();
+  }
 });

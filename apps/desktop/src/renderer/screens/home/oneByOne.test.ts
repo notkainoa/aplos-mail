@@ -442,6 +442,57 @@ test('Undo on the last committed thread reopens the finished walk on it, and K r
   assert.equal(settleSession(stepped, both, NONE), stepped, 'and nothing reopens again');
 });
 
+test('Undo on a thread committed mid-walk steps the walk back to it, and a second Undo steps back again', () => {
+  let session = beginSession(['a', 'b', 'c', 'd']);
+  session = markActed(session, 'a');
+  session = settleSession(session, new Set(['b', 'c', 'd']), NONE);
+  session = markActed(session, 'b');
+  session = settleSession(session, new Set(['c', 'd']), NONE);
+  assert.equal(shownId(session, new Set(['c', 'd'])), 'c');
+  const withB = new Set(['b', 'c', 'd']);
+  const first = settleSession(session, withB, NONE);
+  assert.equal(shownId(first, withB), 'b', 'Undo of b shows b');
+  assert.equal(settleSession(first, withB, NONE), first, 'and nothing steps again');
+  const all = new Set(['a', 'b', 'c', 'd']);
+  assert.equal(shownId(settleSession(first, all, NONE), all), 'a', 'Undo of a shows a');
+});
+
+test('a committed thread that leaves and comes back with a rejected write is shown once, not stepped to twice', () => {
+  let session = beginSession(['a', 'b', 'c']);
+  session = markActed(session, 'a');
+  session = settleSession(session, new Set(['b', 'c']), NONE);
+  const live = new Set(['a', 'b', 'c']);
+  const back = settleSession(session, live, new Set(['a']));
+  assert.equal(shownId(back, live), 'a', 'the failed thread shows with its error');
+  assert.equal(settleSession(back, live, new Set(['a'])), back, 'and nothing steps again');
+});
+
+test('a thread Undo brought back ahead of the walk does not pull it back once the walk has passed it', () => {
+  let session = beginSession(['a', 'b', 'c', 'd']);
+  session = stepSession(session, new Set(['a', 'b', 'c', 'd']), 1);
+  session = markActed(session, 'b');
+  session = settleSession(session, new Set(['a', 'c', 'd']), NONE);
+  const all = new Set(['a', 'b', 'c', 'd']);
+  session = stepSession(session, new Set(['a', 'c', 'd']), -1);
+  session = settleSession(session, all, NONE);
+  assert.equal(shownId(session, all), 'a', 'b is ahead: the walk stays');
+  session = stepSession(stepSession(session, all, 1), all, 1);
+  session = stepSession(session, all, 1);
+  assert.equal(
+    shownId(settleSession(session, all, NONE), all),
+    'd',
+    'and walking past b stays past it',
+  );
+});
+
+test('a thread still live after a J past it is not mistaken for an undo', () => {
+  let session = beginSession(['a', 'b', 'c']);
+  session = markActed(session, 'a');
+  const live = new Set(['a', 'b', 'c']);
+  session = stepSession(session, live, 1);
+  assert.equal(shownId(settleSession(session, live, NONE), live), 'b');
+});
+
 test('Why closes into the list, and drops when the cursor has left its thread', () => {
   const focused: unknown[] = [];
   const listbox = { focus: (options?: FocusOptions) => void focused.push(options) };
