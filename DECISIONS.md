@@ -2074,3 +2074,9 @@ From the owner's review of the UI council. A failed send ("Couldn’t send to Jo
 - **Settings:** "Add an account" (not "More accounts"); Help's "Welcome window" row is "Replay onboarding" with a "Replay" button; Keyboard puts a muted "or" between alternative shortcuts.
 - **Collapsed sidebar (macOS windowed):** the toggle sits 8 px after the window buttons (83 px, was 88) and the notch is 5 px narrower.
 - **Rich mail in dark** keeps its own light sheet: recolouring arbitrary HTML is not reliable.
+
+## 2026-11-16: a reply's From can switch account (owner)
+
+- **What:** with two or more accounts, a reply or forward starts in the account the thread belongs to, and its From row is the same menu a new message has, so it can be sent from another account. Before, a reply's From was plain text with no menu (2026-11-13, #511).
+- **How:** the composer moves the draft the same way a new message does (saved in the new account first, the old copy removed after). The reply keeps its thread and the message it answers. When it is sent, the engine finds that message in whichever account stores it (`repliedMessage` in `outbox/submissions.ts`), so In-Reply-To and References still go out and the recipient sees it in the same conversation. The provider gets no thread id from the other account, so in the sending account it starts its own thread.
+- **Hold time:** the owner kept 600 ms for holding → in the Low importance sheet.

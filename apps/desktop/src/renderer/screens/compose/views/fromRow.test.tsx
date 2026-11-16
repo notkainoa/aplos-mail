@@ -1,6 +1,6 @@
 /**
- * The From row: hidden with one account, a menu button with two or more for a new message, plain text for a reply or
- * forward, and an account that needs to sign in again is listed but cannot be chosen. Run:
+ * The From row: hidden with one account, a menu button with two or more (a reply and a forward too, owner 2026-11-16),
+ * and an account that needs to sign in again is listed but cannot be chosen. Run:
  * `cd apps/desktop && npx tsx --test src/renderer/screens/compose/views/fromRow.test.tsx`.
  */
 import test from 'node:test';
@@ -16,27 +16,20 @@ const account = (id: string, address: string, state = 'ok') =>
 const A = account('a1', 'alex@studio.example');
 const B = account('a2', 'alex@home.example');
 
-function html(accounts: readonly Account[], canChange: boolean): string {
+function html(accounts: readonly Account[]): string {
   return renderToStaticMarkup(
-    createElement(FromRow, { accounts, accountId: 'a1', canChange, onChange: () => undefined }),
+    createElement(FromRow, { accounts, accountId: 'a1', onChange: () => undefined }),
   );
 }
 
 test('one account: no From row at all', () => {
-  assert.equal(html([A], true), '');
+  assert.equal(html([A]), '');
 });
 
-test('two accounts, a new message: the address is a menu button', () => {
-  const out = html([A, B], true);
+test('two accounts: the current address is a menu button, for a reply as much as a new message', () => {
+  const out = html([A, B]);
   assert.match(out, /<button[^>]*aria-haspopup="menu"/);
   assert.match(out, /alex@studio\.example/);
-  assert.doesNotMatch(out, /aplos-from__address/);
-});
-
-test('a reply or forward shows the thread’s address as text, with no button', () => {
-  const out = html([A, B], false);
-  assert.match(out, /class="aplos-from__address">alex@studio\.example</);
-  assert.doesNotMatch(out, /<button/);
 });
 
 test('a missing current account falls back to its id, never a blank label', () => {
@@ -44,7 +37,6 @@ test('a missing current account falls back to its id, never a blank label', () =
     createElement(FromRow, {
       accounts: [A, B],
       accountId: 'gone',
-      canChange: false,
       onChange: () => undefined,
     }),
   );

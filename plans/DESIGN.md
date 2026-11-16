@@ -718,13 +718,13 @@ One 640 px column, top to bottom, with no card and nothing beside it (superseded
 
 - **Inline reply.** R, the `ReplyStub`, or Space on a reply suggestion opens one card (`--elev-card`, `settle`) under the message, so the thread stays visible:
   - the To line with its recipients, plus Cc and Pop out on the right;
-  - the From account as plain text, only with two or more accounts (the reply goes from the thread's account; there is no menu, 2026-11-13, #511);
+  - the From account as a menu, only with two or more accounts: the reply starts in the thread's account and can switch to another (owner, 2026-11-16; it was plain text with no menu, 2026-11-13, #511);
   - the text in `read`;
   - Send (⌘↩), "Draft saved", and attach and ⋯ on the right.
   - While it is open, the composer owns the filled button, and the summary's suggestion becomes a text button.
   - Pop out moves the reply to the compose page.
 - **New message** is a page in the pane, not a floating sheet. It is non-modal: the sidebar and the dock stay available.
-  - **Header:** close (Esc), "New message", then ⋯ (schedule, discard) and Ask. **From** is a visible row under the header, only with two or more accounts, and only for a new message (a reply or forward shows its account as plain text); it is no longer in the ⋯ menu (2026-11-12 owner pass, #500; changing it moves the draft to the other account and the old copy is removed only after the new one is saved).
+  - **Header:** close (Esc), "New message", then ⋯ (schedule, discard) and Ask. **From** is a visible row under the header, only with two or more accounts; a new message starts in the current account, a reply or forward in the thread's, and each can switch (owner, 2026-11-16); it is no longer in the ⋯ menu (2026-11-12 owner pass, #500; changing it moves the draft to the other account and the old copy is removed only after the new one is saved).
   - **Body:** a To row, then the subject as a `heading`-sized field, then the text in `read`. Nothing decorates the top.
   - **Footer:** a hairline, then Send (⌘↩), "Draft saved", attach and format (⌘/).
 - **Draft state** is one line: "Saving…", "Draft saved", "Couldn't save · Retry". After "Draft saved", Esc just closes. That fixes "✓ Saved" followed by "Save this draft?" [V: baseline §6.9 #3].

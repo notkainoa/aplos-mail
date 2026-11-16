@@ -116,7 +116,7 @@ export type ComposeEvent =
   | { readonly type: 'dismissSuggestion' }
   | { readonly type: 'dictated'; readonly text: string; readonly now: number }
   | { readonly type: 'reopen' }
-  /** From: write this new message in another account (see `canChangeAccount`). */
+  /** From: write this message in another account (see `canChangeAccount`). */
   | { readonly type: 'setAccount'; readonly accountId: string; readonly now: number };
 
 /** A `Submission/set` action other than `send`. */

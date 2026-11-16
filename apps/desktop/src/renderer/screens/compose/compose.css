@@ -129,7 +129,7 @@
   display: contents;
 }
 
-/* The From row: its address reads like the recipient rows' text, not like a control, when the account cannot change. */
+/* The From row: a menu button that sits on the recipient rows' line. */
 .ui-recipient-field.aplos-from {
   /* Two classes: the shared field's `flex-start` is declared later and would win a single one. */
   align-items: baseline;
@@ -142,12 +142,6 @@
   padding-top: 0;
   line-height: inherit;
 }
-.aplos-from__address {
-  color: var(--ink-2);
-  font: var(--type-ui);
-  font-weight: 500;
-  letter-spacing: var(--track-ui);
-}
 
 /* The pane's own height is the container the editor's 40 % is taken from. */
 .aplos-compose .ui-composer__scroll {
@@ -155,7 +149,7 @@
 }
 
 /* One From row in the compose page and the inline reply: the labels are as wide as the compose page's, so both values
-   start on the same edge; the address (a menu button with a chevron when 2+ accounts can be picked, plain text in a reply)
+   start on the same edge; the address (a menu button with a chevron, shown when 2+ accounts can be picked)
    reads in the same type, and the button's own padding hangs into the label gap so its text lines up with the To value. */
 .ui-inline-reply .ui-recipient-field__label {
   min-width: var(--space-8);
