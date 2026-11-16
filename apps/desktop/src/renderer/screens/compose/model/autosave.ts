@@ -85,6 +85,17 @@ export function saveDueAt(save: SaveClock): number | null {
   return Math.min(quiet, cap);
 }
 
+/** The longest autosave ever waits on purpose: the quiet spell, the typing cap and the last retry delay. */
+const LONGEST_WAIT_MS = Math.max(AUTOSAVE.quietMs, AUTOSAVE.maxWaitMs, ...AUTOSAVE.retryMs);
+
+/**
+ * How long the autosave timer waits for a save due at `due`. Never longer than autosave's longest delay: `due` was read
+ * off the wall clock, and one stepped back (a time sync, a changed clock) must not hold the text unsaved for that long.
+ */
+export function timerWait(due: number, now: number): number {
+  return Math.min(Math.max(0, due - now), LONGEST_WAIT_MS);
+}
+
 /** True when a save should start at `now`. */
 export function saveIsDue(save: SaveClock, now: number): boolean {
   const due = saveDueAt(save);

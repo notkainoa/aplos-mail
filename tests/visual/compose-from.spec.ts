@@ -60,7 +60,6 @@ for (const theme of ['light', 'dark'] as const)
     await expect(menu).toBeHidden();
     await expect(button).not.toHaveText(first);
     await page.locator('.ui-inline-reply textarea').fill('Sounds good');
-    // Typing keeps the chosen account. (The save itself is covered by session.test.ts and the real app: since revamp
-    // cf3dc57d the gallery's inline reply stays on "Saving…" even without a switch.)
     await expect(button).not.toHaveText(first);
+    await expect(page.locator('.ui-inline-reply .ui-draft-state')).toContainText(/Saved|Draft/i);
   });

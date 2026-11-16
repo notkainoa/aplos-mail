@@ -5,7 +5,7 @@
  */
 import type { Draft, DraftFields, Submission } from '../../../data';
 import type { Timers } from '../../../data/scheduler';
-import { saveDueAt } from '../model/autosave';
+import { saveDueAt, timerWait } from '../model/autosave';
 import { composeReducer } from '../model/composeReducer';
 import type {
   ComposeEffect,
@@ -138,7 +138,8 @@ export function createComposeSession(
     cancelTimer = null;
     const due = state.discarding ? null : saveDueAt(state.save);
     if (due === null) return;
-    const wait = Math.max(0, due - deps.timers.now());
+    // Capped, so a wall clock stepped back (a time sync, a changed clock) cannot hold the text unsaved for the step.
+    const wait = timerWait(due, deps.timers.now());
     // The timer was set for `due`, so when it fires that time has come, even if the clock it was read from stands still
     // (the visual gallery's frozen clock): the save is then due instead of waiting for a time that never arrives.
     cancelTimer = deps.timers.setTimeout(

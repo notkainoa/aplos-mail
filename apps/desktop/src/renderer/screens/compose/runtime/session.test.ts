@@ -262,3 +262,27 @@ test('a later autosave still fires when the clock stands still (the visual galle
   assert.equal(session.getState().save.savedSeq, session.getState().save.editSeq);
   session.dispose();
 });
+
+test('a wall clock stepped back an hour holds a save no longer than autosave’s longest wait', async () => {
+  const kit = await bootStandIn();
+  let skew = 0;
+  const first = open(kit);
+  await type(kit, first, 'Draft one.');
+  const id = first.getState().save.draftId!;
+  first.dispose();
+  const session = createComposeSession(
+    {
+      api: kit.api,
+      timers: { now: () => kit.timers.now() + skew, setTimeout: kit.timers.setTimeout },
+    },
+    composeFromDraft(kit.draft(id)!),
+  );
+  session.dispatch({ type: 'edit', patch: { body: 'Sounds good' }, now: kit.timers.now() });
+  skew = -3_600_000;
+  // Any later event re-arms the timer (here the draft row arriving again), now against the stepped-back clock.
+  kit.observe(session);
+  await kit.advance(Math.max(AUTOSAVE.quietMs, AUTOSAVE.maxWaitMs, ...AUTOSAVE.retryMs));
+  kit.observe(session);
+  assert.equal(htmlToText(kit.draft(id)!.html), 'Sounds good');
+  session.dispose();
+});
