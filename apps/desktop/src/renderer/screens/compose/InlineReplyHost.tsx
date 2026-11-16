@@ -7,12 +7,12 @@
  * The reader mounts it under the thread (REQUEST: wiring in ReaderLetter) and demotes its own suggestion while
  * `onOpenChange(true)`.
  */
-import { useEffect, useMemo, useRef } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { api, getNow, useAccounts, useRow, useView, type Message } from '../../data';
 import { useRegisterCommands, type CommandHandlerTable } from '../../shell';
 import { InlineReply } from '../../ui/compose';
 import { composeFromDraft, freshCompose, type ComposeState } from './model/composeState';
-import { replyDraftFor } from './model/reopen';
+import { replyDraftFor, rowsResolved } from './model/reopen';
 import { ownAddresses, replySeed } from './model/replySeed';
 import { dictateReplyCommands } from './runtime/composeCommands';
 import type { DictationSource } from './runtime/dictationSource';
@@ -50,16 +50,30 @@ function rowsOf<R>(rows: ReadonlyMap<string, R>): readonly R[] {
   return [...rows.values()];
 }
 
+/** How long the host waits for the rows of the drafts and sends it looks through before it starts a fresh reply. */
+const ROWS_WAIT_MS = 2000;
+
+/** True once `ms` have passed since mount: the bound on waiting for rows that never come. */
+function useElapsed(ms: number): boolean {
+  const [elapsed, setElapsed] = useState(false);
+  useEffect(() => {
+    const timer = setTimeout(() => setElapsed(true), ms);
+    return () => clearTimeout(timer);
+  }, [ms]);
+  return elapsed;
+}
+
 /** The starting state, decided once: the thread's send or reply draft on the engine, else a fresh reply. */
 function useInitialReply(props: InlineReplyHostProps): ComposeState | null {
   const drafts = useView({ kind: 'drafts' });
   const scheduled = useView({ kind: 'scheduled' });
   const message = useRow('Message', props.messageId);
   const accounts = useAccounts();
-  // A failed window reads as empty (a fresh reply), so the host never waits forever.
-  const settledView = (status: string) => status === 'live' || status === 'failed';
+  const gaveUp = useElapsed(ROWS_WAIT_MS);
+  const rowsIn = (rowsResolved(drafts) && rowsResolved(scheduled)) || gaveUp;
+  const settled = (status: string) => status === 'live' || status === 'failed';
   const ready =
-    settledView(drafts.status) && settledView(scheduled.status) && message !== undefined;
+    settled(drafts.status) && settled(scheduled.status) && rowsIn && message !== undefined;
   const candidate = ready
     ? replyDraftFor(props.threadId, rowsOf(drafts.rows), rowsOf(scheduled.rows))
     : null;

@@ -21,7 +21,7 @@ import {
   parseRecipient,
   recipientPhrase,
 } from './recipients';
-import { replyDraftFor } from './reopen';
+import { replyDraftFor, rowsResolved } from './reopen';
 import { replySeed, replySubject } from './replySeed';
 import { scheduledLabel, schedulePresets } from './schedule';
 
@@ -146,4 +146,25 @@ test('one tray per send: a submission is claimed by a composer or shown by the t
   assert.equal(shownByToast(state), null, 'a settled send is not handed off');
   state = settle(release(claim(state, 's2'), 's2', true), 's2');
   assert.equal(shownByToast(state), null);
+});
+
+test('a window is resolved only when it is live and every listed id has its row', () => {
+  const rows = new Map([['a', 1]]);
+  assert.equal(rowsResolved({ status: 'opening', ids: [], rows }), false);
+  assert.equal(
+    rowsResolved({ status: 'live', ids: ['a', 'b'], rows }),
+    false,
+    'b is listed, not yet fetched',
+  );
+  assert.equal(rowsResolved({ status: 'live', ids: ['a'], rows }), true);
+  assert.equal(
+    rowsResolved({ status: 'live', ids: [], rows: new Map() }),
+    true,
+    'a really empty window',
+  );
+  assert.equal(
+    rowsResolved({ status: 'failed', ids: ['a', 'b'], rows }),
+    true,
+    'a failed window reads as empty',
+  );
 });
