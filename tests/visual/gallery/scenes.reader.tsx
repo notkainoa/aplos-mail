@@ -305,7 +305,7 @@ interface ReaderScene {
   /** What the screen has when it is ready; the scene waits for it before the steps. */
   readonly ready?: string;
   readonly steps?: readonly Step[];
-  /** The compose page opens on this saved draft (a page that is only looked at; typing under the harness's frozen clock never finishes saving). */
+  /** The compose page opens on this saved draft. */
   readonly draftId?: string;
   /** The card treatment the reader and the compose page draw (CardStyleContext); absent: 'a', the default. */
   readonly cards?: CardStyle;
