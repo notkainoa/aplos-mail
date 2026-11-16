@@ -189,4 +189,8 @@ test('From: a create that was committed but whose reply was lost never binds the
   assert.equal(kit.draft(id)!.accountId, other.id, 'the draft is in the account the row shows');
   assert.equal(htmlToText(kit.draft(id)!.html), 'Hello there');
   assert.equal(session.getState().save.savedSeq, session.getState().save.editSeq);
+  const left = kit.engine.fixture.store
+    .all('Draft')
+    .filter(d => d.accountId === kit.accountId && htmlToText(d.html) === 'Hello there');
+  assert.equal(left.length, 0, 'the create that did commit in the old account is removed');
 });
