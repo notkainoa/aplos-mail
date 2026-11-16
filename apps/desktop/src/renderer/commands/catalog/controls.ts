@@ -129,7 +129,7 @@ export const CONTROLS: readonly ControlSpec[] = [
   },
   { id: 'dialog.cancel', label: 'Cancel', keys: ['Escape'], contexts: ['dialog'] },
 
-  // DESIGN §7.2: the first → arms and the second commits; the handler keeps that state.
+  // DESIGN §7.2: a tap of → marks the cursor row done, holding it marks everything done; the sheet keeps that state.
   {
     id: 'lowImportance.next',
     label: 'Next sender',
@@ -146,7 +146,7 @@ export const CONTROLS: readonly ControlSpec[] = [
   },
   {
     id: 'lowImportance.markAllDone',
-    label: 'Mark everything done (press twice)',
+    label: 'Mark done (hold to mark all)',
     keys: [{ chord: 'ArrowRight', followsSwipe: true }],
     contexts: ['lowImportance'],
   },

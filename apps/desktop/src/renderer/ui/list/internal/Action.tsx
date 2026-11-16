@@ -17,12 +17,30 @@ export function useInListbox(): boolean {
 }
 
 /** One keycap: 18 px, radius 4, caption, --sunken (DESIGN §6 Kbd). Shown always where it is rendered; never by hover. */
-export function Keycap({ chord, reveal }: { chord: string; reveal?: 'hint' | 'badge' }) {
+export function Keycap({
+  chord,
+  reveal,
+  hold,
+}: {
+  chord: string;
+  reveal?: 'hint' | 'badge';
+  /** The plain word "Hold" before the cap: the key does its job when held, not tapped. */
+  hold?: boolean;
+}) {
   if (!chord) return null;
-  return (
+  const cap = (
     <kbd className="ui-list-kbd" data-reveal={reveal} aria-hidden={reveal ? true : undefined}>
       {displayChord(chord)}
     </kbd>
+  );
+  if (!hold) return cap;
+  return (
+    <>
+      <span className="ui-list-key-word" aria-hidden="true">
+        Hold
+      </span>
+      {cap}
+    </>
   );
 }
 
@@ -35,6 +53,8 @@ export interface ActionProps {
   icon?: IconName;
   /** Inline keycap shown always (main actions only: Space, Return). */
   keycap?: string;
+  /** Draws the word "Hold" before the inline keycap. */
+  keycapHold?: boolean;
   /** The command's keycap for the key-hint modes: inline with "Show all key hints" when `keyHint` is 'hint', a badge while ⌘ is held. */
   hintKey?: string;
   /** Where `hintKey` shows inline (DESIGN §8); default 'tooltip' = only in the tooltip and the ⌘-held badge. */
@@ -83,6 +103,7 @@ export function Action({
   label,
   icon,
   keycap,
+  keycapHold,
   hintKey,
   keyHint = 'tooltip',
   tooltip,
@@ -109,7 +130,7 @@ export function Action({
       {variant === 'icon' || labelHidden ? null : (
         <span className="ui-list-btn__label">{label}</span>
       )}
-      {keycap ? <Keycap chord={keycap} /> : null}
+      {keycap ? <Keycap chord={keycap} hold={keycapHold} /> : null}
       {hintInline && hintKey ? <Keycap chord={hintKey} reveal="hint" /> : null}
       {hintBadge && hintKey ? <Keycap chord={hintKey} reveal="badge" /> : null}
     </>

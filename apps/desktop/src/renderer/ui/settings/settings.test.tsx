@@ -537,7 +537,7 @@ test('KeyRecorder idle: label, a button that names the shortcut, keycaps, no Res
   assert.match(out, /title="Click to change"/);
   assert.match(
     out,
-    /<kbd class="ui-key-recorder__kbd">J<\/kbd><kbd class="ui-key-recorder__kbd">↓<\/kbd>/,
+    /<kbd class="ui-key-recorder__kbd">J<\/kbd><span class="ui-key-recorder__or">or<\/span><kbd class="ui-key-recorder__kbd">↓<\/kbd>/,
   );
   assert.doesNotMatch(out, />Reset</);
   assert.doesNotMatch(out, /conflict/);

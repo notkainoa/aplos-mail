@@ -363,6 +363,22 @@ html[data-real-key] .ui-part-tipwrap:has(> :focus-visible) > .ui-part-tip {
   color: var(--dim);
   font-weight: 400;
 }
+/* The one-by-one counter: centred over the card's column (the pane's centre), on the header row, never in the way of a click. */
+.ui-pane__pos-centre {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: 50%;
+  display: flex;
+  align-items: center;
+  transform: translateX(-50%);
+  color: var(--dim);
+  font: var(--type-ui);
+  font-variant-numeric: tabular-nums;
+  letter-spacing: var(--track-ui);
+  white-space: nowrap;
+  pointer-events: none;
+}
 /* The bar starts on the list column's text edge (the section labels and the pick boxes), not the pane's corner. */
 .ui-pane__bulk {
   margin-inline-start: max(

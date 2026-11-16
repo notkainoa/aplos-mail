@@ -36,7 +36,6 @@ import { listenFullscreen, macChrome, toggleCollapsed, useChrome } from './chrom
 import { focusRegion, type RegionRoot } from './regions';
 import { KeysProviders, useRunCommand } from './KeysProviders';
 import { MinimisedNav } from './MinimisedNav';
-import { OutboxFlag } from './OutboxHost';
 import { SheetHost } from './SheetHost';
 import { Sidebar } from './Sidebar';
 import { StatusHost } from './StatusHost';
@@ -311,10 +310,10 @@ export function ChromeNotch() {
  * --shell-pad + --pane-head (the notch's bottom meets the header's hairline). The path's 10 and 12 are the step and
  * pane corner radii (12 = --radius-lg).
  */
-export const NOTCH_W = 134;
+export const NOTCH_W = 129;
 export const NOTCH_H = 56;
-const NOTCH_EDGE = 'M134 8A10 10 0 0 0 124 18V32A12 12 0 0 1 112 44H20A12 12 0 0 0 8 56';
-const NOTCH_FILL = `M0 0H134V8${NOTCH_EDGE.slice('M134 8'.length)}H0Z`;
+const NOTCH_EDGE = 'M129 8A10 10 0 0 0 119 18V32A12 12 0 0 1 107 44H20A12 12 0 0 0 8 56';
+const NOTCH_FILL = `M0 0H129V8${NOTCH_EDGE.slice('M129 8'.length)}H0Z`;
 
 /** The shell's frame drawn from plain props: kept apart from the data hooks so the harness can draw any state. */
 export function ShellLayout(props: ShellLayoutProps) {
@@ -365,7 +364,6 @@ export function ShellLayout(props: ShellLayoutProps) {
           </Pane>
         ) : null}
       </div>
-      {minimised || collapsed ? <OutboxFlag /> : null}
       {props.overlay}
     </div>
   );

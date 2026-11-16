@@ -454,7 +454,7 @@ describe('states, copy and design rules', () => {
 
   test('Help: version line, queue inspector rows, diagnostics preview, welcome', () => {
     assert.match(render('help'), /Version 0\.3\.0 \(build dev\) · macOS/);
-    assert.match(render('help'), />Show welcome</);
+    assert.match(render('help'), />Replay</);
     const q = render('queue-inspector');
     assert.match(q, /Archive 3 threads/);
     assert.match(q, />Retry</);

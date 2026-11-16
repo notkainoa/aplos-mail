@@ -132,6 +132,30 @@ test('the Low band groups and names the newest non-owner sender, past an alias o
   }
 });
 
+test('the Low band puts one sender in one group whatever the case of the address', () => {
+  const low = (thread: string): StoreWrite => ({
+    kind: 'workflow',
+    accountId: ACCOUNT,
+    remoteThreadId: thread,
+    patch: { lane: 'low' },
+  });
+  const store = setup([
+    msg('m1', 't1', 1, { from: { address: 'News@Shop.example', name: 'Shop News' } }),
+    msg('m2', 't2', 2, { from: { address: 'news@shop.example', name: 'Shop News' } }),
+    low('t1'),
+    low('t2'),
+  ]);
+  try {
+    const groups = store.read(q => lowGroups(q));
+    assert.deepEqual(
+      groups.map(g => [g.address, g.threadIds.length]),
+      [['news@shop.example', 2]],
+    );
+  } finally {
+    store.close();
+  }
+});
+
 test('the home Low band preview names non-owner senders, never the owner', () => {
   const low = (thread: string): StoreWrite => ({
     kind: 'workflow',

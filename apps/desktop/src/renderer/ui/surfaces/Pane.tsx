@@ -18,6 +18,8 @@ const BULK_CLEAR_COMMAND = 'list.clearSelection';
 function PaneHeader({ header, scrolled }: { header: PaneHeaderProps; scrolled: boolean }) {
   const { lead, crumb, tools = [], onTool, ask, today, bulk } = header;
   const crumbText = crumb && crumb.showSubject && crumb.subject ? crumb.subject : crumb?.label;
+  const position = crumb?.position && !(crumb.showSubject && crumb.subject) ? crumb.position : null;
+  const centred = position !== null && crumb?.centrePosition === true;
   return (
     <header className="ui-pane__head" data-scrolled={scrolled ? 'true' : undefined}>
       {bulk ? (
@@ -75,15 +77,20 @@ function PaneHeader({ header, scrolled }: { header: PaneHeaderProps; scrolled: b
               data-subject={crumb.showSubject && crumb.subject ? 'true' : undefined}
             >
               <span className="ui-pane__crumb-text">{crumbText}</span>
-              {crumb.position && !(crumb.showSubject && crumb.subject) ? (
+              {position && !centred ? (
                 <span className="ui-pane__crumb-pos">
-                  {formatCount(crumb.position.index)} of {formatCount(crumb.position.of)}
+                  {formatCount(position.index)} of {formatCount(position.of)}
                 </span>
               ) : null}
             </span>
           ) : null}
         </div>
       )}
+      {position && centred && !bulk ? (
+        <span className="ui-pane__pos-centre">
+          {formatCount(position.index)} of {formatCount(position.of)}
+        </span>
+      ) : null}
       <div className="ui-pane__tools">
         {tools.map(tool => (
           <PartButton

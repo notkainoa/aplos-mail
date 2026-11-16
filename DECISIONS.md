@@ -2061,3 +2061,16 @@ A bulk Done, Later or Trash that includes the card's own mail moved the cursor w
 ## 2026-11-14: earlier messages show "…" only when text is left out, and a whole one has no chevron (owner, UI council review)
 
 From the owner's review of the UI council PR. This replaces the "first sentence or two + …" wording of the 2026-11-03 reader answers. A folded earlier message ends in "…" only when part of the message is not shown: a sentence cut short (after the last whole word) or whole sentences dropped (after a space). The greeting and a bare sign-off ("Jordan", "Thanks, Mina") are not counted, as before. A short message the folded card can show whole (a snippet under 120 characters, so surely not cut by the provider, and no attachments) is shown in full with no chevron and no click target, because there is nothing to open; O still opens it. The bare chevron replacing "Show full" stays. In the same review the owner kept the 2 px focus ring with its 2 px gap on filled buttons and fields (the council's flush ring is withdrawn), removed the council's opaque strip and hairline under the reader's pinned bar (the soft pane-coloured fade stays), and kept "Esc closes" and the new footer placement in compose and the inline reply but without the added buttons (the compose page keeps attach and Format; the reply keeps attach, Pop out and ⋯).
+
+## 2026-11-15: a failed send is a toast that stays until you act on it; no sidebar notice (owner)
+
+From the owner's review of the UI council. A failed send ("Couldn’t send to Jordan. Your draft is saved." · Try again · Edit) and "Couldn’t confirm this was sent." · Check Sent are one persistent error toast each: they stay until the owner presses a verb or Dismiss, with no 8 s fade. The sidebar outbox notice, the collapsed and minimised alert flag, and their store and host are removed. The draft stays saved, unchanged, and a later accepted send of the same draft still clears the stale toast.
+
+## 2026-11-15: the rest of the owner's review of the UI council
+
+- **Low importance sheet:** the sender headers come back for every group (also a single row named like its sender). The "Mark all N done" button and the one-line preview stay, and rows keep no dots. A tap of → marks the highlighted row done like every other list; holding → for 600 ms (`--dur-hold-all`) marks everything done, with the button filling while held. The two-press arm-and-commit is gone. Groups are by sender address, now case-insensitive (`News@x` and `news@x` are one sender); which mail is low importance stays the heuristic in `ai/lanes.ts`, not AI.
+- **Home focus card:** the due chip sits on the sender line after the name again (list rows keep it before the summary).
+- **One by one:** the back button reads "Home"; the "1 of N" counter is centred over the card in the header row.
+- **Settings:** "Add an account" (not "More accounts"); Help's "Welcome window" row is "Replay onboarding" with a "Replay" button; Keyboard puts a muted "or" between alternative shortcuts.
+- **Collapsed sidebar (macOS windowed):** the toggle sits 8 px after the window buttons (83 px, was 88) and the notch is 5 px narrower.
+- **Rich mail in dark** keeps its own light sheet: recolouring arbitrary HTML is not reliable.

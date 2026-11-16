@@ -1,8 +1,8 @@
 /**
  * The Low importance sheet (DESIGN 7.2) on its data: the `lowBySender` view, one group per sender. Mounted only while
- * the sheet is open, so the window is watched only then; with more threads than one window it follows the cursor. The
- * first → arms and the second marks every thread done in one operation (a selector over the section, at the state the
- * owner saw), with one Undo toast.
+ * the sheet is open, so the window is watched only then; with more threads than one window it follows the cursor. A tap
+ * of the Done key marks the cursor thread done (one Undo toast, the cursor settles on the next row); holding it marks
+ * every thread done in one operation (a selector over the section, at the state the owner saw), with one Undo toast.
  */
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { api, useHold, useView, type HoldController } from '../../data';
@@ -107,7 +107,6 @@ export function LowSheetHost(props: LowSheetHostProps) {
     { kind: 'lowBySender' as const, ...(accountId ? { accountId } : {}) },
     { holdIds: hold.heldIds },
   );
-  const [armed, setArmed] = useState(false);
   const [hover, setHover] = useState<string | null>(null);
   const cursorId = useSheetCursor(view, hold, useReturnRestore(RETURN_KEY));
   // More low-importance threads than one window: the window follows the cursor, so every thread can be reached.
@@ -126,6 +125,22 @@ export function LowSheetHost(props: LowSheetHostProps) {
       },
     });
   const groups = groupsOf(view, row => ({ ...rowProps(row), hoverActions: [] }));
+
+  const doneCursor = () => {
+    if (!cursorId) return;
+    // The rows around the cursor stay put while the done one leaves; the cursor then settles on its neighbour.
+    hold.extend(neighbourKeys(view.ids, cursorId).filter(id => id !== cursorId));
+    const { opId, receipt } = api.thread.act({ ids: [cursorId], action: { type: 'done' } });
+    pushToast({
+      id: opId,
+      kind: 'done',
+      message: 'Done',
+      undoable: true,
+      actions: [UNDO_ACTION],
+      onAction: undoHandler(opId),
+    });
+    receipt.catch(() => dismissToast(opId));
+  };
 
   const markAll = () => {
     if (!view.state) return;
@@ -156,15 +171,14 @@ export function LowSheetHost(props: LowSheetHostProps) {
       }}
       groups={groups}
       total={view.total}
-      armed={armed}
       markAllCommandId="lowImportance.markAllDone"
       preview={
         hovered ? { rowId: hover ?? '', text: hovered.snippet || primaryOf(hovered) } : undefined
       }
       onPreview={setHover}
-      onArm={() => setArmed(true)}
+      onDoneCursor={doneCursor}
       onCommitAll={markAll}
-      onClose={() => (armed ? setArmed(false) : onClose())}
+      onClose={onClose}
     />
   );
 }

@@ -1,4 +1,4 @@
-import { useEffect, useId, useRef } from 'react';
+import { Fragment, useEffect, useId, useRef } from 'react';
 import type { KeyboardEvent } from 'react';
 import { formatChord } from '../../commands';
 import { chordFromEvent, chordId, parseChord } from '../../commands/internal';
@@ -154,10 +154,11 @@ export function KeyRecorder({
             onClick={onStart}
           >
             {shown.length > 0 ? (
-              shown.map(k => (
-                <kbd key={k} className="ui-key-recorder__kbd">
-                  {k}
-                </kbd>
+              shown.map((k, i) => (
+                <Fragment key={k}>
+                  {i > 0 ? <span className="ui-key-recorder__or">or</span> : null}
+                  <kbd className="ui-key-recorder__kbd">{k}</kbd>
+                </Fragment>
               ))
             ) : (
               <span className="ui-key-recorder__none">None</span>

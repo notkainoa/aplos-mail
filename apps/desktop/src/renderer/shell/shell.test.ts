@@ -411,5 +411,5 @@ test('the collapsed strip is the sidebar region, so its toggle stays a region Ta
   assert.match(html, /aplos-shell__strip[^>]*data-region="sidebar"/);
   // The notch is inside the strip, hidden from assistive tech, and its fill and edge share the notch's width.
   assert.match(html, /aplos-shell__strip[\s\S]*aplos-shell__notch[^>]*aria-hidden="true"/);
-  assert.match(html, new RegExp(`d="M0 0H${NOTCH_W}V8A10 10 0 0 0 124 18`));
+  assert.match(html, new RegExp(`d="M0 0H${NOTCH_W}V8A10 10 0 0 0 119 18`));
 });

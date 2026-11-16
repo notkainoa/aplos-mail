@@ -1,6 +1,5 @@
 import type { ReactNode, Ref } from 'react';
 import type {
-  Announce,
   CommandAction,
   CommandId,
   CommitKind,
@@ -256,7 +255,7 @@ export interface LowSheetGroup {
   onUnsubscribe?: () => void;
 }
 
-/** The Low-importance sheet opened from the LowBand: grouped by sender, hover preview, per-sender Unsubscribe, → → marks everything done (first press arms, second commits); empty: "No low-importance mail." with "Back to Home" (DESIGN §7.2, §7.14). Not drawn in the mockups. Plain + refines: ui-foundation; used by ui-home. */
+/** The Low-importance sheet opened from the LowBand: grouped by sender (a header for every sender, even a single row), hover preview in the bar, per-sender Unsubscribe. The Done key: a tap marks the cursor row done, holding it for 600 ms marks everything done (the button fills while it is held). Empty: "No low-importance mail." with "Back to Home" (DESIGN §7.2, §7.14). Not drawn in the mockups. Plain + refines: ui-foundation; used by ui-home. */
 export interface LowSheetProps {
   /** Whether it is shown (a Dialog, size 'md'). */
   open: boolean;
@@ -269,22 +268,18 @@ export interface LowSheetProps {
    * may show fewer rows than exist, so it is never counted from `groups`; absent, the groups' rows are summed.
    */
   total?: number;
-  /** The first → was pressed: the component shows "Press → again to mark all <n> done · Esc cancels" (copy pending DESIGN). */
-  armed: boolean;
-  /** Registry command for → (the keycap in the armed line). */
+  /** Registry command for the Done key (its keycap on the button, and which arrow the sheet listens for). */
   markAllCommandId: CommandId;
   /** Row whose preview shows on hover, with its text from the data hook. */
   preview?: { rowId: string; text: string };
   /** Pointer entered or left a row; the screen loads the preview text. */
   onPreview?: (rowId: string | null) => void;
-  /** First → (arm). */
-  onArm: () => void;
-  /** Second → while armed (commit all). */
+  /** A tap of the Done key: mark the row under the cursor done (the cursor moves to the next row). */
+  onDoneCursor: () => void;
+  /** The Done key held, or a click on the button: mark everything done. */
   onCommitAll: () => void;
-  /** Esc or "Back to Home". Esc while armed disarms first; the screen sets `armed` false. */
+  /** Esc or "Back to Home". */
   onClose: () => void;
-  /** Announces arming and the result (DESIGN §11.3). */
-  announce?: Announce;
 }
 
 /** Solid hill / dusk / stamp commit chip, 26 px, `--radius-sm`, icon + word; static, drawn on the ghost (DESIGN §4.9, §6 CommitChip). Mockups: home.html, reader.html (commit). Plain + refines: ui-foundation; motion by ui-shell. */

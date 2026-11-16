@@ -128,6 +128,11 @@
 .ui-list-btn[data-variant='filled']:active {
   box-shadow: inset 0 1px 0 var(--press-lo);
 }
+.ui-list-key-word {
+  color: inherit;
+  font: var(--type-caption);
+  letter-spacing: var(--track-caption);
+}
 .ui-list-btn[data-variant='filled'] .ui-list-kbd {
   /* A hint, not part of the label: a faint plate with a hairline edge on the fill, the label's own colour. */
   background: color-mix(in srgb, var(--accent-ink) 12%, transparent);
@@ -1252,9 +1257,36 @@
   box-shadow: 0 calc(-1 * var(--hairline)) 0 var(--line);
   box-sizing: content-box;
 }
-.ui-low-sheet__bar > .ui-list-btn {
+.ui-low-sheet__all {
+  position: relative;
+  display: inline-flex;
   flex: none;
   margin-left: auto;
+}
+/* The hold's progress: a lighter wash grows left to right over the filled button, transform only, on its own layer. */
+.ui-low-sheet__all::after {
+  content: '';
+  position: absolute;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  left: 0;
+  border-radius: var(--radius-md);
+  background-color: color-mix(in srgb, var(--accent-ink) 22%, transparent);
+  opacity: 0;
+  pointer-events: none;
+  transform: scaleX(0);
+  transform-origin: left center;
+}
+.ui-low-sheet__all[data-holding='true']::after {
+  opacity: 1;
+  transform: scaleX(1);
+  transition: transform var(--dur-hold-all) var(--ease-linear);
+}
+@media (prefers-reduced-motion: reduce) {
+  .ui-low-sheet__all[data-holding='true']::after {
+    transition: none;
+  }
 }
 .ui-low-sheet__bar-text {
   display: grid;
@@ -1263,9 +1295,6 @@
 }
 .ui-low-sheet__bar-text > * {
   grid-area: 1 / 1;
-}
-.ui-low-sheet__foot[data-covered='true'] {
-  visibility: hidden;
 }
 .ui-low-sheet__preview {
   display: -webkit-box;
@@ -1278,21 +1307,6 @@
   overflow-wrap: anywhere;
   -webkit-box-orient: vertical;
   -webkit-line-clamp: 1;
-}
-.ui-low-sheet__foot {
-  display: flex;
-  flex: 1 1 auto;
-  flex-wrap: wrap;
-  align-items: center;
-  /* One line is always reserved, so the hovered row's preview (drawn in this slot) never changes the bar's height. */
+  /* One line is always reserved, so a hovered row's preview never changes the bar's height. */
   min-height: 1lh;
-  gap: var(--space-1);
-  min-width: 0;
-  margin: 0;
-  color: var(--dim);
-  font: var(--type-small);
-  letter-spacing: var(--track-small);
-}
-.ui-low-sheet__foot[data-armed='true'] {
-  color: var(--ink);
 }

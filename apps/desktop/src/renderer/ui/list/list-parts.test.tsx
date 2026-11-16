@@ -130,9 +130,8 @@ describe('LowBand and LowSheet', () => {
     const base = {
       binding: { id: 'low-list', label: 'Low importance' },
       groups,
-      armed: false,
       markAllCommandId: 'lowImportance.markAllDone',
-      onArm: noop,
+      onDoneCursor: noop,
       onCommitAll: noop,
       onClose: noop,
     };
@@ -150,35 +149,47 @@ describe('LowBand and LowSheet', () => {
     assert.match(text(m), /Field Notes 1 Unsubscribe/);
     assert.match(text(m), /Winter light, in five short notes\./);
     assert.match(text(m), /Mark all 3 done/, 'the sheet has its own button');
-    assert.doesNotMatch(
-      text(render(<LowSheet open {...base} />)),
-      /twice to mark all done/,
-      'no hint line: the filled button already names the key',
-    );
+    assert.match(text(m), /Mark all 3 done Hold →/, 'the button names the gesture: Hold →');
+    assert.doesNotMatch(text(m), /again to mark|Esc cancels/, 'no armed line any more');
     assert.match(
       m,
       /role="dialog" aria-modal="true" aria-labelledby="[^"]+" tabindex="-1"/,
       'focusable fallback for focus on open',
     );
-    const armed = render(<LowSheet open {...base} armed />);
-    assert.match(armed, /data-armed="true"/);
-    assert.match(text(armed), /Press → again to mark all 3 done · Esc cancels/);
+    assert.match(m, /<span class="ui-low-sheet__all"/, 'the hold progress wraps the button');
     assert.match(
-      armed,
-      /class="ui-low-sheet__foot" role="status"/,
-      'without the shell announcer the foot is the live region',
-    );
-    const announced = render(<LowSheet open {...base} armed announce={noop} />);
-    assert.doesNotMatch(
-      announced,
-      /class="ui-low-sheet__foot" role="status"/,
-      'with the announcer arming is spoken once',
-    );
-    assert.match(
-      announced,
+      m,
       /<button[^>]*title="Unsubscribe"(?![^>]*tabindex)[^>]*>/,
       'Unsubscribe has no key, so it stays reachable',
     );
+  });
+
+  test('every sender has its header, even a single row named like its sender', () => {
+    const one: LowSheetGroup[] = [
+      {
+        id: 'g-parcel',
+        sender: 'Parcel Trail',
+        rows: [
+          row({ id: 'p1', layout: 'list', sender: 'Parcel Trail', primary: 'Out for delivery' }),
+        ],
+      },
+    ];
+    const m = render(
+      <LowSheet
+        open
+        binding={{ id: 'l', label: 'Low importance' }}
+        groups={one}
+        markAllCommandId="lowImportance.markAllDone"
+        preview={{ rowId: 'p1', text: 'Out for delivery, due today.' }}
+        onDoneCursor={noop}
+        onCommitAll={noop}
+        onClose={noop}
+      />,
+    );
+    assert.match(text(m), /Parcel Trail 1 .*Parcel Trail/, 'the header sits above its one row');
+    assert.match(m, /ui-section-header/);
+    assert.match(m, /class="ui-low-sheet__preview"[^>]*>Out for delivery, due today\./);
+    assert.doesNotMatch(m, /data-unread|ui-account-dot|ui-list-row__dot/, 'no dots on the rows');
   });
 
   test('empty sheet: "No low-importance mail" with Back to Home', () => {
@@ -187,9 +198,8 @@ describe('LowBand and LowSheet', () => {
         open
         binding={{ id: 'l', label: 'Low importance' }}
         groups={[]}
-        armed={false}
         markAllCommandId="lowImportance.markAllDone"
-        onArm={noop}
+        onDoneCursor={noop}
         onCommitAll={noop}
         onClose={noop}
       />,

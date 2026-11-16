@@ -302,6 +302,7 @@
   --dur-deal: 140ms;
   --dur-hold: 450ms;
   --dur-hold-cap: 1200ms;
+  --dur-hold-all: 600ms;
   --dur-close: 180ms;
   --dur-swap: 120ms;
   --dur-arrive: 200ms;

@@ -23,7 +23,7 @@ export type CommandId = string;
  * - palette, menu, datePicker, dialog: focus-scoped modal transients (DESIGN §8 last row)
  * - sheet: the reconnect or consent sheet the shell hosts (shell/index.ts openSheet); a
  *   modal transient, so its Esc cancels and nothing behind it answers
- * - lowImportance: the Low-importance sheet over Home, with → → to mark everything done
+ * - lowImportance: the Low-importance sheet over Home, with → to mark the row done (hold → for all)
  *   (DESIGN §7.2); a modal transient like a dialog. Added because §8 has no row for it.
  * - onboarding: the separate setup window (DESIGN §7.11); it has no 'global'
  * - firstSync: the first-sync screen, the onboarding window's last step (DESIGN §7.12);

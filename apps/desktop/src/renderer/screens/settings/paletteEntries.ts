@@ -117,7 +117,7 @@ export const SETTING_ROWS: readonly RowSpec[] = [
     'reset demo',
     'remove demo',
   ]),
-  row('accounts', 'addAccount', 'More accounts', ['add an account', 'connect', 'google', 'gmail']),
+  row('accounts', 'addAccount', 'Add an account', ['more accounts', 'connect', 'google', 'gmail']),
   row('accounts', 'accountAi', 'Use this account’s mail for AI', [
     'privacy',
     'exclude',
@@ -150,7 +150,12 @@ export const SETTING_ROWS: readonly RowSpec[] = [
   // Help & about
   row('help', 'version', 'About Aplos Mail', ['version', 'build', 'update', 'macos']),
   row('help', 'shortcutSheet', 'See all shortcuts', ['cheat sheet', 'keys', 'help']),
-  row('help', 'showWelcome', 'Welcome window', ['show welcome', 'onboarding', 'setup', 'intro']),
+  row('help', 'showWelcome', 'Replay onboarding', [
+    'show welcome',
+    'welcome window',
+    'setup',
+    'intro',
+  ]),
   row('help', 'demoLoad', 'Load demo mail', ['sample', 'try']),
   row('help', 'diagnostics', 'Export diagnostics', ['report', 'logs', 'support']),
   row('help', 'verboseLogging', 'Verbose logging', ['log', 'debug', 'headers', 'support']),

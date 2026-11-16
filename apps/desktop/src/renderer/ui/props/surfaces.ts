@@ -46,6 +46,8 @@ export interface PaneHeaderProps {
     label: string;
     /** Position in `--dim`, e.g. { index: 1, of: 16 } → "1 of 16". */
     position?: { index: number; of: number };
+    /** Draw the position centred in the header (over the content column) instead of after the crumb: the one-by-one view. */
+    centrePosition?: boolean;
     /** Reader: the thread subject, shown instead of the crumb once `showSubject` is true. */
     subject?: string;
     /** The summary has scrolled out of view, so the crumb shows `subject` (DESIGN §7.1). */

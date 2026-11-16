@@ -249,8 +249,6 @@ export function useToasts(): readonly ToastData[] {
   return useSyncExternalStore(subscribeToasts, getToasts, getToasts);
 }
 
-export { addOutboxNotice, removeOutboxNotice } from './store-outbox';
-export type { OutboxNotice } from './store-outbox';
 export {
   holdToast,
   isUndoToast,

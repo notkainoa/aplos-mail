@@ -3,17 +3,12 @@
  * 7.13, 7.15 Send failed): a refused or failed send ("Couldn’t send to Jordan. Your draft is saved." · Try again ·
  * Edit), a send later ("Scheduled for tomorrow, 8:00 AM" · Undo), an offline send ("Saved here · will sync"), an Undo
  * that came too late ("Already sent."), and the held sends behind the newest one (the newest is the toast's UndoTray).
- * Each toast's id is its send's, so a send never has two. Nothing here sends mail by itself: every verb is the owner's.
+ * Each toast's id is its send's, so a send never has two. A failed or unconfirmed send's toast stays until the owner acts
+ * on it (a verb or Dismiss); there is no sidebar notice (owner, 2026-11-15). Nothing here sends mail by itself: every verb
+ * is the owner's.
  */
 import { api, getNow, type Submission } from '../../../data';
-import {
-  addOutboxNotice,
-  dismissToast,
-  navigate,
-  openCompose,
-  pushToast,
-  removeOutboxNotice,
-} from '../../../shell';
+import { dismissToast, navigate, openCompose, pushToast } from '../../../shell';
 import { UNDO_ACTION } from '../../undoOperation';
 import { recipientPhrase } from '../model/recipients';
 import { SEND_COPY } from '../model/sendState';
@@ -67,30 +62,17 @@ function unconfirmedToastId(key: string): string {
   return `send-unconfirmed-${key}`;
 }
 
-/** "Couldn’t confirm this was sent." · Check Sent, for a send whose `Submission/set` never answered before its page went. */
+/** "Couldn’t confirm this was sent." · Check Sent, for a send whose `Submission/set` never answered before its page went. It stays until acted on. */
 export function pushUnconfirmedSend(key: string): void {
-  const id = unconfirmedToastId(key);
-  const open = (actionId: string) => {
-    if (actionId === CHECK_SENT.id) navigate('sent');
-  };
   pushToast({
-    id,
+    id: unconfirmedToastId(key),
     kind: 'error',
     message: SEND_COPY.unconfirmed,
     actions: [CHECK_SENT],
     undoable: false,
+    persistent: true,
     onAction: actionId => {
-      removeOutboxNotice(id);
-      open(actionId);
-    },
-  });
-  addOutboxNotice({
-    id,
-    message: SEND_COPY.unconfirmed,
-    actions: [CHECK_SENT],
-    onAction: actionId => {
-      dismissToast(id);
-      open(actionId);
+      if (actionId === CHECK_SENT.id) navigate('sent');
     },
   });
 }
@@ -98,36 +80,21 @@ export function pushUnconfirmedSend(key: string): void {
 /** The late answer came: the unconfirmed notice goes (the stack follows the send, or says it failed). */
 export function dropUnconfirmedSend(key: string): void {
   dismissToast(unconfirmedToastId(key));
-  removeOutboxNotice(unconfirmedToastId(key));
 }
 
 /**
- * A failed send says so twice, in the same words with the same verbs: a toast that fades after 8 s so it never sits
- * over the pane, and an outbox notice in the sidebar that stays until the owner deals with it. Either one's verb
- * resolves both. The draft is always saved.
+ * A failed send is one error toast that stays until the owner acts on it: Try again, Edit or Dismiss (owner,
+ * 2026-11-15). There is no sidebar notice. The draft is always saved.
  */
 function pushFailure(id: string, recipient: string, onAction: (actionId: string) => void): void {
-  const message = SEND_COPY.failed(recipient);
-  const actions = [TRY_AGAIN, EDIT];
   pushToast({
     id,
     kind: 'error',
-    message,
-    actions,
+    message: SEND_COPY.failed(recipient),
+    actions: [TRY_AGAIN, EDIT],
     undoable: false,
-    onAction: actionId => {
-      removeOutboxNotice(id);
-      onAction(actionId);
-    },
-  });
-  addOutboxNotice({
-    id,
-    message,
-    actions,
-    onAction: actionId => {
-      dismissToast(id);
-      onAction(actionId);
-    },
+    persistent: true,
+    onAction,
   });
 }
 

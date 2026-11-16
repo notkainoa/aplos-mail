@@ -26,6 +26,7 @@ import { menuEntries } from './HomeMenu';
 import { isStaleWhy, restoreListFocus } from './WhyHost';
 import { OneByOneFinish } from './OneByOneStates';
 import { OneByOneScreen } from './OneByOneScreen';
+import { crumbOf } from './useOneByOne';
 import { commandsForOneByOne, type OneByOneControls } from './oneByOneCommands';
 import { doNowQueue, liveDoNow, type DoNowIds } from './oneByOneQueue';
 import {
@@ -503,4 +504,20 @@ test('Why closes into the list, and drops when the cursor has left its thread', 
   assert.equal(isStaleWhy({ id: 'a', anchor }, 'a'), false);
   assert.equal(isStaleWhy({ id: 'a', anchor }, 'b'), true, 'cursor moved while it loaded');
   assert.equal(isStaleWhy({ id: 'a', anchor }, null), true);
+});
+
+test('the pane header reads "‹ Home" and carries "1 of 6" apart, to be centred over the card', () => {
+  let exits = 0;
+  const part = crumbOf({ index: 1, of: 6 }, () => (exits += 1));
+  assert.equal(part.lead?.label, 'Back to Home');
+  assert.equal(part.crumb?.label, 'Home', 'the back button names where it goes');
+  assert.deepEqual(part.crumb?.position, { index: 1, of: 6 });
+  assert.equal(
+    part.crumb?.centrePosition,
+    true,
+    'the counter is drawn centred, not after the crumb',
+  );
+  part.lead?.onPress();
+  assert.equal(exits, 1);
+  assert.equal(crumbOf(null, () => undefined).crumb?.position, undefined);
 });

@@ -73,14 +73,14 @@ function retryOf(failure: RowFailure, id: ThreadId, acted: (id: ThreadId) => voi
   };
 }
 
-function crumbOf(
+export function crumbOf(
   progress: { readonly index: number; readonly of: number } | null,
   onExit: () => void,
 ): PaneHeaderPart {
   return {
     lead: { kind: 'back', label: 'Back to Home', commandId: 'nav.back', onPress: onExit },
-    // The walk is Do now plus Back from Later, not the sidebar's Home badge, so the crumb names the walk, never a list.
-    crumb: { label: 'One by one', position: progress ?? undefined },
+    // The back button reads "‹ Home" (it goes there); the walk's "1 of 6" sits centred over the card, not in the button.
+    crumb: { label: 'Home', position: progress ?? undefined, centrePosition: true },
   };
 }
 
