@@ -107,11 +107,16 @@ export function createComposeSession(
   let cancelTimer: (() => void) | null = null;
   const listeners = new Set<() => void>();
   // A create that has not been confirmed: its retries reuse the key, so a lost reply never makes a second draft.
-  let pendingCreate: {
+  // `fields` are what its last attempt wrote, kept so the create can be replayed if the account changes under it.
+  interface PendingCreate {
     readonly opId: string;
     readonly seq: number;
     readonly accountId: string;
-  } | null = null;
+    fields?: DraftFields;
+  }
+  let pendingCreate: PendingCreate | null = null;
+  // Creates left behind when From changed account while they were unconfirmed: one may have committed in the old account.
+  let abandoned: PendingCreate[] = [];
   const mintOpId = deps.mintOpId ?? randomOpId;
 
   function dispatch(event: ComposeEvent): void {
@@ -163,9 +168,29 @@ export function createComposeSession(
 
   /** The key of this create: the first attempt's while it is unconfirmed and still for the same account (a draft cannot move account). */
   function createFor(seq: number, accountId: string) {
-    if (pendingCreate?.accountId !== accountId)
+    if (pendingCreate?.accountId !== accountId) {
+      if (pendingCreate?.fields) abandoned.push(pendingCreate);
       pendingCreate = { opId: mintOpId(), seq, accountId };
+    }
     return pendingCreate;
+  }
+
+  /**
+   * A create whose reply was lost may have committed in the account the composer then left. Replaying its key answers with
+   * that draft (or makes it, if it never arrived), and the draft is removed, so no copy of the text is left behind in the
+   * old account's Drafts. One that cannot be settled now is tried again with the next save.
+   */
+  async function retireAbandoned(): Promise<void> {
+    const pending = abandoned;
+    abandoned = [];
+    for (const create of pending) {
+      try {
+        const { draft } = await deps.api.saveDraft({ opId: create.opId, fields: create.fields! });
+        await deps.api.destroyDraft({ id: draft.id });
+      } catch {
+        abandoned.push(create);
+      }
+    }
   }
 
   function saveTarget(effect: Extract<ComposeEffect, { type: 'save' }>) {
@@ -177,7 +202,10 @@ export function createComposeSession(
   async function runSave(effect: Extract<ComposeEffect, { type: 'save' }>): Promise<void> {
     const fields = draftFieldsOf(effect.fields, effect.context);
     try {
-      const { draft } = await deps.api.saveDraft({ ...saveTarget(effect), fields });
+      const target = saveTarget(effect);
+      if (effect.draftId === null && pendingCreate) pendingCreate.fields = fields;
+      if (effect.draftId === null) await retireAbandoned();
+      const { draft } = await deps.api.saveDraft({ ...target, fields });
       // A replayed create answers with what the first attempt wrote: only that attempt's edits count as saved.
       const seq = effect.draftId === null ? (pendingCreate?.seq ?? effect.seq) : effect.seq;
       if (effect.draftId === null) pendingCreate = null;
