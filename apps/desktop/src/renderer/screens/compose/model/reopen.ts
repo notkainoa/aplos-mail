@@ -21,3 +21,17 @@ export function replyDraftFor(
     .sort((a, b) => b.updatedAt - a.updatedAt);
   return mine[0]?.id ?? null;
 }
+
+/**
+ * A watched window whose rows have all arrived. A view lists an id before its row is fetched, so "live" alone can mean
+ * "live and still empty": a reply that looked for its draft then would start blank and leave the saved draft behind.
+ */
+export function rowsResolved(view: {
+  readonly status: string;
+  readonly ids: readonly string[];
+  readonly rows: ReadonlyMap<string, unknown>;
+}): boolean {
+  // A failed window reads as empty (a fresh reply), so the host never waits forever.
+  if (view.status === 'failed') return true;
+  return view.status === 'live' && view.ids.every(id => view.rows.has(id));
+}
