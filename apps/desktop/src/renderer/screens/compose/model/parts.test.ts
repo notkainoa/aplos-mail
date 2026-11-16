@@ -169,14 +169,21 @@ test('a window is resolved only when it is live and every listed id has its row'
   );
 });
 
-test('a pretty-printed draft from another client does not open on blank lines; typed blank lines still do', () => {
+test('a pretty-printed draft from another client does not open on blank lines; its words and lines stay apart', () => {
   assert.equal(
-    htmlToText('\n<html>\n<body>\n<p>Hi Jordan,</p>\n<p>See you Thursday.</p>\n</body>\n</html>\n'),
+    htmlToText('\n<html>\n<body>\n<p>Hi Jordan,</p><p>See you Thursday.</p>\n</body>\n</html>\n'),
     'Hi Jordan,\nSee you Thursday.',
   );
-  assert.equal(htmlToText('  \n<div dir="ltr">Thanks</div>'), 'Thanks');
+  assert.equal(htmlToText('  \n<div dir="ltr">Thanks</div>\n'), 'Thanks');
+  // Between the text's own tags nothing is joined or dropped (the same as before).
+  assert.equal(htmlToText('<b>Hello</b>\n<i>there</i>'), 'Hello\nthere');
+  assert.equal(htmlToText('<span>one</span>\n<span>two</span>'), 'one\ntwo');
+  assert.equal(htmlToText('<div>x</div>\n\n<div>y</div>'), 'x\n\ny');
+  // Spaces the owner typed stay, at the end too.
+  assert.equal(htmlToText('foo  '), 'foo  ');
+  assert.equal(htmlToText(textToHtml('foo  ')), 'foo  ');
   // What was typed comes back exactly, including a deliberate first blank line.
-  for (const text of ['\nfoo', '\n\nfoo\n\nbar\n', 'a\n\nb']) {
+  for (const text of ['\nfoo', '\n\nfoo\n\nbar\n', 'a\n\nb', '  lead and trail  ']) {
     assert.equal(htmlToText(textToHtml(text)), text, JSON.stringify(text));
   }
 });
