@@ -37,3 +37,19 @@ test('reply, Esc, leave, return, R: the draft is on the card again', async ({ pa
   await page.keyboard.press('r');
   await expect(page.locator(`${CARD} textarea`).first()).toHaveValue(SAVED);
 });
+
+// The gallery's clock stands still: a first save is immediate, a later one waits for a quiet spell the clock never
+// reached, so the card sat on "Saving…" for ever (ticket 2026-11-16). The session now treats its timer firing as due.
+test('a second edit saves too: the card does not stay on Saving…', async ({ page }) => {
+  await openState(page, HOME, { theme: 'light' });
+  await page.keyboard.press('Enter');
+  await page.locator(LETTER).waitFor();
+  await page.keyboard.press('r');
+  const body = page.locator(`${CARD} textarea`).first();
+  await body.waitFor();
+  await body.fill('First words.');
+  await expect(page.locator(CARD)).toContainText('Draft saved');
+  await body.fill('First words, then more.');
+  await expect(page.locator(CARD)).toContainText('Draft saved', { timeout: 10_000 });
+  await expect(page.locator(CARD)).not.toContainText('Saving…');
+});
