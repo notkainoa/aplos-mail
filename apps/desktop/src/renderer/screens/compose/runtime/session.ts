@@ -139,8 +139,10 @@ export function createComposeSession(
     const due = state.discarding ? null : saveDueAt(state.save);
     if (due === null) return;
     const wait = Math.max(0, due - deps.timers.now());
+    // The timer was set for `due`, so when it fires that time has come, even if the clock it was read from stands still
+    // (the visual gallery's frozen clock): the save is then due instead of waiting for a time that never arrives.
     cancelTimer = deps.timers.setTimeout(
-      () => dispatch({ type: 'tick', now: deps.timers.now() }),
+      () => dispatch({ type: 'tick', now: Math.max(deps.timers.now(), due) }),
       wait,
     );
   }

@@ -224,3 +224,41 @@ test('From: a create that was committed but whose reply was lost never binds the
     .filter(d => d.accountId === kit.accountId && htmlToText(d.html) === 'Hello there');
   assert.equal(left.length, 0, 'the create that did commit in the old account is removed');
 });
+
+test('a later autosave still fires when the clock stands still (the visual gallery): the timer firing means it is due', async () => {
+  const kit = await bootStandIn();
+  const frozen = kit.timers.now();
+  const fired: (() => void)[] = [];
+  const timers = {
+    now: () => frozen,
+    setTimeout(callback: () => void) {
+      fired.push(callback);
+      return () => {
+        const at = fired.indexOf(callback);
+        if (at >= 0) fired.splice(at, 1);
+      };
+    },
+  };
+  const session = createComposeSession(
+    { api: kit.api, timers },
+    freshCompose(
+      { accountId: kit.accountId, mode: 'reply', threadId: kit.threadId },
+      { to: [JORDAN], cc: [], bcc: [], subject: 'Re: plans', body: '' },
+    ),
+  );
+  session.dispatch({ type: 'edit', patch: { body: 'H' }, now: frozen });
+  await session.settled();
+  const id = session.getState().save.draftId;
+  assert.ok(id, 'the first keystroke created the draft');
+  session.dispatch({ type: 'edit', patch: { body: 'Hello there' }, now: frozen });
+  assert.ok(fired.length > 0, 'a save is scheduled');
+  fired.splice(0).forEach(callback => callback());
+  await session.settled();
+  assert.equal(
+    htmlToText(kit.draft(id)!.html),
+    'Hello there',
+    'saved although the clock never moved',
+  );
+  assert.equal(session.getState().save.savedSeq, session.getState().save.editSeq);
+  session.dispose();
+});
