@@ -133,6 +133,30 @@
   min-width: 0;
 }
 
+/* A row's action (Show shortcuts, Export, Open, Add a tool, Remove) is a hairline pill, so it reads as a control and
+   not as a caption beside a switch. The same look as the calendar editor's Day, Time and Calendar triggers. */
+.ui-setting-row__control .ui-button[data-variant='text'] {
+  --btn-h: var(--control-sm);
+  box-shadow: inset 0 0 0 var(--hairline) var(--line-strong);
+}
+.ui-setting-row__control .ui-button[data-variant='text']:is(:disabled, [aria-disabled='true']) {
+  box-shadow: inset 0 0 0 var(--hairline) var(--line);
+}
+/* Remove stays quiet and turns destructive only on hover. */
+.ui-setting-row__control
+  .ui-button[data-variant='text'][data-tone='danger']:not(:disabled, [aria-disabled='true']) {
+  color: var(--ink-2);
+}
+@media (hover: hover) {
+  .ui-setting-row__control
+    .ui-button[data-variant='text'][data-tone='danger']:hover:not(
+      :disabled,
+      [aria-disabled='true']
+    ) {
+    color: var(--stamp-ink);
+  }
+}
+
 .ui-setting-row__toggle .ui-setting-row__control {
   color: var(--dim);
 }
@@ -264,7 +288,7 @@
 
 .ui-provider-table__line {
   display: flex;
-  align-items: center;
+  align-items: baseline;
   gap: var(--space-2);
   font: var(--type-ui);
   letter-spacing: var(--track-ui);
@@ -354,6 +378,13 @@
 .ui-provider-table__local-actions {
   gap: var(--space-2);
   margin-right: calc(-1 * var(--space-2));
+}
+
+/* The address field, its status and Test share one line (no wrapped second line under the field). */
+.ui-provider-table__local-control {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
 }
 
 .ui-provider-table__button {
@@ -521,6 +552,14 @@
   color: var(--dim);
   font: var(--type-caption);
   letter-spacing: var(--track-caption);
+}
+
+/* Alternatives for one command (J or ↓): a small muted word between the keycaps, so they never read as a combination. */
+.ui-key-recorder__or {
+  padding: 0 var(--space-half);
+  font: var(--type-small);
+  letter-spacing: var(--track-small);
+  color: var(--dim);
 }
 
 .ui-key-recorder__kbd[data-role='new'] {

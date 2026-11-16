@@ -220,11 +220,9 @@ export function withCurrent(
   return options.some(o => o.id === id) ? options : [{ id, label }, ...options];
 }
 
-/** "Keep message text for 90 days, plus anything opened, starred or unread, up to 2 GB." */
-export function retentionLine(days: number, bytes: number): string {
-  const size = bytes % GB === 0 ? `${bytes / GB} GB` : `${(bytes / GB).toFixed(1)} GB`;
-  return `Keeps message text for ${days} days, plus anything opened, starred or unread, up to ${size}.`;
-}
+/** The storage row's description: what is kept and what never goes, without restating the pickers' values. */
+export const RETENTION_LINE =
+  'Keeps full message text on this Mac; opened, starred and unread mail is always kept.';
 
 /* ───────────────────────── Accounts ───────────────────────── */
 
@@ -642,6 +640,15 @@ export function modelIds(models: readonly AiModelInfo[] | undefined, feature: Ai
     .map(m => m.id);
 }
 
+/** Catalogue names for a provider's model ids; an id whose name is the id itself needs none. */
+export function modelNames(
+  models: readonly AiModelInfo[] | undefined,
+): Readonly<Record<string, string>> {
+  const names: Record<string, string> = {};
+  for (const m of models ?? []) if (m.label && m.label !== m.id) names[m.id] = m.label;
+  return names;
+}
+
 /** The Features table: Ask, Summaries, Drafts, Plans, Voice, each with the providers it may use and their models. */
 export function featureRows(
   settings: Pick<Settings, 'ai'>,
@@ -663,6 +670,7 @@ export function featureRows(
       model: choice.model,
       providerOptions: options,
       modelOptions: modelIds(models[provider], feature),
+      modelNames: modelNames(models[provider]),
     };
   });
 }

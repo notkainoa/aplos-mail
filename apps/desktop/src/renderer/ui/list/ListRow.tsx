@@ -107,10 +107,11 @@ function Underlays({ swipe }: { swipe: NonNullable<RowProps['swipe']> }) {
 function RowLine({
   rejected,
   due,
+  tag,
   primary,
   secondary,
   highlight,
-}: Pick<RowProps, 'rejected' | 'due' | 'primary' | 'secondary' | 'highlight'>) {
+}: Pick<RowProps, 'rejected' | 'due' | 'tag' | 'primary' | 'secondary' | 'highlight'>) {
   return (
     <span className="ui-list-row__line">
       {rejected ? (
@@ -123,6 +124,7 @@ function RowLine({
       ) : (
         <>
           {due ? <Chip kind="due" due={due} format="short" /> : null}
+          {tag ? <span className="ui-list-row__tag">{tag}</span> : null}
           <span
             className="ui-list-row__primary"
             dir="auto"
@@ -211,6 +213,11 @@ export function ListRow(props: ListRowProps) {
   const { id, layout, density, sender, account, unread, cursor, picked } = props;
   const { picking, hoverActions, swipe, rejected, lifted, onSelect, onOpen, onAction, ref } = props;
 
+  // An overdue Later row says so once: the Later-until chip in the date column. The due chip before the summary
+  // would be a second red time ("Yesterday" beside "Today, 8:00 AM").
+  const laterOverdue =
+    layout === 'later' && props.laterUntil?.kind === 'at' && props.laterUntil.overdue;
+
   // The action count sizes the date column so the hover overlay never spills over the line (DESIGN §5 rule 17).
   const rowStyle =
     hoverActions.length > 0
@@ -254,7 +261,8 @@ export function ListRow(props: ListRowProps) {
 
       <RowLine
         rejected={rejected}
-        due={props.due}
+        due={laterOverdue ? undefined : props.due}
+        tag={props.tag}
         primary={props.primary}
         secondary={props.secondary}
         highlight={props.highlight}

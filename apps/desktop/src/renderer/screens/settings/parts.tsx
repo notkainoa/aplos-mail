@@ -105,6 +105,15 @@ export function NotAvailable({
   return <Row section={section} anchor={anchor} label={label} description={NOT_AVAILABLE} />;
 }
 
+/** A short word between two pickers in one row ("for", "up to"). The pickers' names already say it, so it is silent. */
+export function InlineLabel({ children }: { children: string }) {
+  return (
+    <span className="settings-inline-label" aria-hidden="true">
+      {children}
+    </span>
+  );
+}
+
 /**
  * The picker: a text button that opens a Menu with the current choice checked (`menuitemradio`). There is no
  * listbox popup in the design system. Arrow keys, Return and Esc are the Menu's own. The trigger is drawn as a

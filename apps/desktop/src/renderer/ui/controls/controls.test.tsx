@@ -239,7 +239,7 @@ test('TextField: size, icon, trailing Return keycap, mono, disabled, read-only',
   );
   assert.match(lg, /data-size="lg"/);
   assert.match(lg, /data-icon="mail"/);
-  assert.match(lg, /<kbd class="ui-kbd" data-reveal="always">Return<\/kbd>/);
+  assert.match(lg, /<kbd class="ui-kbd" data-reveal="always">↩<\/kbd>/);
   assert.match(lg, /data-mono="true"/);
   assert.match(
     html(<TextField id="a" value="" onChange={noop} label="Address" disabled />),

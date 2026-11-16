@@ -47,14 +47,14 @@ test('the bell: sent is a bell, none and suppressed a slashed bell, absent no be
     /aplos-bell/,
     'no bell when the engine did not say: a plain bell would read as notified',
   );
-  assert.match(unknown, /aria-label="More"/, 'the rest of the header stays');
+  assert.match(unknown, /aria-label="Message actions"/, 'the rest of the header stays');
 });
 
 test('the bell, Importance and More are all there, in that order (owner sketch 2026-11-10)', () => {
   const html = render('sent');
   const at = (text: string) => html.indexOf(text);
   assert.ok(at('aplos-bell') >= 0 && at('aplos-bell') < at('Important'));
-  assert.ok(at('Important') < at('aria-label="More"'));
+  assert.ok(at('Important') < at('aria-label="Message actions"'));
 });
 
 test('the ⋯ menu lists Reply all only where the view has it', () => {

@@ -42,6 +42,9 @@ export interface ReaderActionsProps {
 export interface RemoteImages {
   /** Remote images are blocked: shows "Load images from this sender". */
   blocked: boolean;
+  /** The message has remote images at all. The notice strip keeps its height once they are loaded (it then reads
+   * "Images from this sender are shown", with no button), so loading them never moves the heading below it. */
+  present?: boolean;
   /** Load and remember for this sender. */
   onLoad: () => void;
 }
@@ -67,7 +70,14 @@ export interface ThreadMessageProps {
   /** The message body from `renderer/mailframe` (sandboxed iframe or plain text); absent while the card is compact. */
   body?: ReactNode;
   /** An earlier message the card can fold: the head is a button (`aria-expanded`), a click or O opens or closes it. Absent: always open (the latest message). */
-  fold?: { open: boolean; onToggle: () => void; onFocus?: () => void; commandId: CommandId };
+  fold?: {
+    open: boolean;
+    onToggle: () => void;
+    onFocus?: () => void;
+    commandId: CommandId;
+    /** The folded card already shows the whole message: no chevron and no click target (O still opens it). */
+    complete?: boolean;
+  };
   /** Compact (folded) card: the plain-text first sentence or two, already ending in "…". Shown under the head while `fold.open` is false; an empty string reads "No preview" in dim text. */
   excerpt?: string;
   /** Attachment chips under the body. */
@@ -76,6 +86,8 @@ export interface ThreadMessageProps {
   remoteImages?: RemoteImages;
   /** Quoted text toggle. `commandId` (O) only where O really toggles quoted text: on the latest message, never on a card O folds. */
   quoted?: { shown: boolean; onToggle: () => void; commandId?: CommandId };
+  /** An invite email's own HTML repeats the invitation block: it folds behind "Show original" (a text button, no key). */
+  original?: { shown: boolean; onToggle: () => void };
   /** The undo-send line under a message you just sent (placement 'thread'). */
   undoTray?: Omit<UndoTrayProps, 'placement'>;
   /** Element ref for `arrive` and scrolling the cursor into view. */

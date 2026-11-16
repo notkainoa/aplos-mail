@@ -10,7 +10,7 @@ export interface SettingRowProps {
   /** Setting name. */
   label: string;
   /** What the setting does, `small` `--dim`. */
-  description?: string;
+  description?: ReactNode;
   /** 'attention' shows the description with an alert icon in `--stamp-ink` (an account that needs reconnecting). */
   descriptionTone?: 'default' | 'attention';
   /** Quiet tag after the label, e.g. "Default". */
@@ -98,6 +98,8 @@ export type ProviderTableProps =
         model: string;
         providerOptions: readonly ProviderId[];
         modelOptions: readonly string[];
+        /** Display names for model ids ("GPT-OSS 120B"), where the provider's catalogue has one; an id without one shows as it is. */
+        modelNames?: Readonly<Record<string, string>>;
       }[];
       /** A picker changed. */
       onChange: (feature: AiFeature, choice: { provider: ProviderId; model: string }) => void;

@@ -168,8 +168,12 @@ test('ProposalCard: the one card, the filled button with Return, Not now with Es
   assert.match(pending, /data-state="pending"/);
   assert.match(pending, /aria-labelledby/);
   assert.match(pending, /--swatch:var\(--tag-ember\)/);
-  assert.match(pending, /data-variant="filled"[^>]*>.*Add.*<kbd[^>]*>Return<\/kbd>/);
-  assert.match(pending, /title="Not now \(Esc\)"[^>]*>.*Not now/);
+  assert.match(pending, /data-variant="filled"[^>]*>.*Add.*<kbd[^>]*>↩<\/kbd>/);
+  // The hint is the real Tooltip now (hover and keyboard focus), so the markup carries the label only.
+  assert.match(
+    pending,
+    /data-variant="text"[^>]*><span class="ui-compose-btn__label">Not now<\/span>/,
+  );
   assert.doesNotMatch(pending, /Not now<\/span><kbd/);
   assert.equal((pending.match(/data-variant="filled"/g) ?? []).length, 1);
   assert.match(text(pending), /Add to CalendarDesign reviewThu 2:00–2:30 PM · Hollow Creek/);
@@ -384,7 +388,7 @@ test('AskDock: header with an Ask | Today tablist and a labelled close', () => {
   assert.match(markup, /role="tablist"[^>]*aria-label="Ask or Today"/);
   assert.match(markup, /role="tab"[^>]*aria-selected="true"[^>]*tabindex="0"[^>]*>Ask</);
   assert.match(markup, /role="tab"[^>]*aria-selected="false"[^>]*tabindex="-1"[^>]*>Today</);
-  assert.match(markup, /aria-label="Close"[^>]*title="Close Ask \(⌘J\)"/);
+  assert.match(markup, /aria-label="Close"/);
   assert.match(markup, /role="tabpanel"/);
   assert.match(markup, /role="separator"[^>]*aria-valuenow="360"/);
   clean(markup);
@@ -592,11 +596,8 @@ test('Palette destructive confirm defaults to Cancel: Return cancels, ⇧Return 
   assert.match(markup, /role="group"[^>]*aria-labelledby/);
   assert.match(text(markup), /Delete forever\?/);
   assert.ok(markup.indexOf('Cancel') < markup.indexOf('Delete forever</span>'), 'Cancel row first');
-  assert.match(markup, /data-primary="true"[^>]*><span>Cancel<\/span><kbd[^>]*>Return<\/kbd>/);
-  assert.match(
-    markup,
-    /data-tone="danger"[^>]*>.*<span>Delete forever<\/span><kbd[^>]*>⇧Return<\/kbd>/,
-  );
+  assert.match(markup, /data-primary="true"[^>]*><span>Cancel<\/span><kbd[^>]*>↩<\/kbd>/);
+  assert.match(markup, /data-tone="danger"[^>]*>.*<span>Delete forever<\/span><kbd[^>]*>⇧↩<\/kbd>/);
   assert.match(markup, /readOnly|readonly/);
   assert.doesNotMatch(markup, /role="listbox"/);
   assert.doesNotMatch(markup, /For: /);
@@ -618,7 +619,7 @@ test('Palette plain confirm makes the confirm row the default', () => {
       },
     }),
   );
-  assert.match(markup, /data-primary="true"[^>]*><span>Discard<\/span><kbd[^>]*>Return<\/kbd>/);
+  assert.match(markup, /data-primary="true"[^>]*><span>Discard<\/span><kbd[^>]*>↩<\/kbd>/);
   assert.match(markup, /><span>Keep editing<\/span><kbd[^>]*>Esc<\/kbd>/);
 });
 
@@ -678,12 +679,22 @@ test('SearchField: heading-size combobox, the fixed hint when there are no token
   assert.match(markup, /aria-controls="results"/);
   assert.match(markup, /aria-label="Search mail"/);
   assert.match(markup, /placeholder="Search mail"/);
-  assert.match(
-    text(markup),
-    /Narrow with from:, to:, subject:, has:attachment, before:, after:, in:done/,
-  );
+  assert.match(text(markup), /Narrow with/);
+  for (const operator of [
+    'from:',
+    'to:',
+    'subject:',
+    'has:attachment',
+    'before:',
+    'after:',
+    'in:done',
+  ]) {
+    assert.match(
+      markup,
+      new RegExp(`<button[^>]*>.*?<span class="ui-compose-btn__label">${operator}</span>`),
+    );
+  }
   assert.match(text(markup), /All accounts/);
-  assert.doesNotMatch(markup, /<button/);
   clean(markup);
 });
 
@@ -704,7 +715,10 @@ test('SearchField tokens replace the hint and are removable; a scope picker beco
   assert.match(markup, /aria-label="Remove from: jordan"/);
   assert.match(markup, /aria-label="Remove has: attachment"/);
   assert.match(markup, /aria-label="Remove in: done"/);
-  assert.match(markup, /<button[^>]*title="Search scope"[^>]*>.*All accounts/);
+  assert.match(
+    markup,
+    /<button[^>]*data-variant="text"[^>]*><span class="ui-compose-btn__label">All accounts<\/span>/,
+  );
 });
 
 test('SearchField and OperatorToken survive an 80-character address, CJK, Arabic, one letter', () => {

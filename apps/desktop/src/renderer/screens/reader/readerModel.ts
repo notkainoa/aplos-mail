@@ -73,13 +73,25 @@ export function afterRemoval(ids: readonly string[], current: string): string | 
   return settleCursor({ ids, current }, rest).current;
 }
 
-/** "1 of 16" for the pane header's crumb; null when the thread is not in the list. */
+/**
+ * "1 of 16" for the pane header's crumb; null when the thread is not in the list. `crumbPlace` is the screen's call: it
+ * counts a thread that is not in the list (Low importance mail, a deep link) as the list's first, so every reader
+ * screen shows the same crumb.
+ */
 export function crumbPosition(
   ids: readonly string[],
   current: string | null,
 ): { readonly index: number; readonly of: number } | null {
   const at = positionOf({ ids, current });
   return at === null ? null : { index: at.index + 1, of: at.total };
+}
+
+export function crumbPlace(
+  ids: readonly string[],
+  current: string | null,
+): { readonly index: number; readonly of: number } | null {
+  if (current === null) return null;
+  return crumbPosition(ids.includes(current) ? ids : [current, ...ids], current);
 }
 
 /**

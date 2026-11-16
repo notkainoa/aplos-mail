@@ -96,11 +96,13 @@
   position: absolute;
   top: var(--space-6);
   bottom: 0;
-  /* The column and a 24 px margin each side: all the text and card edges there are, so nothing needs a pane-wide scrim. */
-  inset-inline: calc(-1 * var(--space-6));
+  /* The column's own width: all the text and card edges there are, so the fade never shows as a box wider than the
+     cards (a wider scrim lifted the pane's own colour beside them in the dark theme). */
+  inset-inline: 0;
   background: var(--canvas);
-  /* The soft edge is a blurred shadow in the same colour (no gradient): solid 12 px above the pill, fading over 24. */
-  box-shadow: 0 0 var(--space-6) var(--space-3) var(--canvas);
+  /* The soft edge is a blurred shadow in the same colour (DESIGN 2.4 forbids gradients): solid 12 px above the pill,
+     fading over 24, with no spread sideways past the column. */
+  box-shadow: 0 calc(-1 * var(--space-6)) var(--space-6) calc(-1 * var(--space-3)) var(--canvas);
 }
 .ui-reader-actions__bar {
   box-sizing: border-box;
@@ -111,8 +113,20 @@
   padding: var(--space-1);
   border-radius: var(--radius-lg);
   background-color: var(--paper);
-  box-shadow: var(--elev-float);
+  /* The ring is --line-strong over whatever scrolls under the pill, so the first layer redraws it as the same ink
+     mixed into --paper: an opaque ring, and no body text or white sheet shows at the pill's edge. */
+  box-shadow:
+    0 0 0 var(--hairline) color-mix(in srgb, var(--ink) 14%, var(--paper)),
+    var(--elev-float);
   pointer-events: auto;
+}
+/* "Replying" is a state, not an action: a muted label (the icon and the word in --dim), with no hover fill. */
+.ui-reader-actions .ui-list-btn[aria-pressed='true'],
+.ui-reader-actions .ui-list-btn[aria-pressed='true'] .ui-list-icon,
+.ui-reader-actions .ui-list-btn[aria-pressed='true']:hover,
+.ui-reader-actions .ui-list-btn[aria-pressed='true']:hover .ui-list-icon {
+  background: none;
+  color: var(--dim);
 }
 /* While the reply is open the bar rests in the flow under it: it never floats over the card being written. */
 .ui-reader-actions[data-demoted='true'] {
@@ -210,7 +224,7 @@
   margin-left: auto;
 }
 /* An earlier message's head (owner feedback 2026-11-11; folded and open share one header, the time inline after the name): the line (who, when) and, folded, its own first words, with the fold
-   button as the grid's right column: "Show full" and a chevron on a folded row, "Show less" and a chevron once open. The one
+   button as the grid's right column: a bare chevron (named "Show full" folded, "Show less" once open). The one
    button stays last in the DOM, so it is one node through a fold and keeps focus. A folded card's button is stretched by a
    pseudo-element over the whole card (nothing moves), so the whole row is its target; once open only the button is, so links,
    attachments and the body keep their own clicks. */
@@ -239,13 +253,15 @@
   align-items: center;
   gap: var(--space-1);
   box-sizing: border-box;
+  justify-content: center;
+  width: var(--control-xs);
   height: var(--control-xs);
   margin: 0;
-  padding: 0 var(--space-2);
+  padding: 0;
   border: 0;
   border-radius: var(--radius-sm);
   background: none;
-  color: var(--ink-2);
+  color: var(--dim);
   font: var(--type-small);
   letter-spacing: var(--track-small);
   white-space: nowrap;
@@ -259,10 +275,12 @@
 .ui-thread-message__excerpt[data-empty='true'] {
   color: var(--dim);
 }
-/* At most two lines: a line clamp ends a long excerpt; a short one keeps its own height. */
+/* At most two lines: a line clamp ends a long excerpt; a short one keeps its own height. A card with the sender's mark
+   starts it in the name's column (`--plain-indent`), the same column the open card's body starts in. */
 .ui-thread-message__excerpt {
   display: -webkit-box;
   margin-top: var(--space-3);
+  margin-left: var(--plain-indent, 0px);
   overflow: hidden;
   color: var(--ink-2);
   font: var(--type-read);
@@ -271,6 +289,11 @@
   text-wrap: pretty;
   -webkit-box-orient: vertical;
   -webkit-line-clamp: 2;
+}
+/* A short message the folded card shows whole: no line clamp, so nothing is ever hidden on a card with nothing to open. */
+.ui-thread-message[data-complete='true'] .ui-thread-message__excerpt {
+  display: block;
+  -webkit-line-clamp: unset;
 }
 .ui-thread-message__toggle:focus-visible {
   outline: var(--focus-width) solid var(--accent);
@@ -285,14 +308,26 @@
 .ui-thread-message[data-fold='folded'] .ui-thread-message__toggle:focus-visible {
   outline: none;
 }
-.ui-thread-message__images,
+/* The remote-images notice is chrome, not mail text: a quiet hairline strip at the top of the card, one control tall,
+   and it keeps that height once the images are shown (a dim sentence, no button) so the heading below never moves. */
+.ui-thread-message__images {
+  display: flex;
+  align-items: center;
+  box-sizing: border-box;
+  height: var(--control-md);
+  margin-bottom: var(--space-4);
+  padding: 0 var(--space-1);
+  border: var(--hairline) solid var(--line);
+  border-radius: var(--radius-md);
+}
+.ui-thread-message__images-shown {
+  padding: 0 var(--space-2);
+  color: var(--dim);
+  font: var(--type-small);
+  letter-spacing: var(--track-small);
+}
 .ui-thread-message__quoted {
   margin-left: calc(-1 * var(--space-3));
-}
-.ui-thread-message__images {
-  margin-bottom: var(--space-3);
-}
-.ui-thread-message__quoted {
   /* Its 28 px box carries its own 6 px above and below the words: pull the card's bottom edge in by the extra. */
   margin-top: var(--space-2);
   margin-bottom: calc(-1 * var(--space-2));

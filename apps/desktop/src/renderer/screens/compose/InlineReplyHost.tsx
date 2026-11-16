@@ -174,7 +174,7 @@ export function InlineReplyView({
   const shared = useSharedComposerProps(binding, controls, {
     label: 'Reply',
     focusTo: false,
-    // DESIGN 7.6: with two or more accounts a reply shows the account it goes from, as plain text (no menu).
+    // DESIGN 7.6: with two or more accounts a reply shows the account it goes from, and it can switch (owner, 2026-11-16).
     from: true,
   });
   const reducedMotion = useReducedMotion();

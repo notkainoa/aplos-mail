@@ -112,11 +112,26 @@ export function MiniMonth({
         <tbody>
           {rows.map(row => (
             <tr key={row[0]}>
-              {row.map(date => {
-                const selected = range ? range.start <= date && date <= range.end : false;
+              {row.map((date, at) => {
+                const inRange = (day: string | undefined): boolean =>
+                  range !== undefined &&
+                  day !== undefined &&
+                  range.start <= day &&
+                  day <= range.end;
+                const selected = inRange(date);
                 const isToday = date === today;
+                // The range is one band behind the digits: each run in a row has a start and an end, so its
+                // ends are round and the days between share the fill (no pill per day).
+                const band = selected
+                  ? `${inRange(row[at - 1]) ? '' : 'start'}${inRange(row[at + 1]) ? '' : 'end'}`
+                  : '';
                 return (
-                  <td key={date} role="gridcell" aria-selected={range ? selected : undefined}>
+                  <td
+                    key={date}
+                    role="gridcell"
+                    aria-selected={range ? selected : undefined}
+                    data-band={selected ? band || 'mid' : undefined}
+                  >
                     <button
                       type="button"
                       className="ui-mini-month__day"

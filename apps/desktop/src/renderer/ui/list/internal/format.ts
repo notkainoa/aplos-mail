@@ -137,14 +137,18 @@ export function formatReaderTime(iso: IsoDateTime): string {
   return `${monthDay(d)}, ${formatTime(d)}`;
 }
 
-/** A message header time: "Just now", "Today, 10:00 AM", "Yesterday, 4:12 PM", "Oct 23, 4:12 PM". */
+/**
+ * A message header time: "Just now", "Today, 10:00 AM", "Oct 23, 4:12 PM". Before today it is always the date, never
+ * a weekday or "Yesterday", so one thread never mixes "Oct 21" with "Friday".
+ */
 export function formatMessageTime(iso: IsoDateTime): string {
   const d = parse(iso);
   if (!d) return '';
   const age = clock() - d.getTime();
   if (age >= 0 && age < 60_000) return 'Just now';
-  if (dayOffset(d) === 0) return `Today, ${formatTime(d)}`;
-  return formatReaderTime(iso);
+  const off = dayOffset(d);
+  if (off === 0) return `Today, ${formatTime(d)}`;
+  return `${monthDay(d)}, ${formatTime(d)}`;
 }
 
 /** Full date for `title` and screen readers: "Thursday, October 29, 2026 at 10:00 AM". */

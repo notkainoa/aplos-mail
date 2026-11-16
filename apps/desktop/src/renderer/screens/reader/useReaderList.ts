@@ -2,7 +2,7 @@
  * The ordered thread ids J and K walk. A list screen tells the shell which ids it showed when it opened the thread
  * (`listIds`), and those are used as they are. Only when none came (a deep link, the palette) does the reader fall back
  * to Home's order, scoped to the account Home was filtered to, held while Home's hold is, and sorted by Home's own
- * `orderLayout`: Do now, Back from Later, Important updates, then Follow up. A thread that is not in the ids starts the
+ * `orderLayout`: Do now, Back from Later, then Important updates. A thread that is not in the ids starts the
  * walk at an end, and one that has left them keeps its place so the neighbour is chosen (`walkList`).
  */
 import { useMemo, useRef } from 'react';
@@ -11,7 +11,11 @@ import { useAccountScope } from '../../shell';
 import { layoutOf, orderLayout } from '../home/homeModel';
 import { NO_MEMORY, walkList, type ListMemory } from './readerModel';
 
-/** The ids of Home in the order the owner sees them (the Low band's rows are not on the list). */
+/**
+ * The ids of Home in the order the owner sees them: Do now, Back from Later, then Important updates. That is the set the
+ * sidebar's Home badge counts (the engine's `home` count), so "n of m" and the badge agree. Follow up (mail you sent) and
+ * the Low band are not on the walk.
+ */
 export function useHomeOrder(): readonly string[] {
   const scope = useAccountScope();
   const hold = useHold('home');
@@ -19,7 +23,7 @@ export function useHomeOrder(): readonly string[] {
   const held = hold.isHeld;
   return useMemo(() => {
     const ordered = orderLayout(layoutOf(home), id => home.rows.get(id), held);
-    return [...ordered.do, ...ordered.fromLater, ...ordered.update, ...ordered.follow];
+    return [...ordered.do, ...ordered.fromLater, ...ordered.update];
   }, [home, held]);
 }
 

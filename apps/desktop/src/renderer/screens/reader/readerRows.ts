@@ -119,17 +119,67 @@ function excerptEnd(text: string): number {
 }
 
 /**
- * The plain-text excerpt of a folded card (owner review 2026-11-03): the first sentence or two of the message after
- * its salutation, whitespace collapsed, cut at a sentence end when two fit and otherwise at a word (or hard at the
- * limit when there is none), and ending in "…". An abbreviation ("Dr.") is not a sentence. Taken from the message's own
- * snippet, so a folded card never loads its body. A message with no text gives "": the card says "No preview".
+ * A snippet this short was not cut by the provider (Gmail stops near 200 characters, the stand-in at 140), so what it
+ * says is the whole message. Longer, the card cannot know, and keeps its chevron.
  */
-export function excerptOf(message: Pick<Message, 'snippet'>): string {
+const SNIPPET_WHOLE = 120;
+
+/**
+ * A sign-off after the last sentence ("Jordan", "Thanks, Mina", "Best, Jordan Park"): at most three words and no
+ * sentence mark of its own. Like the salutation, it is not part of what the message says.
+ */
+const SIGN_OFF =
+  /^(?:(?:thanks|thank you|best|cheers|regards|best regards|kind regards|warmly|love|talk soon|thx)[,!]?\s+)?\p{L}[\p{L}.'’-]*(?:\s+\p{L}[\p{L}.'’-]*){0,2}$/iu;
+
+/** `text` without a trailing sign-off, when it has a sentence end for the sign-off to follow. */
+function withoutSignOff(text: string): string {
+  const ends = sentenceEnds(text);
+  const last = ends[ends.length - 1];
+  if (last === undefined) return text;
+  const tail = text.slice(last).trim();
+  return tail !== '' && Array.from(tail).length <= 40 && SIGN_OFF.test(tail)
+    ? text.slice(0, last)
+    : text;
+}
+
+/** What a folded card shows, and whether that is the whole message (then the card has nothing to open). */
+export interface Excerpt {
+  readonly text: string;
+  readonly complete: boolean;
+}
+
+/**
+ * The plain-text excerpt of a folded card (owner review 2026-11-03; owner call 2026-11-14), taken from the message's own
+ * snippet so a folded card never loads its body, with the salutation skipped and whitespace collapsed.
+ * - A short message with no attachments, whose snippet is surely whole, is shown in full (its sign-off left out, as the
+ *   salutation is): `complete`, so the card has no chevron and nothing to open.
+ * - Otherwise the first sentence or two, cut at a sentence end when two fit and else at a word (hard at the limit when
+ *   there is none). "…" marks that something was left out: after the last whole word when a sentence is cut short, or
+ *   after a space when whole sentences were dropped. Nothing left out but a sign-off: no "…".
+ * An abbreviation ("Dr.") is not a sentence. A message with no text gives "": the card says "No preview".
+ */
+export function excerptView(message: Pick<Message, 'snippet' | 'attachments'>): Excerpt {
   const all = message.snippet.replace(/\s+/g, ' ').trim();
   const text = all.replace(SALUTATION, '') || all;
-  if (text === '') return '';
-  const excerpt = cutLong(text.slice(0, excerptEnd(text)));
-  return `${excerpt.replace(/[\s.…,;:。！？、，]+$/u, '')}…`;
+  if (text === '') return { text: '', complete: false };
+  const content = withoutSignOff(text).trim();
+  const whole =
+    (message.attachments?.length ?? 0) === 0 &&
+    Array.from(all).length < SNIPPET_WHOLE &&
+    Array.from(content).length <= EXCERPT_LIMIT;
+  if (whole) return { text: content.replace(/[\s,;:、，]+$/u, ''), complete: true };
+  const sentences = text.slice(0, excerptEnd(text));
+  const excerpt = cutLong(sentences);
+  if (excerpt !== sentences)
+    return { text: `${excerpt.replace(/[\s.…,;:。！？、，]+$/u, '')}…`, complete: false };
+  const kept = excerpt.replace(/[\s,;:、，]+$/u, '');
+  const dropped = withoutSignOff(text).slice(sentences.length).trim() !== '';
+  return { text: dropped ? `${kept} …` : kept, complete: false };
+}
+
+/** The excerpt's text alone (see `excerptView`). */
+export function excerptOf(message: Pick<Message, 'snippet' | 'attachments'>): string {
+  return excerptView(message).text;
 }
 
 /** The section DESIGN 7.2 would file the thread under, for its suggestion (Home's rule). */

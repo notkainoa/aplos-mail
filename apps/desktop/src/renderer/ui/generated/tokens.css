@@ -302,6 +302,7 @@
   --dur-deal: 140ms;
   --dur-hold: 450ms;
   --dur-hold-cap: 1200ms;
+  --dur-hold-all: 600ms;
   --dur-close: 180ms;
   --dur-swap: 120ms;
   --dur-arrive: 200ms;
@@ -372,7 +373,7 @@
   --hover: color-mix(in srgb, var(--ink) 5%, transparent);
   --press: color-mix(in srgb, var(--ink) 10%, transparent);
   --puck: color-mix(in srgb, var(--ink) 8%, transparent);
-  --today-tint: color-mix(in srgb, var(--accent) 6%, transparent);
+  --today-tint: color-mix(in srgb, var(--accent) 10%, transparent);
   --selection: color-mix(in srgb, var(--accent) 30%, var(--canvas));
   --scrim: color-mix(in srgb, #000000 50%, transparent);
   --shadow-ink: #000000;

@@ -1,22 +1,54 @@
 // LowSheet (DESIGN §7.2 Low importance, §7.14). Not drawn in the mockups.
 // A modal sheet opened from the LowBand: rows grouped by sender, a hover preview in a fixed area (so hover
-// never moves anything), per-sender Unsubscribe once List-Unsubscribe lands, and → → to mark everything done
-// (the first press arms, the second commits). Plain first version of the dialog frame; surfaces' Dialog
-// (size 'md') takes the frame over when it lands. The sheet's own keys are widget keys (ControlSpec).
+// never moves anything), per-sender Unsubscribe once List-Unsubscribe lands, and the Done key: a tap of → marks the
+// cursor row done, holding → for HOLD_ALL_MS marks everything done (the button fills left to right while it is held).
+// Every sender gets its header, even a single row named like its sender (owner, 2026-11-15). Plain first version of
+// the dialog frame; surfaces' Dialog (size 'md') takes the frame over when it lands. The sheet's own keys are widget
+// keys (ControlSpec).
 
-import { useEffect, useId, useLayoutEffect, useRef, type KeyboardEvent } from 'react';
+import {
+  useEffect,
+  useId,
+  useLayoutEffect,
+  useMemo,
+  useRef,
+  useState,
+  type FocusEvent,
+  type KeyboardEvent,
+} from 'react';
+import { motions } from '../generated/motion';
 import type { LowSheetProps } from '../props';
 import { EmptyLine } from './EmptyLine';
-import { Action, Keycap } from './internal/Action';
+import { Action } from './internal/Action';
+import { createDoneHold } from './internal/doneHold';
 import { formatCount } from './internal/format';
 import { useKeycapFor } from './internal/keys';
 import { ListBox } from './ListBox';
 import { ListGroup } from './ListGroup';
 import { ListRow } from './ListRow';
 
-/** The armed line: "Press → again to mark all 6 done · Esc cancels" (copy pending DESIGN). */
-export function armedLine(key: string, total: number): string {
-  return `Press ${key} again to mark all ${formatCount(total)} done · Esc cancels`;
+/** How long the Done key is held to mark everything done, in ms (a tap marks the one row under the cursor). */
+export const HOLD_ALL_MS: number = motions.hold.durations.all;
+
+/** The Done key's controller for this sheet, and whether a hold is in progress (the button's fill). */
+function useDoneHold(onOne: () => void, onAll: () => void) {
+  const [holding, setHolding] = useState(false);
+  const latest = useRef({ onOne, onAll });
+  useEffect(() => {
+    latest.current = { onOne, onAll };
+  });
+  const controller = useMemo(
+    () =>
+      createDoneHold({
+        holdMs: HOLD_ALL_MS,
+        onOne: () => latest.current.onOne(),
+        onAll: () => latest.current.onAll(),
+        onHolding: setHolding,
+      }),
+    [],
+  );
+  useEffect(() => controller.stop, [controller]);
+  return { holding, press: controller.press, release: controller.release, stop: controller.stop };
 }
 
 /** Elements Tab can reach inside the panel (pointer duplicates carry tabIndex -1 and are skipped). */
@@ -37,14 +69,12 @@ export function LowSheet({
   binding,
   groups,
   total: shown,
-  armed,
   markAllCommandId,
   preview,
   onPreview,
-  onArm,
+  onDoneCursor,
   onCommitAll,
   onClose,
-  announce,
 }: LowSheetProps) {
   const titleId = useId();
   const total = shown ?? groups.reduce((n, g) => n + g.rows.length, 0);
@@ -53,9 +83,8 @@ export function LowSheet({
   const panelRef = useRef<HTMLDivElement>(null);
   const empty = groups.length === 0;
 
-  useEffect(() => {
-    if (open && armed && announce) announce(armedLine(key, total));
-  }, [open, armed, announce, key, total]);
+  const hold = useDoneHold(onDoneCursor, onCommitAll);
+  const stopHold = hold.stop;
 
   // On open, focus moves into the dialog. On close it returns to whatever had it before (the Home listbox or the
   // Low importance row), so focus is never lost (DESIGN §11.2).
@@ -101,16 +130,26 @@ export function LowSheet({
     if (event.shiftKey) return;
     if (event.key === 'Escape') {
       event.preventDefault();
+      stopHold();
       onClose();
     } else if (event.key === markEventKey && total > 0) {
       event.preventDefault();
-      if (armed) onCommitAll();
-      else onArm();
+      if (!event.repeat) hold.press();
     }
   };
 
+  const onKeyUp = (event: KeyboardEvent<HTMLDivElement>) => {
+    if (event.key !== markEventKey) return;
+    event.preventDefault();
+    hold.release();
+  };
+
+  const onBlur = (event: FocusEvent<HTMLDivElement>) => {
+    if (!event.currentTarget.contains(event.relatedTarget)) stopHold();
+  };
+
   return (
-    <div className="ui-low-sheet" data-armed={armed ? 'true' : undefined}>
+    <div className="ui-low-sheet">
       <div className="ui-low-sheet__scrim" aria-hidden="true" onClick={onClose} />
       <div
         ref={panelRef}
@@ -120,6 +159,8 @@ export function LowSheet({
         aria-labelledby={titleId}
         tabIndex={-1}
         onKeyDown={onKeyDown}
+        onKeyUp={onKeyUp}
+        onBlur={onBlur}
       >
         <div className="ui-low-sheet__head">
           <h2 id={titleId} className="ui-low-sheet__title">
@@ -147,52 +188,59 @@ export function LowSheet({
           <>
             <div className="ui-low-sheet__body">
               <ListBox binding={binding}>
-                {groups.map(group => (
-                  <ListGroup
-                    key={group.id}
-                    header={{
-                      id: group.id,
-                      label: group.sender,
-                      variant: 'section',
-                      count: group.rows.length,
-                      held: true,
-                      action: group.onUnsubscribe
-                        ? { label: 'Unsubscribe', onSelect: group.onUnsubscribe }
-                        : undefined,
-                    }}
-                  >
-                    {group.rows.map(row => (
-                      <div
-                        key={row.id}
-                        className="ui-low-sheet__row"
-                        role="presentation"
-                        onPointerEnter={onPreview ? () => onPreview(row.id) : undefined}
-                        onPointerLeave={onPreview ? () => onPreview(null) : undefined}
-                      >
-                        <ListRow {...row} />
-                      </div>
-                    ))}
-                  </ListGroup>
-                ))}
+                {groups.map(group => {
+                  const rows = group.rows.map(row => (
+                    <div
+                      key={row.id}
+                      className="ui-low-sheet__row"
+                      role="presentation"
+                      onPointerEnter={onPreview ? () => onPreview(row.id) : undefined}
+                      onPointerLeave={onPreview ? () => onPreview(null) : undefined}
+                    >
+                      <ListRow {...row} />
+                    </div>
+                  ));
+                  return (
+                    <ListGroup
+                      key={group.id}
+                      header={{
+                        id: group.id,
+                        label: group.sender,
+                        variant: 'section',
+                        count: group.rows.length,
+                        held: true,
+                        action: group.onUnsubscribe
+                          ? { label: 'Unsubscribe', onSelect: group.onUnsubscribe }
+                          : undefined,
+                      }}
+                    >
+                      {rows}
+                    </ListGroup>
+                  );
+                })}
               </ListBox>
             </div>
-            <p className="ui-low-sheet__preview" aria-live="off">
-              {preview ? preview.text : null}
-            </p>
-            {/* With the shell's announcer the armed line is spoken once through it; otherwise this line is the live region. */}
-            <p
-              className="ui-low-sheet__foot"
-              role={announce ? undefined : 'status'}
-              data-armed={armed ? 'true' : undefined}
-            >
-              {armed ? (
-                armedLine(key, total)
-              ) : (
-                <>
-                  Press <Keycap chord={key} /> twice to mark all {formatCount(total)} done
-                </>
-              )}
-            </p>
+            {/* One row under the list, so hovering a row never moves anything: the hovered row's preview on the left, one
+                line, ellipsis (empty while idle), the sheet's own button on the right. The button names the gesture
+                (Hold →) and fills left to right while the key is held; a click marks all done at once. */}
+            <div className="ui-low-sheet__bar">
+              <span className="ui-low-sheet__bar-text">
+                <p className="ui-low-sheet__preview" aria-live="off">
+                  {preview ? preview.text : null}
+                </p>
+              </span>
+              <span className="ui-low-sheet__all" data-holding={hold.holding ? 'true' : undefined}>
+                <Action
+                  variant="filled"
+                  size="sm"
+                  label={`Mark all ${formatCount(total)} done`}
+                  keycap={key}
+                  tooltip={`Mark all ${formatCount(total)} done · hold ${key}`}
+                  keycapHold
+                  onPress={() => onCommitAll()}
+                />
+              </span>
+            </div>
           </>
         )}
       </div>

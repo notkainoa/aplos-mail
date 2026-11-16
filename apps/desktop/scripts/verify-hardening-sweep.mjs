@@ -242,7 +242,7 @@ async function main() {
         await rowClick();
       },
     ],
-    ['reader-menu', () => click('More')],
+    ['reader-menu', () => click('Thread actions')],
     ['later', () => click('Later')],
     ['calendar', () => click('Calendar')],
     [

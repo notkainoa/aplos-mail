@@ -378,6 +378,7 @@ export function OnboardingApp(props: OnboardingAppProps) {
   const announced = notice?.text ?? status;
   const chrome: StepChrome = {
     ...(view.dashes ? { dashes: view.dashes } : {}),
+    connected: flow.connected.length > 0 || accounts.length > 0,
     ...(view.tryDemo && !hasDemo ? { onTryDemo } : {}),
     onBack: handleEsc,
     ...(announced ? { status: announced } : {}),

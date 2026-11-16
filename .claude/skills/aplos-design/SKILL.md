@@ -66,7 +66,7 @@ Use `var(--token)` in CSS and the imports from `ui/generated/motion.ts` in TS. N
 | `--control-edge` | Checkbox, radio and switch-off edges only |
 | `--accent` (ink blue) | Only: the one filled button, focus ring, cursor bar, links, today's date badge |
 | `--accent-ink` | Text on an accent fill |
-| `--accent-wash` | Bulk-picked rows only |
+| `--accent-wash` | Bulk-picked rows, and the match in a search result |
 | `--hill` | Done and success, only where it means Done |
 | `--dusk` | Later and paused sync, only where it means Later |
 | `--stamp` / `--stamp-ink` / `--stamp-tint` | Danger fills / red text and failure icons / overdue chips. One red only. |

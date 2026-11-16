@@ -490,11 +490,18 @@ function describe_from(): void {
     assert.deepEqual(step.effects, []);
   });
 
-  test('From: a reply keeps the thread’s account, and so does a send or a save in flight', () => {
+  test('From: a reply starts in the thread’s account and can move; a send or a save in flight keeps it', () => {
     const reply = fresh();
-    assert.equal(canChangeAccount(reply), false);
+    assert.equal(reply.context.accountId, 'a1');
+    assert.equal(canChangeAccount(reply), true);
     const moved = composeReducer(reply, { type: 'setAccount', accountId: 'a2', now: T0 });
-    assert.equal(moved.state.context.accountId, 'a1');
+    assert.equal(moved.state.context.accountId, 'a2');
+    assert.equal(
+      moved.state.context.threadId,
+      reply.context.threadId,
+      'still a reply to the same thread',
+    );
+    assert.equal(moved.state.context.replyToMessageId, reply.context.replyToMessageId);
     const flying = typed();
     assert.notEqual(flying.save.flightSeq, null);
     assert.equal(canChangeAccount(flying), false);
@@ -518,7 +525,6 @@ function describe_from(): void {
     const refused: Record<string, ComposeState> = {
       closed: { ...settled, open: false },
       discarding: { ...settled, discarding: true },
-      forward: { ...settled, context: { ...settled.context, mode: 'forward' } },
       sending: { ...settled, send: { kind: 'pending', alsoDone: false } as ComposeState['send'] },
       waiting: { ...settled, save: { ...settled.save, waitingForRemote: true } },
       sentElsewhere: { ...settled, remote: { submissionId: 's1' } as ComposeState['remote'] },

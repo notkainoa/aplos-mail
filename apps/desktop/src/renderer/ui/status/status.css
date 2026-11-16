@@ -71,17 +71,14 @@
 .ui-status-slot__body > [aria-live='off'] {
   width: 100%;
 }
-/* With several accounts, the account's colour dot leads the sentence instead of a line of its own. */
-.ui-status-slot__dot {
-  display: inline-block;
-  width: var(--mark-dot);
-  height: var(--mark-dot);
-  margin-right: var(--space-1);
-  border-radius: var(--radius-pill);
-  vertical-align: middle;
-}
 .ui-status-slot__text {
   overflow-wrap: anywhere;
+}
+/* The action is a quiet text button in the accent (a link-like control), not a second red mark beside the red icon. */
+.ui-status-slot__action .ui-part-button,
+.ui-status-slot__action .ui-part-button .ui-part-icon {
+  color: var(--accent);
+  font-weight: 500;
 }
 .ui-status-slot__action {
   /* The 28 px text button's label lines up with the sentence above it. */
@@ -106,7 +103,7 @@
 }
 .ui-progress-segments__importing b {
   color: var(--ink-2);
-  font-weight: 500;
+  font-weight: 400;
 }
 .ui-progress-segments__track {
   position: relative;
@@ -116,7 +113,17 @@
   margin-top: var(--space-2);
   overflow: hidden;
   border-radius: var(--radius-xs);
-  background: var(--line);
+  background: var(
+    --line-strong
+  ); /* --line vanishes on the white pane; the ring token reads as a track */
+}
+/* At the very start the fill would be a hairline: the track keeps a 6 px mark at its left end, so it reads as begun. */
+.ui-progress-segments[data-variant='importing'] .ui-progress-segments__track::before {
+  content: '';
+  position: absolute;
+  inset: 0 auto 0 0;
+  width: calc(var(--space-1) + var(--space-half));
+  background: var(--ink-2);
 }
 .ui-progress-segments[data-variant='waiting'] .ui-progress-segments__track {
   margin-top: 0;
@@ -220,7 +227,7 @@
   height: var(--seg-h);
   overflow: hidden;
   border-radius: var(--radius-xs);
-  background: var(--line);
+  background: var(--line-strong);
 }
 .ui-progress-segments__seg[data-state='done'] {
   background: var(--ink-2);
@@ -345,28 +352,22 @@
   box-shadow: 0 calc(-1 * var(--hairline)) 0 var(--line);
 }
 
-.ui-progress-segments__dot[data-color='sky'],
-.ui-status-slot__dot[data-color='sky'] {
+.ui-progress-segments__dot[data-color='sky'] {
   background: var(--tag-sky);
 }
-.ui-progress-segments__dot[data-color='hill'],
-.ui-status-slot__dot[data-color='hill'] {
+.ui-progress-segments__dot[data-color='hill'] {
   background: var(--tag-hill);
 }
-.ui-progress-segments__dot[data-color='stamp'],
-.ui-status-slot__dot[data-color='stamp'] {
+.ui-progress-segments__dot[data-color='stamp'] {
   background: var(--tag-stamp);
 }
-.ui-progress-segments__dot[data-color='dusk'],
-.ui-status-slot__dot[data-color='dusk'] {
+.ui-progress-segments__dot[data-color='dusk'] {
   background: var(--tag-dusk);
 }
-.ui-progress-segments__dot[data-color='sand'],
-.ui-status-slot__dot[data-color='sand'] {
+.ui-progress-segments__dot[data-color='sand'] {
   background: var(--tag-sand);
 }
-.ui-progress-segments__dot[data-color='ember'],
-.ui-status-slot__dot[data-color='ember'] {
+.ui-progress-segments__dot[data-color='ember'] {
   background: var(--tag-ember);
 }
 

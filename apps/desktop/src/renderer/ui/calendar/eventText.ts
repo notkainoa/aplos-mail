@@ -27,13 +27,13 @@ export function calVar(color: TagColor): string {
   return `var(--tag-${color})`;
 }
 
-/** How much a block can show: under 30 minutes is a single title line, under an hour a single line. */
+/** How much a block can show: up to 30 minutes is the title alone on one full-width line, under an hour a title and time on one line. */
 export type BlockDensity = 'allday' | 'tiny' | 'one' | 'full';
 
 export function densityOf(event: CalendarEventData): BlockDensity {
   if (event.allDay) return 'allday';
   const minutes = minutesBetween(event.start, event.end);
-  return minutes < 30 ? 'tiny' : minutes < 60 ? 'one' : 'full';
+  return minutes <= 30 ? 'tiny' : minutes < 60 ? 'one' : 'full';
 }
 
 /** The time as written in a label: "2:00 – 2:30 PM" or "all day". */

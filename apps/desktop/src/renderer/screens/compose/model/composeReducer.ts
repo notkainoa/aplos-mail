@@ -146,16 +146,16 @@ function onDraft(state: ComposeState, event: Event<'observeDraft'>): Step {
 }
 
 /**
- * From (the account a new message is written in). A draft belongs to one account for good, so one the engine already
- * holds is saved again in the account chosen and only then destroyed (quietly), so the text is never in memory alone. Only a new message can change
- * account (a reply belongs to the thread's), and only while nothing is in flight: a save that is mid-air, a send, a
- * discard or a conflict wait would race the move.
+ * From (the account a message is written in). A draft belongs to one account for good, so one the engine already
+ * holds is saved again in the account chosen and only then destroyed (quietly), so the text is never in memory alone.
+ * Any message can change account, a reply or forward too (owner, 2026-11-16: it starts in the thread's account and
+ * stays switchable; the engine finds the replied message in whichever account holds it). Only while nothing is in
+ * flight: a save that is mid-air, a send, a discard or a conflict wait would race the move.
  */
 export function canChangeAccount(state: ComposeState): boolean {
   return (
     state.open &&
     !state.discarding &&
-    state.context.mode === 'new' &&
     state.send.kind === 'none' &&
     // Another window pressed Send on this draft: destroying it would cancel that send without a word.
     state.remote?.submissionId === undefined &&

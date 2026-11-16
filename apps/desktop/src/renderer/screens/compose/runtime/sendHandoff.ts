@@ -7,7 +7,7 @@
  * is over, however many there are: a fourth send inside thirty seconds never costs the first one its Undo.
  */
 import type { Submission } from '../../../data';
-import { dismissToast, removeOutboxNotice } from '../../../shell';
+import { dismissToast } from '../../../shell';
 
 /** A value with subscribers, for `useSyncExternalStore`. */
 export interface HandoffStore {
@@ -125,7 +125,7 @@ export function claimSend(id: string): void {
   handoffStore.set(claim(handoffStore.get(), id));
 }
 
-/** The id a refused send's toast and sidebar notice share (`sendNotices.ts`). */
+/** The id a refused send's toast has (`sendNotices.ts`). */
 export function refusedNoticeId(draftId: string): string {
   return `send-refused-${draftId}`;
 }
@@ -133,7 +133,6 @@ export function refusedNoticeId(draftId: string): string {
 /** A send for this draft was accepted, so an earlier "Couldn’t send" about it is no longer true. */
 function clearRefusal(draftId: string): void {
   dismissToast(refusedNoticeId(draftId));
-  removeOutboxNotice(refusedNoticeId(draftId));
 }
 
 export function releaseSend(id: string, live: boolean, row?: Submission | null): void {

@@ -35,6 +35,19 @@ const reply = (answer: 'yes' | 'maybe' | 'no' | null): NonNullable<EventDetailPr
 const detail = (event: CalendarEventData, over: Partial<EventDetailProps> = {}): string =>
   html(<EventDetail event={event} presentation="popover" onMore={noop} onClose={noop} {...over} />);
 
+test('EventDetail guests: one shared answer is said once in the heading, not on every row', () => {
+  const same = ev('same', 'Offsite', '2026-10-30T11:00:00', '2026-10-30T12:00:00', {
+    guests: [
+      { name: 'Priya Raman', status: 'going', isOrganizer: true },
+      { name: 'Mina Cho', status: 'going' },
+    ],
+  });
+  const out = detail(same);
+  assert.match(out, /All going/);
+  assert.doesNotMatch(out, /ui-event-detail__status/, 'no per-row chip');
+  assert.doesNotMatch(detail(Q4), /All going/, 'mixed answers keep their rows');
+});
+
 test('EventDetail rsvp: nothing chosen, "Send reply" disabled until you choose, keys in the tooltips', () => {
   const out = detail(Q4, { reply: reply(null) });
   assert.match(out, /<h3[^>]*>Going\?<\/h3>/);
@@ -62,8 +75,8 @@ test('EventDetail: title, the when line with the comma day, swatch, video, invit
   assert.match(out, />Invite from Priya</);
   assert.match(out, /Open the invite email · O/);
   assert.match(out, />Guests</);
-  assert.match(out, /organizer/);
-  assert.match(out, />you</);
+  assert.match(out, />Organizer</);
+  assert.match(out, />\(you\)</);
   assert.match(out, /Going/);
   assert.match(out, /Maybe/);
   assert.match(out, /Not answered/);
@@ -140,7 +153,7 @@ test('EventDetail worst case: long title and place, unbreakable name, one-letter
     { reply: reply(null) },
   );
   assert.ok(out.includes('T'.repeat(300)));
-  assert.match(out, /you, organizer/);
+  assert.match(out, /\(you\) · Organizer/);
   assert.match(out, /Declined/);
   assert.ok(out.includes('田中 さん') && out.includes('مينا') && out.includes('🎉'));
 });
@@ -198,8 +211,8 @@ test('DatePresets: five presets with digits always visible, fixed copy, Return o
   assert.match(out, /Thu 6:00 PM/);
   assert.match(out, /Fri 8:00 AM/);
   assert.match(out, /Pick a date…/);
-  assert.equal((out.match(/<kbd class="ui-date-presets__kbd">Return<\/kbd>/g) ?? []).length, 1);
-  assert.match(out, /data-id="tomorrow"[^>]*>.*?Return/);
+  assert.equal((out.match(/<kbd class="ui-date-presets__kbd">↩<\/kbd>/g) ?? []).length, 1);
+  assert.match(out, /data-id="tomorrow"[^>]*>.*?↩/);
   assert.match(out, /aria-activedescendant="[^"]*-tomorrow"/);
   assert.equal((out.match(/role="menuitem"/g) ?? []).length, 6);
   assert.doesNotMatch(out, /ui-date-presets__calendar/);
@@ -217,7 +230,7 @@ test('DatePresets calendar: month grid of six weeks, picked day, time list, "Mov
   assert.match(out, /data-picked="true"[^>]*aria-label="Wed, Nov 4"/);
   assert.match(out, /Wed, Nov 4<\/span>/);
   assert.match(out, /<option value="08:00" selected="">8:00 AM<\/option>/);
-  assert.match(out, /Move to Later<kbd class="ui-cal-kbd">Return<\/kbd>/);
+  assert.match(out, /Move to Later<kbd class="ui-cal-kbd">↩<\/kbd>/);
   assert.doesNotMatch(out, /disabled=""/);
   const none = html(<DatePresets {...presetsProps({ activeId: 'date', calendarOpen: true })} />);
   assert.match(none, /<button[^>]*disabled=""[^>]*>Move to Later/);

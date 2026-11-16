@@ -159,7 +159,8 @@ test('RecipientField is a combobox with a labelled listbox, removable people and
   assert.match(demo, /id="to-list"[^>]*role="listbox"/);
   assert.match(demo, /id="to-list-hana"[^>]*role="option"[^>]*aria-selected="true"/);
   assert.match(demo, /aria-label="Remove Jordan Park"/);
-  assert.match(demo, /title="Add Cc or Bcc \(⌘⇧C\)"/);
+  assert.match(demo, />Cc</);
+  assert.doesNotMatch(demo, /title="Add Cc or Bcc/);
   assert.match(demo, /value="ha"/);
   clean(demo);
 
@@ -206,9 +207,19 @@ function reply(over: Partial<Parameters<typeof InlineReply>[0]> = {}) {
 test('InlineReply: the card, Send with its keycap, draft state, attach, more and pop out', () => {
   const markup = html(reply());
   assert.match(markup, /<section[^>]*class="ui-inline-reply"[^>]*aria-label="Reply"/);
-  assert.match(markup, /aria-label="Pop out"/);
-  assert.match(markup, /aria-label="Attach"[^>]*title="Attach a file \(⌘⇧A\)"/);
-  assert.match(markup, /aria-label="More"[^>]*title="More: format, schedule, discard \(⌘\/\)"/);
+  assert.match(markup, /aria-label="Pop out reply"/);
+  // Pop out lives in the footer, after Attach and before More; the head has none. Formatting is in ⋯, so the reply has
+  // no Formatting button of its own (owner call 2026-11-14: no extra buttons).
+  const footer = markup.slice(markup.indexOf('ui-compose-footer'));
+  assert.ok(footer.indexOf('aria-label="Attach"') < footer.indexOf('aria-label="Pop out reply"'));
+  assert.ok(footer.indexOf('aria-label="Pop out reply"') < footer.indexOf('aria-label="More"'));
+  assert.doesNotMatch(footer, /aria-label="Formatting"/);
+  assert.match(footer, /closes/, 'the quiet "Esc closes" line stays');
+  assert.doesNotMatch(markup.slice(0, markup.indexOf('ui-compose-footer')), /Pop out reply/);
+  // The tips are the real Tooltip (hover and keyboard focus), not a native title: only the names are in the markup.
+  assert.match(markup, /aria-label="Attach"/);
+  assert.match(markup, /aria-label="More"/);
+  assert.doesNotMatch(markup, /title="Attach a file/);
   assert.match(markup, /data-variant="filled"[^>]*>.*Send.*<kbd[^>]*>⌘↩<\/kbd>/);
   assert.equal((markup.match(/data-variant="filled"/g) ?? []).length, 1, 'one filled button');
   assert.match(markup, /Draft saved/);
@@ -274,7 +285,11 @@ test('Composer: To row, heading-size subject, body, footer with Send, draft stat
   );
   assert.match(markup, /<footer[^>]*class="ui-composer__foot"/);
   assert.match(markup, /<kbd[^>]*>⌘↩<\/kbd>/);
-  assert.match(markup, /aria-label="Format"[^>]*title="Format \(⌘\/\)"/);
+  assert.match(markup, /aria-label="Formatting"/);
+  // The page's ⋯ is in the pane header, so the footer has no second one (owner call 2026-11-14: no extra buttons).
+  const footer = markup.slice(markup.indexOf('ui-composer__foot'));
+  assert.doesNotMatch(footer, /aria-label="More"/);
+  assert.match(footer, /closes/, 'the quiet "Esc closes" line stays');
   assert.match(markup, /Draft saved/);
   assert.doesNotMatch(markup, /Polish suggests/);
   assert.doesNotMatch(markup, /is a suggestion/);
@@ -293,7 +308,7 @@ test('Composer: AI draft hint, Polish bar, follow-up hint and dictation from an 
 
   const polish = html(composer({ polish: { changes: 3, onUse: noop, onKeep: noop } }));
   assert.match(text(polish), /Polish suggests 3 changes\. Yours stays until you choose\./);
-  assert.match(polish, /Use these.*<kbd[^>]*>Return<\/kbd>/);
+  assert.match(polish, /Use these.*<kbd[^>]*>↩<\/kbd>/);
   assert.match(polish, /Keep mine.*<kbd[^>]*>Esc<\/kbd>/);
   assert.match(
     text(html(composer({ polish: { changes: 1, onUse: noop, onKeep: noop } }))),

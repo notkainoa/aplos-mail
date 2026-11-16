@@ -28,6 +28,7 @@ import {
   lanesFor,
   layoutDay,
   MAX_LANES,
+  allDayRows,
   timedOn,
   type Timed,
 } from './layout';
@@ -56,6 +57,21 @@ interface DragRun {
   /** The element that took the press and its pointer, captured only once the press becomes a drag. */
   el: HTMLElement;
   pointerId: number;
+}
+
+/**
+ * The hour label the scroller's bottom edge would cut in half sits just below the edge instead: the grid opens a few
+ * pixels earlier, so the visible window ends between two labels. Opening only; scrolling afterwards is the reader's.
+ */
+function clearLabelAtEdge(scroller: HTMLElement): void {
+  const edge = scroller.getBoundingClientRect().bottom;
+  for (const label of scroller.querySelectorAll('.ui-calendar-grid__hour')) {
+    const box = label.getBoundingClientRect();
+    if (box.top < edge && box.bottom > edge) {
+      scroller.scrollTop = Math.max(0, scroller.scrollTop - (edge - box.top) - 1);
+      return;
+    }
+  }
 }
 
 /** Pixels the pointer must travel before a press becomes a drag, so a click still selects. */
@@ -93,6 +109,8 @@ export function TimeGrid(props: CalendarGridProps) {
   const first = 0;
   const count = DAY_HOURS;
   const hasAllDay = perDay.some(d => d.allDay.length > 0);
+  const dayRows = allDayRows(events, days);
+  const rowCount = Math.max(0, ...[...dayRows.values()].map(r => r + 1));
   const nowHours = new Date(now).getHours() + new Date(now).getMinutes() / 60;
 
   const scrollRef = useRef<HTMLDivElement>(null);
@@ -116,14 +134,20 @@ export function TimeGrid(props: CalendarGridProps) {
       const perHour = track.offsetHeight / DAY_HOURS;
       if (perHour <= 0) return false;
       scroller.scrollTop = perHour * opensAt.current;
+      // The pane settles after the first layout (header rows, fonts), so the edge is checked again a frame later.
+      frame = requestAnimationFrame(() => clearLabelAtEdge(scroller));
       return true;
     };
-    if (open() || typeof ResizeObserver === 'undefined') return;
+    let frame = 0;
+    if (open() || typeof ResizeObserver === 'undefined') return () => cancelAnimationFrame(frame);
     const observer = new ResizeObserver(() => {
       if (open()) observer.disconnect();
     });
     observer.observe(track);
-    return () => observer.disconnect();
+    return () => {
+      observer.disconnect();
+      cancelAnimationFrame(frame);
+    };
   }, [view]);
 
   useEffect(() => {
@@ -295,18 +319,28 @@ export function TimeGrid(props: CalendarGridProps) {
             <div key={day} role="gridcell" className="ui-calendar-grid__allday-cell">
               {/* The cell's name comes from its content, which holds the visible titles; a label would hide them. */}
               <span className="ui-sr-only">{`${dayTitle(day)}, all day`}</span>
-              {allDay.map(event => (
-                <div className="ui-calendar-grid__strip" key={event.id}>
-                  {/* A multi-day entry shows on each day it covers, but only its first segment is the DOM target. */}
-                  <FirstSegment.Provider
-                    value={
-                      !perDay.slice(0, dayIndex).some(d => d.allDay.some(x => x.id === event.id))
-                    }
+              {Array.from({ length: rowCount }, (_, row) => {
+                const event = allDay.find(e => dayRows.get(e.id) === row);
+                if (!event) return <div className="ui-calendar-grid__strip" key={`gap-${row}`} />;
+                const before =
+                  dayIndex > 0 && perDay[dayIndex - 1].allDay.some(x => x.id === event.id);
+                const after =
+                  dayIndex < perDay.length - 1 &&
+                  perDay[dayIndex + 1].allDay.some(x => x.id === event.id);
+                return (
+                  <div
+                    className="ui-calendar-grid__strip"
+                    key={event.id}
+                    data-joins-before={before ? 'true' : undefined}
+                    data-joins-after={after ? 'true' : undefined}
                   >
-                    {block(event, { lane: 0, lanes: 1, wide })}
-                  </FirstSegment.Provider>
-                </div>
-              ))}
+                    {/* A multi-day entry is one bar: it shows on each day it covers, but only its first segment is the DOM target. */}
+                    <FirstSegment.Provider value={!before}>
+                      {block(event, { lane: 0, lanes: 1, wide })}
+                    </FirstSegment.Provider>
+                  </div>
+                );
+              })}
             </div>
           ))}
         </div>

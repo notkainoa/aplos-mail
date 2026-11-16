@@ -26,8 +26,15 @@ import { Welcome } from './Welcome';
 
 const noop = () => {};
 
-const chromeAt = (step: number, demo = false, notice?: string): StepChrome => ({
+/** From the AI step on, an account is connected (the fixtures' Add-your-mail step says so with `connected`). */
+const chromeAt = (
+  step: number,
+  demo = false,
+  notice?: string,
+  connected = step >= 3,
+): StepChrome => ({
   dashes: { step, of: 4 },
+  connected,
   onBack: noop,
   ...(demo ? { onTryDemo: noop } : {}),
   ...(notice ? { notice: { text: notice, onRetry: noop }, status: notice } : {}),
@@ -49,7 +56,7 @@ function accounts(
 ): JSX.Element {
   return (
     <AccountsStep
-      chrome={chromeAt(2, true, over.windowNotice)}
+      chrome={chromeAt(2, true, over.windowNotice, (over.list ?? []).length > 0)}
       mode={mode}
       address={over.address ?? ''}
       notice={over.notice ?? null}

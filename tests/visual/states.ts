@@ -210,7 +210,7 @@ export const STATES: readonly VisualState[] = [
     components: ['OnboardingStep', 'ChoiceRow'],
     design: '7.11',
     mockup: 'onboarding-accounts.html (default)',
-    filled: 1,
+    filled: 0,
   },
   {
     id: 'progress-first-sync',
@@ -574,7 +574,7 @@ export const STATES: readonly VisualState[] = [
     components: ['LowSheet', 'LowBand'],
     design: '7.2',
     mockup: 'home.html (low sheet)',
-    filled: 0,
+    filled: 1,
   },
   {
     id: 'home-menu',
@@ -612,8 +612,7 @@ export const STATES: readonly VisualState[] = [
     components: ['FocusSlot', 'FocusLetter', 'ListRow', 'SectionHeader', 'LowBand', 'BulkBar'],
     design: '7.2, 7.4',
     mockup: 'home.html (default)',
-    filled: 1,
-    summary: 'ready',
+    filled: 0,
   },
   {
     id: 'home-bulk-trash-confirm',
@@ -630,8 +629,7 @@ export const STATES: readonly VisualState[] = [
     ],
     design: '7.2, 7.4',
     mockup: 'home.html (default)',
-    filled: 1,
-    summary: 'ready',
+    filled: 0,
   },
   {
     id: 'one-by-one',

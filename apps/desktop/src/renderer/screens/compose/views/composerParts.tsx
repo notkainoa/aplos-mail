@@ -73,7 +73,6 @@ export function useSharedComposerProps(
           <FromRow
             accounts={accounts}
             accountId={state.context.accountId}
-            canChange={state.context.mode === 'new'}
             onChange={accountId => chooseAccount(session, accountId)}
           />
         ) : null}

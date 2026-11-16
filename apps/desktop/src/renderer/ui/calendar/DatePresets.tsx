@@ -17,6 +17,7 @@ import {
   WEEKDAYS,
   yearMonthOf,
 } from './dates';
+import { displayChord } from '../buttons-keys/keyHints';
 import { CalIcon } from './icons';
 
 const LABELS: Record<DatePresetId, string> = {
@@ -171,7 +172,7 @@ export function DatePresets(props: DatePresetsProps) {
         {content}
         {/* With the month open, Return confirms in the footer button, which carries the keycap. */}
         {active && !(id === 'date' && calendarOpen) ? (
-          <kbd className="ui-date-presets__kbd">Return</kbd>
+          <kbd className="ui-date-presets__kbd">{displayChord('Return')}</kbd>
         ) : null}
       </div>
     );
@@ -302,7 +303,7 @@ export function DatePresets(props: DatePresetsProps) {
                 onClick={onConfirmDate}
               >
                 {confirmLabel}
-                <kbd className="ui-cal-kbd">Return</kbd>
+                <kbd className="ui-cal-kbd">{displayChord('Return')}</kbd>
               </button>
             </div>
           </div>

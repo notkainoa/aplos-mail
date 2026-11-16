@@ -385,7 +385,9 @@ describe('states, copy and design rules', () => {
     );
     assert.match(ai, /Default/);
     assert.match(ai, /On this Mac · running · no key needed/);
-    assert.match(ai, /On this Mac · not running/);
+    // A stopped local server says "Not running" once, in its status; the description does not repeat it.
+    assert.match(ai, /On this Mac · no key needed/);
+    assert.equal(ai.match(/not running/gi)?.length, 1);
     assert.match(ai, /Any OpenAI-compatible server · key optional/);
     assert.match(ai, /Daily limit/);
     assert.match(ai, /150,000 tokens/);
@@ -431,7 +433,7 @@ describe('states, copy and design rules', () => {
     assert.match(render('mail'), /8 seconds/);
     assert.match(
       render('mail'),
-      /Keeps message text for 90 days, plus anything opened, starred or unread, up to 2 GB\./,
+      /Keeps full message text on this Mac; opened, starred and unread mail is always kept\./,
     );
     assert.match(render('calendar'), /Calendar not allowed yet/);
     assert.match(render('calendar'), /Allow calendar access/);
@@ -452,7 +454,7 @@ describe('states, copy and design rules', () => {
 
   test('Help: version line, queue inspector rows, diagnostics preview, welcome', () => {
     assert.match(render('help'), /Version 0\.3\.0 \(build dev\) · macOS/);
-    assert.match(render('help'), />Show welcome</);
+    assert.match(render('help'), />Replay</);
     const q = render('queue-inspector');
     assert.match(q, /Archive 3 threads/);
     assert.match(q, />Retry</);

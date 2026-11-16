@@ -1,8 +1,8 @@
 /**
  * The composer's From row (owner's hands-on pass 2026-11-12: with two accounts there was no way to say which one
- * sends). Shown only when more than one account is connected. A new message is written in the account chosen here
- * (the current one by default); a reply, a forward or a message already being sent is written in the account the
- * thread belongs to, so its row shows that address and offers no menu. Accounts are named by their address.
+ * sends). Shown only when more than one account is connected. A new message starts in the current account; a reply or
+ * forward starts in the account the thread belongs to. Either can be moved to another account from the menu (owner,
+ * 2026-11-16: replies too). Accounts are named by their address.
  */
 import { useId, useRef, useState } from 'react';
 import type { Account } from '../../../data';
@@ -15,9 +15,8 @@ import { needsReconnect } from '../../../shell/status-map';
 /** Props for `FromRow`. */
 export interface FromRowProps {
   readonly accounts: readonly Account[];
+  /** A moment's lockout (a save or send in flight) keeps the menu: the move waits for it (`chooseAccount`). */
   readonly accountId: string;
-  /** False for good when the account cannot change (a reply or forward). A moment's lockout (a save in flight) keeps the menu: the move waits for it. */
-  readonly canChange: boolean;
   readonly onChange: (accountId: string) => void;
 }
 
@@ -38,7 +37,7 @@ function entriesOf(accounts: readonly Account[]): readonly MenuEntry[] {
 }
 
 /** The From row, or nothing when there is only one account to send from. */
-export function FromRow({ accounts, accountId, canChange, onChange }: FromRowProps) {
+export function FromRow({ accounts, accountId, onChange }: FromRowProps) {
   const [open, setOpen] = useState(false);
   const [active, setActive] = useState(accountId);
   const anchor = useRef<HTMLButtonElement>(null);
@@ -51,40 +50,34 @@ export function FromRow({ accounts, accountId, canChange, onChange }: FromRowPro
       <span className="ui-recipient-field__label" aria-hidden="true">
         From
       </span>
-      {canChange ? (
-        <>
-          <Button
-            ref={anchor}
-            variant="text"
-            size="sm"
-            label={address}
-            ariaLabel={`From ${address}, change account`}
-            trailingIcon="chevron-down"
-            popup={{ kind: 'menu', expanded: open, controls: menuId }}
-            onPress={() => {
-              setActive(accountId);
-              setOpen(value => !value);
-            }}
-          />
-          <Menu
-            id={menuId}
-            open={open}
-            anchor={anchor.current}
-            label="Send from"
-            entries={entriesOf(accounts)}
-            checkedId={accountId}
-            activeId={active}
-            onActiveChange={setActive}
-            onSelect={id => {
-              setOpen(false);
-              onChange(id);
-            }}
-            onClose={() => setOpen(false)}
-          />
-        </>
-      ) : (
-        <span className="aplos-from__address">{address}</span>
-      )}
+      <Button
+        ref={anchor}
+        variant="text"
+        size="sm"
+        label={address}
+        ariaLabel={`From ${address}, change account`}
+        trailingIcon="chevron-down"
+        popup={{ kind: 'menu', expanded: open, controls: menuId }}
+        onPress={() => {
+          setActive(accountId);
+          setOpen(value => !value);
+        }}
+      />
+      <Menu
+        id={menuId}
+        open={open}
+        anchor={anchor.current}
+        label="Send from"
+        entries={entriesOf(accounts)}
+        checkedId={accountId}
+        activeId={active}
+        onActiveChange={setActive}
+        onSelect={id => {
+          setOpen(false);
+          onChange(id);
+        }}
+        onClose={() => setOpen(false)}
+      />
     </div>
   );
 }

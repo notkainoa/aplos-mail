@@ -69,6 +69,7 @@ export function Chip(props: ChipProps) {
             <Icon name={state === 'failed' ? 'alert' : (icon ?? 'file-text')} />
             <span className="ui-chip__name">{name}</span>
             {state === 'ready' && size ? <span className="ui-chip__size">{size}</span> : null}
+            {state === 'ready' ? <Icon name="download" size="sm" /> : null}
             {state === 'downloading' ? <span className="ui-chip__size">Downloading…</span> : null}
           </button>
           {state === 'failed' ? (

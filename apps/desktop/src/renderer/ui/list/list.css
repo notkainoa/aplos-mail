@@ -128,13 +128,30 @@
 .ui-list-btn[data-variant='filled']:active {
   box-shadow: inset 0 1px 0 var(--press-lo);
 }
+.ui-list-key-word {
+  color: inherit;
+  font: var(--type-caption);
+  letter-spacing: var(--track-caption);
+}
 .ui-list-btn[data-variant='filled'] .ui-list-kbd {
-  background-color: color-mix(in srgb, var(--accent-ink) 16%, transparent);
+  /* A hint, not part of the label: a faint plate with a hairline edge on the fill, the label's own colour. */
+  background: color-mix(in srgb, var(--accent-ink) 12%, transparent);
+  box-shadow: inset 0 0 0 var(--hairline) color-mix(in srgb, var(--accent-ink) 32%, transparent);
   color: var(--accent-ink);
 }
 .ui-list-btn[data-tone='danger'],
 .ui-list-btn[data-tone='danger'] .ui-list-icon {
   color: var(--stamp-ink);
+}
+/* In light, the pinned bar's Later and Done caps (--sunken on --paper, 1.1:1) take one step more: a deeper plate, a
+   hairline edge and the --ink-2 glyph. Dark keeps the plain cap. */
+:root:not([data-theme='dark'])
+  .ui-reader-actions
+  .ui-list-btn:not([data-variant='filled'])
+  .ui-list-kbd:not([data-reveal='badge']) {
+  background-color: color-mix(in srgb, var(--ink) 9%, var(--paper));
+  box-shadow: inset 0 0 0 var(--hairline) var(--line-strong);
+  color: var(--ink-2);
 }
 .ui-list-btn:disabled {
   color: var(--dim);
@@ -385,6 +402,9 @@
 .ui-empty-line__copy > .ui-list-icon {
   color: var(--faint);
 }
+:root[data-theme='dark'] .ui-empty-line__copy > .ui-list-icon {
+  color: var(--dim); /* --faint is 3.6:1 here; the mark takes the AA text step */
+}
 .ui-empty-line__text,
 .ui-empty-line__detail {
   margin: 0;
@@ -507,8 +527,10 @@
 }
 
 .ui-list-group + .ui-list-group,
+.ui-list-group + .ui-low-band,
 .ui-low-band + .ui-list-group,
 .ui-focus-slot + .ui-list-group {
+  /* One gap between Home's sections (DESIGN 7.2 pins none), the Low band included. */
   margin-top: var(--group-gap);
 }
 .ui-list-group .ui-list-group {
@@ -689,6 +711,11 @@
   text-overflow: ellipsis;
   white-space: nowrap;
 }
+.ui-list-row__tag {
+  flex: none;
+  color: var(--dim);
+  font-weight: 500;
+}
 .ui-list-row__primary {
   flex: 1 1 auto;
 }
@@ -701,8 +728,19 @@
   color: var(--dim);
 }
 .ui-list-row__hit {
+  /* Bold, a soft wash and a hairline underline in a reduced-strength accent (a full-strength one read like a link),
+     so a match shows on the plain row, on the cursor row's --puck and on an already bold subject, in both themes
+     (the wash alone is under 1.1:1 on --puck). */
+  border-radius: var(--radius-xs);
+  background: var(--accent-wash);
   color: var(--ink);
   font-weight: 600;
+  text-decoration: underline;
+  text-decoration-color: color-mix(in srgb, var(--accent) 45%, transparent);
+  text-decoration-thickness: var(--hairline);
+  text-underline-offset: var(--space-half);
+  -webkit-box-decoration-break: clone;
+  box-decoration-break: clone;
 }
 
 .ui-list-row__meta {
@@ -827,10 +865,14 @@
   position: absolute;
   top: var(--space-3);
   bottom: var(--space-3);
-  left: 0;
+  left: var(--space-1); /* inside the rounded slab, not on its edge */
   width: var(--select-bar);
   border-radius: var(--radius-pill);
   background-color: var(--accent);
+}
+/* While rows are picked the pick box fills the lead column, so the bar moves to the slab's edge and clears it. */
+.ui-list-row[data-cursor='true'][data-picking='true']::before {
+  left: 0;
 }
 /* --accent-wash is for bulk-picked rows only. */
 .ui-list-row[data-picked='true'],
@@ -876,7 +918,8 @@
 .ui-focus-slot {
   position: relative;
   height: var(--focus-letter);
-  margin: var(--space-2) 0;
+  /* The slot's own bottom margin is the card's air above the first row; sections stay a group gap apart. */
+  margin: var(--space-2) 0 var(--space-5);
 }
 .ui-focus-slot[data-density='roomy'] {
   height: var(--focus-letter-roomy);
@@ -1117,7 +1160,7 @@
   position: absolute;
   top: var(--space-3);
   bottom: var(--space-3);
-  left: 0;
+  left: var(--space-1); /* inside the rounded slab, not on its edge */
   width: var(--select-bar);
   border-radius: var(--radius-pill);
   background-color: var(--accent);
@@ -1171,6 +1214,10 @@
 .ui-low-sheet__panel .ui-list-row {
   --ui-row-base: var(--paper);
 }
+/* The sheet's slab is a rounded run of rows on the paper card: the cursor bar sits well inside it, clear of the curve. */
+.ui-low-sheet__row .ui-list-row[data-cursor='true']::before {
+  left: var(--space-2);
+}
 .ui-low-sheet__head {
   display: flex;
   align-items: center;
@@ -1199,37 +1246,67 @@
   /* Room for the listbox's focus ring inside the scroller, which would otherwise clip it. */
   padding: calc(var(--focus-width) + var(--focus-gap));
 }
-.ui-low-sheet__preview {
-  box-sizing: border-box;
-  display: -webkit-box;
+.ui-low-sheet__bar {
+  display: flex;
   flex: none;
-  height: var(--space-9);
-  margin: var(--space-2) 0 0;
-  padding: var(--space-1) var(--space-3);
-  overflow: hidden;
+  align-items: center;
+  gap: var(--space-3);
+  min-height: var(--control-sm);
+  margin-top: var(--space-2);
+  padding: var(--space-3) var(--space-1) 0 var(--space-3);
   box-shadow: 0 calc(-1 * var(--hairline)) 0 var(--line);
+  box-sizing: content-box;
+}
+.ui-low-sheet__all {
+  position: relative;
+  display: inline-flex;
+  flex: none;
+  margin-left: auto;
+}
+/* The hold's progress: a lighter wash grows left to right over the filled button, transform only, on its own layer. */
+.ui-low-sheet__all::after {
+  content: '';
+  position: absolute;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  left: 0;
+  border-radius: var(--radius-md);
+  background-color: color-mix(in srgb, var(--accent-ink) 22%, transparent);
+  opacity: 0;
+  pointer-events: none;
+  transform: scaleX(0);
+  transform-origin: left center;
+}
+.ui-low-sheet__all[data-holding='true']::after {
+  opacity: 1;
+  transform: scaleX(1);
+  transition: transform var(--dur-hold-all) var(--ease-linear);
+}
+@media (prefers-reduced-motion: reduce) {
+  .ui-low-sheet__all[data-holding='true']::after {
+    transition: none;
+  }
+}
+.ui-low-sheet__bar-text {
+  display: grid;
+  flex: 1 1 auto;
+  min-width: 0;
+}
+.ui-low-sheet__bar-text > * {
+  grid-area: 1 / 1;
+}
+.ui-low-sheet__preview {
+  display: -webkit-box;
+  min-width: 0;
+  margin: 0;
+  overflow: hidden;
   color: var(--ink-2);
   font: var(--type-small);
   letter-spacing: var(--track-small);
   overflow-wrap: anywhere;
   -webkit-box-orient: vertical;
-  -webkit-line-clamp: 2;
-}
-/* Until a row is hovered the slot keeps its room (the sheet holds still) but drops its rule, so no empty band shows. */
-.ui-low-sheet__preview:empty {
-  box-shadow: none;
-}
-.ui-low-sheet__foot {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: var(--space-1);
-  margin: var(--space-2) 0 0;
-  padding: 0 var(--space-3);
-  color: var(--dim);
-  font: var(--type-small);
-  letter-spacing: var(--track-small);
-}
-.ui-low-sheet__foot[data-armed='true'] {
-  color: var(--ink);
+  -webkit-line-clamp: 1;
+  /* One line is always reserved, so a hovered row's preview never changes the bar's height. */
+  min-height: 1lh;
 }

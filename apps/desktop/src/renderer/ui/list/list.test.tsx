@@ -54,6 +54,12 @@ describe('ListRow', () => {
     assert.doesNotMatch(m, /ui-list-row__dot/);
   });
 
+  test('a tag is a quiet word before the line, so a draft never reads as sent mail', () => {
+    const m = render(<ListRow {...row({ layout: 'list', tag: 'Draft' })} />);
+    assert.match(m, /<span class="ui-list-row__tag">Draft<\/span>/);
+    assert.doesNotMatch(render(<ListRow {...row({ layout: 'list' })} />), /ui-list-row__tag/);
+  });
+
   test('done layout: fixed stamp column, "Move to Home" is the only action', () => {
     const m = render(
       <ListRow
@@ -324,14 +330,10 @@ describe('FocusSlot and FocusLetter', () => {
     assert.match(m, /data-kind="due"[^>]*>.*Tomorrow/);
     assert.match(
       m,
-      /ui-focus-letter__meta[\s\S]*<\/time><\/div><div class="ui-focus-letter__summary[^"]*"[^>]*><p[^>]*class="ui-summary"[^>]*><span class="ui-summary__lead" dir="ltr"><span class="ui-chip" data-kind="due"/,
-      'the chip leads the summary line, where a row puts it before the subject, not after the sender',
+      /ui-focus-letter__sender" dir="auto" title="Jordan Park">Jordan Park<\/span><span class="ui-chip" data-kind="due"[\s\S]*Tomorrow[\s\S]*<time class="ui-focus-letter__date"/,
+      'the chip sits on the sender line, right after the name',
     );
-    assert.match(
-      m,
-      /<span class="ui-summary__text">Two layout/,
-      'with a chip the words sit in their own span, so the arrival fade leaves the chip standing',
-    );
+    assert.doesNotMatch(m, /ui-summary__lead/, 'nothing leads the summary on the card');
     assert.match(m, /10:00 AM<\/time>/);
     assert.match(
       m,
@@ -376,11 +378,6 @@ describe('FocusSlot and FocusLetter', () => {
     assert.match(pending, /class="ui-summary-placeholder"/);
     assert.match(pending, /class="ui-focus-letter"[^>]*aria-busy="true"/);
     assert.match(pending, /Summarizing…/);
-    assert.match(
-      pending,
-      /ui-summary-placeholder__row"><span class="ui-chip" data-kind="due"/,
-      'the due chip leads the placeholder too',
-    );
     assert.doesNotMatch(pending, /ui-summary"/, 'no subject line in the space while pending');
     assert.match(pending, /data-narrow="true"/);
     assert.match(pending, /data-label-hidden="true" aria-label="Later"/);

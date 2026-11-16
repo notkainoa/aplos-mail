@@ -1,12 +1,11 @@
 import { Fragment, useId } from 'react';
 import type { InlineReplyProps } from '../props';
-import { BlockedLine, ComposeFooter, ConflictBar } from './ComposeParts';
-import { Btn } from './parts';
+import { BlockedLine, ComposeFooter, ConflictBar, footerActions } from './ComposeParts';
 import { Suggestion } from './Suggestion';
 
 /**
  * The inline reply card under the message (`--elev-card`; the `settle` in and out is the motion runtime's, through
- * `ref`): the To line with Cc and Pop out, the text in `read`, then Send (⌘↩), the draft line, attach and ⋯ (DESIGN §6
+ * `ref`): the To line with Cc and Bcc, the text in `read`, then Send (⌘↩), the draft line, Esc closes, attach, Pop out and ⋯ (formatting lives in ⋯) (DESIGN §6
  * InlineReply, §7.6). While it is open it owns the filled button. The draft strip (`Suggestion`) is the card's sibling
  * right after it, hanging off its bottom edge, never inside it.
  */
@@ -42,14 +41,6 @@ export function InlineReply(props: InlineReplyProps) {
           >
             {recipients}
           </div>
-          <Btn
-            variant="icon"
-            icon="pop-out"
-            label="Pop out"
-            hint="Pop out reply"
-            commandId="compose.popOut"
-            onPress={() => onPopOut()}
-          />
         </div>
         {blocked?.field === 'to' ? blockedLine : null}
         <div className="ui-inline-reply__body">
@@ -69,22 +60,13 @@ export function InlineReply(props: InlineReplyProps) {
           onRetrySave={onRetrySave}
           dictation={dictation}
           onSend={props.onSend}
-          trailing={[
-            {
-              label: 'Attach',
-              icon: 'paperclip',
-              hint: 'Attach a file',
-              commandId: commands.attach,
-              onPress: () => props.onAttach(),
-            },
-            {
-              label: 'More',
-              icon: 'more',
-              hint: 'More: format, schedule, discard',
-              commandId: commands.more,
-              onPress: props.onMore,
-            },
-          ]}
+          closeHint
+          trailing={footerActions({
+            commands,
+            onAttach: props.onAttach,
+            onMore: props.onMore,
+            onPopOut,
+          })}
         />
       </section>
       {suggestion ? <Suggestion {...suggestion} /> : null}

@@ -34,6 +34,9 @@ import {
   remoteStarted,
   removeToken,
   resultRow,
+  snippetAround,
+  snippetFit,
+  withoutGreeting,
   returnReady,
   searchPage,
   submit,
@@ -247,7 +250,7 @@ test('the offer row sits under local results; a no-match carries the offer itsel
   assert.equal(hit.remoteLine?.kind, 'offer');
   assert.equal(hit.noMatch, null);
   const miss = searchPage(state, LOCAL([]), 1_000);
-  assert.equal(miss.noMatch, 'No mail matches ‘dentist’');
+  assert.equal(miss.noMatch, 'No mail matches “dentist”');
   assert.equal(miss.noMatchOffer, true);
   assert.equal(miss.remoteLine, null);
 });
@@ -445,6 +448,58 @@ test('free terms bold in subjects and snippets; quoted phrases stay whole', () =
   assert.equal(row.remote, true);
   assert.equal(row.marks.attachment, true);
   assert.equal(row.marks.bookmarked, true);
+});
+
+test('a snippet whose match sits far in starts a few words before it, one leading ellipsis', () => {
+  const text =
+    'The printer queue was cleared overnight, and the invoice reminder went out before nine';
+  assert.equal(
+    snippetAround(text, ['invoice']),
+    '…overnight, and the invoice reminder went out before nine',
+  );
+  assert.equal(snippetAround(text, ['printer']), text, 'a match near the start is left alone');
+  assert.equal(snippetAround(text, ['nothing']), text, 'no match, no cut');
+});
+
+test('a snippet is cut after a whole word, keeps its match, and short text is left alone', () => {
+  const text = '…can close out the project. The two layout directions are ready';
+  assert.equal(snippetFit(text, ['project']), '…can close out the project…');
+  assert.equal(
+    snippetFit('Our project review is Friday at ten', ['project']),
+    'Our project review is…',
+  );
+  assert.equal(snippetFit('A short line', ['line']), 'A short line');
+  const long = 'Replacement parts arrive in the supercalifragilisticexpialidocious crate';
+  assert.ok(
+    snippetFit(long, ['supercalifragilisticexpialidocious']).includes(
+      'supercalifragilisticexpialidocious',
+    ),
+  );
+});
+
+test('a result keeps its whole subject and windows only the snippet, past a leading greeting', () => {
+  const subject = 'Quarterly invoice reminder for the studio printer lease';
+  const row = resultRow(
+    {
+      id: 't1',
+      fromName: 'Maya',
+      subject,
+      snippet:
+        'Hi Alex, the printer queue was cleared overnight, and the invoice went out before nine',
+      unread: false,
+      lastDate: 0,
+      hasAttachments: false,
+      workflow: { status: 'new', bookmarked: false, hiddenFromHome: false },
+      accountId: 'a1',
+    },
+    toSearchQuery([], 'invoice'),
+    false,
+  );
+  assert.equal(row.primary, subject);
+  assert.ok(row.secondary?.startsWith('…') || row.secondary?.startsWith('the printer'));
+  assert.ok(!row.secondary?.includes('Hi Alex'));
+  assert.equal(withoutGreeting('Hello, world'), 'world');
+  assert.equal(withoutGreeting('Hi,'), 'Hi,', 'a bare greeting is left alone');
 });
 
 test('a saved cursor lands once its row is there, or once the local window has settled (never on a local neighbour early)', () => {

@@ -121,7 +121,9 @@
 }
 
 .ui-cal-button[data-variant='filled'] .ui-cal-kbd {
-  background: var(--press-hi);
+  /* A hint, not part of the label: a faint plate with a hairline edge on the fill, the label's own colour. */
+  background: color-mix(in srgb, var(--accent-ink) 12%, transparent);
+  box-shadow: inset 0 0 0 var(--hairline) color-mix(in srgb, var(--accent-ink) 32%, transparent);
   color: var(--accent-ink);
 }
 
@@ -234,15 +236,28 @@
   font: inherit;
   letter-spacing: inherit;
   font-variant-numeric: tabular-nums;
-  color: var(--ink-2);
+  font-weight: 400;
+  color: var(--ink);
 }
 
+/* Days of the next or previous month: dim beside the in-month ink, so the month edge reads. Only today is heavier. */
 .ui-mini-month__day[data-out='true'] {
   color: var(--dim);
 }
 
-.ui-mini-month__day[data-in-range='true'] {
+/* The shown week (or day, or month) is one quiet band behind the digits, rounded only at the ends of each run. */
+.ui-mini-month__table td[data-band] {
   background: var(--puck);
+}
+.ui-mini-month__table td[data-band='start'],
+.ui-mini-month__table td[data-band='startend'] {
+  border-top-left-radius: var(--radius-sm);
+  border-bottom-left-radius: var(--radius-sm);
+}
+.ui-mini-month__table td[data-band='end'],
+.ui-mini-month__table td[data-band='startend'] {
+  border-top-right-radius: var(--radius-sm);
+  border-bottom-right-radius: var(--radius-sm);
 }
 
 .ui-mini-month__day[data-today='true'] {
@@ -445,6 +460,46 @@
   height: var(--space-5);
 }
 
+/* Bars take a deeper tint step than a timed tile; dark takes a deeper one still, so a quiet calendar (dusk) is not the
+   same muddy slate as the pane. */
+:root {
+  --bar-step: 1.5;
+}
+:root[data-theme='dark'] {
+  --bar-step: 2;
+}
+
+/* All-day and multi-day bars take a deeper step of their calendar's tint than a timed tile (1.5 times the event fill),
+   so a calendar of a quiet colour still reads as that colour and not as grey. */
+.ui-calendar-grid__strip .ui-event-block[data-kind='event'] {
+  --ev-fill: color-mix(
+    in srgb,
+    var(--cal) calc(var(--event-fill) * var(--bar-step)),
+    var(--canvas)
+  );
+}
+
+/* A multi-day entry reads as one bar: each segment bridges the gap to the next column, and a continuing
+   segment drops its rule, its left corners and its repeated title. */
+.ui-calendar-grid__strip[data-joins-after='true'] {
+  margin-right: calc(-2 * var(--ev-gap));
+}
+
+.ui-calendar-grid__strip[data-joins-after='true'] .ui-event-block {
+  border-top-right-radius: 0;
+  border-bottom-right-radius: 0;
+}
+
+.ui-calendar-grid__strip[data-joins-before='true'] .ui-event-block {
+  border-top-left-radius: 0;
+  border-bottom-left-radius: 0;
+  box-shadow: none;
+}
+
+.ui-calendar-grid__strip[data-joins-before='true'] .ui-event-block > * {
+  visibility: hidden;
+}
+
 .ui-calendar-grid__scroll {
   flex: 1;
   min-height: 0;
@@ -603,6 +658,10 @@
     var(--cal) var(--event-fill),
     var(--canvas)
   ); /* over the canvas, so grid lines never cross the text */
+  --ev-line: calc(var(--space-4) + var(--space-half)); /* the 18 px `small` line */
+  --ev-free: calc(var(--hour) * var(--d, 1) - var(--ev-gap) * 2 - var(--space-half) * 2);
+  --title-lines: max(1, round(down, calc((var(--ev-free) - var(--ev-line)) / var(--ev-line)), 1));
+  --title-lines-solo: max(1, round(down, calc(var(--ev-free) / var(--ev-line)), 1));
   position: relative;
   display: flex;
   flex-direction: column;
@@ -663,6 +722,48 @@
   flex: none;
 }
 
+/* Titles take the lines the tile has. `--ev-free` is the tile's height inside its padding (the slot's `--d` hours of
+   grid), `--ev-line` one `small` line, so a tall tile wraps a long title over many lines and a short one over one or
+   two, never one line with the tile empty below it. The time (or "From mail") line is taken off first. */
+
+:is(
+  .ui-event-block[data-density='full'] .ui-event-block__title,
+  .ui-plan-outline[data-density='full'] .ui-plan-outline__title
+) {
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  -webkit-line-clamp: var(--title-lines);
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
+
+/* Crowded lanes (overlapping entries share the column): the time line goes, so the name gets the whole tile and
+   stays readable instead of cutting at five characters. */
+:is(
+  .ui-event-block[data-crowded='true'],
+  .ui-calendar-grid__slot[data-beside='true'] .ui-event-block
+)[data-density='full'] {
+  padding-left: calc(var(--space-1) + var(--select-bar));
+  padding-right: var(--space-1);
+}
+
+:is(
+    .ui-event-block[data-crowded='true'],
+    .ui-calendar-grid__slot[data-beside='true'] .ui-event-block
+  )[data-density='full']
+  .ui-event-block__title {
+  -webkit-line-clamp: var(--title-lines-solo);
+}
+
+:is(
+    .ui-event-block[data-crowded='true'],
+    .ui-calendar-grid__slot[data-beside='true'] .ui-event-block
+  )[data-density='full']
+  .ui-event-block__time {
+  display: none;
+}
+
 .ui-event-block[data-selected='true'],
 .ui-plan-outline[data-selected='true'],
 .ui-event-block:focus-visible,
@@ -672,9 +773,9 @@
   position: relative;
 }
 
-/* A plan from mail: dashed 1 px outline and a label until it is confirmed. */
+/* A plan from mail: dashed 1 px outline, its calendar's tint and a label until it is confirmed. */
 .ui-plan-outline {
-  background: var(--canvas);
+  background: var(--ev-fill);
   outline: 1px dashed var(--control-edge);
   outline-offset: calc(-1 * 1px);
   padding-left: var(--space-2);
@@ -687,6 +788,10 @@
   font: var(--type-small);
   letter-spacing: var(--track-small);
   color: var(--dim);
+}
+
+:root[data-theme='dark'] .ui-plan-outline__from {
+  color: var(--ink-2); /* the same one-step lift the time line takes on a 20 % dark tint */
 }
 
 .ui-plan-outline__from .ui-cal-icon {
@@ -840,11 +945,29 @@
   font: var(--type-small);
   letter-spacing: var(--track-small);
   font-variant-numeric: tabular-nums;
-  color: var(--ink-2);
+  font-weight: 600; /* in-month digits carry weight, so the month edge reads against the dim 400 digits beside it */
+  color: var(--ink);
 }
 
 .ui-calendar-grid__mcell[data-out='true'] .ui-calendar-grid__mnum {
+  font-weight: 400;
   color: var(--dim);
+}
+
+/* The last week row closes the grid with a bottom hairline. */
+.ui-calendar-grid__mrow:last-child .ui-calendar-grid__mcell {
+  box-shadow:
+    inset var(--hairline) 0 0 var(--line),
+    inset 0 var(--hairline) 0 var(--line),
+    inset 0 calc(-1 * var(--hairline)) 0 var(--line);
+}
+
+.ui-calendar-grid__mrow:last-child .ui-calendar-grid__mcell:last-child {
+  box-shadow:
+    inset var(--hairline) 0 0 var(--line),
+    inset 0 var(--hairline) 0 var(--line),
+    inset calc(-1 * var(--hairline)) 0 0 var(--line),
+    inset 0 calc(-1 * var(--hairline)) 0 var(--line);
 }
 
 .ui-calendar-grid__mcell[data-today='true'] .ui-calendar-grid__mnum {
@@ -896,6 +1019,47 @@
 .ui-calendar-grid__mev[aria-pressed='true'] {
   outline: var(--focus-width) solid var(--accent);
   outline-offset: 0;
+}
+
+/* A gap where a bar sits in another cell of the week, so every bar keeps one height across its span. */
+.ui-calendar-grid__mgap {
+  height: var(--control-xs);
+}
+
+/* A multi-day entry is one bar through its week row: its calendar's tint and 2 px leading rule, each cell bridging the
+   cell padding to the next, and a continuing cell drops the rule, its left corners and its repeated title. */
+.ui-calendar-grid__mev[data-bar='true'] {
+  --ev-fill: color-mix(
+    in srgb,
+    var(--cal) calc(var(--event-fill) * var(--bar-step)),
+    var(--canvas)
+  );
+  --bridge: 0px;
+  width: calc(100% + var(--bridge));
+  padding-left: var(--space-2);
+  background: var(--ev-fill);
+  box-shadow: inset var(--select-bar) 0 0 var(--cal);
+}
+.ui-calendar-grid__mev[data-bar='true'] i {
+  display: none;
+}
+.ui-calendar-grid__mev[data-bar='true'][data-joins-after='true'] {
+  --bridge: var(--space-1);
+  border-top-right-radius: 0;
+  border-bottom-right-radius: 0;
+}
+.ui-calendar-grid__mev[data-bar='true'][data-joins-before='true'] {
+  --bridge: var(--space-1);
+  margin-left: calc(-1 * var(--space-1));
+  border-top-left-radius: 0;
+  border-bottom-left-radius: 0;
+  box-shadow: none;
+}
+.ui-calendar-grid__mev[data-bar='true'][data-joins-before='true'][data-joins-after='true'] {
+  --bridge: calc(2 * var(--space-1));
+}
+.ui-calendar-grid__mev[data-bar='true'][data-joins-before='true'] span {
+  visibility: hidden;
 }
 
 @media (hover: hover) {
@@ -1123,6 +1287,18 @@
   font-weight: 500;
   letter-spacing: var(--track-small);
   color: var(--dim);
+}
+
+.ui-event-detail__label-note {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+  margin-left: var(--space-2);
+}
+
+.ui-event-detail__label-note .ui-cal-icon {
+  width: var(--icon-sm);
+  height: var(--icon-sm);
 }
 
 .ui-event-detail__plan {

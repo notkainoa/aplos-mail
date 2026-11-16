@@ -54,15 +54,12 @@ const step = (mode: AccountsStepProps['mode'], over: Record<string, unknown> = {
     }),
   );
 
-// The frame's own markup (OnboardingStep.tsx): the heading, the footer and the dashes.
-const FRAME = [
-  'ui-onboarding-step__title',
-  'ui-onboarding-step__foot',
-  'ui-onboarding-step__dashes',
-];
+// The frame's own markup (OnboardingStep.tsx): the heading and the footer. The footer says "Step N of 4" in words; the
+// dashes beside it are gone.
+const FRAME = ['ui-onboarding-step__title', 'ui-onboarding-step__foot'];
 
 describe('AccountsBody draws only the connect flow, never the step frame', () => {
-  test('choose: the field and the provider row, no heading, footer or dashes', () => {
+  test('choose: the field and the provider row, no heading, footer or step words', () => {
     const html = body('choose');
     for (const mark of FRAME) assert.ok(!html.includes(mark), mark);
     assert.ok(!html.includes('<h1'));
@@ -85,17 +82,22 @@ describe('AccountsBody draws only the connect flow, never the step frame', () =>
 });
 
 describe('AccountsStep keeps the OnboardingStep frame around the body', () => {
-  test('choose: title, footer note and dashes are all present', () => {
+  test('choose: title and the "Step 2 of 4" words are present, with no dashes and no background note yet', () => {
     const html = step('choose');
     for (const mark of FRAME) assert.ok(html.includes(mark), mark);
     assert.ok(html.includes('Add your mail'));
-    assert.ok(html.includes('Step 2 of 4'));
+    assert.ok(html.includes('>Step 2 of 4<'));
+    // The note is true only once an account is connected, so the step that is still choosing one does not say it.
+    assert.ok(!html.includes('Setup continues in the background.'));
+    assert.ok(!html.includes('ui-onboarding-step__dashes'));
     assert.ok(html.includes('onb-address'));
   });
 
   test('connected: its own title and actions, and the same account list', () => {
     const html = step('connected');
     for (const mark of FRAME) assert.ok(html.includes(mark), mark);
+    assert.ok(html.includes('>Step 2 of 4<'));
+    assert.ok(!html.includes('ui-onboarding-step__dashes'));
     assert.ok(html.includes('Your accounts'));
     assert.ok(html.includes('Continue'));
     assert.ok(html.includes('Add another account'));

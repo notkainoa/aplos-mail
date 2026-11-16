@@ -253,7 +253,7 @@ test('a failed window that kept its rows shows them under one notice', () => {
 
 test('no mail matched is not a failure: the empty line carries the offer, no alert', () => {
   const model = searchPage({ ...initialSearch, field: 'dentist' }, LOCAL([]), NOW);
-  assert.equal(model.noMatch, 'No mail matches ‘dentist’');
+  assert.equal(model.noMatch, 'No mail matches “dentist”');
   const markup = renderPage(model);
   assert.equal(errorLines(markup), 0);
   assert.equal(alerts(markup), 0);

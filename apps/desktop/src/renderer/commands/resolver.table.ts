@@ -510,7 +510,7 @@ export const TABLE: readonly Row[] = [
     expect: 'dialog.cancel',
   },
   {
-    name: '→ in the Low-importance sheet marks everything done',
+    name: '→ in the Low-importance sheet marks done (hold: everything)',
     stack: [...HOME, 'lowImportance'],
     event: keydown('ArrowRight'),
     expect: 'lowImportance.markAllDone',

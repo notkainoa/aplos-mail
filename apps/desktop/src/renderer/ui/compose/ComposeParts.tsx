@@ -12,7 +12,7 @@ import type {
 import { DictationLine } from './DictationLine';
 import { DraftState } from './DraftState';
 import { Icon } from './icons';
-import { Btn } from './parts';
+import { Btn, Kbd } from './parts';
 
 /** A blocked send: one plain sentence, an icon and the stamp ink; the field it belongs to is outlined by CSS. No shake. */
 export function BlockedLine({ id, blocked }: { id: string; blocked: BlockedSend }) {
@@ -46,6 +46,56 @@ export interface FooterAction {
   onPress: (anchor: HTMLElement) => void;
 }
 
+/**
+ * The footer's icon buttons, one anatomy for the compose page and the inline reply: attach, Formatting, Pop out (only
+ * where the card can be popped out, so the inline reply), then ⋯. Both menu buttons open the one compose menu.
+ */
+export function footerActions(parts: {
+  commands: ComposeCommands;
+  onAttach: () => void;
+  /** The compose page's Format button (T). The inline reply has none: its ⋯ holds formatting. */
+  onFormat?: (anchor: HTMLElement) => void;
+  /** The inline reply's ⋯ (format, schedule, discard). The compose page keeps its ⋯ in the pane header. */
+  onMore?: (anchor: HTMLElement) => void;
+  onPopOut?: () => void;
+}): readonly FooterAction[] {
+  const { commands, onAttach, onFormat, onMore, onPopOut } = parts;
+  const actions: FooterAction[] = [
+    {
+      label: 'Attach',
+      icon: 'paperclip',
+      hint: 'Attach a file',
+      commandId: commands.attach,
+      onPress: () => onAttach(),
+    },
+  ];
+  if (onFormat)
+    actions.push({
+      label: 'Formatting',
+      icon: 'type',
+      hint: 'Formatting',
+      commandId: commands.more,
+      onPress: onFormat,
+    });
+  if (onPopOut)
+    actions.push({
+      label: 'Pop out reply',
+      icon: 'pop-out',
+      hint: 'Pop out reply',
+      commandId: 'compose.popOut',
+      onPress: () => onPopOut(),
+    });
+  if (onMore)
+    actions.push({
+      label: 'More',
+      icon: 'more',
+      hint: 'More: format, schedule, discard',
+      commandId: commands.more,
+      onPress: onMore,
+    });
+  return actions;
+}
+
 /** Send (always with its keycap), the draft line or the dictation line, and the trailing icon buttons. */
 export function ComposeFooter(props: {
   commands: ComposeCommands;
@@ -54,8 +104,10 @@ export function ComposeFooter(props: {
   dictation?: DictationState;
   onSend: () => void;
   trailing: readonly FooterAction[];
+  /** The quiet "Esc closes" line, in the inline reply and the compose page alike: Esc closes and keeps the draft. */
+  closeHint?: boolean;
 }) {
-  const { commands, draftState, onRetrySave, dictation, onSend, trailing } = props;
+  const { commands, draftState, onRetrySave, dictation, onSend, trailing, closeHint } = props;
   return (
     <div className="ui-compose-footer">
       <Btn
@@ -73,6 +125,11 @@ export function ComposeFooter(props: {
         <DraftState state={draftState} onRetry={onRetrySave} />
       )}
       <span className="ui-compose-footer__right">
+        {closeHint ? (
+          <span className="ui-compose-footer__close">
+            <Kbd>Esc</Kbd> closes
+          </span>
+        ) : null}
         {trailing.map(action => (
           <Btn
             key={action.label}

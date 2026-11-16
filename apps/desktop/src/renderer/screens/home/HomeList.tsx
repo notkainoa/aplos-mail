@@ -96,7 +96,9 @@ function Rows(props: HomeListProps & { ids: readonly ThreadId[]; section: Sectio
     const rejected = failure
       ? { op: failurePhrase(failure.action), onRetry: () => void failure.retry() }
       : undefined;
-    if (id === cursorKey)
+    // While rows are picked the bar acts on the pick, so the cursor row is a plain checked row, not the card.
+    const letter = id === cursorKey && props.picked.size === 0;
+    if (letter)
       return <LetterSlot key={id} {...props} row={row} section={section} rejected={rejected} />;
     return (
       <ListRow
@@ -105,7 +107,7 @@ function Rows(props: HomeListProps & { ids: readonly ThreadId[]; section: Sectio
           domId: rowDomId(id),
           layout: 'home',
           density,
-          cursor: false,
+          cursor: id === cursorKey,
           picked: props.picked.has(id),
           picking: props.picked.size > 0,
           accounts,
@@ -168,9 +170,15 @@ function DoNow(props: HomeListProps) {
   const section = props.view.sections.find(s => s.key === 'do');
   if (!section) return null;
   const { fromLater } = section;
+  // The label counts the rows listed right under it; Back from Later carries its own count below.
+  const listed = fromLater?.visible ? section.count - fromLater.count : section.count;
   return (
     <ListGroup
-      header={headerOf(section, { waitingNew: section.waiting, action: oneByOneAction(props) })}
+      header={headerOf(section, {
+        count: Math.max(0, listed),
+        waitingNew: section.waiting,
+        action: oneByOneAction(props),
+      })}
     >
       <Rows {...props} ids={props.layout.do} section="do" />
       {fromLater?.visible ? (

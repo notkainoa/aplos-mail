@@ -339,10 +339,12 @@ export function lowGroups(q: StoreReader, accountId?: string): Group[] {
   const groups = new Map<string, Group>();
   for (const raw of runPage(q, rows, MATERIALIZED_LIMIT)) {
     const [id, address, name, unsub] = JSON.parse(raw) as [string, string, string, number];
-    const g = groups.get(address) ?? { address, name, threadIds: [], unsubscribe: false };
+    // Addresses are stored as the mail spelled them: `News@shop.example` and `news@shop.example` are one sender.
+    const key = address.toLowerCase();
+    const g = groups.get(key) ?? { address: key, name, threadIds: [], unsubscribe: false };
     g.threadIds.push(id);
     g.unsubscribe ||= unsub === 1;
-    groups.set(address, g);
+    groups.set(key, g);
   }
   return [...groups.values()];
 }

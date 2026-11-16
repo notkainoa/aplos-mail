@@ -43,3 +43,14 @@
 .search-screen__column > .ui-empty-line .ui-empty-line__actions {
   justify-content: center;
 }
+
+/* Search rows show the subject as the row's first cell and the matched snippet beside it in --dim, so the two cells
+   read as two things; each cell ellipsises only its own end. The subject keeps the list's weight (400 read, 500 unread)
+   and the snippet always keeps room for about 25 characters, cut on a word by the model. */
+.search-screen .ui-list-row__primary[data-has-secondary='true'] {
+  max-width: 58%;
+  color: var(--ink-2);
+}
+.search-screen .ui-list-row__secondary {
+  flex: 1 0 min(13rem, 45%);
+}

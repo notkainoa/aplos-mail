@@ -91,7 +91,12 @@
   padding-block: var(--space-3);
 }
 .aplos-compose:not([data-cards='off']) .ui-composer__editor {
-  min-height: calc(var(--space-10) * 4);
+  /* About 40 % of the pane's height, at least 200 px and at most 384, so the card reaches down the pane instead of
+     hugging its top; the field still grows with the words. */
+  min-height: min(
+    max(calc(var(--space-10) * 3 + var(--space-2)), 40cqh),
+    calc(var(--space-10) * 6 + var(--space-6))
+  );
   margin-block: var(--space-6);
 }
 .aplos-compose[data-cards='a'] .ui-composer__to:not(:focus-within),
@@ -101,7 +106,11 @@
 .aplos-compose[data-cards='a'] .ui-composer__subject {
   margin-top: var(--space-1);
 }
-/* The footer's Send and icons sit on the card's 24 px text edge (the icons' glyphs, not their 28 px boxes). */
+/* The footer is the card's last row: full card width, so its hairline runs edge to edge, with Send and the icons on the
+   card's 24 px text edge (the icons' glyphs, not their 28 px boxes). */
+.aplos-compose:not([data-cards='off']) .ui-composer__page > .ui-composer__foot {
+  margin-inline: 0;
+}
 .aplos-compose:not([data-cards='off']) .ui-composer__foot .ui-compose-footer {
   box-sizing: border-box;
   padding-inline: var(--space-6) var(--space-5);
@@ -120,16 +129,31 @@
   display: contents;
 }
 
-/* The From row: its address reads like the recipient rows' text, not like a control, when the account cannot change. */
-.aplos-from {
-  align-items: center;
+/* The From row: a menu button that sits on the recipient rows' line. */
+.ui-recipient-field.aplos-from {
+  /* Two classes: the shared field's `flex-start` is declared later and would win a single one. */
+  align-items: baseline;
+  /* The 28 px control sits where the To row's chips do; the label's baseline follows the address's. */
+  padding-top: calc((var(--control-lg) - var(--control-sm)) / 2);
+  /* The same hairline the To row draws under itself, on the compose page and in the inline reply. */
+  box-shadow: 0 var(--hairline) 0 var(--line);
 }
 .aplos-from .ui-recipient-field__label {
   padding-top: 0;
+  line-height: inherit;
 }
-.aplos-from__address {
-  color: var(--ink-2);
-  font: var(--type-ui);
-  font-weight: 500;
-  letter-spacing: var(--track-ui);
+
+/* The pane's own height is the container the editor's 40 % is taken from. */
+.aplos-compose .ui-composer__scroll {
+  container-type: size;
+}
+
+/* One From row in the compose page and the inline reply: the labels are as wide as the compose page's, so both values
+   start on the same edge; the address (a menu button with a chevron, shown when 2+ accounts can be picked)
+   reads in the same type, and the button's own padding hangs into the label gap so its text lines up with the To value. */
+.ui-inline-reply .ui-recipient-field__label {
+  min-width: var(--space-8);
+}
+.aplos-from > .ui-button {
+  margin-left: calc(-1 * var(--space-3));
 }

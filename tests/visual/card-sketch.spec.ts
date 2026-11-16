@@ -56,7 +56,7 @@ for (const theme of THEMES)
                 kinds.push(
                   a.matches('.aplos-bell')
                     ? 'bell'
-                    : a.getAttribute('aria-label') === 'More'
+                    : a.getAttribute('aria-label') === 'Message actions'
                       ? 'more'
                       : /Important|Low importance/.test(a.getAttribute('aria-label') ?? '')
                         ? 'importance'

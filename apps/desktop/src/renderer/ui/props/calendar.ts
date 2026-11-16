@@ -165,9 +165,9 @@ export interface EventGuest {
   name: string;
   /** Their reply. */
   status: 'going' | 'maybe' | 'declined' | 'none';
-  /** The owner: the role reads "you" (or "you, organizer"). */
+  /** The owner: the role reads "(you)" (or "(you) · Organizer"). */
   isYou?: boolean;
-  /** The organizer: the role reads "organizer". */
+  /** The organizer: the role reads "Organizer". */
   isOrganizer?: boolean;
 }
 

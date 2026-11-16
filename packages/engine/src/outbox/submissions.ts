@@ -172,6 +172,32 @@ export function threadOf(
     : { threadId: `${draft.account_id}:${remote}`, remoteThreadId: remote };
 }
 
+type RepliedRow = { internet_id: string | null; refs: string | null };
+
+/**
+ * The stored message a reply answers. It is usually in the draft's own account, but the owner can switch a reply's
+ * From to another account (owner, 2026-11-16), so the message is looked up in whichever account its id names.
+ */
+function repliedMessage(
+  q: StoreReader,
+  accountId: string,
+  messageId: string | undefined,
+): RepliedRow | undefined {
+  if (messageId === undefined) return undefined;
+  const others = q.all<{ id: string }>('SELECT id FROM accounts WHERE id != ?', accountId);
+  for (const owner of [accountId, ...others.map(a => a.id)]) {
+    const remoteId = remotePart(owner, messageId);
+    if (remoteId === undefined) continue;
+    const msg = q.get<RepliedRow>(
+      'SELECT internet_id, refs FROM messages WHERE account_id = ? AND remote_id = ?',
+      owner,
+      remoteId,
+    );
+    if (msg) return msg;
+  }
+  return undefined;
+}
+
 /** In-Reply-To and References from the replied message's stored headers; omitted when the store lacks them. */
 export function replyHeaders(
   q: StoreReader,
@@ -179,13 +205,7 @@ export function replyHeaders(
   fields: DraftFields,
 ) {
   if (fields.mode !== 'reply' && fields.mode !== 'replyAll') return {};
-  const remoteId = remotePart(draft.account_id, fields.replyToMessageId);
-  if (remoteId === undefined) return {};
-  const msg = q.get<{ internet_id: string | null; refs: string | null }>(
-    'SELECT internet_id, refs FROM messages WHERE account_id = ? AND remote_id = ?',
-    draft.account_id,
-    remoteId,
-  );
+  const msg = repliedMessage(q, draft.account_id, fields.replyToMessageId);
   if (!msg?.internet_id) return {};
   let refs: string[] = [];
   try {

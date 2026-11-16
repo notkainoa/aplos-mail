@@ -25,7 +25,9 @@
    y = 21 and the last dot ends at x = 75. Everything in the top row centres on that line. */
 .aplos-shell[data-mac='true']:not([data-fullscreen='true']) {
   --traffic-center: 21px;
-  --notch-w: 134px;
+  --traffic-end: 75px;
+  /* The notch spans the dots, the toggle (a --space-2 gap after the last dot, 28 px wide) and the same right margin as before. */
+  --notch-w: 129px;
 }
 
 /* Collapsed: the chrome strip sits across the top and the panes drop below it. */
@@ -101,7 +103,7 @@
 .aplos-shell[data-mac='true']:not([data-fullscreen='true']) .aplos-shell__strip > :not(svg) {
   position: absolute;
   top: calc(var(--traffic-center) - var(--control-sm) / 2);
-  left: calc(var(--space-8) * 2 + var(--space-2));
+  left: calc(var(--traffic-end) + var(--space-2));
 }
 /* The pane's header starts past the notch so a back button or crumb is never under it. */
 .aplos-shell[data-mac='true']:not([data-fullscreen='true'])[data-collapsed='true']
@@ -196,74 +198,11 @@
   box-shadow: inset 0 calc(-1 * var(--hairline)) 0 var(--line);
 }
 
-/* Minimised or collapsed there is no sidebar to hold the notice: a small alert sits in the window's bottom-left
-   corner, in the rail's empty space or over the pane's margin, and opens Drafts. */
-.aplos-outbox-flag {
-  position: absolute;
-  bottom: var(--space-3);
-  left: var(--space-3);
-  z-index: var(--z-sticky);
-}
-/* Collapsed, the pane reaches the window's margin: the flag sits inside its corner, clear of the rounded edge. */
-.aplos-shell[data-collapsed='true'] .aplos-outbox-flag {
-  bottom: calc(var(--shell-pad) + var(--space-3));
-  left: calc(var(--shell-pad) + var(--space-3));
-}
-
-/* A failed send's notice: StatusSlot's shape, two or three short lines, never a banner. */
-.aplos-outbox {
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-2);
-  /* On a short window the notice is what gives way, and it scrolls: Settings and Help never leave the window. */
-  flex-shrink: 1;
-  min-height: 0;
-  overflow-y: auto;
-  padding: var(--space-2);
-  color: var(--stamp-ink);
-  font: var(--type-small);
-  letter-spacing: var(--track-small);
-}
-.aplos-outbox__item {
-  display: flex;
-  align-items: flex-start;
-  gap: var(--space-2);
-}
-.aplos-outbox__item > .ui-part-icon {
-  margin-top: var(--space-half);
-}
-.aplos-outbox__body {
-  display: flex;
-  flex: 1;
-  flex-direction: column;
-  align-items: flex-start;
-  min-width: 0;
-}
-.aplos-outbox__text {
-  font-weight: 500;
-  overflow-wrap: anywhere;
-}
-.aplos-outbox__actions {
-  /* The 28 px text buttons' labels line up with the sentence above them. */
-  display: flex;
-  flex-wrap: wrap;
-  margin: var(--space-1) 0 0 calc(-1 * var(--space-3));
-}
-
 .aplos-sidebar__foot {
   display: flex;
   flex-direction: column;
   margin-top: auto;
   padding-top: var(--space-5);
-}
-/* The outbox notice sits just above the footer; the footer then no longer needs the auto margin or the wide gap. */
-.aplos-sidebar > .aplos-outbox {
-  margin-top: auto;
-  padding-top: var(--space-3);
-}
-.aplos-outbox + .aplos-sidebar__foot {
-  margin-top: 0;
-  padding-top: var(--space-2);
 }
 
 .aplos-rail {
@@ -382,4 +321,20 @@
 .aplos-add-account__block > .onb-group {
   margin-top: 0;
   gap: var(--space-3);
+}
+
+/* The account menu opens under the switcher and stays inside the sidebar: 12 px in from the pane's edge (not flush), so the
+   pane's rounded corner and shadow never touch it. */
+.ui-menu[aria-label='Accounts'] {
+  min-width: calc(var(--menu-min) - var(--space-3));
+}
+/* A long address ends in an ellipsis 12 px short of the row's edge, never touching it; the label's inset is the rows'. */
+.ui-menu[aria-label='Accounts'] .ui-menu__item {
+  padding-right: var(--space-3);
+}
+.ui-menu[aria-label='Accounts'] .ui-menu__item-label {
+  min-width: 0;
+}
+.ui-menu[aria-label='Accounts'] .ui-menu__label {
+  padding-inline: var(--space-2) var(--space-3);
 }

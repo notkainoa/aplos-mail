@@ -379,7 +379,7 @@ const STACK_THREE: readonly ToastData[] = [
 const ERROR_TOAST: ToastData = {
   id: 'sh-error',
   kind: 'error',
-  message: 'Couldn’t move 3 emails to Trash. They are still in Home.',
+  message: 'Couldn’t move 3 emails to Trash. They’re still in Home.',
   actions: [{ id: 'retry', label: 'Try again' }],
   undoable: false,
   persistent: true,

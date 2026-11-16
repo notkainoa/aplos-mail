@@ -63,5 +63,7 @@ for (const theme of THEMES)
       if (label.startsWith('a very long'))
         expect(facts.clipped, 'a long name ellipsizes').toBe(true);
       await expect(page.locator(`${CARD} .aplos-recipients__button`).first()).toBeVisible();
-      await expect(page.locator(`${CARD} button[aria-label="More"]`).first()).toBeVisible();
+      await expect(
+        page.locator(`${CARD} button[aria-label="Message actions"]`).first(),
+      ).toBeVisible();
     });

@@ -35,16 +35,32 @@ for (const theme of ['light', 'dark'] as const)
     await expect(page.locator('.ui-draft-state')).toContainText(/Saved|Draft/i);
   });
 
-test('a reply shows the thread’s account as plain text, with no menu (DESIGN 7.6)', async ({
-  page,
-}) => {
-  await openState(page, HOME, { theme: 'light' });
-  await page.keyboard.press('Enter');
-  await page.locator('.aplos-reader__letter[data-paper="true"]').waitFor();
-  await page.keyboard.press('r');
-  await page.locator('.ui-inline-reply').waitFor();
-  const row = page.locator(`.ui-inline-reply ${FROM}`);
-  await expect(row).toHaveCount(1);
-  await expect(row.locator('.aplos-from__address')).toHaveText(/@/);
-  await expect(row.getByRole('button')).toHaveCount(0);
-});
+for (const theme of ['light', 'dark'] as const)
+  test(`a reply starts in the thread’s account and its From can switch (DESIGN 7.6), ${theme}`, async ({
+    page,
+  }) => {
+    await openState(page, HOME, { theme });
+    await page.keyboard.press('Enter');
+    await page.locator('.aplos-reader__letter[data-paper="true"]').waitFor();
+    await page.keyboard.press('r');
+    await page.locator('.ui-inline-reply').waitFor();
+    const row = page.locator(`.ui-inline-reply ${FROM}`);
+    await expect(row).toHaveCount(1);
+    const button = row.getByRole('button');
+    const first = (await button.textContent())?.trim() ?? '';
+    expect(first).toMatch(/@/);
+    await button.click();
+    const menu = page.getByRole('menu', { name: 'Send from' });
+    await expect(menu.getByRole('menuitemradio')).toHaveCount(2);
+    await expect(menu.getByRole('menuitemradio', { checked: true })).toHaveText(first);
+    await page.screenshot({
+      path: `${process.env.SHOTS ?? 'artifacts/visual'}/reply-from-${theme}.png`,
+    });
+    await menu.getByRole('menuitemradio').filter({ hasNotText: first }).click();
+    await expect(menu).toBeHidden();
+    await expect(button).not.toHaveText(first);
+    await page.locator('.ui-inline-reply textarea').fill('Sounds good');
+    // Typing keeps the chosen account. (The save itself is covered by session.test.ts and the real app: since revamp
+    // cf3dc57d the gallery's inline reply stays on "Saving…" even without a switch.)
+    await expect(button).not.toHaveText(first);
+  });

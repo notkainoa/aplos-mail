@@ -19,6 +19,7 @@ import {
   keySourceLine,
   leaseLine,
   localRows,
+  modelNames,
   mergePatch,
   navItems,
   notifyRows,
@@ -586,4 +587,13 @@ describe('Keyboard model', () => {
     assert.ok(!ids.includes('mail.dictateReply'));
     assert.ok(!ids.includes('ask.dictate'));
   });
+});
+
+test('modelNames: the catalogue name for an id, nothing for an id that is its own name', () => {
+  const names = modelNames([
+    { id: 'openai/gpt-oss-120b', label: 'GPT-OSS 120B' },
+    { id: 'llama3.2', label: 'llama3.2' },
+  ]);
+  assert.deepEqual({ ...names }, { 'openai/gpt-oss-120b': 'GPT-OSS 120B' });
+  assert.deepEqual({ ...modelNames(undefined) }, {});
 });

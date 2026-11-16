@@ -47,9 +47,9 @@ export function commandsForHome(actions: HomeActions, extra: HomeExtras): Comman
 /** The pane header's bulk bar on Home (DESIGN 7.4): Done, Later, Trash; the keycaps come from the registry. */
 export function homeBarActions(actions: HomeActions): readonly CommandAction[] {
   return [
-    { label: 'Done', commandId: 'mail.done', onSelect: () => actions.done() },
-    { label: 'Later', commandId: 'mail.later', onSelect: () => actions.later() },
-    { label: 'Trash', commandId: 'mail.trash', onSelect: () => actions.trash() },
+    { label: 'Done', icon: 'check', commandId: 'mail.done', onSelect: () => actions.done() },
+    { label: 'Later', icon: 'clock', commandId: 'mail.later', onSelect: () => actions.later() },
+    { label: 'Trash', icon: 'trash', commandId: 'mail.trash', onSelect: () => actions.trash() },
   ];
 }
 

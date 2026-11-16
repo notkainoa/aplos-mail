@@ -212,6 +212,7 @@ function draftProps(draft: Draft, context: ListRowContext): UnpickedProps {
     density: context.density,
     sender: who.text,
     senderTitle: who.title,
+    tag: 'Draft',
     primary: draftLine(draft),
     unread: false,
     date: toIsoDateTime(draft.updatedAt),

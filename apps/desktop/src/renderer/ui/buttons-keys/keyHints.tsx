@@ -23,6 +23,15 @@ import type {
 
 const DEFAULT_HINTS: KeyHintsContextValue = { showKeys: 'tooltips' };
 
+/**
+ * The one key-label convention: modifier chords and the bare key use the return glyph ("↩", "⌘↩", "⇧↩"); only Space,
+ * Esc and Tab are words. The registry and `LiteralKey` say "Return" (the key's name); every keycap and tooltip draws it
+ * through this.
+ */
+export function displayChord(chord: string): string {
+  return chord.replace(/Return$/, '↩');
+}
+
 /** The app-wide key-hint mode. Default 'tooltips'. */
 export const KeyHintsContext = createContext<KeyHintsContextValue>(DEFAULT_HINTS);
 

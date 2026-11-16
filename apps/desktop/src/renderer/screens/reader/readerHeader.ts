@@ -36,7 +36,7 @@ function toolsOf(input: ReaderHeaderInput): PaneTools {
     {
       commandId: 'list.more',
       icon: 'more',
-      label: 'More',
+      label: 'Thread actions',
       detail: 'bookmark, trash, forward, why it’s here',
     },
   ];

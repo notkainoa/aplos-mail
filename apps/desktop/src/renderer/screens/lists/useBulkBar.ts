@@ -4,7 +4,7 @@
  * small menu (Bookmark, Select all). Pure tables plus one hook that hands the bar to the shell.
  */
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import type { CommandAction, MenuEntry } from '../../ui/props';
+import type { CommandAction, IconName, MenuEntry } from '../../ui/props';
 import { usePaneHeaderPart, type PaneHeaderPart } from '../../shell';
 import type { ListActions } from './listActions';
 import type { ListKind } from './listKinds';
@@ -13,12 +13,24 @@ import type { ListKind } from './listKinds';
 interface BarVerb {
   readonly label: string;
   readonly commandId: string;
+  /** The verb's own icon, as the mockup's bar draws it (inbox.html). */
+  readonly icon?: IconName;
   readonly run: (actions: ListActions) => void;
 }
 
-const DONE: BarVerb = { label: 'Done', commandId: 'mail.done', run: a => a.done() };
-const LATER: BarVerb = { label: 'Later', commandId: 'mail.later', run: a => a.later() };
-const TRASH: BarVerb = { label: 'Trash', commandId: 'mail.trash', run: a => a.trash() };
+const DONE: BarVerb = { label: 'Done', commandId: 'mail.done', icon: 'check', run: a => a.done() };
+const LATER: BarVerb = {
+  label: 'Later',
+  commandId: 'mail.later',
+  icon: 'clock',
+  run: a => a.later(),
+};
+const TRASH: BarVerb = {
+  label: 'Trash',
+  commandId: 'mail.trash',
+  icon: 'trash',
+  run: a => a.trash(),
+};
 
 const BAR_VERBS: Readonly<Record<ListKind, readonly BarVerb[]>> = {
   all: [DONE, LATER, TRASH],
@@ -39,6 +51,7 @@ const BOOKMARK_KINDS: readonly ListKind[] = ['all', 'label', 'sent', 'bookmarks'
 export function barActionsOf(kind: ListKind, actions: ListActions): readonly CommandAction[] {
   return BAR_VERBS[kind].map(verb => ({
     label: verb.label,
+    icon: verb.icon,
     commandId: verb.commandId,
     onSelect: () => verb.run(actions),
   }));

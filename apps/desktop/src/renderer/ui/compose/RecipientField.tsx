@@ -139,13 +139,23 @@ export function RecipientField(props: RecipientFieldProps) {
         />
       </div>
       {ccButton ? (
-        <Btn
-          variant="text"
-          label="Cc"
-          hint="Add Cc or Bcc"
-          commandId={ccButton.commandId}
-          onPress={ccButton.onSelect}
-        />
+        // Cc and a quiet Bcc side by side: either opens both rows, so neither hides behind the other.
+        <span className="ui-recipient-field__more">
+          <Btn
+            variant="text"
+            label="Cc"
+            hint="Add Cc or Bcc"
+            commandId={ccButton.commandId}
+            onPress={ccButton.onSelect}
+          />
+          <Btn
+            variant="text"
+            label="Bcc"
+            hint="Add Cc or Bcc"
+            commandId={ccButton.commandId}
+            onPress={ccButton.onSelect}
+          />
+        </span>
       ) : null}
       <ul
         id={listboxId}

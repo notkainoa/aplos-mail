@@ -1,14 +1,15 @@
-import { useEffect, useId, useRef } from 'react';
+import { Fragment, useEffect, useId, useRef } from 'react';
 import type { KeyboardEvent } from 'react';
 import { formatChord } from '../../commands';
 import { chordFromEvent, chordId, parseChord } from '../../commands/internal';
 import type { KeyRecorderProps } from '../props';
+import { displayChord } from '../buttons-keys/keyHints';
 import { SetIcon } from './icons';
 
-/** A chord as a keycap ("shift+r" to "⇧R"). Text that is not a chord (already a display form) is shown as it came. */
+/** A chord as a keycap ("shift+r" to "⇧R", Return as ↩). Text that is not a chord (already a display form) is shown as it came. */
 export function chordText(chord: string): string {
   try {
-    return formatChord(parseChord(chord));
+    return displayChord(formatChord(parseChord(chord)));
   } catch {
     return chord;
   }
@@ -153,10 +154,11 @@ export function KeyRecorder({
             onClick={onStart}
           >
             {shown.length > 0 ? (
-              shown.map(k => (
-                <kbd key={k} className="ui-key-recorder__kbd">
-                  {k}
-                </kbd>
+              shown.map((k, i) => (
+                <Fragment key={k}>
+                  {i > 0 ? <span className="ui-key-recorder__or">or</span> : null}
+                  <kbd className="ui-key-recorder__kbd">{k}</kbd>
+                </Fragment>
               ))
             ) : (
               <span className="ui-key-recorder__none">None</span>

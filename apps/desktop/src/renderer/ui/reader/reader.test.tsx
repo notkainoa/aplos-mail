@@ -246,7 +246,7 @@ describe('ThreadMessage', () => {
     assert.ok(at('ui-thread-message__when') < at('ui-thread-message__to'), 'time, then to');
   });
 
-  test('an earlier message is a compact card: its own first words, a visible Show full button, aria-expanded, no body', () => {
+  test('an earlier message is a compact card: its own first words, a bare chevron button named Show full, aria-expanded, no body', () => {
     const fold = { open: false, onToggle: noop, commandId: 'reader.expand' } as const;
     const folded = render(
       <ThreadMessage
@@ -264,7 +264,7 @@ describe('ThreadMessage', () => {
       folded,
       /<button type="button" class="ui-thread-message__toggle" aria-expanded="false"[^>]*aria-label="Show full, message from Jordan Park"[^>]*aria-describedby="e1-excerpt"/,
     );
-    assert.match(folded, />Show full<\/span>/, 'the visible hint');
+    assert.doesNotMatch(folded, /ui-thread-message__toggle-label/, 'no repeated text label');
     assert.doesNotMatch(
       folded,
       /aria-controls/,
@@ -272,7 +272,7 @@ describe('ThreadMessage', () => {
     );
     assert.match(
       text(folded),
-      /^Jordan Park to you .* Kicking off: here is the brief we agreed on Friday… Show full$/,
+      /^Jordan Park to you .* Kicking off: here is the brief we agreed on Friday…$/,
     );
     assert.match(folded, /id="e1-excerpt"/, 'the button is described by the excerpt');
     assert.doesNotMatch(folded, /ui-thread-message__body/, 'a folded card loads and draws no body');
@@ -292,7 +292,6 @@ describe('ThreadMessage', () => {
     assert.match(open, /aria-expanded="true"/);
     assert.match(open, /aria-label="Show less, message from Jordan Park"/);
     assert.match(open, /aria-controls="e1-content"/);
-    assert.match(open, />Show less<\/span>/, 'the same place reads Show less once open');
     assert.doesNotMatch(open, /aria-describedby/, 'no excerpt to describe it while open');
     assert.doesNotMatch(text(open), /never shown/);
     assert.match(text(open), /The whole brief\./);

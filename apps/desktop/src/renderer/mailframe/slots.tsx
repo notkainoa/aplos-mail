@@ -9,7 +9,7 @@ import { relayKey } from './keys';
 import { clampHeight, parseBg } from './protocol';
 import { createReportListener } from './reports';
 import { useAppDark } from './appTheme';
-import { FRAME_PAPER, sheetOf } from './paper';
+import { FRAME_PAPER, sheetKind, sheetOf } from './paper';
 import { PlainText } from './PlainText';
 import type { FrameSource, MailFrameKey, MailFrameReady } from './types';
 import { useSealedMailKeys } from './useSealedMailKeys';
@@ -156,6 +156,7 @@ export function SrcdocSlot(props: SlotProps<Extract<FrameSource, { kind: 'srcdoc
         tabIndex={-1}
         srcDoc={built.srcdoc}
         onLoad={onLoad}
+        data-sheet={sheetKind(built.plain, bg)}
         style={{ ...FRAME, ...sheetOf(built.plain, bg), height }}
       />
     </div>
@@ -210,6 +211,7 @@ export function UrlSlot(props: SlotProps<Extract<FrameSource, { kind: 'url' }>>)
       allow=""
       tabIndex={-1}
       src={source.url}
+      data-sheet={sheetKind(plain, bg)}
       style={{ ...FRAME, ...sheetOf(plain, bg), height, ...(hidden ? HIDDEN : null) }}
     />
   );

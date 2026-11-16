@@ -58,7 +58,8 @@ export interface OneByOneScreenProps {
   /** Back to Home (Esc, the header's back button, the finish line's button). */
   readonly onExit: () => void;
   /** Return, O and R: open the thread in the reader. Absent until the reader lands. */
-  readonly onOpen?: (id: ThreadId, how?: OpenHow) => void;
+  /** `listIds` is the walk's queue, so the reader's J and K and its "n of m" use the same list as the walk. */
+  readonly onOpen?: (id: ThreadId, how?: OpenHow, listIds?: readonly ThreadId[]) => void;
 }
 
 /** "Couldn't <op>." with Retry, as Home's rows word it; a retry is a commit, so the walk steps on again. */
@@ -72,13 +73,14 @@ function retryOf(failure: RowFailure, id: ThreadId, acted: (id: ThreadId) => voi
   };
 }
 
-function crumbOf(
+export function crumbOf(
   progress: { readonly index: number; readonly of: number } | null,
   onExit: () => void,
 ): PaneHeaderPart {
   return {
     lead: { kind: 'back', label: 'Back to Home', commandId: 'nav.back', onPress: onExit },
-    crumb: { label: 'Home', position: progress ?? undefined },
+    // The back button reads "‹ Home" (it goes there); the walk's "1 of 6" sits centred over the card, not in the button.
+    crumb: { label: 'Home', position: progress ?? undefined, centrePosition: true },
   };
 }
 
@@ -118,6 +120,8 @@ export function useOneByOne({ accountId, onExit, onOpen }: OneByOneScreenProps):
   const restore = useReturnRestore(ONE_BY_ONE_RETURN_KEY);
   const walk = useWalkSession(home, restore);
   const queue = walk.session?.walk.queue;
+  const queueRef = useRef(queue);
+  queueRef.current = queue;
   useReturnSource(ONE_BY_ONE_RETURN_KEY, () => ({
     cursorId: walk.shown,
     order: queue ?? [],
@@ -167,7 +171,7 @@ export function useOneByOne({ accountId, onExit, onOpen }: OneByOneScreenProps):
     hold,
     setCursor: ignore,
     commit: (_kind, _ids, rowId) => walk.acted(rowId),
-    openThread: (id, how) => props.current.onOpen?.(id, how),
+    openThread: (id, how) => props.current.onOpen?.(id, how, queueRef.current),
     openLow: ignore,
     oneByOne: ignore,
     openMore,
@@ -201,7 +205,7 @@ export function useOneByOne({ accountId, onExit, onOpen }: OneByOneScreenProps):
       step,
       open: () => {
         const id = snapshot.current.key;
-        if (id !== null) props.current.onOpen?.(id);
+        if (id !== null) props.current.onOpen?.(id, undefined, queueRef.current);
       },
       more: openMore,
       why: openWhy,

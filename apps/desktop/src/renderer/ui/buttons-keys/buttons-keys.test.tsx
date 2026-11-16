@@ -115,17 +115,7 @@ test('Kbd: one cap, never hover-driven; reveal modes follow the key-hint mode on
 });
 
 test('Kbd: worst-case chords render as given inside one element', () => {
-  for (const chord of [
-    '⌘⇧Return',
-    '⌃1–8',
-    'Space',
-    EMOJI,
-    CJK,
-    ARABIC,
-    LONG_300,
-    EMAIL_80,
-    '9999',
-  ]) {
+  for (const chord of ['⌘⇧↩', '⌃1–8', 'Space', EMOJI, CJK, ARABIC, LONG_300, EMAIL_80, '9999']) {
     const markup = html(<Kbd chord={chord} />);
     assert.equal(text(markup), chord);
     assert.equal((markup.match(/<kbd/g) ?? []).length, 1);
@@ -314,7 +304,7 @@ test('Button: literal keys for dialogs and onboarding (Return, Esc)', () => {
       onPress={noop}
     />,
   );
-  assert.match(ret, />Return<\/kbd>/);
+  assert.match(ret, />↩<\/kbd>/);
   assert.match(ret, /data-size="lg"/);
   const esc = inMode(
     'all',

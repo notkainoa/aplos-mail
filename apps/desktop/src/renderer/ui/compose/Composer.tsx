@@ -1,14 +1,13 @@
 import { useId } from 'react';
 import type { ComposerProps } from '../props';
-import { BlockedLine, ComposeFooter, ConflictBar } from './ComposeParts';
+import { BlockedLine, ComposeFooter, ConflictBar, footerActions } from './ComposeParts';
 import { Icon } from './icons';
 import { Btn } from './parts';
 import { Suggestion } from './Suggestion';
 
 /**
  * New message as a page in the pane, 640 px, non-modal (DESIGN §6 Composer, §7.6): To row, the subject as a
- * `heading`-size field, the body in `read`, then a footer under a hairline with Send, the draft line, attach and
- * format. The pane header (close, "New message", ⋯, Ask) belongs to the screen. The body is an editor the reader lane
+ * `heading`-size field, the body in `read`, then a footer under a hairline, inside the card, with Send, the draft line, Esc closes, attach and Formatting (⋯ is in the pane header). The pane header (close, "New message", ⋯, Ask) belongs to the screen. The body is an editor the reader lane
  * owns; AI drafts and follow-up nudges are dim text the editor itself renders, announced by `suggestion`.
  */
 export function Composer(props: ComposerProps) {
@@ -83,34 +82,24 @@ export function Composer(props: ComposerProps) {
           </div>
           {blocked?.field === 'body' ? blockedLine : null}
           {conflict ? <ConflictBar conflict={conflict} /> : null}
+          <footer className="ui-composer__foot">
+            <ComposeFooter
+              commands={commands}
+              draftState={draftState}
+              onRetrySave={onRetrySave}
+              dictation={dictation}
+              onSend={props.onSend}
+              closeHint
+              trailing={footerActions({
+                commands,
+                onAttach: props.onAttach,
+                onFormat: props.onFormat,
+              })}
+            />
+          </footer>
         </div>
         {suggestion ? <Suggestion {...suggestion} /> : null}
       </div>
-      <footer className="ui-composer__foot">
-        <ComposeFooter
-          commands={commands}
-          draftState={draftState}
-          onRetrySave={onRetrySave}
-          dictation={dictation}
-          onSend={props.onSend}
-          trailing={[
-            {
-              label: 'Attach',
-              icon: 'paperclip',
-              hint: 'Attach a file',
-              commandId: commands.attach,
-              onPress: () => props.onAttach(),
-            },
-            {
-              label: 'Format',
-              icon: 'type',
-              hint: 'Format',
-              commandId: commands.more,
-              onPress: props.onFormat,
-            },
-          ]}
-        />
-      </footer>
     </section>
   );
 }

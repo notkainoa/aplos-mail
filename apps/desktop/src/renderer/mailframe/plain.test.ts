@@ -7,7 +7,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { frameDocument } from './document';
-import { FRAME_DARK, FRAME_PAPER, sheetOf } from './paper';
+import { FRAME_DARK, FRAME_PAPER, sheetKind, sheetOf } from './paper';
 import { isPlainBody } from './plain';
 import { sanitiseBody } from './sanitise';
 
@@ -82,6 +82,12 @@ test('the host draws a trusted-plain email on the card (no inset, no rounding, i
     background: FRAME_PAPER.paper,
     colorScheme: 'light',
   });
+});
+
+test('sheetKind marks a light sheet apart from an email that sits on the card, for the pinned bar tray', () => {
+  assert.equal(sheetKind(false, '#ece8df'), 'paper');
+  assert.equal(sheetKind(true, FRAME_DARK.surface), 'app');
+  assert.equal(sheetKind(true, FRAME_PAPER.paper), 'paper');
 });
 
 test('a blocked image collapses to nothing in the host layer, so no gray strip is left', () => {

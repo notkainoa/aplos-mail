@@ -40,6 +40,11 @@ export function calendarOnLine(count: number): string {
   return `Calendar on · ${count} ${count === 1 ? 'calendar' : 'calendars'}`;
 }
 
+/** "4 calendars", singular for one: the count alone, for an account with no access claim to make (demo, non-Google). */
+export function calendarCountLine(count: number): string {
+  return `${count} ${count === 1 ? 'calendar' : 'calendars'}`;
+}
+
 /** The sheet the action opens: 'grant' asks Google for the calendar scopes, 'reconnect' signs in again. */
 export interface CalendarAccessAction {
   readonly label: string;

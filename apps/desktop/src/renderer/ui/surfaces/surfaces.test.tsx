@@ -87,6 +87,23 @@ describe('Pane', () => {
     assert.match(html, /data-subject="true"/);
   });
 
+  it('a centred position is its own element on the header row, not inside the crumb', () => {
+    const html = render(
+      <Pane
+        kind="main"
+        label="Home"
+        header={header({
+          crumb: { label: 'Home', position: { index: 1, of: 6 }, centrePosition: true },
+        })}
+      >
+        x
+      </Pane>,
+    );
+    assert.match(html, /<span class="ui-pane__pos-centre">1 of 6<\/span>/);
+    assert.doesNotMatch(html, /ui-pane__crumb-pos/, 'the crumb button area carries no counter');
+    assert.match(html, /<span class="ui-pane__crumb-text">Home<\/span>/);
+  });
+
   it('Ask in mail scope and the pressed states', () => {
     const html = render(
       <Pane

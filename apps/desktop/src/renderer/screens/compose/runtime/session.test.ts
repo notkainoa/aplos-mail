@@ -159,6 +159,36 @@ test('From: a new message moves to the other account, keeps its text, and says n
   assert.deepEqual(notices, [], 'a move is not a discard');
 });
 
+test('From: a reply moves to the other account before and after its first save, and keeps its thread', async () => {
+  const kit = await bootStandIn();
+  const other = kit.engine.fixture.store.all('Account').find(a => a.id !== kit.accountId)!;
+  const before = open(kit);
+  before.dispatch({ type: 'setAccount', accountId: other.id, now: kit.timers.now() });
+  await kit.settle();
+  await type(kit, before, 'Sounds good');
+  const fresh = before.getState().save.draftId!;
+  assert.ok(fresh, 'saved');
+  assert.equal(
+    before.getState().save.savedSeq,
+    before.getState().save.editSeq,
+    'nothing left unsaved',
+  );
+  assert.equal(kit.draft(fresh)!.accountId, other.id);
+  assert.equal(kit.draft(fresh)!.threadId, kit.threadId, 'still a reply in the same thread');
+  const after = open(kit);
+  await type(kit, after, 'On my way');
+  const first = after.getState().save.draftId!;
+  after.dispatch({ type: 'setAccount', accountId: other.id, now: kit.timers.now() });
+  await kit.settle();
+  kit.observe(after);
+  const moved = after.getState().save.draftId!;
+  assert.notEqual(moved, first);
+  assert.equal(kit.draft(first), undefined, 'the old account’s copy is gone');
+  assert.equal(kit.draft(moved)!.accountId, other.id);
+  assert.equal(kit.draft(moved)!.mode, 'reply');
+  assert.equal(after.getState().save.savedSeq, after.getState().save.editSeq);
+});
+
 test('From: a create that was committed but whose reply was lost never binds the composer to the old account', async () => {
   const kit = await bootStandIn();
   const other = kit.engine.fixture.store.all('Account').find(a => a.id !== kit.accountId)!;

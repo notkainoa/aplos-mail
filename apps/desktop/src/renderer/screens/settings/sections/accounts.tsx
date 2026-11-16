@@ -103,6 +103,7 @@ export function Accounts({ data, view, actions, host }: SectionProps) {
                       />
                       <Button
                         variant="text"
+                        tone="danger"
                         label="Remove"
                         disabled={view.busy.demo === true}
                         onPress={() => actions.askRemoveDemo()}
@@ -111,6 +112,7 @@ export function Accounts({ data, view, actions, host }: SectionProps) {
                   ) : (
                     <Button
                       variant="text"
+                      tone="danger"
                       label="Remove"
                       onPress={() => actions.askRemoveAccount(r.id)}
                     />
@@ -123,7 +125,7 @@ export function Accounts({ data, view, actions, host }: SectionProps) {
         <Row
           section="accounts"
           anchor="addAccount"
-          description={host.renderAddAccount ? 'Connect another Google account.' : NOT_AVAILABLE}
+          description={host.renderAddAccount ? 'Connect another account.' : NOT_AVAILABLE}
           control={
             host.renderAddAccount ? (
               <Button

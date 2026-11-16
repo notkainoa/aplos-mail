@@ -158,7 +158,9 @@
   box-shadow: inset 0 1px 0 var(--press-lo);
 }
 .ui-part-button[data-variant='filled'] .ui-part-kbd {
-  background: color-mix(in srgb, var(--accent-ink) 16%, transparent);
+  /* A hint, not part of the label: a faint plate with a hairline edge on the fill, the label's own colour. */
+  background: color-mix(in srgb, var(--accent-ink) 12%, transparent);
+  box-shadow: inset 0 0 0 var(--hairline) color-mix(in srgb, var(--accent-ink) 32%, transparent);
   color: var(--accent-ink);
 }
 .ui-part-button[data-tone='danger'],
@@ -360,6 +362,32 @@ html[data-real-key] .ui-part-tipwrap:has(> :focus-visible) > .ui-part-tip {
   flex: none;
   color: var(--dim);
   font-weight: 400;
+}
+/* The one-by-one counter: centred over the card's column (the pane's centre), on the header row, never in the way of a click. */
+.ui-pane__pos-centre {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: 50%;
+  display: flex;
+  align-items: center;
+  transform: translateX(-50%);
+  color: var(--dim);
+  font: var(--type-ui);
+  font-variant-numeric: tabular-nums;
+  letter-spacing: var(--track-ui);
+  white-space: nowrap;
+  pointer-events: none;
+}
+/* The bar starts on the list column's text edge (the section labels and the pick boxes), not the pane's corner. */
+.ui-pane__bulk {
+  margin-inline-start: max(
+    0px,
+    calc(
+      (100% + var(--space-6) - min(var(--list-w), 100% + var(--space-6) - 2 * var(--gutter))) / 2 -
+        var(--space-3) + var(--space-2)
+    )
+  );
 }
 .ui-pane__bulk-count {
   margin: 0 var(--space-2) 0 var(--space-1);
@@ -675,9 +703,13 @@ html[data-real-key] .ui-part-tipwrap:has(> :focus-visible) > .ui-part-tip {
 .ui-menu__check .ui-part-icon {
   color: var(--ink);
 }
+/* The dots sit centred in an icon-wide column, so a row's label starts in the same place whether it wears a dot or an icon. */
 .ui-menu__swatches {
   display: flex;
   flex: none;
+  align-items: center;
+  justify-content: center;
+  width: var(--icon);
 }
 .ui-menu__item[data-detail='true'] .ui-menu__swatches,
 .ui-menu__item[data-detail='true'] > .ui-part-icon {
@@ -945,6 +977,8 @@ html[data-real-key] .ui-part-tipwrap:has(> :focus-visible) > .ui-part-tip {
   border: 0;
   border-radius: var(--radius-md);
   background: transparent;
+  /* Both rows carry the same ring, so neither reads as the lesser choice. */
+  box-shadow: inset 0 0 0 var(--hairline) var(--line-strong);
   color: var(--ink-2);
   font: var(--type-ui);
   letter-spacing: var(--track-ui);
@@ -969,7 +1003,12 @@ html[data-real-key] .ui-part-tipwrap:has(> :focus-visible) > .ui-part-tip {
   font-weight: 500;
 }
 .ui-confirm__row[data-tone='danger'] {
+  background: var(--stamp-tint);
   color: var(--stamp-ink);
+}
+/* A destructive pair: the default (Cancel) row keeps its fill but not extra weight, so the two rows weigh the same. */
+.ui-confirm__rows:has(.ui-confirm__row[data-tone='danger']) .ui-confirm__row[data-primary='true'] {
+  font-weight: inherit;
 }
 .ui-confirm__row:focus-visible {
   outline: var(--focus-width) solid var(--accent);
@@ -1086,6 +1125,15 @@ html[data-real-key] .ui-part-tipwrap:has(> :focus-visible) > .ui-part-tip {
   box-shadow: var(--elev-puck);
 }
 
+/* Dark: --paper is barely lighter than the track, so the thumb takes --puck (the token's role for segmented
+   thumbs), which reads clearly against --sunken. */
+:root[data-theme='dark'] .ui-puck[data-kind='segmented'] > .ui-puck__thumb,
+:root[data-theme='dark']
+  .ui-puck[data-kind='segmented']:not([data-ready])
+  .ui-puck__item[data-selected='true'] {
+  background: var(--puck);
+}
+
 /* selection: rows with a --puck fill (sidebar, Settings nav) */
 .ui-puck[data-kind='selection'] > .ui-puck__thumb {
   border-radius: var(--radius-md);
@@ -1152,11 +1200,11 @@ html[data-real-key] .ui-part-tipwrap:has(> :focus-visible) > .ui-part-tip {
   z-index: var(--z-toast);
   display: flex;
   flex-direction: column-reverse;
-  /* One column: the stack is as wide as its widest toast and every toast fills it. */
+  /* One column, one width: the stack is --toast-max wide (less in a narrow pane) and every toast fills it, so a single
+     toast, a persistent error and a stack of three are the same width; the words wrap inside. */
   align-items: stretch;
   gap: var(--space-2);
-  width: max-content;
-  max-width: calc(100% - var(--space-6) * 2);
+  width: min(var(--toast-max), calc(100% - var(--space-6) * 2));
   transform: translateX(-50%);
   pointer-events: none;
 }
@@ -1166,7 +1214,6 @@ html[data-real-key] .ui-part-tipwrap:has(> :focus-visible) > .ui-part-tip {
   display: flex;
   align-items: center;
   gap: var(--space-2);
-  max-width: var(--toast-max);
   min-height: var(--control-lg);
   padding: var(--space-1) var(--space-2) var(--space-1) var(--space-4);
   overflow: hidden;
@@ -1219,6 +1266,8 @@ html[data-real-key] .ui-part-tipwrap:has(> :focus-visible) > .ui-part-tip {
   -webkit-line-clamp: 2;
   overflow: hidden;
   overflow-wrap: anywhere;
+  /* A two-line message splits evenly, so no lone word hangs on the second line. */
+  text-wrap: balance;
 }
 /* A countdown keeps its number and unit on one line; a long recipient list shortens with an ellipsis. */
 .ui-toast__message[data-countdown] {
@@ -1257,8 +1306,15 @@ html[data-real-key] .ui-part-tipwrap:has(> :focus-visible) > .ui-part-tip {
     background-color var(--dur-hover) var(--ease-std),
     color var(--dur-hover) var(--ease-std);
 }
+/* Message left, actions right: the message fills the row, so every toast's last action ends on the same right edge and
+   the chips line up down a stack. The gap from the message to its first action is one 16 px (the 8 px flex gap plus this
+   8 px); a toast with no actions keeps the same 16 px right inset as one whose last chip ends there (the chip's own
+   8 px padding plus the toast's 8 px). */
 .ui-toast__message + .ui-toast__action {
   margin-left: var(--space-2);
+}
+.ui-toast__message:last-child {
+  padding-right: var(--space-2);
 }
 .ui-toast__action:focus-visible {
   outline: var(--focus-width) solid var(--accent);

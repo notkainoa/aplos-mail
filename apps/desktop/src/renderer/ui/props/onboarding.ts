@@ -20,8 +20,8 @@ export interface StepButton extends CommandAction {
 export interface OnboardingFooter {
   /** Short dashes for "Step 2 of 4"; omitted on the first-sync screen. */
   dashes?: { step: number; of: number };
-  /** 'setupContinues' = "Setup continues in the background."; 'escOpensAplos' = Esc keycap + "opens Aplos" (first sync, drill). */
-  note: 'setupContinues' | 'escOpensAplos';
+  /** 'setupContinues' = "Setup continues in the background."; 'escOpensAplos' = Esc keycap + "opens Aplos" (first sync, drill); 'none' = nothing (Welcome: nothing has started yet). */
+  note: 'setupContinues' | 'escOpensAplos' | 'none';
   /** Footer buttons, e.g. Back (Esc), "Skip setup", "Continue anyway", "Open Aplos" (Return). */
   buttons: readonly StepButton[];
 }

@@ -163,7 +163,7 @@ All tokens live in one source file, `apps/desktop/src/renderer/ui/tokens.json`, 
 | `--fill-ink` | `#ffffff` | `#08111a` | Text on hill, dusk and stamp fills |
 | `--hover` / `--press` | ink at 4 % / 8 % | ink at 5 % / 10 % | Hover and press fills |
 | `--puck` | ink at 6 % | ink at 8 % | Sidebar selection, the keyboard cursor, segmented thumbs |
-| `--today-tint` | accent at 4 % | accent at 6 % | The calendar's today column |
+| `--today-tint` | accent at 4 % | accent at 10 % | The calendar's today column |
 | `--scrim` | ink at 18 % | `#000` at 50 % | Behind dialogs and the palette |
 | `--shadow-ink` | `#1d1e21` | `#000000` | The base colour for every shadow |
 | `--sheen` | none | white at 4 % | The 1 px top sheen on dark panes and cards |
@@ -177,7 +177,7 @@ All tokens live in one source file, `apps/desktop/src/renderer/ui/tokens.json`, 
 | dim on pane / shell / paper / raised / sunken | **5.76** / 5.28 / 5.76 / 5.33 / **5.01** | 6.41 / 6.85 / 6.00 / **5.86** / 7.07 |
 | dim on a bulk-picked row (accent-wash) | 5.07 | 5.19 |
 | dim on the keyboard cursor (puck over pane) / a sidebar count (puck over shell) | 5.12 / 4.71 | 5.23 / 5.70 |
-| dim on hover / on today-tint | 5.33 / 5.41 | 5.68 / 5.82 |
+| dim on hover / on today-tint | 5.33 / 5.41 | 5.68 / 5.40 |
 | faint on pane, non-text only (3:1 needed) | 3.12 | 3.61 |
 | accent text on pane / shell | 7.84 / 7.19 | 7.61 / 8.13 |
 | accent-ink on the accent fill | **7.84** (today 3.73) | 8.30 |
@@ -629,7 +629,7 @@ The Back from Later block uses the same order, below the new items. Rows in Do n
 
 - Rows follow §4.1's read and unread rules. Hover shows Later and Done icon buttons over the date column.
 - **Low-importance band.** It keeps its own `--raised` background (your rule). It reads as one line: the label "Low importance", up to three sender names in `--dim` with "and N more", and the count as a plain number on the right. There is no count badge on the left; badge-plus-comma-list is Avec's layout (`App.tsx:510` `.low-line`; Avec `seg/t0174.2.png`) [V].
-  - Return opens the Low-importance sheet. It is grouped by sender, with a hover preview, per-sender Unsubscribe once List-Unsubscribe lands, and **→ →** to mark everything done (the first press arms and the second commits) [Carried graft].
+  - Return opens the Low-importance sheet. It is grouped by sender, with a hover preview, per-sender Unsubscribe once List-Unsubscribe lands, a tap of **→** marks the highlighted row done like every list, and **holding →** (about 600 ms; the "Mark all N done" button fills while held) marks everything done (owner, 2026-11-15) [Carried graft].
 - **"Go one by one"** (S) is a quiet `--dim` text button on the Do now label. It opens each item in turn in the reader.
 - **New mail** during activity waits under `hold`, then `arrive`s. Meanwhile a quiet "2 new" appears next to the Do now label.
 - **Next-step toasts:** after Later, "Set a date · D". After Done on a Follow up item or a thread waiting on someone, "Remind me if no reply · R".
@@ -718,13 +718,13 @@ One 640 px column, top to bottom, with no card and nothing beside it (superseded
 
 - **Inline reply.** R, the `ReplyStub`, or Space on a reply suggestion opens one card (`--elev-card`, `settle`) under the message, so the thread stays visible:
   - the To line with its recipients, plus Cc and Pop out on the right;
-  - the From account as plain text, only with two or more accounts (the reply goes from the thread's account; there is no menu, 2026-11-13, #511);
+  - the From account as a menu, only with two or more accounts: the reply starts in the thread's account and can switch to another (owner, 2026-11-16; it was plain text with no menu, 2026-11-13, #511);
   - the text in `read`;
   - Send (⌘↩), "Draft saved", and attach and ⋯ on the right.
   - While it is open, the composer owns the filled button, and the summary's suggestion becomes a text button.
   - Pop out moves the reply to the compose page.
 - **New message** is a page in the pane, not a floating sheet. It is non-modal: the sidebar and the dock stay available.
-  - **Header:** close (Esc), "New message", then ⋯ (schedule, discard) and Ask. **From** is a visible row under the header, only with two or more accounts, and only for a new message (a reply or forward shows its account as plain text); it is no longer in the ⋯ menu (2026-11-12 owner pass, #500; changing it moves the draft to the other account and the old copy is removed only after the new one is saved).
+  - **Header:** close (Esc), "New message", then ⋯ (schedule, discard) and Ask. **From** is a visible row under the header, only with two or more accounts; a new message starts in the current account, a reply or forward in the thread's, and each can switch (owner, 2026-11-16); it is no longer in the ⋯ menu (2026-11-12 owner pass, #500; changing it moves the draft to the other account and the old copy is removed only after the new one is saved).
   - **Body:** a To row, then the subject as a `heading`-sized field, then the text in `read`. Nothing decorates the top.
   - **Footer:** a hairline, then Send (⌘↩), "Draft saved", attach and format (⌘/).
 - **Draft state** is one line: "Saving…", "Draft saved", "Couldn't save · Retry". After "Draft saved", Esc just closes. That fixes "✓ Saved" followed by "Save this draft?" [V: baseline §6.9 #3].
@@ -1158,7 +1158,7 @@ The root cause is that `DECISIONS.md:125` set "Visual parity (M14)" to reproduce
 | 16 | "Ask me anything" with a "Hold A to talk" hint in the field | `Ask.tsx:255-256`, `:261`; `App.tsx:549`; `components/Overlays.tsx:10` | `ui/avec.md` §2 (Ask empty state) | "Ask about your mail or calendar"; hint in the tooltip |
 | 17 | Welcome copy teaching "Hold it to talk" | `components/Welcome.tsx:55`, `:122` | Same phrase family | Welcome is one line, one sentence and one button (§7.11) |
 
-**Behaviours kept on purpose** (your model, with new looks and words): one letter at a time, Space runs the suggestion, hold to dictate, the docked Ask, the big summary, sender first, the low-importance bundle with its own background, Later grouped by date, the D due-date toast, → → mark-all, and rapid-mode timing.
+**Behaviours kept on purpose** (your model, with new looks and words): one letter at a time, Space runs the suggestion, hold to dictate, the docked Ask, the big summary, sender first, the low-importance bundle with its own background, Later grouped by date, the D due-date toast, hold → to mark all, and rapid-mode timing.
 
 > **What this means:** These 17 items make today's screens look and read like Avec. All of them go in the first build of each screen, and an automatic check stops them returning.
 
@@ -1256,7 +1256,7 @@ Scored 0–10 per lens before comparing with `judge-design-glm.md`. These are th
 | "Try the keys" drill during first sync | Instrument (its onboarding drill, moved) | §7.12 |
 | Citations or "No source" on every answer; follow-ups queue while streaming | Instrument | §7.7 |
 | Press inset highlights swapping on `:active` | Carried | §4.6 |
-| → → mark-all on low-importance sender groups | Carried | §7.2 |
+| Hold → to mark all done on low-importance sender groups | Carried | §7.2 |
 | "Set a date · D" and "Remind me if no reply · R" toasts | Carried / SYNTH-ui | §7.2 |
 | One-frame theme-switch freeze | Carried / Redakt | §4.8 |
 | **Not grafted:** desk and paper noise texture; warm canvas; full-card stamp flood; uppercase AI label; ink-black primary; 32 px default rows; dropping the serif | n/a | Appendix A |

@@ -2,7 +2,7 @@ import { expect, test, type Page } from '@playwright/test';
 import { STATES } from './states';
 import { openState } from './support/gallery';
 
-// Earlier messages in a thread (owner feedback 2026-11-11): each compact row says "Show full" with a chevron, the whole row opens
+// Earlier messages in a thread (owner feedback 2026-11-11): each compact row is a bare chevron named "Show full", the whole row opens
 // it (mouse, Enter, Space, O unchanged), an opened message has the card's header row and "Show less" in the same place,
 // and the one toggle button keeps keyboard focus through a fold. The row shows the message's own first words, no summary.
 const state = STATES.find(s => s.id === 'reader-rich-project')!;
@@ -16,7 +16,7 @@ async function open(page: Page): Promise<void> {
 }
 
 test.describe('earlier messages', () => {
-  test('every folded row shows Show full and a chevron, and the message’s own first words', async ({
+  test('every folded row is a bare chevron named Show full, and the message’s own first words', async ({
     page,
   }) => {
     await open(page);
@@ -26,7 +26,7 @@ test.describe('earlier messages', () => {
     for (let i = 0; i < count; i += 1) {
       const toggle = toggles.nth(i);
       await expect(toggle).toHaveAttribute('aria-expanded', 'false');
-      await expect(toggle).toContainText('Show full');
+      await expect(toggle).toHaveText('');
       await expect(toggle.locator('svg')).toBeVisible();
       await expect(toggle).toHaveAccessibleName(/^Show full, message from /);
     }
@@ -45,13 +45,13 @@ test.describe('earlier messages', () => {
     await page.mouse.click(words.x + 20, words.y + words.height / 2);
     const toggle = card.locator('.ui-thread-message__toggle');
     await expect(toggle).toHaveAttribute('aria-expanded', 'true');
-    await expect(toggle).toContainText('Show less');
+    await expect(toggle).toHaveAccessibleName(/^Show less, message from /);
     await expect(
       card.locator('.ui-thread-message__line[data-layout="card"] .aplos-sender-mark'),
     ).toBeVisible();
     await expect(card.locator('.aplos-recipients__button')).toBeVisible();
     await expect(card.locator('.ui-thread-message__body')).toBeVisible();
-    // The same header row as the latest card: the time follows the name, only "Show less" is on the far right.
+    // The same header row as the latest card: the time follows the name, only the chevron is on the far right.
     const gaps = await card.evaluate(el => {
       const r = (sel: string) => el.querySelector(sel)!.getBoundingClientRect();
       return {
@@ -60,12 +60,14 @@ test.describe('earlier messages', () => {
       };
     });
     expect(gaps.timeAfterName, 'the time follows the name').toBeLessThan(24);
-    expect(gaps.buttonAfterRecipients, 'Show less is pushed to the far right').toBeGreaterThan(24);
+    expect(gaps.buttonAfterRecipients, 'the chevron is pushed to the far right').toBeGreaterThan(
+      24,
+    );
     // The Importance, bell and ⋯ are the latest message's, not an earlier one's.
     await expect(card.locator('.ui-thread-message__actions')).toHaveCount(0);
     await toggle.click();
     await expect(toggle).toHaveAttribute('aria-expanded', 'false');
-    await expect(toggle).toContainText('Show full');
+    await expect(toggle).toHaveAccessibleName(/^Show full, message from /);
   });
 
   test('Enter and Space open and fold it, and focus stays on the same button', async ({ page }) => {

@@ -4,15 +4,15 @@
  * with name and address, To, Cc, Bcc, Reply-to when it differs, Date. Esc closes it and focus returns to the button.
  * No avatar of any kind is drawn, and none is ever loaded by the renderer.
  */
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useLayoutEffect, useRef, useState, type RefObject } from 'react';
 import type { Message } from '../../data';
 import { Icon } from '../../ui/buttons-keys';
 import { Popover } from '../../ui/surfaces';
 import {
   detailRows,
   recipientPeople,
-  recipientLabel,
   recipientParts,
+  MAX_NAMED,
   type DetailRow,
   type Person,
 } from './readerPeople';
@@ -85,11 +85,43 @@ function useCloseOnScroll(open: boolean, close: () => void): void {
   }, [open, close]);
 }
 
+/**
+ * How many names the header can show whole. It starts at the most `recipientParts` names and drops one name at a time
+ * while the names overflow, so a narrow header reads "to me and 2 more", not "to me, Jordan Pa…". It starts over when the
+ * line's width changes.
+ */
+function useNamedCount(names: RefObject<HTMLElement | null>, total: number): number | undefined {
+  const [fit, setFit] = useState<number | undefined>(undefined);
+  const [width, setWidth] = useState(0);
+  useLayoutEffect(() => {
+    const el = names.current;
+    if (!el) return;
+    const named = fit ?? Math.min(total, MAX_NAMED + 1);
+    if (el.scrollWidth > el.clientWidth + 1 && named > 1) setFit(named - 1);
+  }, [names, fit, total, width]);
+  useEffect(() => {
+    // The header line's width is stable while names drop; the recipients' own width is not.
+    const el = names.current?.closest('.ui-thread-message__line') ?? null;
+    if (!el || typeof ResizeObserver === 'undefined') return undefined;
+    let last = el.clientWidth;
+    const watch = new ResizeObserver(() => {
+      if (el.clientWidth === last) return;
+      last = el.clientWidth;
+      setFit(undefined);
+      setWidth(last);
+    });
+    watch.observe(el);
+    return () => watch.disconnect();
+  }, [names]);
+  return fit;
+}
+
 /** "to me" (or the names), the chevron and the details popover they open. */
 export function RecipientsLine({ message, me }: RecipientsLineProps) {
   const people = recipientPeople(message, me);
-  const label = recipientLabel(people);
-  const { names, more } = recipientParts(people);
+  const namesEl = useRef<HTMLSpanElement>(null);
+  const fit = useNamedCount(namesEl, people.length);
+  const { names, more } = recipientParts(people, fit);
   const [open, setOpen] = useState(false);
   const button = useRef<HTMLButtonElement>(null);
   useCloseOnScroll(open, () => setOpen(false));
@@ -101,11 +133,14 @@ export function RecipientsLine({ message, me }: RecipientsLineProps) {
         className="aplos-recipients__button"
         aria-haspopup="dialog"
         aria-expanded={open}
-        aria-label={`${label}, show details`}
+        // The name starts with the words drawn (WCAG 2.5.3 label in name), so voice control can say what it sees.
+        aria-label={`${names}${more}, show details`}
         onClick={() => setOpen(value => !value)}
       >
         <span className="aplos-recipients__to" aria-hidden="true">
-          <span className="aplos-recipients__names">{names}</span>
+          <span ref={namesEl} className="aplos-recipients__names">
+            {names}
+          </span>
           {more === '' ? null : <span className="aplos-recipients__more">{more}</span>}
         </span>
         <Icon name="chevron-down" size="sm" />

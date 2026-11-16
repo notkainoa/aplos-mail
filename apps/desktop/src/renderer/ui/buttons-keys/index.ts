@@ -10,6 +10,7 @@ export { Tooltip, TooltipBubble } from './Tooltip';
 export {
   CommandKeysContext,
   CommandKeysProvider,
+  displayChord,
   KeyHintsContext,
   KeyHintsProvider,
   parseKeyText,

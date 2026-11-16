@@ -88,7 +88,7 @@ export const GLOBAL_COMMANDS: readonly CommandSpec[] = [
   },
   {
     id: 'app.shortcuts',
-    label: 'See every shortcut',
+    label: 'See all shortcuts',
     icon: 'keyboard',
     keys: ['?'],
     contexts: ['global'],

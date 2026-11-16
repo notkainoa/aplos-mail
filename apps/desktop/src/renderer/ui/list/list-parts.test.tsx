@@ -29,7 +29,7 @@ describe('LowBand and LowSheet', () => {
     );
     assert.match(m, /role="option" aria-selected="false" class="ui-low-band"/);
     assert.match(text(m), /^Low importance Field Notes, Cedar Market, Google and 3 more 6$/);
-    assert.match(m, /title="Open low importance · Return"/);
+    assert.match(m, /title="Open low importance · ↩"/);
     assert.equal(lowBandNames(['A']), 'A');
     assert.equal(lowBandNames(['A', 'B']), 'A and B');
     assert.equal(lowBandNames(['A', 'B', 'C']), 'A, B and C');
@@ -130,9 +130,8 @@ describe('LowBand and LowSheet', () => {
     const base = {
       binding: { id: 'low-list', label: 'Low importance' },
       groups,
-      armed: false,
       markAllCommandId: 'lowImportance.markAllDone',
-      onArm: noop,
+      onDoneCursor: noop,
       onCommitAll: noop,
       onClose: noop,
     };
@@ -148,32 +147,49 @@ describe('LowBand and LowSheet', () => {
     assert.match(m, /Low importance<\/h2><span class="ui-low-sheet__count">3</);
     assert.match(m, /role="listbox"/);
     assert.match(text(m), /Field Notes 1 Unsubscribe/);
-    assert.match(text(m), /Press → twice to mark all 3 done/);
     assert.match(text(m), /Winter light, in five short notes\./);
+    assert.match(text(m), /Mark all 3 done/, 'the sheet has its own button');
+    assert.match(text(m), /Mark all 3 done Hold →/, 'the button names the gesture: Hold →');
+    assert.doesNotMatch(text(m), /again to mark|Esc cancels/, 'no armed line any more');
     assert.match(
       m,
       /role="dialog" aria-modal="true" aria-labelledby="[^"]+" tabindex="-1"/,
       'focusable fallback for focus on open',
     );
-    const armed = render(<LowSheet open {...base} armed />);
-    assert.match(armed, /data-armed="true"/);
-    assert.match(text(armed), /Press → again to mark all 3 done · Esc cancels/);
+    assert.match(m, /<span class="ui-low-sheet__all"/, 'the hold progress wraps the button');
     assert.match(
-      armed,
-      /class="ui-low-sheet__foot" role="status"/,
-      'without the shell announcer the foot is the live region',
-    );
-    const announced = render(<LowSheet open {...base} armed announce={noop} />);
-    assert.doesNotMatch(
-      announced,
-      /class="ui-low-sheet__foot" role="status"/,
-      'with the announcer arming is spoken once',
-    );
-    assert.match(
-      announced,
+      m,
       /<button[^>]*title="Unsubscribe"(?![^>]*tabindex)[^>]*>/,
       'Unsubscribe has no key, so it stays reachable',
     );
+  });
+
+  test('every sender has its header, even a single row named like its sender', () => {
+    const one: LowSheetGroup[] = [
+      {
+        id: 'g-parcel',
+        sender: 'Parcel Trail',
+        rows: [
+          row({ id: 'p1', layout: 'list', sender: 'Parcel Trail', primary: 'Out for delivery' }),
+        ],
+      },
+    ];
+    const m = render(
+      <LowSheet
+        open
+        binding={{ id: 'l', label: 'Low importance' }}
+        groups={one}
+        markAllCommandId="lowImportance.markAllDone"
+        preview={{ rowId: 'p1', text: 'Out for delivery, due today.' }}
+        onDoneCursor={noop}
+        onCommitAll={noop}
+        onClose={noop}
+      />,
+    );
+    assert.match(text(m), /Parcel Trail 1 .*Parcel Trail/, 'the header sits above its one row');
+    assert.match(m, /ui-section-header/);
+    assert.match(m, /class="ui-low-sheet__preview"[^>]*>Out for delivery, due today\./);
+    assert.doesNotMatch(m, /data-unread|ui-account-dot|ui-list-row__dot/, 'no dots on the rows');
   });
 
   test('empty sheet: "No low-importance mail" with Back to Home', () => {
@@ -182,9 +198,8 @@ describe('LowBand and LowSheet', () => {
         open
         binding={{ id: 'l', label: 'Low importance' }}
         groups={[]}
-        armed={false}
         markAllCommandId="lowImportance.markAllDone"
-        onArm={noop}
+        onDoneCursor={noop}
         onCommitAll={noop}
         onClose={noop}
       />,
@@ -365,7 +380,7 @@ describe('EmptyLine', () => {
         }}
       />,
     );
-    assert.match(text(search), /Search all mail on Google Return$/);
+    assert.match(text(search), /Search all mail on Google ↩$/);
   });
 });
 

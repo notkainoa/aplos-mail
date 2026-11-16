@@ -224,7 +224,7 @@ function Select({
   label: string;
   value: string;
   options: readonly string[];
-  /** Display names for option values (provider ids to "OpenCode Go"). */
+  /** Display names for option values (provider ids to "OpenCode Go", model ids to "GPT-OSS 120B"). */
   names?: Readonly<Record<string, string>>;
   onChange: (value: string) => void;
 }) {
@@ -249,7 +249,9 @@ function localDescription(
   const where =
     row.provider === 'custom'
       ? 'Any OpenAI-compatible server'
-      : `On this Mac · ${row.running ? 'running' : 'not running'}`;
+      : row.status?.kind === 'notRunning'
+        ? 'On this Mac'
+        : `On this Mac · ${row.running ? 'running' : 'not running'}`;
   const source = row.keySource;
   if (!source || source.kind === 'local')
     return row.provider === 'custom' ? `${where} · key optional` : `${where} · no key needed`;
@@ -294,6 +296,7 @@ export function ProviderTable(props: ProviderTableProps): ReactNode {
                     label={`${copy.label} model`}
                     value={row.model}
                     options={row.modelOptions}
+                    names={row.modelNames}
                     onChange={model => onChange(row.feature, { provider: row.provider, model })}
                   />
                 </span>
@@ -385,31 +388,29 @@ export function ProviderTable(props: ProviderTableProps): ReactNode {
             label={name}
             description={localDescription(row)}
             control={
-              <input
-                className="ui-provider-table__address"
-                type="text"
-                value={row.address}
-                placeholder={row.defaultAddress || 'https://your-server.example/v1'}
-                spellCheck={false}
-                autoComplete="off"
-                aria-label={`${name} address`}
-                aria-describedby={`${id}-description`}
-                onChange={e => onAddressChange(row.provider, e.target.value)}
-              />
+              <span className="ui-provider-table__local-control">
+                <input
+                  className="ui-provider-table__address"
+                  type="text"
+                  value={row.address}
+                  placeholder={row.defaultAddress || 'https://your-server.example/v1'}
+                  spellCheck={false}
+                  autoComplete="off"
+                  aria-label={`${name} address`}
+                  aria-describedby={`${id}-description`}
+                  onChange={e => onAddressChange(row.provider, e.target.value)}
+                />
+                {actions}
+              </span>
             }
             below={
-              actions || (onAction && row.status) ? (
-                <>
-                  {actions}
-                  {onAction && row.status ? (
-                    <Fix
-                      name={name}
-                      source={source}
-                      status={row.status}
-                      onAction={action => onAction(row.provider, action)}
-                    />
-                  ) : null}
-                </>
+              onAction && row.status ? (
+                <Fix
+                  name={name}
+                  source={source}
+                  status={row.status}
+                  onAction={action => onAction(row.provider, action)}
+                />
               ) : undefined
             }
           />

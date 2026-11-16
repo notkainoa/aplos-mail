@@ -26,6 +26,20 @@
   min-width: 0;
 }
 
+/* Two pickers and their two words need more than the fixed control column. */
+.settings-anchor[data-setting-anchor='retention'] .ui-setting-row {
+  --set-control: var(--set-address);
+}
+
+.settings-inline-label {
+  flex: none;
+  white-space: nowrap;
+  color: var(--dim);
+  font: var(--type-small);
+  letter-spacing: var(--track-small);
+  font-variant-numeric: var(--num-small);
+}
+
 .settings-group + .settings-group,
 .settings-group + .settings-anchor,
 .settings-anchor + .settings-group {

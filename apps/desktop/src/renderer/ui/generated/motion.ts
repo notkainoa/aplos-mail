@@ -356,10 +356,10 @@ export const motions = {
     curveName: 'ease.out',
   },
   hold: {
-    durations: { base: 450, cap: 1200 },
-    rapid: { base: 450, cap: 1200 },
+    durations: { base: 450, cap: 1200, all: 600 },
+    rapid: { base: 450, cap: 1200, all: 600 },
     deferWhenRapid: false,
-    reduced: { base: 450, cap: 1200 },
+    reduced: { base: 450, cap: 1200, all: 600 },
     reducedMode: 'same',
     curve: null,
     curveName: null,

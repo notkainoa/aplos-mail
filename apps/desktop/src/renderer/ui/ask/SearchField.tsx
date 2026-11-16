@@ -1,12 +1,22 @@
-import { useEffect, useState, type KeyboardEvent } from 'react';
+import { useEffect, useRef, useState, type KeyboardEvent } from 'react';
 import type { SearchFieldProps } from '../props';
 import { Icon } from '../compose/icons';
 import { Btn } from '../compose/parts';
 import { OperatorToken } from './OperatorToken';
 
-/** The fixed hint under an empty field (DESIGN §7.9). */
-export const SEARCH_HINT =
-  'Narrow with from:, to:, subject:, has:attachment, before:, after:, in:done';
+/**
+ * The fixed hint under an empty field (DESIGN §7.9): "Narrow with" and these operators in this order. Each is a quiet
+ * button that puts its text in the field; one that needs no value ends in a space, so it becomes a token at once.
+ */
+const HINT_OPERATORS: readonly { readonly label: string; readonly insert: string }[] = [
+  { label: 'from:', insert: 'from:' },
+  { label: 'to:', insert: 'to:' },
+  { label: 'subject:', insert: 'subject:' },
+  { label: 'has:attachment', insert: 'has:attachment ' },
+  { label: 'before:', insert: 'before:' },
+  { label: 'after:', insert: 'after:' },
+  { label: 'in:done', insert: 'in:done ' },
+];
 
 /** aria-controls must name an element that exists: true until the mounted page shows the results listbox is absent. */
 function useControlsRendered(id: string): boolean {
@@ -41,6 +51,13 @@ export function SearchField(props: SearchFieldProps) {
   } = props;
 
   const controls = useControlsRendered(resultsId);
+  const root = useRef<HTMLDivElement>(null);
+
+  /** An operator in the hint goes into the field and the caret stays there, so the next thing typed is its value. */
+  function insertOperator(text: string) {
+    onChange(value + text);
+    root.current?.querySelector('input')?.focus();
+  }
 
   function onKeyDown(event: KeyboardEvent<HTMLInputElement>) {
     if (event.nativeEvent.isComposing) return;
@@ -60,7 +77,7 @@ export function SearchField(props: SearchFieldProps) {
   }
 
   return (
-    <div className="ui-search-field" role="search">
+    <div ref={root} className="ui-search-field" role="search">
       <label className="ui-search-field__title">
         <Icon name="search" />
         <input
@@ -84,7 +101,21 @@ export function SearchField(props: SearchFieldProps) {
       <div className="ui-search-field__meta">
         <span className="ui-search-field__tokens">
           {tokens.length === 0 ? (
-            <span className="ui-search-field__hint">{SEARCH_HINT}</span>
+            // The hint belongs to an empty field: once there is text, the results are what matter.
+            value.length === 0 ? (
+              <span className="ui-search-field__hint" role="group" aria-label="Search operators">
+                <span>Narrow with</span>
+                {HINT_OPERATORS.map(({ label, insert }) => (
+                  <Btn
+                    key={label}
+                    variant="text"
+                    label={label}
+                    hint={`Add ${label} to the search`}
+                    onPress={() => insertOperator(insert)}
+                  />
+                ))}
+              </span>
+            ) : null
           ) : (
             tokens.map((token, index) => (
               <OperatorToken

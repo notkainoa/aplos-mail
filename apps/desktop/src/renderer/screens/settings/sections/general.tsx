@@ -1,6 +1,6 @@
 /** Settings → General: appearance, keys and gestures, the window, and the tools allowed on this Mac (DESIGN 7.10). */
 import { useEffect, useRef } from 'react';
-import { Button } from '../../../ui/buttons-keys';
+import { Button, Kbd } from '../../../ui/buttons-keys';
 import { Switch } from '../../../ui/controls';
 import { Puck } from '../../../ui/surfaces';
 import { Group, NotAvailable, Row, rowId, Select } from '../parts';
@@ -90,7 +90,11 @@ export function General({ data, actions }: SectionProps) {
         <Row
           section="general"
           anchor="sidebarMinimised"
-          description="Hide the sidebar until you press [."
+          description={
+            <>
+              Hide the sidebar until you press <Kbd chord="[" />.
+            </>
+          }
           control={id => (
             <Switch
               label="Minimized sidebar"
@@ -199,6 +203,7 @@ function Tools({ data, actions }: Pick<SectionProps, 'data' | 'actions'>) {
               variant="text"
               label="Add a tool"
               disabled={!enabled}
+              disabledReason="Turn on tools first"
               onPress={() => actions.openAddTool()}
             />
           }

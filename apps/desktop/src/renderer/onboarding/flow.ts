@@ -365,6 +365,8 @@ export function shouldMoveFocus(
 export interface StepChrome {
   /** "Step 2 of 4". */
   readonly dashes?: { readonly step: number; readonly of: number };
+  /** An account is connected (this session or already): only then is anything setting up in the background. */
+  readonly connected?: boolean;
   /** "Try demo mail"; absent hides it. */
   readonly onTryDemo?: () => void;
   /** Footer Back (Esc). Welcome's footer button is "Skip setup" instead. */
@@ -389,11 +391,15 @@ export interface StepKeys {
   readonly keepUserFocus?: boolean;
 }
 
-/** The footer of every step after Welcome: dashes, the fixed note and Back (Esc, shown only with all key hints). */
+/**
+ * The footer of every step after Welcome: dashes, the note and Back (Esc, shown only with all key hints). "Setup continues
+ * in the background." only once an account is connected: before that nothing is being set up, so it would be a promise
+ * about nothing.
+ */
 export function backFooter(chrome: StepChrome): OnboardingFooter {
   return {
     ...(chrome.dashes ? { dashes: chrome.dashes } : {}),
-    note: 'setupContinues',
+    note: chrome.connected ? 'setupContinues' : 'none',
     buttons: [
       { label: 'Back', emphasis: 'text', keys: 'Esc', keyHint: 'hint', onSelect: chrome.onBack },
     ],

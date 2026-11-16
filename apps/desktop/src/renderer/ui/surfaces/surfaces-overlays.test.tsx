@@ -127,11 +127,11 @@ describe('Confirm', () => {
     assert.ok(cancelAt > 0 && confirmAt > cancelAt, 'Cancel comes first');
     assert.match(
       html,
-      /data-primary="true"><span class="ui-confirm__row-label">Cancel<\/span>.*?<kbd class="ui-part-kbd">Return<\/kbd>/,
+      /data-primary="true"><span class="ui-confirm__row-label">Cancel<\/span>.*?<kbd class="ui-part-kbd">↩<\/kbd>/,
     );
     assert.match(
       html,
-      /data-tone="danger"><span class="ui-confirm__row-label">Delete forever<\/span>.*?<kbd class="ui-part-kbd">⇧Return<\/kbd>/,
+      /data-tone="danger"><span class="ui-confirm__row-label">Delete forever<\/span>.*?<kbd class="ui-part-kbd">⇧↩<\/kbd>/,
     );
     assert.match(html, /data-destructive="true"/);
     assertIdRefs(html);
@@ -154,10 +154,7 @@ describe('Confirm', () => {
       /^<div class="ui-confirm" role="group" aria-labelledby="[^"]+" aria-describedby="[^"]+" data-presentation="inline">/,
     );
     assert.ok(html.indexOf('>Send</span>') < html.indexOf('>Keep editing</span>'));
-    assert.match(
-      html,
-      /data-primary="true"><span class="ui-confirm__row-label">Send<\/span>.*?Return/,
-    );
+    assert.match(html, /data-primary="true"><span class="ui-confirm__row-label">Send<\/span>.*?↩/);
     assert.match(html, /Keep editing<\/span>.*?<kbd class="ui-part-kbd">Esc<\/kbd>/);
     assert.ok(!html.includes('data-tone="danger"'));
     assertIdRefs(html);

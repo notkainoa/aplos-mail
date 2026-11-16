@@ -286,7 +286,7 @@ export interface SearchPageModel {
   readonly localCount: number;
   /** "From Google": ids that joined the window after Return, only hits not already local. */
   readonly remoteIds: readonly string[];
-  /** "No mail matches ‘dentist’." when nothing local matches and Google has nothing new. */
+  /** "No mail matches “dentist”." when nothing local matches and Google has nothing new. */
   readonly noMatch: string | null;
   /** The no-match line carries "Search all mail on Google · Return" itself (DESIGN §7.14). */
   readonly noMatchOffer: boolean;
@@ -430,7 +430,7 @@ export function searchPage(
   // A failed window is not "no mail": the error line says so, and the region announces nothing wrong.
   const nothing = settled && !localFailed && localCount === 0 && remoteIds.length === 0;
   const shown = formatSearch(currentSearch(state.field, state.tokens).tokens, query.text);
-  const noMatch = !empty && nothing ? `No mail matches ‘${shown}’` : null;
+  const noMatch = !empty && nothing ? `No mail matches “${shown}”` : null;
   // The no-match line carries the offer itself (EmptyLine's action), so the separate offer row hides.
   const line = noMatch && remoteLine?.kind === 'offer' ? null : remoteLine;
 
@@ -483,6 +483,59 @@ export function highlightTerms(query: SearchQuery): string[] {
   return [...new Set(terms)];
 }
 
+/** How many characters of snippet may come before the first match; the rest of the cell is for the match itself. */
+const SNIPPET_LEAD = 20;
+/**
+ * The snippet with its first match near the left edge, so the one ellipsis the cell draws at its end never hides the
+ * matched word. A leading "…" marks the cut; text with no match or a match already near the start is unchanged.
+ */
+export function snippetAround(
+  text: string,
+  terms: readonly string[],
+  lead = SNIPPET_LEAD,
+  fits = SNIPPET_LEAD,
+): string {
+  const words = terms.map(t => t.trim().toLowerCase()).filter(t => t.length > 0);
+  const lower = text.toLowerCase();
+  const found = words.map(w => lower.indexOf(w)).filter(i => i >= 0);
+  if (found.length === 0) return text;
+  const at = Math.min(...found);
+  if (at <= fits) return text;
+  const boundary = text.indexOf(' ', at - lead);
+  const start = boundary >= 0 && boundary < at ? boundary + 1 : at - lead;
+  return `…${text.slice(start)}`;
+}
+
+/** About how many characters of snippet the cell shows; the cut falls on a word so no word is left half-drawn. */
+const SNIPPET_FIT = 25;
+/**
+ * The snippet cut after a whole word, with a "…" when text follows. The match always stays inside the kept text, so
+ * the cell's own ellipsis rarely has to cut a word in half.
+ */
+export function snippetFit(text: string, terms: readonly string[], fit = SNIPPET_FIT): string {
+  if (text.length <= fit) return text;
+  const lower = text.toLowerCase();
+  const ends = terms
+    .map(t => t.trim().toLowerCase())
+    .filter(t => t.length > 0 && lower.includes(t))
+    .map(t => lower.indexOf(t) + t.length);
+  const matchEnd = Math.max(0, ...ends);
+  const back = matchEnd <= fit ? text.lastIndexOf(' ', fit) : -1;
+  const forward = text.indexOf(' ', Math.max(fit, matchEnd));
+  const end = back >= fit / 2 ? back : forward;
+  if (end < 0) return text;
+  return `${text.slice(0, end).replace(/[\s,;:.\u2013\u2014-]+$/, '')}…`;
+}
+
+/** "Hi Alex," or "Dear Dr. Rao," at the start of a snippet: a greeting says nothing about why the thread matched. */
+const GREETING = /^(?:hi|hello|hey|dear|good (?:morning|afternoon|evening))\b[^,\n]{0,30},\s+/i;
+
+/** The snippet without its leading greeting, unless that would leave nothing. */
+export function withoutGreeting(text: string): string {
+  const rest = text.replace(GREETING, '');
+  return rest.length > 0 ? rest : text;
+}
+
 /** One row from a thread. */
 export function resultRow(
   thread: Pick<
@@ -501,13 +554,17 @@ export function resultRow(
   remote: boolean,
   account?: { label: string },
 ): ResultRow {
+  const highlight = highlightTerms(query);
   return {
     id: `search-row-${thread.id.replace(/[^A-Za-z0-9_-]/g, '_')}`,
     threadId: thread.id,
     sender: thread.fromName || '(no sender)',
+    // The subject is shown whole (the cell ellipsises its own end); only the snippet is windowed to the match.
     primary: thread.subject || '(no subject)',
-    secondary: thread.snippet || undefined,
-    highlight: highlightTerms(query),
+    secondary: thread.snippet
+      ? snippetFit(snippetAround(withoutGreeting(thread.snippet), highlight), highlight)
+      : undefined,
+    highlight,
     unread: thread.unread,
     date: toIsoDateTime(thread.lastDate),
     marks: {

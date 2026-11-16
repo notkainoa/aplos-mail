@@ -3,15 +3,15 @@
 // "Load images from this sender" when remote images are blocked, the `read` body at 64ch, quoted text on O,
 // attachments, and the undo-send line under a message you just sent. The 2 px accent rail marks the cursor.
 // An earlier message is a compact card (owner review 2026-11-03; owner feedback 2026-11-11): its row shows who, when and the
-// message's own first sentence or two (never an AI summary: those are per thread), with a visible "Show full" and a chevron
-// at the right. The row's one `button` (`aria-expanded`) is that hint, stretched by a pseudo-element over the whole card, so a
+// message's own first sentence or two (never an AI summary: those are per thread), with a bare chevron
+// at the right edge (its name is "Show full, message from …"); a short message the card already shows whole has no chevron. The row's one `button` (`aria-expanded`) is that hint, stretched by a pseudo-element over the whole card, so a
 // click anywhere on a folded card, Enter, Space or O opens the full message in place with the same header row (the sender's
 // mark, the name, the time, the "To" circles) and the same button now reads "Show less". The button is one DOM node,
 // last in the head, folded or open, so keyboard focus survives a fold; once open only it is the target, so links,
 // attachments and the body keep their own clicks.
 
 import type { ReactNode, Ref } from 'react';
-import type { ThreadMessageProps } from '../props';
+import type { RemoteImages, ThreadMessageProps } from '../props';
 import { Chip } from '../list/Chip';
 import { Action } from '../list/internal/Action';
 import { formatFull, formatMessageTime } from '../list/internal/format';
@@ -97,7 +97,7 @@ interface FoldButtonProps {
   readonly describedBy: string | undefined;
 }
 
-/** "Show full" and a chevron on a folded row, "Show less" once open: the one button of an earlier message. */
+/** A bare chevron (named "Show full" folded, "Show less" open): the one button of an earlier message. */
 function FoldButton({ id, from, fold, describedBy }: FoldButtonProps) {
   const tip = useTooltipText();
   const label = fold.open ? 'Show less' : 'Show full';
@@ -113,12 +113,43 @@ function FoldButton({ id, from, fold, describedBy }: FoldButtonProps) {
       onFocus={fold.onFocus}
       onClick={fold.onToggle}
     >
-      <span className="ui-thread-message__toggle-label" aria-hidden="true">
-        {label}
-      </span>
       <Icon name={fold.open ? 'chevron-up' : 'chevron-down'} size="sm" />
     </button>
   );
+}
+
+/**
+ * The remote-images notice: a quiet strip at the top of the card (chrome, not mail text). Blocked, it holds the one
+ * button; once the images are shown it keeps its height with a dim sentence, so the heading below never moves.
+ */
+function RemoteImagesStrip({ blocked, present, onLoad }: RemoteImages) {
+  if (!blocked && !present) return null;
+  return (
+    <div className="ui-thread-message__images" data-blocked={blocked ? 'true' : 'false'}>
+      {blocked ? (
+        <Action
+          variant="text"
+          size="sm"
+          icon="eye"
+          label="Load images from this sender"
+          onPress={() => onLoad()}
+        />
+      ) : (
+        <span className="ui-thread-message__images-shown">Images from this sender are shown</span>
+      )}
+    </div>
+  );
+}
+
+/** The fold's three states as the card draws them: folded or not, whole (nothing to open), and the `data-fold` value. */
+function foldState(fold: ThreadMessageProps['fold']) {
+  const folded = fold !== undefined && !fold.open;
+  return {
+    folded,
+    // A short message the folded card shows whole has nothing to open: no chevron, no click target.
+    whole: folded && fold.complete === true,
+    attr: fold ? (fold.open ? 'open' : 'folded') : undefined,
+  };
 }
 
 /** A full message in the thread. */
@@ -137,12 +168,13 @@ export function ThreadMessage({
   attachments,
   remoteImages,
   quoted,
+  original,
   undoTray,
   ref,
 }: ThreadMessageProps) {
   const tip = useTooltipText();
   const fromId = `${id}-from`;
-  const folded = fold !== undefined && !fold.open;
+  const { folded, whole, attr } = foldState(fold);
   const excerptId = `${id}-excerpt`;
   const head = (
     <HeadLine
@@ -164,12 +196,13 @@ export function ThreadMessage({
       id={id}
       className="ui-thread-message"
       data-cursor={cursor ? 'true' : undefined}
-      data-fold={fold ? (fold.open ? 'open' : 'folded') : undefined}
+      data-fold={attr}
+      data-complete={whole ? 'true' : undefined}
       aria-labelledby={fromId}
     >
       <header className="ui-thread-message__head" data-fold={fold ? 'true' : undefined}>
         {head}
-        {fold ? (
+        {fold && !whole ? (
           <FoldButton
             id={id}
             from={from}
@@ -179,23 +212,25 @@ export function ThreadMessage({
         ) : null}
       </header>
 
-      {remoteImages?.blocked ? (
-        <div className="ui-thread-message__images">
-          <Action
-            variant="text"
-            size="sm"
-            icon="eye"
-            label="Load images from this sender"
-            onPress={() => remoteImages.onLoad()}
-          />
-        </div>
-      ) : null}
+      {remoteImages ? <RemoteImagesStrip {...remoteImages} /> : null}
 
       {folded ? null : (
         <div className="ui-thread-message__body" id={`${id}-content`}>
           {body}
         </div>
       )}
+
+      {original ? (
+        <div className="ui-thread-message__quoted">
+          <Action
+            variant="text"
+            size="sm"
+            label={original.shown ? 'Hide original' : 'Show original'}
+            expanded={original.shown}
+            onPress={() => original.onToggle()}
+          />
+        </div>
+      ) : null}
 
       {quoted ? (
         <div className="ui-thread-message__quoted">
