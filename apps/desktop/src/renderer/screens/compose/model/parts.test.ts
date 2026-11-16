@@ -168,3 +168,15 @@ test('a window is resolved only when it is live and every listed id has its row'
     'a failed window reads as empty',
   );
 });
+
+test('a pretty-printed draft from another client does not open on blank lines; typed blank lines still do', () => {
+  assert.equal(
+    htmlToText('\n<html>\n<body>\n<p>Hi Jordan,</p>\n<p>See you Thursday.</p>\n</body>\n</html>\n'),
+    'Hi Jordan,\nSee you Thursday.',
+  );
+  assert.equal(htmlToText('  \n<div dir="ltr">Thanks</div>'), 'Thanks');
+  // What was typed comes back exactly, including a deliberate first blank line.
+  for (const text of ['\nfoo', '\n\nfoo\n\nbar\n', 'a\n\nb']) {
+    assert.equal(htmlToText(textToHtml(text)), text, JSON.stringify(text));
+  }
+});

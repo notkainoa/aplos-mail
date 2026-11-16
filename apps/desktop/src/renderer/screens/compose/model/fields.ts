@@ -63,6 +63,11 @@ export function textToHtml(text: string): string {
 export function htmlToText(html: string): string {
   if (html === '') return '';
   const lines = html
+    // Layout whitespace is not text: a draft another client wrote (or the provider re-serialised) is pretty-printed, and
+    // the newlines around the markup and between tags would otherwise open the body on blank lines. Our own HTML
+    // (`textToHtml`) never has any, so what was typed still comes back exactly.
+    .replace(/^\s+|\s+$/g, '')
+    .replace(/>\s*\n\s*</g, '><')
     .replace(/<p>\s*<br\s*\/?>\s*<\/p>/gi, '<p></p>')
     .replace(/<br\s*\/?>/gi, '\n')
     .split(/<\/p>/i)
