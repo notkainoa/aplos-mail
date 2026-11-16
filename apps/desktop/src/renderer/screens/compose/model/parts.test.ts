@@ -13,6 +13,7 @@ import {
   keepsOnRelease,
   listeningLine,
 } from './dictationModel';
+import { composeFromDraft } from './composeState';
 import { htmlToText, textToHtml } from './fields';
 import {
   addRecipients,
@@ -186,4 +187,31 @@ test('a pretty-printed draft from another client does not open on blank lines; i
   for (const text of ['\nfoo', '\n\nfoo\n\nbar\n', 'a\n\nb', '  lead and trail  ']) {
     assert.equal(htmlToText(textToHtml(text)), text, JSON.stringify(text));
   }
+});
+
+test('a draft read back from its MIME copy keeps one line per paragraph: the CRLFs between them are not lines', () => {
+  // The MIME writer puts a CRLF after every paragraph (engine draft-state.ts `asWritten`).
+  assert.equal(htmlToText('<p>a</p>\r\n<p><br></p>\r\n<p>b</p>\r\n'), 'a\n\nb');
+  assert.equal(
+    htmlToText('\r\n<p>Hi Jordan,</p>\r\n<p>Sounds good</p>\r\n'),
+    'Hi Jordan,\nSounds good',
+  );
+  for (const text of ['Sounds good', '\nfoo', 'a\n\nb', 'x\n\n\n', 'foo  ']) {
+    const copy = textToHtml(text).replace(/<\/p>/g, '</p>\r\n');
+    assert.equal(htmlToText(copy), text, JSON.stringify(text));
+  }
+  const draft = {
+    id: 'd1',
+    accountId: 'a1',
+    mode: 'reply',
+    threadId: 't1',
+    to: [],
+    cc: [],
+    bcc: [],
+    subject: 'Re: plans',
+    html: '<p>Sounds good</p>\r\n<p>See you then.</p>\r\n',
+    revision: 1,
+    rev: 1,
+  } as unknown as Draft;
+  assert.equal(composeFromDraft(draft).fields.body, 'Sounds good\nSee you then.');
 });

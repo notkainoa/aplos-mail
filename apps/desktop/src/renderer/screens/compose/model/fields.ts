@@ -70,6 +70,9 @@ export function htmlToText(html: string): string {
     .replace(/^\s*\n\s*|\s*\n\s*$/g, '')
     .replace(/(<\/?(?:html|head|body)\b[^>]*>)\s*\n\s*(?=<)/gi, '$1')
     .replace(/>\s*\n\s*(?=<\/?(?:html|head|body)\b)/gi, '>')
+    // A draft read back from its MIME copy has the writer's CRLF after every paragraph (`<p>a</p>\r\n<p>b</p>\r\n`):
+    // between one paragraph and the next it is layout, not a line, so only that break goes.
+    .replace(/<\/p>\s*\n\s*(?=<p\b)/gi, '</p>')
     .replace(/<p>\s*<br\s*\/?>\s*<\/p>/gi, '<p></p>')
     .replace(/<br\s*\/?>/gi, '\n')
     .split(/<\/p>/i)
