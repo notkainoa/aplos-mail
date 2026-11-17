@@ -474,6 +474,29 @@ test('a row with no sender name and no subject still reads something', () => {
   assert.equal(primaryOf(named), 'Lunch');
 });
 
+test("every list row's main line is the summary when it is written, else the subject", () => {
+  // The one row rule for Home, Important updates, Sent and All mail — all funnel through the shared
+  // `primaryOf` (DESIGN "summary or subject", DECISIONS 2026-11-14): a ready or stale summary's text leads,
+  // every other state — pending, failed, none, or text never written — shows the subject.
+  const base = { ...row({ id: 'r' }), subject: 'Print run' } as ThreadRow;
+  for (const state of ['ready', 'stale'] as const)
+    assert.equal(
+      primaryOf({ ...base, summary: { state, text: 'Ada asked about the invoice.' } } as ThreadRow),
+      'Ada asked about the invoice.',
+    );
+  for (const state of ['pending', 'failed', 'none'] as const)
+    assert.equal(
+      primaryOf({ ...base, summary: { state, text: '' } } as ThreadRow),
+      'Print run',
+      `${state} shows the subject, not an AI line`,
+    );
+  assert.equal(
+    primaryOf({ ...base, summary: { state: 'ready', text: '' } } as ThreadRow),
+    'Print run',
+    'a ready row with no text still shows the subject',
+  );
+});
+
 test('a bulk action that includes the card moves the cursor on, and Undo hands the card back', () => {
   const ids = ['a', 'b', 'c', 'd'];
   const before = buildItems(layoutOf({ do: ids }));
