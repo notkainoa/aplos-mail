@@ -1346,3 +1346,9 @@ html[data-real-key] .ui-part-tipwrap:has(> :focus-visible) > .ui-part-tip {
     color: var(--ink);
   }
 }
+/* A toast's quiet actions ("Set a date", "Remind me if no reply") sit back in --dim so the one keycapped action beside
+   them (Undo Z) stays the loudest thing to reach for. */
+.ui-toast__action:not(:has(.ui-part-kbd)):has(~ .ui-toast__action .ui-part-kbd) {
+  color: var(--dim);
+  font-weight: 400;
+}

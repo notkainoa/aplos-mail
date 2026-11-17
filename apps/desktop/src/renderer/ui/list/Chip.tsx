@@ -8,6 +8,12 @@ import { Action } from './internal/Action';
 import { formatBytes, formatDue, formatFull, formatLaterUntil } from './internal/format';
 import { Icon } from './internal/Icon';
 
+/** What a due chip is, in words: "Due Wednesday · Wed, Nov 18, 11:59 PM", and "from the email" when Aplos found it. */
+function dueTitle(due: { at: string; source: string }, found: boolean): string {
+  const phrase = `${formatDue(due.at, 'sentence')} · ${formatFull(due.at)}`;
+  return found ? `${phrase} · from the email` : phrase;
+}
+
 /** A due, Later-until, label, attachment or operator chip. */
 export function Chip(props: ChipProps) {
   switch (props.kind) {
@@ -20,7 +26,7 @@ export function Chip(props: ChipProps) {
           data-kind="due"
           data-overdue={due.overdue ? 'true' : undefined}
           data-source={due.source}
-          title={found ? `${formatFull(due.at)} · from the email` : formatFull(due.at)}
+          title={dueTitle(due, found)}
         >
           <Icon name="clock" size="sm" />
           <span className="ui-chip__text">{formatDue(due.at, format)}</span>
@@ -35,7 +41,7 @@ export function Chip(props: ChipProps) {
           className="ui-chip"
           data-kind="laterUntil"
           data-overdue={overdue ? 'true' : undefined}
-          title={until.kind === 'at' ? formatFull(until.at) : undefined}
+          title={until.kind === 'at' ? `Back ${formatFull(until.at)}` : 'Back someday'}
         >
           <Icon name="clock" size="sm" />
           <span className="ui-chip__text">
