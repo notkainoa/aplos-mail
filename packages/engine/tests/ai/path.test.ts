@@ -72,6 +72,26 @@ async function world(transport?: AiTransport) {
   return { store, engine, call, frames, clock, file };
 }
 
+/** Wait until a run's `done` frame lands (the error path emits `error` then `done`, so one wait covers both). */
+async function settle(w: Awaited<ReturnType<typeof world>>, runId: string) {
+  for (
+    let i = 0;
+    i < 60 &&
+    !w.frames.some(
+      f =>
+        f.frame === 'progress' &&
+        (f as { runId?: string }).runId === runId &&
+        (f as { kind?: string }).kind === 'done',
+    );
+    i++
+  )
+    await new Promise(r => setImmediate(r));
+}
+
+/** The last user message the scripted provider saw — the prompt the sources were quoted into. */
+const lastPrompt = (t: ReturnType<typeof stubTransport>) =>
+  t.calls.at(-1)!.messages.at(-1)!.content ?? '';
+
 const seedMail = (w: Awaited<ReturnType<typeof world>>, aiAllowed = true) =>
   w.store.commit({
     opId: 'seed',
@@ -551,35 +571,95 @@ test('Ask/run: the picked account scopes retrieval, and sources name their accou
       }),
     ],
   });
-  const settle = async (runId: string) => {
-    for (
-      let i = 0;
-      i < 60 &&
-      !w.frames.some(
-        f =>
-          f.frame === 'progress' &&
-          (f as { runId?: string }).runId === runId &&
-          (f as { kind?: string }).kind === 'done',
-      );
-      i++
-    )
-      await new Promise(r => setImmediate(r));
-  };
-  // All accounts: both accounts' mail can be a source, each carrying its address for the answer to name.
+  // All accounts: both accounts' mail can be a source, labeled in first-appearance order — never
+  // by the owner's own address, which stays out of the provider's prompt.
   const all = await w.call('Ask/run', { question: 'invoice' });
-  await settle(all.runId);
-  const promptAll = t.calls.at(-1)!.messages.at(-1)!.content ?? '';
-  assert.match(promptAll, /Account: owner@mail\.example/);
-  assert.match(promptAll, /Account: two@mail\.example/);
-  // Account A picked: only A's mail is quoted — B's subject and address never reach the provider.
+  await settle(w, all.runId);
+  const promptAll = lastPrompt(t);
+  assert.match(
+    promptAll,
+    /\[1\] Account: Account 1\nFrom: Sender x1\nSubject: Invoice paid already/,
+  );
+  assert.match(promptAll, /\[2\] Account: Account 2\nFrom: Sender m1\nSubject: Invoice due Friday/);
+  assert.doesNotMatch(promptAll, /@mail\.example/);
+  // Account B picked: only B's mail is quoted — A's subject never reaches the provider, and a
+  // one-account run carries no Account: line at all.
   const scoped = await w.call('Ask/run', {
     question: 'invoice',
     scope: { accountIds: ['acct-2'] },
   });
-  await settle(scoped.runId);
-  const promptScoped = t.calls.at(-1)!.messages.at(-1)!.content ?? '';
-  assert.match(promptScoped, /Account: two@mail\.example/);
-  assert.doesNotMatch(promptScoped, /owner@mail\.example|Invoice due Friday/);
+  await settle(w, scoped.runId);
+  const promptScoped = lastPrompt(t);
+  assert.match(promptScoped, /\[1\]\nFrom: Sender x1\nSubject: Invoice paid already/);
+  assert.doesNotMatch(promptScoped, /Account:|@mail\.example|Invoice due Friday/);
+});
+
+test('Ask/run: a display name labels its account; an address-looking name falls back to a number', async () => {
+  const t = stubTransport({});
+  const w = await world(t);
+  seedMail(w);
+  w.store.commit({
+    opId: 'seed-b',
+    origin: 'sync',
+    writes: [
+      {
+        kind: 'account',
+        id: 'acct-2',
+        provider: 'google',
+        address: 'two@mail.example',
+        displayName: 'Work mail',
+        capabilities: {},
+        status: { state: 'ok' },
+        aiAllowed: true,
+      },
+      {
+        kind: 'account',
+        id: 'acct-3',
+        provider: 'google',
+        address: 'three@mail.example',
+        // A display name that is itself an address must never be sent either.
+        displayName: 'three@mail.example',
+        capabilities: {},
+        status: { state: 'ok' },
+        aiAllowed: true,
+      },
+      {
+        kind: 'folder',
+        accountId: 'acct-2',
+        remoteId: 'INBOX',
+        name: 'Inbox',
+        role: 'inbox',
+        folderKind: 'system',
+      },
+      {
+        kind: 'folder',
+        accountId: 'acct-3',
+        remoteId: 'INBOX',
+        name: 'Inbox',
+        role: 'inbox',
+        folderKind: 'system',
+      },
+      msg('x1', 'T-other', 7, {
+        accountId: 'acct-2',
+        subject: 'Invoice paid already',
+        snippet: 'The invoice was paid last week.',
+      }),
+      msg('x2', 'T-third', 8, {
+        accountId: 'acct-3',
+        subject: 'Invoice archived',
+        snippet: 'The invoice was archived.',
+      }),
+    ],
+  });
+  const run = await w.call('Ask/run', { question: 'invoice' });
+  await settle(w, run.runId);
+  const prompt = lastPrompt(t);
+  // Sources newest-first: acct-3's mail leads (numbered, its "name" being an address), then acct-2's
+  // (its display name), then acct-1's (numbered).
+  assert.match(prompt, /\[1\] Account: Account 1\nFrom: Sender x2\nSubject: Invoice archived/);
+  assert.match(prompt, /\[2\] Account: Work mail\nFrom: Sender x1\nSubject: Invoice paid already/);
+  assert.match(prompt, /\[3\] Account: Account 3\nFrom: Sender m1\nSubject: Invoice due Friday/);
+  assert.doesNotMatch(prompt, /@mail\.example/);
 });
 
 test('Ask/cancel: a live run aborts', async () => {
