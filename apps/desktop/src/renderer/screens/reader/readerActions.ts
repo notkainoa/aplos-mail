@@ -202,7 +202,7 @@ export function createReaderActions(deps: ReaderDeps): ReaderActions {
   function later(): void {
     const row = current();
     if (!row) return;
-    const message = undated(namedToast(deps.undoLabel('mail.later', 'Moved to Later'), row));
+    const message = namedToast(undated(deps.undoLabel('mail.later', 'Moved to Later')), row);
     leaveList(row, { type: 'later' }, { kind: 'later', message });
   }
 

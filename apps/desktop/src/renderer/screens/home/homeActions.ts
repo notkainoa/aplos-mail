@@ -250,7 +250,7 @@ export function createHomeActions(deps: HomeDeps): HomeActions {
       id: opId,
       kind: 'later',
       ...triageSlot('later'),
-      message: undated(namedToast(deps.undoLabel('mail.later', 'Moved to Later'), target.row)),
+      message: namedToast(undated(deps.undoLabel('mail.later', 'Moved to Later')), target.row),
       undoable: true,
       actions: [{ id: 'setDate', label: 'Set a date' }, UNDO_ACTION],
       onAction: actionId => {

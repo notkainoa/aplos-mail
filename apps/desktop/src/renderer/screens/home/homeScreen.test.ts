@@ -618,7 +618,7 @@ test('Later offers Set a date for its own thread, and D opens the picker for the
       ['setDate', 'undo'],
     );
     assert.equal(toast?.actions?.[0]?.keysFrom, undefined, 'no D keycap');
-    assert.ok(toast?.message?.endsWith(' · no date'));
+    assert.match(toast?.message ?? '', /^Moved to Later · no date · /);
     key.current = second;
     runToastAction(toast!.id, 'setDate');
     assert.deepEqual(

@@ -749,7 +749,7 @@
     -1 * var(--space-1)
   ); /* "Weekly sync · 9:00 AM": the dot sits close to the title, not a gap away */
 }
-@container (max-width: 8.5rem) {
+@container (max-width: 7.5rem) {
   .ui-event-block__time[data-compact='true'] {
     display: none;
   }
