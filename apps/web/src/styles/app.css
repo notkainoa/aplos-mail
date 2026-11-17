@@ -1,0 +1,427 @@
+/* Copies of the app's own parts: its buttons and chips, the Home focus card and rows, the suggestion cards and the
+   calendar. Inside these the accent is the app's ink blue, and the serif is only for words Aplos wrote. */
+
+.app-filled,
+.app-text,
+.app-icon {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 32px;
+  padding: 0 10px;
+  border: 0;
+  border-radius: 8px;
+  background: none;
+  font-size: 13px;
+  font-weight: 500;
+  line-height: 1;
+  white-space: nowrap;
+  cursor: default;
+}
+
+.app-filled {
+  padding-right: 7px;
+  background: var(--app-accent);
+  color: var(--app-accent-ink);
+  box-shadow:
+    inset 0 1px 0 var(--press-hi),
+    inset 0 -1px 0 var(--press-lo);
+  transition: transform var(--dur-press) var(--ease-std);
+}
+
+.app-text {
+  color: var(--ink-2);
+  transition: background-color var(--dur-hover) linear;
+}
+
+.app-icon {
+  justify-content: center;
+  width: 32px;
+  padding: 0;
+  color: var(--dim);
+}
+
+button.app-filled,
+button.app-text,
+button.app-icon {
+  cursor: pointer;
+}
+
+@media (hover: hover) {
+  button.app-text:hover,
+  button.app-icon:hover {
+    background: var(--hover);
+  }
+}
+
+.app-filled:active,
+.app-filled.is-pressed,
+.app-text.is-pressed {
+  transform: scale(0.97);
+}
+
+.app-text.is-pressed {
+  background: var(--puck);
+}
+
+.app-filled .glyph {
+  width: 14px;
+  height: 14px;
+}
+
+.kbd-on-fill {
+  background: color-mix(in srgb, var(--app-accent-ink) 16%, transparent);
+  color: var(--app-accent-ink);
+}
+
+.chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  height: 22px;
+  padding: 0 7px;
+  border-radius: 6px;
+  background: var(--raised);
+  color: var(--ink-2);
+  font-size: 12px;
+  font-weight: 500;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.chip .glyph {
+  width: 13px;
+  height: 13px;
+}
+
+.chip-overdue {
+  color: var(--stamp-ink);
+}
+
+/* Home: the section label, the focus card and the rows after it. */
+
+.home-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  padding: 0 4px 12px;
+  font-size: 13px;
+}
+
+.home-label {
+  display: inline-flex;
+  gap: 6px;
+  font-weight: 600;
+}
+
+.home-count {
+  color: var(--dim);
+  font-weight: 400;
+  font-variant-numeric: tabular-nums;
+}
+
+.home-link {
+  color: var(--dim);
+}
+
+.focus-card {
+  padding: 18px 20px 16px;
+  border-radius: 12px;
+  background: var(--paper);
+  box-shadow: var(--elev-card);
+  font-size: 14px;
+  line-height: 22px;
+}
+
+.focus-meta {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+
+.focus-sender {
+  overflow: hidden;
+  font-weight: 600;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.focus-time {
+  margin-left: auto;
+  color: var(--dim);
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.focus-summary {
+  margin: 12px 0 18px;
+  color: var(--ink);
+  font-family: var(--font-serif);
+  font-size: 21px;
+  font-weight: var(--w-summary);
+  line-height: 31px;
+  letter-spacing: -0.1px;
+}
+
+.focus-actions {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+}
+
+.mail-rows {
+  padding: 0;
+  margin-top: 8px;
+  list-style: none;
+  font-size: 14px;
+}
+
+.mail-row {
+  display: grid;
+  grid-template-columns: 124px minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 12px;
+  height: 44px;
+  padding: 0 16px;
+}
+
+.row-sender {
+  overflow: hidden;
+  font-weight: 600;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.row-text {
+  overflow: hidden;
+  color: var(--ink);
+  font-weight: 500;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.row-summary {
+  color: var(--dim);
+  font-weight: 400;
+}
+
+.row-when {
+  color: var(--dim);
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+}
+
+/* The suggestion cards: one next step each, named on the filled button. */
+
+.suggest-cards {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 20px;
+  padding: 0;
+  list-style: none;
+}
+
+.suggest-card {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  padding: 18px 20px 20px;
+  border-radius: 12px;
+  background: var(--paper);
+  box-shadow: var(--elev-card);
+  font-size: 14px;
+  line-height: 22px;
+}
+
+.suggest-sender {
+  font-weight: 600;
+}
+
+.suggest-summary {
+  flex: 1;
+  margin: 10px 0 20px;
+  font-family: var(--font-serif);
+  font-size: 19px;
+  font-weight: var(--w-summary);
+  line-height: 28px;
+  letter-spacing: -0.1px;
+}
+
+/* The calendar: a week on wide screens, a day on phones. Events are the account colour at a low fill. */
+
+.cal {
+  border-radius: 12px;
+  background: var(--canvas);
+  box-shadow: var(--elev-window);
+  font-size: 13px;
+  line-height: 18px;
+}
+
+.cal-head {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  padding: 18px 20px 6px;
+}
+
+.cal-title {
+  font-size: 15px;
+  font-weight: 600;
+}
+
+.cal-sub {
+  color: var(--dim);
+}
+
+.cal-event {
+  position: absolute;
+  overflow: hidden;
+  border-left: 3px solid var(--tone);
+  border-radius: 6px;
+  background: color-mix(in srgb, var(--tone) var(--event-fill), var(--canvas));
+  color: var(--ink);
+  font-size: 12px;
+  font-weight: 500;
+  line-height: 16px;
+}
+
+.tone-sky {
+  --tone: var(--tag-sky);
+}
+
+.tone-sand {
+  --tone: var(--tag-sand);
+}
+
+.week-grid {
+  --hour: 44px;
+
+  display: grid;
+  grid-template-columns: 56px repeat(7, minmax(0, 1fr));
+  padding: 0 20px 20px 8px;
+}
+
+.week-hours {
+  display: grid;
+  grid-auto-rows: var(--hour);
+  padding-top: 32px;
+  color: var(--dim);
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+}
+
+.week-hours span {
+  transform: translateY(-9px);
+  text-align: right;
+  padding-right: 10px;
+}
+
+.week-col {
+  position: relative;
+  height: calc(32px + 6 * var(--hour));
+  border-left: 1px solid var(--line);
+}
+
+.week-line {
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: calc(32px + var(--n) * var(--hour));
+  border-top: 1px solid var(--line);
+}
+
+.week-col.is-today {
+  background: var(--today-tint);
+}
+
+.week-name {
+  display: block;
+  height: 32px;
+  padding: 6px 8px 0;
+  color: var(--dim);
+  font-size: 12px;
+  white-space: nowrap;
+}
+
+.is-today .week-name {
+  color: var(--app-accent);
+  font-weight: 600;
+}
+
+.week-event {
+  top: calc(32px + var(--start) * var(--hour) + 2px);
+  left: 3px;
+  right: 3px;
+  height: calc(var(--len) * var(--hour) - 4px);
+  padding: 4px 6px;
+}
+
+.cal-day {
+  display: none;
+}
+
+.day-grid {
+  --hour: 64px;
+
+  position: relative;
+  margin: 8px 16px 16px;
+}
+
+.day-hour {
+  height: var(--hour);
+  border-top: 1px solid var(--line);
+  color: var(--dim);
+  font-size: 12px;
+}
+
+.day-hour span {
+  display: block;
+  padding-top: 4px;
+}
+
+.day-event {
+  top: calc(var(--row) * var(--hour) + 3px);
+  left: 52px;
+  right: 0;
+  height: calc(var(--hour) - 6px);
+  display: grid;
+  align-content: start;
+  padding: 6px 10px;
+}
+
+.day-event span {
+  color: var(--ink-2);
+  font-weight: 400;
+}
+
+@media (max-width: 900px) {
+  .suggest-cards {
+    grid-template-columns: minmax(0, 1fr);
+    max-width: 520px;
+  }
+}
+
+@media (max-width: 640px) {
+  .cal-week {
+    display: none;
+  }
+
+  .cal-day {
+    display: block;
+  }
+
+  .mail-row {
+    grid-template-columns: minmax(0, 1fr) auto;
+    grid-template-rows: auto auto;
+    gap: 0 12px;
+    height: auto;
+    padding: 10px 16px;
+  }
+
+  .row-text {
+    grid-column: 1 / -1;
+    grid-row: 2;
+  }
+}

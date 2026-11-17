@@ -179,7 +179,7 @@
       ],
       "status": "verified",
       "verifiedAt": "2026-10-27",
-      "note": "The demos are scripted on original demo data and the screenshots show the 0.2.x app; both are kept until the redesign."
+      "note": "The demos are scripted on original demo data; the home screenshot is the current app on demo data with AI off, to be retaken after UI council 2 (PR #548)."
     },
     {
       "id": "suggested-action-ai-off",
@@ -228,7 +228,7 @@
     },
     {
       "id": "several-accounts",
-      "says": "Several Google accounts can be connected at once; the screenshots show All accounts and a calendar week with events from two accounts",
+      "says": "Several Google accounts can be connected at once; the home screenshot shows All accounts and the calendar mock shows two accounts' colours",
       "pages": ["landing"],
       "evidence": [
         {
@@ -244,7 +244,7 @@
       ],
       "status": "verified",
       "verifiedAt": "2026-10-27",
-      "note": "Carried by the tour screenshots and their alt text (Tour.tsx). The images are the 0.2.x app on demo data."
+      "note": "Carried by the calendar section (Landing.tsx) and the home screenshot's alt text. The screenshot is the current app on demo data."
     },
     {
       "id": "google-calendar-views",
@@ -283,7 +283,7 @@
       ],
       "status": "verified",
       "verifiedAt": "2026-10-27",
-      "note": "Also carried by the Ask demo answer \"It goes on your calendar only when you add it\" (Ask.tsx)."
+      "note": "Also carried by the Ask demo answer \"It goes on your calendar only when you add it\" (askData.ts)."
     },
     {
       "id": "ask-dictate",

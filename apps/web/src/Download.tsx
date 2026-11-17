@@ -1,34 +1,17 @@
 import { useEffect, useState } from 'react';
-import icon from './assets/icon-512.webp';
+import { Logo } from './brand';
 import { Footer, Header } from './Chrome';
+import { ArrowDownIcon, DownloadIcon } from './Icons';
 import { DockArt, DragArt, FinderArt } from './InstallArt';
-import { Rise } from './Live';
 import { detect, type Detected } from './platform';
-import { megabytes, release, requires } from './release';
+import { megabytes, release, requires, type Release } from './release';
 import { useReveal } from './reveal';
 
-// The page the Download buttons lead to. While there is no public release (the repository is private), it says that
-// builds are shared with invited testers and who can use the app. Once `release` is filled in, it lists the Mac builds
-// and marks the one for this Mac; see VISION.md.
-const delay = (ms: number) => ({ '--d': `${ms}ms` }) as React.CSSProperties;
+// The page the "How to get it" links lead to. While there is no public release (the repository is private), it says
+// that builds are shared with invited testers and who can use the app. Once `release` is filled in, it lists the Mac
+// builds and marks the one for this Mac; see VISION.md.
 
-function DownloadIcon() {
-  return (
-    <svg className="dl-icon" viewBox="0 0 16 16" aria-hidden="true">
-      <path
-        d="M8 2.5v8m0 0L4.75 7.25M8 10.5l3.25-3.25M3 13.25h10"
-        fill="none"
-        stroke="currentColor"
-        strokeWidth="1.5"
-        strokeLinecap="round"
-        strokeLinejoin="round"
-      />
-    </svg>
-  );
-}
-
-export function Download() {
-  useReveal();
+function useDetected() {
   const [found, setFound] = useState<Detected | null>(null);
   useEffect(() => {
     if (!release) return;
@@ -38,123 +21,38 @@ export function Download() {
       live = false;
     };
   }, []);
+  return found;
+}
 
-  const title = release ? 'Download Aplos Mail' : 'Aplos Mail is with invited testers';
-  const released =
-    release &&
-    new Date(`${release.date}T12:00:00`).toLocaleDateString('en-US', {
-      month: 'long',
-      day: 'numeric',
-      year: 'numeric',
-    });
+function releasedOn(date: string) {
+  return new Date(`${date}T12:00:00`).toLocaleDateString('en-US', {
+    month: 'long',
+    day: 'numeric',
+    year: 'numeric',
+  });
+}
 
+function Intro() {
   return (
-    <>
-      <div className="sky dl-sky">
-        <Header home="../" />
-        <section className="dl-hero" aria-labelledby="dl-title">
-          <img className="dl-app" src={icon} width="512" height="512" alt="" data-reveal />
-          <h1 id="dl-title">
-            <Rise text={title} />
-          </h1>
-          {release ? (
-            <p className="dl-lead" data-reveal style={delay(80)}>
-              Aplos Mail {release.version} for Mac. It takes about a minute to install.
-            </p>
-          ) : (
-            <p
-              className="dl-lead"
-              data-reveal
-              data-claim="invited-testers-builds"
-              style={delay(80)}
-            >
-              There is no public download yet. Builds are shared directly with invited testers.
-            </p>
-          )}
-          <div className="dl-actions" data-reveal style={delay(160)}>
-            <a className="dl-pill" href="#all">
-              <span>{release ? 'All versions' : 'Who can use it'}</span>
-              <svg className="dl-icon" viewBox="0 0 16 16" aria-hidden="true">
-                <path
-                  d="M8 3v10m0 0-4-4m4 4 4-4"
-                  fill="none"
-                  stroke="currentColor"
-                  strokeWidth="1.5"
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                />
-              </svg>
-            </a>
-          </div>
-        </section>
-        <section className="dl-steps" aria-labelledby="steps-title">
-          <h2 id="steps-title" className="sr">
-            How to install
-          </h2>
-          <ol data-claim="dmg-install">
-            {steps.map(([Art, text], i) => (
-              <li key={i} data-reveal style={delay(i * 90)}>
-                <div className="dl-art" data-ui aria-hidden="true">
-                  <Art />
-                </div>
-                <p>{text}</p>
-              </li>
-            ))}
-          </ol>
-        </section>
-      </div>
-
-      <main className="dl-main">
-        <section className="dl-all" id="all" aria-labelledby="all-title">
-          <h2 id="all-title" data-reveal>
-            {release ? 'All versions' : 'Who can use it'}
-          </h2>
-          <p className="dl-all-lead" data-reveal style={delay(70)}>
-            {release ? (
-              <>
-                Aplos Mail {release.version}, released {released}.{' '}
-                <a href={release.notesUrl}>What’s new</a>
-              </>
-            ) : (
-              'No public release yet.'
-            )}
-          </p>
-          <div className="dl-platforms">
-            <article className="dl-platform" data-reveal style={delay(100)}>
-              <h3>Aplos Mail for Mac</h3>
-              <p data-claim="mac-chips macos-13">For {requires}</p>
-              {release && (
-                <div className="dl-files">
-                  {release.files.map(f => (
-                    <a
-                      key={f.target}
-                      className={`dl-file${f.target === found?.target ? ' is-yours' : ''}`}
-                      href={f.url}
-                      download
-                    >
-                      <DownloadIcon />
-                      <span>
-                        {f.label} <small>.dmg</small>
-                      </span>
-                      <small>{megabytes(f.size)}</small>
-                    </a>
-                  ))}
-                </div>
-              )}
-            </article>
-            <article className="dl-platform" data-reveal style={delay(170)}>
-              <h3>Gmail and Google Calendar</h3>
-              <p data-claim="gmail-invited-testers google-weekly-reconnect">
-                Available to invited testers. While Aplos Mail is in testing, Google lets only
-                listed test users sign in, and a sign-in lasts 7 days, so testers reconnect once a
-                week.
-              </p>
-            </article>
-          </div>
-        </section>
-      </main>
-      <Footer home="../" />
-    </>
+    <section className="dl-hero" aria-labelledby="dl-title" data-reveal>
+      <Logo size={64} />
+      <h1 id="dl-title">
+        {release ? 'Download Aplos Mail' : 'Aplos Mail is with invited testers'}
+      </h1>
+      {release ? (
+        <p className="dl-lead">
+          Aplos Mail {release.version} for Mac. It takes about a minute to install.
+        </p>
+      ) : (
+        <p className="dl-lead" data-claim="invited-testers-builds">
+          There is no public download yet. Builds are shared directly with invited testers.
+        </p>
+      )}
+      <a className="text-link text-link-strong dl-jump" href="#all">
+        {release ? 'All versions' : 'Who can use it'}
+        <ArrowDownIcon />
+      </a>
+    </section>
   );
 }
 
@@ -163,19 +61,117 @@ const steps: [() => React.ReactElement, React.ReactNode][] = [
   [
     DockArt,
     <>
-      Open the <b>Aplos Mail</b> disk image from your <b>Downloads</b> folder
+      Open the <b>Aplos Mail</b> disk image from your <b>Downloads</b> folder.
     </>,
   ],
   [
     DragArt,
     <>
-      Drag the <b>Aplos Mail</b> icon into your <b>Applications</b> folder
+      Drag the <b>Aplos Mail</b> icon into your <b>Applications</b> folder.
     </>,
   ],
   [
     FinderArt,
     <>
-      Open <b>Aplos Mail</b> from your <b>Applications</b> folder
+      Open <b>Aplos Mail</b> from your <b>Applications</b> folder.
     </>,
   ],
 ];
+
+function Steps() {
+  return (
+    <section className="dl-steps" aria-labelledby="steps-title">
+      <h2 id="steps-title" className="dl-section-title" data-reveal>
+        How to install
+      </h2>
+      <ol data-claim="dmg-install">
+        {steps.map(([Art, text], i) => (
+          <li key={i} data-reveal>
+            <div className="dl-art" aria-hidden="true">
+              <Art />
+            </div>
+            <p>
+              <span className="dl-step-number">{i + 1}</span>
+              <span>{text}</span>
+            </p>
+          </li>
+        ))}
+      </ol>
+    </section>
+  );
+}
+
+function Files({ files, found }: { files: Release['files']; found: Detected | null }) {
+  return (
+    <div className="dl-files">
+      {files.map(file => (
+        <a
+          key={file.target}
+          className={`dl-file${file.target === found?.target ? ' is-yours' : ''}`}
+          href={file.url}
+          download
+        >
+          <DownloadIcon />
+          <span>
+            {file.label} <small>.dmg</small>
+          </span>
+          <small>{megabytes(file.size)}</small>
+        </a>
+      ))}
+    </div>
+  );
+}
+
+function WhoCanUse({ found }: { found: Detected | null }) {
+  return (
+    <section className="dl-all" id="all" aria-labelledby="all-title">
+      <div className="dl-all-head" data-reveal>
+        <h2 id="all-title" className="dl-section-title">
+          {release ? 'All versions' : 'Who can use it'}
+        </h2>
+        <p className="dl-all-lead">
+          {release ? (
+            <>
+              Aplos Mail {release.version}, released {releasedOn(release.date)}.{' '}
+              <a href={release.notesUrl}>What’s new</a>
+            </>
+          ) : (
+            'No public release yet.'
+          )}
+        </p>
+      </div>
+      <div className="dl-columns">
+        <article data-reveal>
+          <h3>Aplos Mail for Mac</h3>
+          <p data-claim="mac-chips macos-13">For {requires}</p>
+          {release ? <Files files={release.files} found={found} /> : null}
+        </article>
+        <article data-reveal>
+          <h3>Gmail and Google Calendar</h3>
+          <p data-claim="gmail-invited-testers google-weekly-reconnect">
+            Available to invited testers. While Aplos Mail is in testing, Google lets only listed
+            test users sign in, and a sign-in lasts 7 days, so testers reconnect once a week.
+          </p>
+        </article>
+      </div>
+    </section>
+  );
+}
+
+export function Download() {
+  useReveal();
+  const found = useDetected();
+  return (
+    <div className="site">
+      <div className="page">
+        <Header home="../" />
+        <main className="dl">
+          <Intro />
+          <Steps />
+          <WhoCanUse found={found} />
+        </main>
+        <Footer home="../" />
+      </div>
+    </div>
+  );
+}
