@@ -55,6 +55,20 @@ test('CalendarGrid week: plans show "From mail", three overlaps show the first l
   assert.doesNotMatch(two, /\+\d/);
 });
 
+test('CalendarGrid week: an overlapped tile of 90 minutes or more is tall, so it keeps its time line', () => {
+  const out = html(
+    <CalendarGrid
+      {...gridProps({
+        events: [
+          ev('a', 'Long one', '2026-10-27T10:00:00', '2026-10-27T12:00:00'),
+          ev('b', 'Short one', '2026-10-27T10:30:00', '2026-10-27T11:30:00'),
+        ],
+      })}
+    />,
+  );
+  assert.equal((out.match(/data-tall="true"/g) ?? []).length, 1);
+});
+
 /** Elements the ↑ ↓ walk can land on in a render: those with a walk time and an id. */
 function walkables(markup: string): string[] {
   return [...markup.matchAll(/<[^>]*data-walk-at="[^"]*"[^>]*>/g)].map(

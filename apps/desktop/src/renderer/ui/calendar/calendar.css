@@ -746,7 +746,8 @@
 }
 
 /* Crowded lanes (overlapping entries share the column): the time line goes, so the name gets the whole tile and
-   stays readable instead of cutting at five characters. */
+   stays readable instead of cutting at five characters. A tile of 90 minutes or more has a line to spare, so it
+   keeps its time (cut with an ellipsis, never wrapped) and the title takes the lines left. */
 :is(
   .ui-event-block[data-crowded='true'],
   .ui-calendar-grid__slot[data-beside='true'] .ui-event-block
@@ -758,7 +759,7 @@
 :is(
     .ui-event-block[data-crowded='true'],
     .ui-calendar-grid__slot[data-beside='true'] .ui-event-block
-  )[data-density='full']
+  )[data-density='full']:not([data-tall='true'])
   .ui-event-block__title {
   -webkit-line-clamp: var(--title-lines-solo);
 }
@@ -766,7 +767,7 @@
 :is(
     .ui-event-block[data-crowded='true'],
     .ui-calendar-grid__slot[data-beside='true'] .ui-event-block
-  )[data-density='full']
+  )[data-density='full']:not([data-tall='true'])
   .ui-event-block__time {
   display: none;
 }

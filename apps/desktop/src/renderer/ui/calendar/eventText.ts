@@ -30,6 +30,9 @@ export function calVar(color: TagColor): string {
 /** How much a block can show: up to 30 minutes is the title alone on one full-width line, under an hour a title and time on one line. */
 export type BlockDensity = 'allday' | 'tiny' | 'one' | 'full';
 
+/** From this length a tile in a crowded lane has a line to spare below its title, so its time shows too. */
+export const TALL_MINUTES = 90;
+
 export function densityOf(event: CalendarEventData): BlockDensity {
   if (event.allDay) return 'allday';
   const minutes = minutesBetween(event.start, event.end);

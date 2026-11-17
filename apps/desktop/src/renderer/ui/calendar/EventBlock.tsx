@@ -1,8 +1,16 @@
 import { useContext } from 'react';
 import type { CSSProperties, KeyboardEvent } from 'react';
 import type { EventBlockProps } from '../props';
-import { rangeOf, timeOf } from './dates';
-import { calVar, densityOf, eventDomId, eventLabel, stackDomId, walkAt } from './eventText';
+import { minutesBetween, rangeOf, timeOf } from './dates';
+import {
+  calVar,
+  densityOf,
+  eventDomId,
+  eventLabel,
+  stackDomId,
+  TALL_MINUTES,
+  walkAt,
+} from './eventText';
 import { ActiveStack, FirstSegment } from './segment';
 
 /**
@@ -68,6 +76,11 @@ export function EventBlock(props: EventBlockProps) {
       data-selected={selected ? 'true' : 'false'}
       data-wide={placement.wide ? 'true' : 'false'}
       data-crowded={placement.lanes > 1 ? 'true' : undefined}
+      data-tall={
+        density === 'full' && minutesBetween(event.start, event.end) >= TALL_MINUTES
+          ? 'true'
+          : undefined
+      }
       data-unanswered={event.unanswered ? 'true' : undefined}
       data-locked={locked ? 'true' : undefined}
       aria-pressed={selected}
