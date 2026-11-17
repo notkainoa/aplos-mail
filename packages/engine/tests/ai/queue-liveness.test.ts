@@ -8,6 +8,7 @@ import { openStore } from '../../src/store';
 import { AiCallError, type AiChatRequest, type AiTransport } from '../../src/ai/host';
 import { runJobs } from '../../src/ai/impl/runner';
 import { queueSummary } from '../../src/ai/impl/jobs';
+import { RATE_LIMIT_MAX_MS, rateLimitWait } from '../../src/ai/impl/execute';
 import { CHAT_TIMEOUT_MS, LONG_CHAT_TIMEOUT_MS, meteredChat } from '../../src/ai/impl/runtime';
 import { ACCOUNT, accountWrite, folderWrites, msg, tempDb } from '../store/helpers';
 import { manualClock, silentDeadlines } from '../runtime.helpers';
@@ -141,8 +142,11 @@ test('a stalled provider call times the job out and the queue keeps draining', a
   const line = w.lines.find(l => l.event === 'ai.job.failed');
   assert.ok(line, 'a failed attempt logs — the card collapse is never silent');
   assert.equal(line!.data.attempt, 1);
-  // The placeholder stays: retryable work is still coming.
-  assert.equal((await threadSummary(w)).state, 'pending');
+  // The card collapses: the next try waits out a backoff, and "Summarizing…" shows only while really working.
+  assert.equal((await threadSummary(w)).state, 'failed');
+  // A wake while the job backs off does not raise the placeholder again.
+  queueSummary(w.engine.services, ACCOUNT, 'T-thread');
+  assert.equal((await threadSummary(w)).state, 'failed');
   // After the backoff the same queue takes the job again — a recovered provider lands the summary.
   w.engine.services.ai.useTransport(stubTransport({}));
   w.clock.advance(61_000);
@@ -415,4 +419,98 @@ test('a pending placeholder with older text goes stale, not empty, when AI is sw
   const row = await threadSummary(w);
   assert.equal(row.state, 'stale');
   assert.equal(row.text, 'Ada asked about the invoice.');
+});
+
+test('a rate limit pauses the queue: one 429, not every queued job burning its attempts (Home card repro)', async () => {
+  // The 2026-11-17 retest: Groq answered 429 and the runner kept claiming. Every due job spent an attempt in the
+  // same second, the backoffs stayed in lockstep, and the focus card sat on "Summarizing…" for hours.
+  const limited = stubTransport({ fail: new AiCallError('rateLimited', 'slow down', 90_000) });
+  const w = await world(limited);
+  seedMail(w);
+  const many = Array.from({ length: 12 }, (_, i) =>
+    msg(`n${i}`, `T-n${i}`, 10 + i, { subject: `Note ${i}`, snippet: 'A short note.' }),
+  );
+  w.engine.services.store.commit({ opId: 'more', origin: 'sync', writes: many });
+  await consentNow(w);
+  queueSummary(w.engine.services, ACCOUNT, 'T-thread');
+  for (let i = 0; i < 12; i++) queueSummary(w.engine.services, ACCOUNT, `T-n${i}`);
+  assert.equal((await threadSummary(w)).state, 'pending');
+  await runJobs(w.engine.services, w.clock.now());
+  // At most one round (CONCURRENCY) reached the provider before the whole queue paused.
+  assert.ok(limited.calls.length <= 2, `${limited.calls.length} calls under a rate limit`);
+  const rows = w.engine.services.store.read(q =>
+    q.all<{ state: string; attempts: number; next_at: number }>(
+      "SELECT state, attempts, next_at FROM jobs WHERE kind = 'summary'",
+    ),
+  );
+  assert.equal(rows.length, 13);
+  for (const r of rows) {
+    assert.equal(r.state, 'queued');
+    assert.equal(r.attempts, 0, 'a rate limit spends no attempt');
+    assert.ok(r.next_at >= w.clock.now() + 90_000, 'every row waits out the Retry-After');
+  }
+  // Nothing is working during the pause, so no card holds "Summarizing…" — and a wake does not raise it again.
+  assert.equal((await threadSummary(w)).state, 'failed');
+  queueSummary(w.engine.services, ACCOUNT, 'T-thread');
+  assert.equal((await threadSummary(w)).state, 'failed');
+  const line = w.lines.find(l => l.event === 'ai.job.failed');
+  assert.equal((line?.data.error as { reason?: string } | undefined)?.reason, 'ai.rateLimited');
+  // The window reopens: the queue drains and the Home card gets its summary.
+  w.engine.services.ai.useTransport(stubTransport({}));
+  w.clock.advance(91_000);
+  await runJobs(w.engine.services, w.clock.now());
+  assert.equal((await threadSummary(w)).state, 'ready');
+  assert.ok(jobsOf(w, 'summary').every(j => j.state === 'done'));
+});
+
+test('a rate limit pauses only its own feature, and a long Retry-After is capped', async () => {
+  // Only Summaries' provider is limited: the summary prompt gets a six-hour 429, anything else answers.
+  const base = stubTransport({});
+  const limited: AiTransport = {
+    ...base,
+    chat: req =>
+      String(req.messages[0]?.content).startsWith('Summarize')
+        ? Promise.reject(new AiCallError('rateLimited', 'quota', 6 * 3_600_000))
+        : base.chat(req),
+  };
+  const w = await world(limited);
+  seedMail(w);
+  await consentNow(w);
+  w.engine.services.store.commit({
+    opId: 'two',
+    origin: 'sync',
+    writes: [msg('t2', 'T-two', 7, { subject: 'Second', snippet: 'Second note.' })],
+  });
+  // Two summary jobs fill the round's two slots; the due plan job behind them is left to the next round.
+  queueSummary(w.engine.services, ACCOUNT, 'T-thread');
+  queueSummary(w.engine.services, ACCOUNT, 'T-two');
+  // A due job of another feature: a rate-limited Summaries must not hold it back.
+  w.engine.services.store.commit({
+    opId: 'other-feature',
+    origin: 'system',
+    writes: [
+      {
+        kind: 'job',
+        action: 'enqueue',
+        job: { kind: 'plan', key: 'plan:x', priority: 5, payload: '{}', nextAt: w.clock.now() },
+      },
+    ],
+  });
+  await runJobs(w.engine.services, w.clock.now());
+  const rows = w.engine.services.store.read(q =>
+    q.all<{ kind: string; next_at: number }>('SELECT kind, next_at FROM jobs ORDER BY id'),
+  );
+  const summary = rows.find(r => r.kind === 'summary')!;
+  assert.equal(
+    summary.next_at,
+    w.clock.now() + RATE_LIMIT_MAX_MS,
+    'six hours asked, fifteen minutes waited',
+  );
+  // The due plan job is not pushed to Summaries' window (a global pause used to defer it with everything else).
+  assert.ok(
+    rows.find(r => r.kind === 'plan')!.next_at <= w.clock.now(),
+    'Plans keeps its own schedule',
+  );
+  assert.equal(rateLimitWait(Number.NaN), 60_000);
+  assert.equal(rateLimitWait(Number.POSITIVE_INFINITY), 60_000);
 });
