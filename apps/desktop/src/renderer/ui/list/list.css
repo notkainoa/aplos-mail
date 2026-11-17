@@ -720,12 +720,20 @@
   flex: 1 1 auto;
 }
 .ui-list-row__primary[data-has-secondary='true'] {
+  /* One calm line: the subject at its own width (at most 60 % of the line, so the summary always keeps a share), then
+     the muted summary, which takes the rest and ends in an ellipsis (owner decision 2026-11-16). */
   flex: 0 1 auto;
-  max-width: 45%;
+  max-width: 60%;
 }
 .ui-list-row__secondary {
   flex: 1 1 0;
   color: var(--dim);
+}
+.ui-list-row__secondary::before {
+  /* The " · " between the subject and its summary; a pseudo-element, so the summary text stays clean for copy and
+     screen readers. */
+  content: '·' / '';
+  margin-inline-end: var(--space-2);
 }
 .ui-list-row__hit {
   /* Bold, a soft wash and a hairline underline in a reduced-strength accent (a full-strength one read like a link),
