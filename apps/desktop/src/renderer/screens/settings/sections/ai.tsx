@@ -15,6 +15,7 @@ import type { ProviderAction, ProviderId } from '../../../ui/props';
 import { Anchor, Group, Row, Select } from '../parts';
 import {
   aiNotices,
+  type AiNotice,
   backgroundLine,
   CAP_OPTIONS,
   capNote,
@@ -60,6 +61,27 @@ function moveFocusOffAccountMail(): void {
   accountMailFocusTarget(active.closest('.settings-content'))?.focus({ preventScroll: true });
 }
 
+/** One neutral setup line (never red: nothing failed), with Add key when a key is what is missing. */
+function AiNoticeLine({
+  notice,
+  onAddKey,
+}: {
+  readonly notice: AiNotice;
+  readonly onAddKey: (provider: string) => void;
+}) {
+  const provider = notice.addKeyFor;
+  return (
+    <div className="settings-notice" role="status">
+      <Text variant="small" tone="ink-2">
+        {notice.text}
+      </Text>
+      {provider ? (
+        <Button variant="text" size="sm" label="Add key" onPress={() => onAddKey(provider)} />
+      ) : null}
+    </div>
+  );
+}
+
 export function Ai({ data, view, actions }: SectionProps) {
   const { settings } = data;
   const devDetails = settings.ui.devDetails;
@@ -73,7 +95,11 @@ export function Ai({ data, view, actions }: SectionProps) {
   }
   const consent = consentView(data.consent, settings);
   const notices = aiNotices(settings, providers);
-  const features = featureRows(settings, providers, data.models ?? {});
+  const needKey = new Set(notices.flatMap(n => (n.addKeyFor ? (n.features ?? []) : [])));
+  const features = featureRows(settings, providers, data.models ?? {}).map(row => ({
+    ...row,
+    needsKey: needKey.has(row.feature),
+  }));
   const hosted = hostedRows(providers, view.testing, devDetails);
   const local = localRows(providers, settings, view.testing, devDetails).map(r => ({
     ...r,
@@ -96,13 +122,10 @@ export function Ai({ data, view, actions }: SectionProps) {
   return (
     <>
       {notices.map(n => (
-        <ErrorLine
+        <AiNoticeLine
           key={n.id}
-          kind="reason"
-          text={n.text}
-          retryable={false}
-          placement="settings"
-          onAction={() => {}}
+          notice={n}
+          onAddKey={provider => actions.openAddKey(provider as ProviderId, 'add')}
         />
       ))}
 

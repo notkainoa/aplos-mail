@@ -280,6 +280,7 @@ export function ProviderTable(props: ProviderTableProps): ReactNode {
               key={row.feature}
               id={id}
               label={copy.label}
+              meta={row.needsKey ? 'Needs a key' : undefined}
               description={copy.description}
               control={
                 <span className="ui-provider-table__pair">

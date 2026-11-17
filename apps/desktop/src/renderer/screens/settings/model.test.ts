@@ -597,3 +597,20 @@ test('modelNames: the catalogue name for an id, nothing for an id that is its ow
   assert.deepEqual({ ...names }, { 'openai/gpt-oss-120b': 'GPT-OSS 120B' });
   assert.deepEqual({ ...modelNames(undefined) }, {});
 });
+
+describe('one setup notice per blocking provider', () => {
+  test('five features on a provider with no key make one neutral line with Add key', () => {
+    const settings = baseSettings();
+    const mixed = providers().map(p =>
+      p.id === 'groq' ? { ...p, status: 'missingKey', keySource: 'none' } : p,
+    );
+    const notices = aiNotices(settings, mixed);
+    assert.equal(notices.length, 1);
+    assert.equal(notices[0]?.addKeyFor, 'groq');
+    assert.match(
+      notices[0]!.text,
+      /^Ask, Summaries, Drafts, Plans and Voice use Groq, which needs a key\.$/,
+    );
+    assert.deepEqual(notices[0]?.features, ['ask', 'summaries', 'drafts', 'plans', 'voice']);
+  });
+});

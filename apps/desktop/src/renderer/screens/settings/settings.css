@@ -103,6 +103,18 @@
   gap: var(--space-3);
 }
 
+/* A setup notice (Settings → AI): one calm line on --raised, never red, with its one quiet action. */
+.settings-notice {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3);
+  margin-bottom: var(--space-6);
+  padding: var(--space-2) var(--space-3);
+  border-radius: var(--radius-md);
+  background-color: var(--raised);
+}
+
 /* The queue inspector's way back. */
 .settings-back {
   padding: 0 0 var(--space-2);

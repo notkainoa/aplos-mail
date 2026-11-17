@@ -97,6 +97,8 @@ export type ProviderTableProps =
         provider: ProviderId;
         model: string;
         providerOptions: readonly ProviderId[];
+        /** The row's provider needs a key: a quiet "Needs a key" shows after the feature's name. */
+        needsKey?: boolean;
         modelOptions: readonly string[];
         /** Display names for model ids ("GPT-OSS 120B"), where the provider's catalogue has one; an id without one shows as it is. */
         modelNames?: Readonly<Record<string, string>>;
