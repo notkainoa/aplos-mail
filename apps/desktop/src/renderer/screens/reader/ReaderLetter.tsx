@@ -5,13 +5,14 @@
  * wanted letter lays itself out off paper and tells the reader when it is measured, and only then does it replace the
  * letter on paper (the no-blank-sheet double buffer, `letterController`).
  */
-import { useCallback, useEffect, useMemo, useState, type ReactNode } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { api, useAccounts, useMessageBody, useRow, type Message, type ThreadRow } from '../../data';
 import type { MailFrameKey, MailFrameReady } from '../../mailframe';
 import { useRegisterCommands, type CommandHandlerTable } from '../../shell';
 import { EmptyLine, ErrorLine } from '../../ui/list';
+import { senderOf, subjectOf } from '../home/homeRows';
 import type { SuggestedAction } from '../../ui/props';
-import { ReaderActions, ReaderHead, ReplyStub } from '../../ui/reader';
+import { LoadingLine, ReaderActions, ReaderHead, ReplyStub } from '../../ui/reader';
 import { FOLLOW_UP_VERB } from './readerActions';
 import { InlineReplyHost } from '../compose';
 import { EventOffers } from './EventOffer';
@@ -295,9 +296,26 @@ function Thread(props: BodyProps & { readonly row: NonNullable<LetterData['row']
   );
 }
 
+/**
+ * A letter on paper whose messages have not come yet (opened from search, or the next one after Done): the sender and
+ * the subject at once, and the quiet loading line in place of the body, so the screen is never blank and the keys act
+ * on the thread the header names.
+ */
+function LoadingHead({ row }: { readonly row: ThreadRow }) {
+  return (
+    <header className="aplos-reader__pending">
+      <h2 className="aplos-reader__pending-subject">{subjectOf(row)}</h2>
+      <p className="aplos-reader__pending-from">{senderOf(row)}</p>
+      <LoadingLine label={loadingLabel(row) ?? 'Loading this email…'} />
+    </header>
+  );
+}
+
 function Contents(props: BodyProps): ReactNode {
   const { data } = props;
   const row = data.row;
+  if (props.paper && data.status === 'loading' && data.messages.length === 0 && row)
+    return <LoadingHead row={row} />;
   if (data.status === 'missing') return <EmptyLine placement="pane" icon="mail" text={GONE_COPY} />;
   if (data.status === 'failed')
     return <ErrorLine kind="bodyFailed" placement="column" onAction={props.onRetry} />;
@@ -313,7 +331,24 @@ function LetterBody(props: ReaderLetterProps & { readonly onRetry: () => void })
     // The reader opened this thread: the engine completes a partial row and keeps its bodies (once per open).
     api.thread.open({ threadId }).catch(() => undefined);
   }, [threadId]);
+  useMarkReadOnPaper(paper, threadId, data.row?.unread === true);
   return <Contents {...props} data={data} onFrame={onFrame} />;
+}
+
+/**
+ * Opening a thread reads it, as in Gmail: the letter that comes on paper marks its thread read once. It is a quiet write
+ * (not on the undo stack, so Z still undoes the owner's own last action), and only once per letter, so a thread the owner
+ * marks unread while it is open is not read again behind their back.
+ */
+function useMarkReadOnPaper(paper: boolean, threadId: string, unread: boolean): void {
+  const done = useRef(false);
+  useEffect(() => {
+    if (!paper || !unread || done.current) return;
+    done.current = true;
+    api.thread
+      .act({ ids: [threadId], action: { type: 'read' }, quiet: true })
+      .receipt.catch(() => undefined);
+  }, [paper, unread, threadId]);
 }
 
 /** One letter, on paper or laying itself out off paper. */
