@@ -584,7 +584,9 @@
   min-width: 0;
   height: var(--control-sm);
   margin: 0 0 var(--space-1);
-  padding: 0 var(--space-3);
+  /* Left: the label starts on the rows' sender and the focus letter's text (24 px in). Right: the section's action ends on
+     the rows' dates (12 px in). One left and one right edge for every section header of every list. */
+  padding: 0 var(--space-3) 0 var(--space-6);
   color: var(--ink);
   font: var(--type-ui);
   letter-spacing: var(--track-ui);
@@ -623,7 +625,8 @@
 .ui-section-header__action {
   display: inline-flex;
   flex: none;
-  margin-right: calc(-1 * var(--space-2));
+  /* The button's own 12 px inset is the header's right edge: the words end where the rows' dates end. */
+  margin-right: calc(-1 * var(--space-3));
   margin-left: auto;
 }
 .ui-section-header__target + .ui-section-header__action {
@@ -999,6 +1002,11 @@
   /* The slot's own bottom margin is the card's air above the first row; sections stay a group gap apart. */
   margin: var(--space-2) 0 var(--space-5);
 }
+.ui-list-row + .ui-focus-slot {
+  /* The letter takes a row's place under the cursor: the 4 px the section header's margin gave the first one is the same
+     4 px here, so everything below keeps its y as the cursor walks (j/k) and never jumps. */
+  margin-top: var(--space-1);
+}
 .ui-focus-slot[data-density='roomy'] {
   height: var(--focus-letter-roomy);
 }
@@ -1012,7 +1020,8 @@
   display: flex;
   flex-direction: column;
   height: 100%;
-  padding: var(--space-5) var(--space-5) var(--space-4) var(--space-6);
+  /* 24 px left and 12 px right: the text starts where a row's sender starts and the date ends where a row's date ends. */
+  padding: var(--space-5) var(--space-3) var(--space-4) var(--space-6);
   /* The letter's own width decides which secondary parts the action row shows (see the container queries below). */
   container-type: inline-size;
   overflow: hidden;
