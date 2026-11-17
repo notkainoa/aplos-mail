@@ -8,7 +8,7 @@
  * is the owner's.
  */
 import { api, getNow, type Submission } from '../../../data';
-import { dismissToast, navigate, openCompose, pushToast } from '../../../shell';
+import { dismissToast, navigate, openCompose, openThread, pushToast } from '../../../shell';
 import { UNDO_ACTION } from '../../undoOperation';
 import { recipientPhrase } from '../model/recipients';
 import { SEND_COPY } from '../model/sendState';
@@ -51,11 +51,30 @@ function pushUndoRefused(id: string, message: string): void {
  * why.
  */
 export function undoSubmission(id: string, row?: Submission): void {
-  void api.submission.set({ action: { type: 'undo', submissionId: id } }).catch(error => {
-    const outcome = undoRefusalOutcome(refusalOf(error), row, getNow());
-    if (outcome.kind === 'alreadySent') pushAlreadySent(id);
-    if (outcome.kind === 'refused') pushUndoRefused(id, outcome.message);
-  });
+  void api.submission
+    .set({ action: { type: 'undo', submissionId: id } })
+    .then(() => reopenSend(row))
+    .catch(error => {
+      const outcome = undoRefusalOutcome(refusalOf(error), row, getNow());
+      if (outcome.kind === 'alreadySent') pushAlreadySent(id);
+      if (outcome.kind === 'refused') pushUndoRefused(id, outcome.message);
+    });
+}
+
+/**
+ * An Undo that came from the toast (no composer was showing the send) brings the writing back, as Gmail does, instead
+ * of leaving it in Drafts unseen: a reply opens its thread with the reply card on the draft; anything else opens the
+ * compose page on the draft.
+ */
+export function reopenSend(row: Pick<Submission, 'draftId' | 'threadId'> | undefined): void {
+  if (!row) return;
+  if (row.threadId) {
+    openThread(row.threadId, {
+      reply: { replyAll: false, dictate: false, nudge: false, draftId: row.draftId },
+    });
+    return;
+  }
+  openCompose({ draftId: row.draftId });
 }
 
 function unconfirmedToastId(key: string): string {

@@ -14,6 +14,8 @@ export interface ReplyRequest {
   readonly dictate: boolean;
   /** The dim text to offer: the Follow up nudge. */
   readonly suggest?: InlineReplyHostProps['suggest'];
+  /** Open on this draft (an Undo send handed it back). */
+  readonly draftId?: string;
 }
 
 /** The reply card a thread was opened for (R, ⇧R, hold R or the Follow up nudge on Home or one by one). */
@@ -21,9 +23,11 @@ export function replyRequestOf(reply: {
   readonly replyAll: boolean;
   readonly dictate: boolean;
   readonly nudge: boolean;
+  readonly draftId?: string;
 }): ReplyRequest {
-  const { replyAll, dictate, nudge } = reply;
-  return nudge ? { replyAll, dictate, suggest: { kind: 'followUp' } } : { replyAll, dictate };
+  const { replyAll, dictate, nudge, draftId } = reply;
+  const base: ReplyRequest = draftId ? { replyAll, dictate, draftId } : { replyAll, dictate };
+  return nudge ? { ...base, suggest: { kind: 'followUp' } } : base;
 }
 
 /** A plain R. */

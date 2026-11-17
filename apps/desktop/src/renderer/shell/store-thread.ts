@@ -25,6 +25,8 @@ export interface ThreadReply {
   readonly dictate: boolean;
   /** The Follow up nudge: the reply card starts with the dim nudge text. */
   readonly nudge: boolean;
+  /** An Undo send put this draft back: the card opens on it, whatever the drafts window already holds. */
+  readonly draftId?: string;
 }
 
 /** What a caller may say when it opens a thread. */

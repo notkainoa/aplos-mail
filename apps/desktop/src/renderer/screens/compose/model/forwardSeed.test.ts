@@ -6,7 +6,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import type { Message } from '../../../data';
-import { forwardSeed, forwardSubject } from './forwardSeed';
+import { forwardDate, forwardSeed, forwardSubject } from './forwardSeed';
 
 const message = {
   id: 'acct:m1',
@@ -39,4 +39,14 @@ test('a forward starts with nobody in To, a blank line to write on, and the quot
   assert.equal(context.mode, 'forward');
   assert.equal(context.replyToMessageId, 'acct:m1');
   assert.equal(context.threadId, undefined, 'a forward is not part of the original thread');
+});
+
+test('the forwarded Date line is in the owner’s zone, not UTC', () => {
+  assert.equal(
+    forwardDate(message.date, 'America/Los_Angeles'),
+    'Mon, Oct 26, 2026 at 8:30 AM PDT',
+  );
+  assert.equal(forwardDate(message.date, 'Pacific/Honolulu'), 'Mon, Oct 26, 2026 at 5:30 AM HST');
+  const { fields } = forwardSeed(message, 'Hi');
+  assert.match(fields.body, /\nDate: \w{3}, \w{3} \d{1,2}, 2026 at \d{1,2}:\d{2} [AP]M .+\n/);
 });

@@ -84,6 +84,7 @@ export function useSharedComposerProps(
           onShowCc={() => controls.setShowCc(true)}
           invalid={view.invalid}
           autoFocus={options.focusTo}
+          registerTyped={controls.registerTyped}
         />
       </>
     ),

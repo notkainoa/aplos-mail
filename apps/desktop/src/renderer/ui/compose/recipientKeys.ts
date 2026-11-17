@@ -1,8 +1,8 @@
 /**
  * What a key does in a recipient field, apart from React (DESIGN 7.6): Return picks the highlighted match or commits the
  * typed text, a comma or semicolon commits it, Backspace on empty text removes the last person. ⌘Return and Ctrl+Return
- * are the composer's send: with text typed they commit that text first (and the key goes no further, so the message
- * never leaves without the address just typed); with none typed they are left to the composer. They never pick a match.
+ * are the composer's send and always go on to it: the composer commits what is typed in its recipient fields as it sends,
+ * so the message never leaves without the address just typed. They never pick a match.
  */
 import type { Recipient } from '../props';
 
@@ -35,7 +35,7 @@ export function recipientKey(
   if (event.isComposing) return null;
   const typed = state.query.trim() !== '';
   if (event.key === 'Enter') {
-    if (event.metaKey || event.ctrlKey) return typed ? { type: 'commit' } : null;
+    if (event.metaKey || event.ctrlKey) return null;
     if (state.activeSuggestionId && state.open)
       return { type: 'pick', id: state.activeSuggestionId };
     return typed ? { type: 'commit' } : null;

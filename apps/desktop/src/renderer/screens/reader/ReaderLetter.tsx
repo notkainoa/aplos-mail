@@ -13,7 +13,7 @@ import { EmptyLine, ErrorLine } from '../../ui/list';
 import type { SuggestedAction } from '../../ui/props';
 import { ReaderActions, ReaderHead, ReplyStub } from '../../ui/reader';
 import { FOLLOW_UP_VERB } from './readerActions';
-import { InlineReplyHost } from '../compose';
+import { InlineReplyHost, PendingSent } from '../compose';
 import { EventOffers } from './EventOffer';
 import { FindBar } from './FindBar';
 import { HeadActions, type HeadControls } from './HeadActions';
@@ -174,6 +174,7 @@ function ReplyArea({
       messageId={messageId}
       replyAll={request.replyAll}
       dictate={request.dictate}
+      draftId={request.draftId}
       suggest={request.suggest}
       onClose={onClose}
       onOpenChange={onOpenChange}
@@ -263,6 +264,7 @@ function Thread(props: BodyProps & { readonly row: NonNullable<LetterData['row']
         <div className="aplos-reader__messages">
           {earlier.map(m => message(m, ui.cursor === m.id))}
           {message(latest, ui.cursor === latest.id)}
+          <PendingSent threadId={props.threadId} />
         </div>
         {/* The card has nothing above it (owner sketch 2026-11-10): its offers sit under it; the card-less column keeps them under the summary. */}
         {offers && props.cards !== 'off' ? offers : null}
