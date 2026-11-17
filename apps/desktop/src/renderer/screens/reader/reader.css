@@ -345,6 +345,9 @@
   flex: none;
   white-space: pre;
 }
+/* The details read like every other popover and menu (owner review of #548, 2026-11-17): the Popover's own --float
+   surface, radius, ring and 16 px padding with nothing added inside it, rows 8 px apart on a hairline like a menu's
+   separator, labels in the menu label's role (small 500, --dim) and values in `ui`. */
 .aplos-details {
   box-sizing: border-box;
   /* A long recipient list scrolls inside a popover that still fits under the To button, instead of filling the window
@@ -352,9 +355,7 @@
   max-height: 60vh;
   overflow-y: auto;
   overscroll-behavior: contain;
-  min-width: calc(var(--space-10) * 5);
-  max-width: min(calc(var(--space-10) * 7), 90vw);
-  padding: var(--space-1) var(--space-5);
+  min-width: var(--menu-min);
 }
 .aplos-details:focus-visible {
   /* Drawn inside: the popover scrolls and would clip a ring drawn outside it. */
@@ -366,15 +367,22 @@
   grid-template-columns: var(--space-9) minmax(0, 1fr);
   align-items: baseline;
   gap: var(--space-3);
-  padding: var(--space-3) 0;
+  padding: var(--space-2) 0;
+}
+.aplos-details__row:first-child {
+  padding-top: 0;
+}
+.aplos-details__row:last-child {
+  padding-bottom: 0;
 }
 .aplos-details__row + .aplos-details__row {
   box-shadow: 0 calc(-1 * var(--hairline)) 0 var(--line);
 }
 .aplos-details__label {
   color: var(--dim);
-  font: var(--type-ui);
-  letter-spacing: var(--track-ui);
+  font: var(--type-small);
+  font-weight: 500;
+  letter-spacing: var(--track-small);
 }
 .aplos-details__value {
   display: grid;
