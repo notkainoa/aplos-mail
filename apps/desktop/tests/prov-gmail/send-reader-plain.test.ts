@@ -54,7 +54,6 @@ test('an inline reply sent through the engine reads as a plain letter in the rea
       await until(() => w.get(submitted.id).state === 'sent');
       const [sent] = gmail.sentMessages();
       const html = htmlPart(sent.raw);
-      console.log('SENT-HTML', JSON.stringify(html));
       const result = render({ html, cids: [], imagePolicy: 'block' });
       assert.equal(result.bodyKind, 'html');
       assert.match(/<html[^>]*>/.exec(result.document)?.[0] ?? '', /data-aplos-plain/);
