@@ -26,8 +26,9 @@
 .aplos-shell[data-mac='true']:not([data-fullscreen='true']) {
   --traffic-center: 21px;
   --traffic-end: 75px;
-  /* The notch spans the dots, the toggle (a --space-2 gap after the last dot, 28 px wide) and the same right margin as before. */
-  --notch-w: 129px;
+  /* The notch spans the dots, the toggle and New message (a --space-2 gap after the last dot, two 28 px buttons 4 px
+     apart) and the same right margin as before. */
+  --notch-w: 161px;
 }
 
 /* Collapsed: the chrome strip sits across the top and the panes drop below it. */
@@ -113,6 +114,12 @@
 }
 .aplos-shell__strip > :not(svg) {
   -webkit-app-region: no-drag;
+}
+/* The toggle and New message sit together; the strip's absolute rule above places the pair, not each button. */
+.aplos-shell__strip-tools {
+  display: flex;
+  align-items: center;
+  gap: var(--space-1);
 }
 
 .aplos-sidebar {
