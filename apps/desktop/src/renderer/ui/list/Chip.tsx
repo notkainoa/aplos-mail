@@ -34,7 +34,7 @@ export function Chip(props: ChipProps) {
           data-source={due.source}
           title={dueTitle(due, found)}
         >
-          <Icon name="calendar" size="sm" />
+          <Icon name="clock" size="sm" />
           <span className="ui-chip__text">{formatDue(due.at, format)}</span>
         </span>
       );

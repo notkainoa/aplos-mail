@@ -58,6 +58,31 @@
 .aplos-list-column .ui-list-row__line {
   overflow: hidden;
 }
+
+/* Home keeps the edges it had before UI council 2 (owner review of #548, 2026-11-17): a 16 px lead column (the row's
+   sender sits 8 px right of the focus card's text), the 148 px Home sender column, labels 12 px in with their action
+   8 px from the right, the focus card's 20 px right inset and the Low band's label on the rows' sender. The keyboard
+   cursor's own rule (the card takes a row's place and nothing below moves, list.css) is kept. */
+.aplos-list-column[data-screen='home'] .ui-list-row {
+  grid-template-columns:
+    var(--space-4) minmax(var(--space-9), var(--ui-sender-w)) minmax(0, 1fr)
+    var(--ui-date-w);
+}
+.aplos-list-column[data-screen='home'] .ui-list-row__lead {
+  justify-content: center;
+}
+.aplos-list-column[data-screen='home'] .ui-section-header {
+  padding: 0 var(--space-3);
+}
+.aplos-list-column[data-screen='home'] .ui-section-header__action {
+  margin-right: calc(-1 * var(--space-2));
+}
+.aplos-list-column[data-screen='home'] .ui-focus-letter {
+  padding-right: var(--space-5);
+}
+.aplos-list-column[data-screen='home'] .ui-low-band {
+  padding-left: calc(var(--space-4) + var(--space-1) + var(--space-3));
+}
 .aplos-list-column .ui-list-row__meta > * {
   flex: none;
 }

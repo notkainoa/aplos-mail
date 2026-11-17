@@ -39,8 +39,17 @@ describe('ListRow', () => {
     assert.match(m, /aria-selected="true"/);
     assert.match(m, /data-unread="true" data-cursor="true"/);
     assert.match(m, /Unread\./);
-    assert.match(m, /data-kind="due"[^>]*>.*Due tomorrow/);
-    assert.match(m, /data-icon="calendar"/, 'a due date wears the calendar, never the Later clock');
+    assert.match(m, /data-kind="due"[^>]*>.*Tomorrow/);
+    assert.match(
+      m,
+      /data-kind="due"[^>]*><svg[^>]*data-icon="clock"/,
+      'the due chip wears its clock, as before',
+    );
+    assert.doesNotMatch(
+      m,
+      /ui-list-row__due/,
+      'the chip sits inline before the subject: no chip slot',
+    );
     assert.doesNotMatch(m, /ui-list-row__account|ui-list-row__dot|--swatch/, 'no dots on a row');
     assert.match(m, /title="alex@fernworks.studio"/, 'account always in the row tooltip');
   });
@@ -385,15 +394,6 @@ describe('FocusSlot and FocusLetter', () => {
     }
   });
 
-  test('the card keeps the bookmark and paperclip marks before the date', () => {
-    const m = render(<FocusLetter {...letter()} marks={{ bookmarked: true, attachment: true }} />);
-    assert.match(
-      m,
-      /ui-focus-letter__marks[\s\S]*title="Bookmarked"[\s\S]*title="Has attachments"[\s\S]*<time class="ui-focus-letter__date"/,
-    );
-    assert.doesNotMatch(render(<FocusLetter {...letter()} />), /ui-focus-letter__marks/);
-  });
-
   test('meta line, serif summary clamped to two lines, filled suggestion with Space, Later, Done, More', () => {
     const m = render(<FocusLetter {...letter()} />);
     assert.match(
@@ -405,10 +405,10 @@ describe('FocusSlot and FocusLetter', () => {
       /ui-focus-letter__sender" dir="auto" title="Jordan Park">Jordan Park</,
       'a name cut short in the card can still be read in full',
     );
-    assert.match(m, /data-kind="due"[^>]*>.*Due tomorrow/);
+    assert.match(m, /data-kind="due"[^>]*>.*Tomorrow/);
     assert.match(
       m,
-      /ui-focus-letter__sender" dir="auto" title="Jordan Park">Jordan Park<\/span><span class="ui-chip" data-kind="due"[\s\S]*Due tomorrow[\s\S]*<time class="ui-focus-letter__date"/,
+      /ui-focus-letter__sender" dir="auto" title="Jordan Park">Jordan Park<\/span><span class="ui-chip" data-kind="due"[\s\S]*Tomorrow[\s\S]*<time class="ui-focus-letter__date"/,
       'the chip sits on the sender line, right after the name',
     );
     assert.doesNotMatch(m, /ui-summary__lead/, 'nothing leads the summary on the card');

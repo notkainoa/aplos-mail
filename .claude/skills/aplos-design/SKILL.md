@@ -128,7 +128,7 @@ Rules:
   - Sidebar 232, transparent on the shell.
   - Pane inset 8 (`--shell-pad`), radius 12.
   - Pane header 48.
-  - List column `min(720px, 100% − 2 gutters)` (`--list-w`). Sender column 136, then one chip slot (120), then the subject, in every list including Home.
+  - List column `min(720px, 100% − 2 gutters)` (`--list-w`). Sender column 136 in lists, 148 on Home (`--sender-w-home`). The due chip (clock + "Tomorrow" / "Thu" / "Nov 4") sits inline before the subject; there is no chip column (owner review of #548, 2026-11-17). Home keeps its earlier edges: 16 px lead column, labels 12 px in, the focus card 20 px from the right.
   - Reader column 640 (`--reader-w`). The email sits in one card (subject top line, hairline, header row, body, attachments) by owner request 2026-11-10 (DESIGN §16); the summary stays big above it.
   - Composer page 640.
   - Ask dock 360 (320 under a 1180 px window, resizable 300–440).

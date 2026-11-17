@@ -201,8 +201,6 @@ export interface FocusLetterProps {
   due?: DueInfo;
   /** Relative date on the right. */
   date: IsoDateTime;
-  /** The row's own marks (bookmarked, attachment), kept when a row is promoted to the card. */
-  marks?: { replied?: boolean; bookmarked?: boolean; attachment?: boolean };
   /** Summary slot; clamped to two lines here. */
   summary: SummaryContent;
   /** The suggestion as the filled button with Space; Later and Done as text buttons; then ⋯. */
@@ -305,11 +303,11 @@ export interface CommitEdgeProps {
 /** Due, label, attachment and operator chips: 24 px, radius 6, `--raised`; overdue on `--stamp-tint`; pill only for operator tokens (DESIGN §6 Chip). Mockups: home.html, reader.html (due, attachments), later.html, search.html (operators). Plain + refines: ui-foundation; operator kind delegates to OperatorToken. */
 export type ChipProps =
   | {
-      /** A due date with a calendar icon; the clock belongs to Later and return times. */
+      /** A due date with a clock icon. */
       kind: 'due';
       /** The due date. */
       due: DueInfo;
-      /** 'short' = "Due tomorrow" / "Due Sat" / "Due Nov 4"; 'withTime' = "Today, 5:00 PM"; 'sentence' = "Due tomorrow" (reader). */
+      /** 'short' = "Tomorrow" / "Sat" / "Nov 4"; 'withTime' = "Today, 5:00 PM"; 'sentence' = "Due tomorrow" (reader). */
       format: 'short' | 'withTime' | 'sentence';
     }
   | {

@@ -64,13 +64,9 @@
 
 /* Search rows show the subject as the row's first cell and the muted snippet (or summary) beside it in --dim, so the two cells
    read as two things; each cell ellipsises only its own end. The subject keeps the list's weight (400 read, 500 unread).
-   Search is its own screen and its rows carry no due chip, so the chip slot Home and the places reserve collapses here and
-   the subject takes the room. What is left of the line is shared so the reason a row matched always stays on screen: the
+   What is left of the line is shared so the reason a row matched always stays on screen: the
    snippet starts a few words before the match (search.model: 14 characters, so lead, match and the cell's "…" fit the floor) and keeps a floor of 10 rem, and the subject gives way
    first. */
-.search-screen:not(:has(.ui-list-row__due)) .ui-list-row__line {
-  padding-left: 0;
-}
 .search-screen .ui-list-row__primary[data-has-secondary='true'] {
   flex: 0 1 auto;
   min-width: 8rem;

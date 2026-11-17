@@ -137,11 +137,7 @@ function RowLine({
         />
       ) : (
         <>
-          {due ? (
-            <span className="ui-list-row__due">
-              <Chip kind="due" due={due} format="short" />
-            </span>
-          ) : null}
+          {due ? <Chip kind="due" due={due} format="short" /> : null}
           {tag ? <span className="ui-list-row__tag">{tag}</span> : null}
           <span
             className="ui-list-row__primary"
@@ -173,7 +169,7 @@ const MARKS = [
 ] as const;
 
 /** Replied, bookmarked and attachment marks, in that order, each only when set. */
-export function RowMarks({ marks }: Pick<RowProps, 'marks'>) {
+function RowMarks({ marks }: Pick<RowProps, 'marks'>) {
   return (
     <>
       {MARKS.map(({ key, title, icon, word }) =>

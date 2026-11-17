@@ -232,6 +232,11 @@
   font-variant-numeric: tabular-nums;
   white-space: nowrap;
 }
+/* A due chip is as it was before UI council 2 (owner review of #548, 2026-11-17): no edge, the clock and the short words,
+   inline before the subject. */
+.ui-chip[data-kind='due'] {
+  box-shadow: none;
+}
 .ui-chip .ui-list-icon {
   color: var(--dim);
 }
@@ -680,8 +685,6 @@
 .ui-list-row {
   --ui-row-base: var(--canvas);
   --ui-sender-w: var(--sender-w);
-  /* The chip slot: wide enough for "Due yesterday", the same on every row of every list. */
-  --ui-due-slot: calc(var(--space-10) + var(--space-9) + var(--space-2));
   --ui-date-w: auto;
   --ui-actions: 0;
   box-sizing: border-box;
@@ -708,6 +711,9 @@
 }
 .ui-list-row[data-density='compact'] {
   height: var(--row-compact);
+}
+.ui-list-row[data-layout='home'] {
+  --ui-sender-w: var(--sender-w-home);
 }
 .ui-list-row[data-layout='done'] {
   /* Sized for the worst row: three marks, the check and a dated stamp ("Oct 22, 2025"). */
@@ -768,23 +774,6 @@
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-}
-/* One grid for every mail list (Home, All mail, Done, Drafts, Sent, Spam, Trash, Later, Bookmarks, search, the Low
-   sheet): the sender column, then ALWAYS one chip slot, then the subject. A row with a due chip fills the slot (the chip
-   hugging its words at the slot's leading edge); a row with none leaves it empty, so the subject starts at one x in
-   every place and never moves, whatever triage takes away. The slot fits "Due yesterday" whole: a chip is never cut. */
-.ui-list-row__due {
-  display: flex;
-  flex: none;
-  justify-content: flex-start;
-  width: var(--ui-due-slot);
-}
-.ui-list-row__line:not(:has(> .ui-list-row__due, > .ui-error-line)) {
-  padding-left: calc(var(--ui-due-slot) + var(--space-2));
-}
-.ui-chip[data-kind='due'] .ui-chip__text {
-  overflow: visible;
-  text-overflow: clip;
 }
 .ui-list-row__tag {
   flex: none;
@@ -1063,16 +1052,6 @@
   letter-spacing: var(--track-base);
   text-overflow: ellipsis;
   white-space: nowrap;
-}
-.ui-focus-letter__marks {
-  display: inline-flex;
-  flex: none;
-  align-items: center;
-  gap: var(--space-1);
-  margin-left: auto;
-}
-.ui-focus-letter__marks + .ui-focus-letter__date {
-  margin-left: 0;
 }
 .ui-focus-letter__date {
   flex: none;
