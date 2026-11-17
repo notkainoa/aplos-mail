@@ -2899,9 +2899,9 @@
       "kind": "nontext",
       "min": 3,
       "usage": "Text-field ring at rest",
-      "fgHex": "#3b3c3d",
+      "fgHex": "#323335",
       "bgHex": "#191a1c",
-      "fgRgb": [0.230431, 0.233725, 0.240941],
+      "fgRgb": [0.197333, 0.200784, 0.208157],
       "bgRgb": [0.098039, 0.101961, 0.109804],
       "exception": {
         "decision": "DESIGN decision 20",
