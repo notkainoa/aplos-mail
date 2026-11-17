@@ -436,10 +436,11 @@ test('AskDock: input is never disabled; working shows Stop; queued follow-ups ar
   clean(markup);
 });
 
-test('AskDock: no provider is one plain line and a link, never an alert', () => {
+test('AskDock: no provider is one sentence and one button in the body, a short line by the field, never an alert', () => {
   const markup = html(dock({ providerReady: false, empty }));
-  assert.match(text(markup), /Add an AI key to ask\./);
-  assert.match(markup, /<button[^>]*class="ui-ask-dock__link"[^>]*>Open Settings → AI/);
+  assert.match(text(markup), /Ask needs an AI key\..*Add an AI key to ask\./);
+  assert.equal(markup.match(/>Add a key</g)?.length, 1, 'one button, no second link');
+  assert.doesNotMatch(markup, /Open Settings/);
   assert.doesNotMatch(markup, /role="alert"|stamp|ui-ask-dock__empty/);
   assert.doesNotMatch(markup, /<textarea[^>]*disabled/, 'typing stays allowed');
   assert.match(markup, /<button[^>]*(disabled[^>]*aria-label="Ask"|aria-label="Ask"[^>]*disabled)/);

@@ -5,7 +5,6 @@
 /* Native control reset at zero specificity, so every rule below wins and no browser chrome shows through. */
 :where(
   .ui-ask-dock__tab,
-  .ui-ask-dock__link,
   .ui-ask-dock__input,
   .ui-ask-dock__queued-text,
   .ui-step-log__toggle,
@@ -175,7 +174,20 @@
   }
 }
 
-/* no provider: one plain line and a link above the field, never a red error */
+/* no provider: one plain sentence and one button in the empty body, a short line by the field, never a red error */
+.ui-ask-dock__setup {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: var(--space-2);
+  padding-top: var(--space-4);
+}
+.ui-ask-dock__setup-text {
+  margin: 0;
+  color: var(--ink-2);
+  font: var(--type-base);
+  letter-spacing: var(--track-base);
+}
 .ui-ask-dock__noprovider {
   display: flex;
   flex-wrap: wrap;
@@ -186,18 +198,6 @@
   color: var(--ink-2);
   font: var(--type-ui);
   letter-spacing: var(--track-ui);
-}
-.ui-ask-dock__link {
-  color: var(--accent);
-  font: var(--type-ui);
-  text-decoration: underline;
-  text-decoration-color: color-mix(in srgb, var(--accent) 40%, transparent);
-  text-decoration-thickness: 1px;
-  text-underline-offset: var(--space-half);
-}
-.ui-ask-dock__link:focus-visible {
-  outline: var(--focus-width) solid var(--accent);
-  outline-offset: var(--focus-gap);
 }
 
 /* queued follow-ups and the field */

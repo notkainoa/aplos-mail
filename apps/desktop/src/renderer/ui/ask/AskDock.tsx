@@ -222,10 +222,20 @@ function QueuedCard({
   );
 }
 
+/** With no provider the body says so once, with the one button that fixes it. */
+function SetupLine({ onOpenSettings }: { onOpenSettings: () => void }) {
+  return (
+    <div className="ui-ask-dock__setup">
+      <p className="ui-ask-dock__setup-text">Ask needs an AI key.</p>
+      <Btn variant="text" label="Add a key" onPress={() => onOpenSettings()} />
+    </div>
+  );
+}
+
 /** The queued cards and the field with its Stop and Ask buttons. */
 function DockFoot(props: AskDockProps & { activeOption: string | undefined; emptyId: string }) {
   const { value, onChange, onSubmit, working, onStop, queued, dictation, fieldRef } = props;
-  const { providerReady, onOpenSettings } = props;
+  const { providerReady } = props;
   const sendNowKeys = describeKeys('ask.sendNow');
   function onFieldKey(event: KeyboardEvent<HTMLTextAreaElement>) {
     if (event.nativeEvent.isComposing || event.key !== 'Enter' || event.shiftKey) return;
@@ -245,10 +255,7 @@ function DockFoot(props: AskDockProps & { activeOption: string | undefined; empt
       ))}
       {providerReady ? null : (
         <p className="ui-ask-dock__noprovider" role="status">
-          <span>Add an AI key to ask. </span>
-          <button type="button" className="ui-ask-dock__link" onClick={onOpenSettings}>
-            Open Settings → AI
-          </button>
+          Add an AI key to ask.
         </p>
       )}
       <div
@@ -346,6 +353,9 @@ export function AskDock(props: AskDockProps) {
         {tab === 'today' ? today : null}
         {tab === 'ask' && providerReady && conversation ? conversation : null}
         {showEmpty && empty ? <EmptyView empty={empty} listId={emptyId} /> : null}
+        {tab === 'ask' && !providerReady ? (
+          <SetupLine onOpenSettings={props.onOpenSettings} />
+        ) : null}
       </div>
       {tab === 'ask' ? <DockFoot {...props} activeOption={activeOption} emptyId={emptyId} /> : null}
     </aside>
