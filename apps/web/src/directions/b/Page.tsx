@@ -36,7 +36,7 @@ function Hero() {
       <Nav />
       <div className="b-hero-body b-wrap">
         <div className="b-hero-logo">
-          <Logo size={80} alt="Aplos Mail" />
+          <Logo size={96} alt="Aplos Mail" />
         </div>
         <h1 data-claim="home-focus">Finish your inbox, one email at a time.</h1>
         <p className="b-hero-sub" data-claim="gmail-google-calendar keyboard-first">
@@ -206,8 +206,8 @@ function Keyboard() {
       aside={<KeyGrid />}
     >
       <p data-claim="keyboard-first">
-        Space does the main thing for the email in front of you. The left arrow sends it to Later,
-        the right arrow marks it Done, and Z undoes the last move.
+        Space does the main thing for the email in front of you. The arrow keys sort it, and Z
+        undoes the last move.
       </p>
     </Feature>
   );
@@ -255,22 +255,22 @@ function Privacy() {
             chosen model.
           </p>
         </div>
+        <dl className="b-facts">
+          <div data-claim="local-models">
+            <dt>Run it locally</dt>
+            <dd>Ollama and LM Studio run on your Mac, so text sent to them stays there.</dd>
+          </div>
+          <div data-claim="keys-on-mac">
+            <dt>Your keys</dt>
+            <dd>Your AI keys stay on your Mac.</dd>
+          </div>
+          <div data-claim="no-aplos-server">
+            <dt>No middleman</dt>
+            <dd>No Aplos server ever sees your mail, calendar or sign‑in details.</dd>
+          </div>
+        </dl>
         <div className="b-privacy-side">
           <Providers />
-          <dl className="b-facts">
-            <div data-claim="local-models">
-              <dt>Run it locally</dt>
-              <dd>Ollama and LM Studio run on your Mac, so text sent to them stays there.</dd>
-            </div>
-            <div data-claim="keys-on-mac">
-              <dt>Your keys</dt>
-              <dd>Your AI keys stay on your Mac.</dd>
-            </div>
-            <div data-claim="no-aplos-server">
-              <dt>No middleman</dt>
-              <dd>No Aplos server ever sees your mail, calendar or sign-in details.</dd>
-            </div>
-          </dl>
         </div>
       </div>
     </section>
@@ -288,8 +288,8 @@ function Footer() {
         <p data-claim="mac-only">Independent software for Mac.</p>
       </div>
       <nav className="b-footer-links" aria-label="Footer">
-        <a href={download}>How to get it</a>
         <a href={privacy}>Privacy</a>
+        <a href={download}>How to get it</a>
       </nav>
     </footer>
   );

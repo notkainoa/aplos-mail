@@ -1707,16 +1707,17 @@ img {
   }
 }
 
-/* Round 5: contrast, one accent, one grid */
+/* Round 5: contrast and one grid */
 
+/* Mocks of the app use the app's own accent (ink blue), so they match the real app. */
 .mock-filled {
-  background: var(--brand);
-  color: var(--brand-ink);
+  background: var(--app-accent);
+  color: var(--app-accent-ink);
 }
 
 .kbd-on-fill {
-  background: color-mix(in srgb, #ffffff 20%, transparent);
-  color: #ffffff;
+  background: color-mix(in srgb, var(--app-accent-ink) 18%, transparent);
+  color: var(--app-accent-ink);
 }
 
 .hero {
