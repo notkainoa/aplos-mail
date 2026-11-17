@@ -114,7 +114,7 @@
     paused: `<div class="status-slot">${icon('pause')}<div>Google asked Aplos to slow down. Resuming at <b>2:14 PM</b>.<br><button class="btn btn-text xs">Retry now</button></div></div>`,
     offline: `<div class="status-slot">${icon('cloudoff')}<div>Offline. 2 changes waiting.</div></div>`,
     reconnect: `<div class="status-slot is-attn">${icon('alert')}<div><b>Google needs you to sign in again.</b><br><button class="btn btn-text xs btn-danger">Reconnect</button></div></div>`,
-    demo: `<div class="status-slot">${icon('mail')}<div>Demo mail · Remove in Settings</div></div>`,
+    demo: `<div class="status-slot">${icon('mail')}<div>Demo mail. Remove it in Settings.</div></div>`,
     firstmail: `<div class="status-slot">${icon('refresh')}<div style="flex:1">Reading your newest mail<br><b>24</b> of 50<div class="status-track" role="progressbar" aria-label="alex.moreno@gmail.com sync"><i></i></div></div></div>`,
   };
   const ACCTS = {

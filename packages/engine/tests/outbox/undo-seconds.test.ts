@@ -18,3 +18,16 @@ test('the countdown uses the Undo send setting, and the setting default (8) when
   assert.equal(storedUndoSeconds(storeWith(undefined)), 8, 'Settings → Mail shows 8 seconds');
   assert.equal(storedUndoSeconds(storeWith('not json')), 8);
 });
+
+test('a damaged Undo send setting never makes a bad window', () => {
+  const damaged = [
+    '',
+    '[]',
+    'null',
+    '5',
+    JSON.stringify({ mail: null }),
+    JSON.stringify({ mail: { undoSendSeconds: '20' } }),
+    JSON.stringify({ mail: { undoSendSeconds: null } }),
+  ];
+  for (const data of damaged) assert.equal(storedUndoSeconds(storeWith(data)), 8, data);
+});
