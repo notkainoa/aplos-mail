@@ -27,14 +27,16 @@ export interface ListEmptyProps {
 /** The line a list shows when it holds nothing, centred in the pane. */
 export function ListEmpty({ text, icon, detail, action, state }: ListEmptyProps) {
   if (state.settling) return <FirstSyncLine reason={state.reason} />;
-  // The same hierarchy as a search with no match: the sentence, a quieter hint, then one text action.
+  // The same hierarchy as a search with no match: the sentence, then one quiet text action.
   return (
     <EmptyLine
       placement="pane"
       text={text}
       icon={icon}
       detail={detail}
-      action={action ? { ...action, emphasis: 'text', onSelect: () => openCompose({}) } : undefined}
+      action={
+        action ? { ...action, emphasis: 'quiet', onSelect: () => openCompose({}) } : undefined
+      }
     />
   );
 }

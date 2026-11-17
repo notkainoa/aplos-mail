@@ -673,7 +673,7 @@ The Back from Later block uses the same order, below the new items. Rows in Do n
 - **Hover actions** overlay the date column and never reflow the row.
 - **Bulk select:** X, ⇧X, ⌘A. The pane header shows "3 selected · Done · Later · Trash · More · Esc". Bulk-picked rows take `--accent-wash`. Destructive bulk actions use a two-row confirm and give an 8 s undo.
 - **Per-mailbox details:** Drafts shows the edited time. Sent shows the recipients. Trash and Spam have Restore as their only quick action.
-- **Empty:** one line in the pane ("No drafts.", "Nothing sent yet.", "Trash is empty.", "Spam is empty."). This fixes the inconsistency where only Spam kept its header [V: baseline §6.6].
+- **Empty:** one line in the pane ("No drafts.", "Nothing sent yet.", "Trash is empty.", "Spam is empty."). Drafts adds one quiet text action under its line, "Write a message" (C), in `--dim`; the line itself is `--ink` (owner review of #548, 2026-11-17). This fixes the inconsistency where only Spam kept its header [V: baseline §6.6].
 - **Done** is the place for mail you finished.
   - Rows show a fixed stamp column: a quiet check named "Done" and the date as every other list writes it (time today, Yesterday, a weekday, then Oct 23), not "Done 9:41 AM" (2026-11-12 owner pass, #503; the real engine has no `done_at` yet, so the date is the last message date until it does). Rows group under the same date labels as All mail, and Drafts and Sent get date groups too. The only hover action is an icon-only "Move to Home" (H), placed to the left of the stamp so it never covers it.
   - E and L do nothing on done rows.
@@ -914,7 +914,7 @@ Each is one plain sentence plus at most one action. There is no icon in a circle
 | Later | "Nothing set aside for later." | none |
 | Bookmarks | "No bookmarks. Press B on any email." | none |
 | Done | "Nothing done yet." | none |
-| Drafts / Sent / Trash / Spam | "No drafts." / "Nothing sent yet." / "Trash is empty." / "Spam is empty." | none |
+| Drafts / Sent / Trash / Spam | "No drafts." / "Nothing sent yet." / "Trash is empty." / "Spam is empty." | Drafts: a quiet Write a message · C; the others none |
 | Search | "No mail matches 'dentist'." | Search all mail on Google · Return; without the offer, a quiet Clear search |
 | Ask | Suggestions + recent chats | n/a |
 | Calendar day | "Nothing scheduled." | New event · N |

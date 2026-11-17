@@ -93,7 +93,6 @@ export const DRAFTS_CONFIG: ListConfig = {
     view: { kind: 'drafts' },
     empty: 'No drafts',
     emptyIcon: 'file',
-    emptyDetail: 'Messages you start and leave are saved here',
     emptyAction: { label: 'Write a message', commandId: 'mail.compose' },
     hoverActions: [],
   }),

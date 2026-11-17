@@ -295,7 +295,7 @@ test('an empty list is one plain sentence centred in the pane, and first sync is
   const calm = { settling: false };
   for (const [config, line, icon] of [
     [ALL_CONFIG, 'No mail here yet', 'tray'],
-    [DRAFTS_CONFIG, 'No drafts Messages you start and leave are saved here', 'file'],
+    [DRAFTS_CONFIG, 'No drafts', 'file'],
     [SENT_CONFIG, 'Nothing sent yet', 'send'],
     [TRASH_CONFIG, 'Trash is empty', 'trash'],
     [SPAM_CONFIG, 'Spam is empty', 'spam'],
