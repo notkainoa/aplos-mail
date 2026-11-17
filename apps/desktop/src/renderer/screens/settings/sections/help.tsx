@@ -39,11 +39,11 @@ export function Help(props: SectionProps) {
         <Row
           section="help"
           anchor="showWelcome"
-          description="Go through the welcome steps again. Your mail and settings stay as they are."
+          description="Go through the onboarding again. Your mail and settings stay as they are."
           control={
             <Button
               variant="text"
-              label="Show welcome"
+              label="Replay"
               disabled={!host.showWelcome}
               onPress={() => actions.showWelcome()}
             />

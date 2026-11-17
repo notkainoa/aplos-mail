@@ -460,7 +460,12 @@ describe('states, copy and design rules', () => {
 
   test('Help: version line, queue inspector rows, diagnostics preview, welcome', () => {
     assert.match(render('help'), /Version 0\.3\.0 \(build dev\) · macOS/);
-    assert.match(render('help'), />Show welcome</);
+    assert.match(render('help'), />Replay</);
+    assert.match(render('help'), /Replay onboarding/);
+    assert.match(
+      render('help'),
+      /Go through the onboarding again\. Your mail and settings stay as they are\./,
+    );
     const q = render('queue-inspector');
     assert.match(q, /Archive 3 threads/);
     assert.match(q, />Retry</);
