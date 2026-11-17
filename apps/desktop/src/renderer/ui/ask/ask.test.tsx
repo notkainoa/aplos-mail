@@ -438,7 +438,7 @@ test('AskDock: input is never disabled; working shows Stop; queued follow-ups ar
 
 test('AskDock: no provider is one sentence and one button in the body, a disabled field that says why, never an alert', () => {
   const markup = html(dock({ providerReady: false, empty }));
-  assert.match(markup, /Ask needs an AI key\.[\s\S]*placeholder="Add a key to ask"/);
+  assert.match(markup, /Answers appear here\.[\s\S]*placeholder="Add a key to ask"/);
   assert.equal(markup.match(/>Add a key</g)?.length, 1, 'one button, no second link');
   assert.doesNotMatch(markup, /Open Settings/);
   assert.doesNotMatch(markup, /role="alert"|stamp|ui-ask-dock__empty/);

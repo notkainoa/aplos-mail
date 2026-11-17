@@ -115,10 +115,25 @@
   align-items: center;
   justify-content: space-between;
   gap: var(--space-3);
-  margin-bottom: var(--space-6);
+  margin-bottom: var(--space-3);
   padding: var(--space-2) var(--space-3);
   border-radius: var(--radius-md);
   background-color: var(--raised);
+}
+
+/* The notice's action is the same small outlined button every Settings row action wears. */
+.settings-notice .ui-button[data-variant='text'] {
+  --btn-h: var(--control-sm);
+  box-shadow: inset 0 0 0 var(--hairline) var(--line-strong);
+}
+
+/* An empty list says so in one quiet line under its setting, not as a row of its own. */
+.settings-note {
+  margin: 0;
+  padding: var(--space-1) var(--space-3) var(--space-3);
+  color: var(--dim);
+  font: var(--type-small);
+  letter-spacing: var(--track-small);
 }
 
 /* The queue inspector's way back. */

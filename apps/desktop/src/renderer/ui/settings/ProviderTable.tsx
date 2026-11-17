@@ -67,19 +67,22 @@ function StatusCell({ status }: { status: ProviderStatus }) {
   );
 }
 
-/** A quiet text button for a row action. A disabled one keeps its tooltip and says why, for screen readers too. */
+/** A small outlined button for a row action (the one style every Settings row action shares). A disabled one keeps its tooltip and says why, for screen readers too. */
 function RowButton({
   label,
   onClick,
   disabled,
   reason,
   aria,
+  danger,
 }: {
   label: string;
   onClick?: () => void;
   disabled?: boolean;
   reason?: string;
   aria?: string;
+  /** The quiet danger text (Remove): no outline, the danger colour. */
+  danger?: boolean;
 }) {
   const reasonId = useId();
   return (
@@ -87,6 +90,7 @@ function RowButton({
       <button
         type="button"
         className="ui-provider-table__button"
+        data-tone={danger ? 'danger' : undefined}
         aria-disabled={disabled ? true : undefined}
         aria-label={aria}
         aria-describedby={disabled && reason ? reasonId : undefined}
@@ -108,7 +112,7 @@ function removeReason(source: KeySource): string | undefined {
   return source.kind === 'environment' ? envKeyReason(source.variable) : undefined;
 }
 
-/** The actions of a keyed row: Test, then Replace key and Remove, or Add key when no key is set. */
+/** The actions of a keyed row: Test, then Replace key and Remove, or Add a key when no key is set. */
 function Actions({
   name,
   source,
@@ -137,8 +141,8 @@ function Actions({
           />
         ) : null}
         <RowButton
-          label="Add key"
-          aria={`Add key for ${name}`}
+          label="Add a key"
+          aria={`Add a key for ${name}`}
           onClick={() => onAction('addKey')}
         />
       </>
@@ -163,6 +167,7 @@ function Actions({
       {source.kind === 'local' ? null : (
         <RowButton
           label="Remove"
+          danger
           aria={`Remove key for ${name}`}
           disabled={Boolean(reason)}
           reason={reason}

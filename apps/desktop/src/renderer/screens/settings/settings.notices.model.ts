@@ -1,6 +1,6 @@
 /**
  * Settings → AI setup notices (DESIGN 9 rule 7): the quiet lines that say why a feature cannot answer. A provider that
- * needs a key says so once for every feature behind it, with Add key; red is kept for a key that was refused.
+ * needs a key says so once for every feature behind it, with Add a key; red is kept for a key that was refused.
  */
 import type { AiProvider, Settings } from '../../data';
 import type { AiFeature } from '../../ui/props';
@@ -16,7 +16,7 @@ import {
 export interface AiNotice {
   readonly id: string;
   readonly text: string;
-  /** The provider whose key the notice asks for: the notice then offers "Add key" for it. */
+  /** The provider whose key the notice asks for: the notice then offers "Add a key" for it. */
   readonly addKeyFor?: string;
   /** The features the notice speaks for, for a reader of the notice. */
   readonly features?: readonly AiFeature[];

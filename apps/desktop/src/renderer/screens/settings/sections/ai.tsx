@@ -61,7 +61,7 @@ function moveFocusOffAccountMail(): void {
   accountMailFocusTarget(active.closest('.settings-content'))?.focus({ preventScroll: true });
 }
 
-/** One neutral setup line (never red: nothing failed), with Add key when a key is what is missing. */
+/** One neutral setup line (never red: nothing failed), with Add a key when a key is what is missing. */
 function AiNoticeLine({
   notice,
   onAddKey,
@@ -76,7 +76,7 @@ function AiNoticeLine({
         {notice.text}
       </Text>
       {provider ? (
-        <Button variant="text" size="sm" label="Add key" onPress={() => onAddKey(provider)} />
+        <Button variant="text" size="sm" label="Add a key" onPress={() => onAddKey(provider)} />
       ) : null}
     </div>
   );
@@ -117,15 +117,15 @@ export function Ai({ data, view, actions }: SectionProps) {
 
   return (
     <>
-      {notices.map(n => (
-        <AiNoticeLine
-          key={n.id}
-          notice={n}
-          onAddKey={provider => actions.openAddKey(provider as ProviderId, 'add')}
-        />
-      ))}
-
       <Group id="set-ai-features" label="Features">
+        {notices.map(n => (
+          <AiNoticeLine
+            key={n.id}
+            notice={n}
+            onAddKey={provider => actions.openAddKey(provider as ProviderId, 'add')}
+          />
+        ))}
+
         {features.map(row => (
           <Anchor key={row.feature} section="ai" anchor={row.feature}>
             <ProviderTable

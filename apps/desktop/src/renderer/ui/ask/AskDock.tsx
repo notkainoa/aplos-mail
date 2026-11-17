@@ -1,4 +1,4 @@
-import { useEffect, useId, useRef } from 'react';
+import { useId, useRef } from 'react';
 import type { KeyboardEvent, PointerEvent } from 'react';
 import type { CSSProperties } from 'react';
 import type { AskDockProps, AskEmptyData } from '../props';
@@ -222,16 +222,17 @@ function QueuedCard({
   );
 }
 
-/** With no provider the body says so once, with the one button that fixes it. It takes focus when the panel opens. */
+/**
+ * With no provider the body says what Ask does and offers the one button that fixes it. The button never takes focus on
+ * its own (a ring on it read as stuck); the field and the send arrow are visibly off.
+ */
 function SetupLine({ onOpenSettings }: { onOpenSettings: () => void }) {
-  const button = useRef<HTMLButtonElement>(null);
-  useEffect(() => {
-    button.current?.focus();
-  }, []);
   return (
     <div className="ui-ask-dock__setup">
-      <p className="ui-ask-dock__setup-text">Ask needs an AI key.</p>
-      <Btn ref={button} variant="text" label="Add a key" onPress={() => onOpenSettings()} />
+      <p className="ui-ask-dock__setup-text">
+        Ask about your mail and calendar. Answers appear here.
+      </p>
+      <Btn variant="text" label="Add a key" onPress={() => onOpenSettings()} />
     </div>
   );
 }

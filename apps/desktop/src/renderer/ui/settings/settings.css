@@ -29,7 +29,9 @@
 .ui-setting-row__main,
 .ui-setting-row__toggle {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) var(--set-control);
+  /* The control takes what it needs (never less than its own words), so a description runs nearly the row's width
+     beside a switch and wraps only beside a wide picker (council 2, round 5). */
+  grid-template-columns: minmax(0, 1fr) auto;
   align-items: center;
   column-gap: var(--space-4);
   width: 100%;
@@ -377,12 +379,11 @@
 }
 
 .ui-provider-table__actions {
-  margin-right: calc(-1 * var(--space-2));
+  gap: var(--space-2);
 }
 
 .ui-provider-table__local-actions {
   gap: var(--space-2);
-  margin-right: calc(-1 * var(--space-2));
 }
 
 /* The address field, its status and Test share one line (no wrapped second line under the field). */
@@ -396,8 +397,10 @@
   display: inline-flex;
   align-items: center;
   height: var(--control-sm);
-  padding: 0 var(--space-2);
+  padding: 0 var(--space-3);
   border-radius: var(--radius-md);
+  /* The one small outlined button every row action wears (Add a key, Add account, Reset, Export, Preview). */
+  box-shadow: inset 0 0 0 var(--hairline) var(--line-strong);
   font: var(--type-ui);
   font-weight: 500;
   letter-spacing: var(--track-ui);
@@ -416,6 +419,15 @@
 }
 
 .ui-provider-table__button[aria-disabled='true'] {
+  box-shadow: inset 0 0 0 var(--hairline) var(--line);
+  color: var(--dim);
+}
+/* Remove is the quiet danger text beside the outlined actions, as it is on Accounts. */
+.ui-provider-table__button[data-tone='danger'] {
+  box-shadow: none;
+  color: var(--stamp-ink);
+}
+.ui-provider-table__button[data-tone='danger'][aria-disabled='true'] {
   color: var(--dim);
 }
 

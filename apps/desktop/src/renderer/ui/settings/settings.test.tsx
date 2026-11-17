@@ -289,13 +289,13 @@ test('ProviderTable hosted: Remove is disabled for an environment key, with the 
   );
 });
 
-test('ProviderTable hosted: no key offers "Add key"; a refused key adds a plain line with Replace key', () => {
+test('ProviderTable hosted: no key offers "Add a key"; a refused key adds a plain line with Replace key', () => {
   const out = html(<ProviderTable {...hosted()} />);
   const claude = out.slice(
     out.indexOf('data-provider="anthropic"'),
     out.indexOf('data-provider="openrouter"'),
   );
-  assert.match(claude, />Add key</);
+  assert.match(claude, />Add a key</);
   assert.doesNotMatch(claude, />Test</);
   assert.match(
     out,
@@ -369,7 +369,7 @@ test('ProviderTable local: address field with the default as placeholder, runnin
   assert.match(out, /On this Mac · running · no key needed/);
   assert.match(out, /On this Mac · no key needed/);
   assert.match(out, /Any OpenAI-compatible server · key optional/);
-  assert.match(out, />Add key</);
+  assert.match(out, />Add a key</);
   assert.match(out, /Works · 0\.1 s/);
   assert.match(out, /spellcheck="false"/i);
   assertCleanCopy(out);
