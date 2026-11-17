@@ -99,41 +99,72 @@ function decodeEntities(text: string): string {
 }
 
 /**
+ * Look-alike letters NFKC leaves alone, so a fake 'Αccount:' (Greek alpha) or 'ѕubject:'
+ * (Cyrillic dze) would slip the check unquoted. Groups below give, per ASCII letter the
+ * structure words use, the Greek and Cyrillic shapes that wear it; digit look-alikes already
+ * fold through NFKC. The check copy only — the provider still sees the original line.
+ */
+const CONFUSE = new Map(
+  (
+    'A:ΑА B:ΒВ C:ϹС E:ΕЕ F:Ϝ I:ΙІ J:Ј M:ΜМ N:Ν O:ΟО P:ΡР S:Ѕ T:ΤТ ' +
+    'a:αа b:Ьь c:ϲс e:εе f:ϝ i:ιі j:ϳј m:м n:ηп o:οо p:ρр r:г s:ѕς t:τт u:υμи'
+  )
+    .split(' ')
+    .flatMap(pair => [...pair.slice(2)].map(shape => [shape, pair.charAt(0)] as const)),
+);
+const CONFUSED = new RegExp(`[${[...CONFUSE.keys()].join('')}]`, 'g');
+
+/**
  * A line folded into the shape `FAKE_STRUCTURE` is checked against — for the CHECK only; the
  * provider always sees the original. Decode, fold, drop invisibles, twice: one pass leaves
  * `&amp;#91;` at `&#91;` and `&#xff3b;` at `［`; the second lands both on `[`.
  */
 function foldForCheck(line: string): string {
   let out = line;
-  for (let i = 0; i < 2; i++) out = decodeEntities(out).normalize('NFKC').replace(INVISIBLE, '');
+  for (let i = 0; i < 2; i++)
+    out = decodeEntities(out)
+      .normalize('NFKC')
+      .replace(INVISIBLE, '')
+      .replace(CONFUSED, c => CONFUSE.get(c) ?? c);
   return out;
 }
 
 /**
  * Owner addresses inside body text (a quoted-reply header, a signature) get the neutral label
- * too — including the `local+anything@domain` plus-tag form of an owner address. The boundary
- * counts `.x`, `-x` or `+x` after the domain as an address continuation (a longer token is a
- * different address and must not be mangled) but a sentence-ending `.`, `-` or `+` on its own
- * as a boundary.
+ * too — including the `local+anything@domain` plus-tag form of an owner address and an `@`
+ * hidden behind the encodings a tracking or unsubscribe link carries: `%40`, the
+ * double-encoded `%2540`, the entities `&#64;`/`&#x40;`, their `&amp;`-wrapped forms and
+ * `&commat;`. Percent escapes ahead of the local part (`%20owner%40…`) count as spacing, not
+ * address glue. The boundary counts `.x`, `-x` or `+x` after the domain as an address
+ * continuation (a longer token is a different address and must not be mangled) but a
+ * sentence-ending `.`, `-` or `+` on its own as a boundary.
  */
 function maskOwners(text: string, byAddress: Map<string, string>): string {
   let out = text;
   const esc = (s: string) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
   for (const [addr, label] of byAddress) {
     const at = addr.indexOf('@');
-    // An address without '@' is masked verbatim; otherwise its local+tag@domain forms too.
-    const rest = at < 0 ? '' : `(?:\\+[\\w.+-]*)?${esc(addr.slice(at))}`;
+    // An address without '@' is masked verbatim; otherwise its local+tag@domain forms too,
+    // with the '@' matched in raw and encoded spellings alike.
+    const rest =
+      at < 0
+        ? ''
+        : `(?:\\+[\\w.+-]*)?(?:@|%40|%2540|&commat;|&#0*64;|&#x0*40;|&amp;#0*64;|&amp;#x0*40;)${esc(addr.slice(at + 1))}`;
     const re = new RegExp(
-      `(?<![\\w.+-])${esc(at < 0 ? addr : addr.slice(0, at))}${rest}(?![\\w]|\\.[\\w-]|[+-][\\w.+-])`,
+      `(?<![\\w.+-])${at < 0 ? esc(addr) : `(?:%[0-9a-f]{2})*${esc(addr.slice(0, at))}`}${rest}(?![\\w]|\\.[\\w-]|[+-][\\w.+-])`,
       'gi',
     );
-    out = out.replace(re, label);
+    // `() =>`: the label is data — a display name holding '$&' must not reinsert the match.
+    out = out.replace(re, () => label);
   }
   return out;
 }
 
 function quoteText(text: string, owners: Map<string, string>): string {
+  // Mask BEFORE the cap: cutting raw text first could split an address and leak its fragment.
   return maskOwners(text.replace(LINE_BREAKS, '\n'), owners)
+    .slice(0, MAX_SOURCE_CHARS)
+    .trim()
     .split('\n')
     .map(l => (FAKE_STRUCTURE.test(foldForCheck(l)) ? `> ${l}` : l))
     .join('\n');
@@ -224,16 +255,18 @@ function findSources(
     if (seen.has(m.id) || out.length >= MAX_SOURCES) return;
     seen.add(m.id);
     const body = readBody(q, m.account_id, m.remote_id);
-    const text = (body?.text ?? (body?.html ? plain(body.html) : (m.snippet ?? '')))
-      .slice(0, MAX_SOURCE_CHARS)
-      .trim();
+    // Full text, not capped here: owner masking must run before the cut or a split address
+    // leaks its fragment. `quoteText` masks, then caps at MAX_SOURCE_CHARS.
+    const text = (body?.text ?? (body?.html ? plain(body.html) : (m.snippet ?? ''))).trim();
     out.push({
       n: out.length + 1,
       messageRowId: m.id,
       messageId: `${m.account_id}:${m.remote_id}`,
       threadId: `${m.account_id}:${m.remote_thread}`,
-      subject: (m.subject ?? '').replace(/\s+/g, ' ').slice(0, 500),
-      fromName: (m.from_name ?? m.from_addr ?? undefined)?.replace(/\s+/g, ' ').slice(0, 200),
+      subject: (m.subject ?? '').replace(LINE_BREAKS, ' ').replace(/\s+/g, ' '),
+      fromName: (m.from_name ?? m.from_addr ?? undefined)
+        ?.replace(LINE_BREAKS, ' ')
+        .replace(/\s+/g, ' '),
       fromAddr: (m.from_addr ?? undefined)?.replace(/\s+/g, ' ').slice(0, 200),
       accountId: m.account_id,
       date: m.internal_date,
@@ -360,13 +393,14 @@ function draftCtx(
   d:
     | { to?: { address: string }[]; cc?: { address: string }[]; subject?: string; html?: string }
     | undefined,
+  owners: Map<string, string>,
 ): string {
   if (!d) return '';
   const parts: string[] = [];
-  if (d.to?.length) parts.push(`To: ${d.to.map(a => a.address).join(', ')}`);
-  if (d.cc?.length) parts.push(`Cc: ${d.cc.map(a => a.address).join(', ')}`);
-  if (d.subject) parts.push(`Subject: ${d.subject}`);
-  const body = d.html ? plain(d.html).slice(0, 4_000) : '';
+  if (d.to?.length) parts.push(`To: ${d.to.map(a => maskOwners(a.address, owners)).join(', ')}`);
+  if (d.cc?.length) parts.push(`Cc: ${d.cc.map(a => maskOwners(a.address, owners)).join(', ')}`);
+  if (d.subject) parts.push(`Subject: ${maskOwners(d.subject, owners)}`);
+  const body = d.html ? maskOwners(plain(d.html), owners).slice(0, 4_000) : '';
   if (!parts.length && !body) return '';
   return `\n\nThe draft being written:\n${parts.join('\n')}${body ? `\n${body}` : ''}`;
 }
@@ -560,12 +594,15 @@ async function askRun(
     const { labels, byAddress } = accountLabels(accounts, allowed);
     const multi = new Set(sources.map(s => s.accountId)).size > 1;
     const quoted = sources
-      .map(
-        s =>
-          `[${s.n}]${multi ? ` Account: ${labels.get(s.accountId)!}` : ''}\nFrom: ${
-            (s.fromAddr && byAddress.get(s.fromAddr.toLowerCase())) ?? s.fromName ?? 'unknown'
-          }\nSubject: ${maskOwners(s.subject, byAddress)}\n\n${quoteText(s.text, byAddress)}`,
-      )
+      .map(s => {
+        // The From: line masks a display name too: 'owner@x via Eve' or a plus-tagged owner
+        // address lent to `fromName` would go out raw otherwise. Mask before the cap.
+        const from =
+          ((s.fromAddr && byAddress.get(s.fromAddr.toLowerCase())) ??
+            (s.fromName && maskOwners(s.fromName, byAddress).slice(0, 200))) ||
+          'unknown';
+        return `[${s.n}]${multi ? ` Account: ${labels.get(s.accountId)!}` : ''}\nFrom: ${from}\nSubject: ${maskOwners(s.subject, byAddress).slice(0, 500)}\n\n${quoteText(s.text, byAddress)}`;
+      })
       .join('\n\n---\n\n');
     const history = args.conversationId
       ? services.store.read(q =>
@@ -596,13 +633,18 @@ async function askRun(
       : [];
     const messages: AiChatMessage[] = [
       { role: 'system', content: ASK_SYSTEM },
+      // History and the question are provider-bound too: an owner address the user typed or a
+      // stored answer echoed back stays masked on replay.
       ...history.flatMap((t): AiChatMessage[] => [
-        { role: 'user', content: t.question },
-        { role: 'assistant', content: t.answer?.blocks.map(b => b.text).join('\n\n') ?? '' },
+        { role: 'user', content: maskOwners(t.question, byAddress) },
+        {
+          role: 'assistant',
+          content: t.answer?.blocks.map(b => maskOwners(b.text, byAddress)).join('\n\n') ?? '',
+        },
       ]),
       {
         role: 'user',
-        content: `${args.question}\n\nSources:\n${quoted || '(no matching mail found)'}${draftCtx(args.context?.draft)}${args.timeZone ? `\n\nThe reader's time zone: ${args.timeZone}.` : ''}`,
+        content: `${maskOwners(args.question, byAddress)}\n\nSources:\n${quoted || '(no matching mail found)'}${draftCtx(args.context?.draft, byAddress)}${args.timeZone ? `\n\nThe reader's time zone: ${args.timeZone}.` : ''}`,
       },
     ];
     const turnId = hexId(services.randomBytes, 'turn');
