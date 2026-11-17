@@ -99,6 +99,16 @@ export function screenPlace(screen: Screen): PlaceId | null {
   return found ?? null;
 }
 
+/**
+ * While the reader is open the place it was opened from (Home, Search, Later, a list) stays marked, quietly, so the sidebar
+ * still says where you are; the walk through Home's one-by-one view counts as Home. Null when nothing recorded where from.
+ */
+export function originPlace(screen: Screen, from: Screen | null): PlaceId | null {
+  if (typeof screen === 'string' || screen.label !== 'thread' || from === null) return null;
+  if (typeof from !== 'string' && from.label === 'one by one') return 'home';
+  return screenPlace(from);
+}
+
 /** The one place that is current: Help while Settings shows its Help section, so Settings and Help never both mark. */
 export function currentPlace(screen: Screen, section: SettingSection | null): PlaceId | null {
   if (screen === 'settings' && section === 'help') return 'help';

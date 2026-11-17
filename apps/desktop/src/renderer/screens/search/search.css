@@ -13,20 +13,20 @@
   margin-top: var(--space-3);
 }
 
-/* One left inset for the header: the field's icon, "Narrow with" and the section label all start on the label's 12 px
-   (the underline still runs the column's full width). */
+/* One left edge for the whole page, Home's: the field's icon, "Narrow with", the section label and the rows' text all start
+   24 px in (the underline still runs the column's full width). */
 .search-screen .ui-search-field__title,
 .search-screen .ui-search-field__meta {
-  padding-left: var(--space-3);
+  padding-left: var(--space-6);
 }
 /* and the scope label ends on the rows' date column (their 12 px right inset) */
 .search-screen .ui-search-field__meta {
   padding-right: var(--space-3);
 }
 
-/* The section label keeps the field header's 12 px inset: the icon, "Narrow with" and the label share one left edge here. */
+/* The section label keeps the page's one 24 px left edge, as Home's labels do (the header's own default). */
 .search-screen .ui-section-header {
-  padding-left: var(--space-3);
+  padding-left: var(--space-6);
 }
 
 /* No results: the line centres in what is left of the pane under the field (owner review 2026-11-05), the same
@@ -48,11 +48,12 @@
 .search-screen:has(> .search-screen__column > .ui-empty-line) > .search-screen__column {
   flex: 1 0 auto;
 }
-/* A no-match line sits under the field (80 px), where the eye already is, not in the middle of the pane. */
+/* A no-match line is centred in what is left of the pane under the field, like Drafts' (owner rule), not top-loaded. */
 .search-screen__column > .ui-empty-line {
-  flex: 0 0 auto;
+  flex: 1 0 auto;
   align-items: center;
-  padding: calc(var(--space-10) + var(--space-4)) var(--space-3) var(--space-6);
+  justify-content: center;
+  padding: var(--space-6) var(--space-3) var(--space-10);
   text-align: center;
 }
 .search-screen__column > .ui-empty-line .ui-empty-line__text {

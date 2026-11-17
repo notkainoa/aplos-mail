@@ -63,6 +63,8 @@ export interface ListRowProps {
   due?: DueInfo;
   /** 'later' layout only: when it comes back; replaces the date column with a 'laterUntil' Chip (DESIGN §7.3). */
   laterUntil?: LaterUntil;
+  /** The row sits under a date group header ("Today", "Yesterday"): a day the header names shows the time, not the word again. */
+  dayGrouped?: boolean;
   /** For 'done' layout: when it was finished, drawn as the date in the stamp column. */
   doneAt?: IsoDateTime;
   /** For 'done' layout: `doneAt` is the last message's date, not a finish time (the tooltip must not claim one). */

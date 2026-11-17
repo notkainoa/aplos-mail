@@ -38,18 +38,23 @@ export function Composer(props: ComposerProps) {
             {recipients}
           </div>
           {blocked?.field === 'to' ? blockedLine : null}
-          <input
-            className="ui-composer__subject"
-            type="text"
-            dir="auto"
-            aria-label="Subject"
-            placeholder="Subject"
-            value={subject}
-            data-blocked={outlined('subject')}
-            aria-invalid={blocked?.field === 'subject' ? true : undefined}
-            aria-describedby={blocked?.field === 'subject' ? blockedId : undefined}
-            onChange={event => onSubjectChange(event.target.value)}
-          />
+          <div className="ui-composer__subject-row">
+            <span className="ui-composer__subject-label" aria-hidden="true">
+              Subject
+            </span>
+            <input
+              className="ui-composer__subject"
+              type="text"
+              dir="auto"
+              aria-label="Subject"
+              placeholder="Subject"
+              value={subject}
+              data-blocked={outlined('subject')}
+              aria-invalid={blocked?.field === 'subject' ? true : undefined}
+              aria-describedby={blocked?.field === 'subject' ? blockedId : undefined}
+              onChange={event => onSubjectChange(event.target.value)}
+            />
+          </div>
           {blocked?.field === 'subject' ? blockedLine : null}
           {polish ? (
             <div className="ui-composer__polish" role="group" aria-label="Polish">

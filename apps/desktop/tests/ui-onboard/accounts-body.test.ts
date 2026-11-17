@@ -98,7 +98,7 @@ describe('AccountsStep keeps the OnboardingStep frame around the body', () => {
     assert.ok(html.includes('aria-label="Step 2 of 4"'));
     assert.ok(html.includes('Your accounts'));
     assert.ok(html.includes('Continue'));
-    assert.ok(html.includes('Add another account'));
+    assert.ok(html.includes('Add account'));
     assert.ok(html.includes('onb-account-a1'));
   });
 });

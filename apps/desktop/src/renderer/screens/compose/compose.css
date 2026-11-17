@@ -140,12 +140,26 @@
 .aplos-compose:not([data-cards='off']) .ui-composer__to {
   padding-top: var(--space-3);
 }
-.aplos-compose:not([data-cards='off']) .ui-composer__subject {
-  width: calc(100% - 2 * var(--space-6));
+.aplos-compose:not([data-cards='off']) .ui-composer__subject-row {
+  /* From, To and Subject share one label column and one value edge: the label, then the value, on the hairline's row. */
+  display: flex;
+  align-items: baseline;
+  gap: var(--space-2);
   margin-top: 0;
   padding-block: var(--space-3);
-  /* The text starts where From and To values do (the label's 40 px and the 8 px gap), not under the labels. */
-  padding-left: calc(var(--space-8) + var(--space-2));
+}
+.aplos-compose:not([data-cards='off']) .ui-composer__subject-label {
+  display: block;
+}
+.aplos-compose:not([data-cards='off']) .ui-composer__subject::placeholder {
+  /* The label says "Subject"; the empty field shows nothing beside it. */
+  color: transparent;
+}
+.aplos-compose:not([data-cards='off']) .ui-composer__subject {
+  flex: 1;
+  width: auto;
+  margin-top: 0;
+  padding-block: 0;
 }
 .aplos-compose:not([data-cards='off']) .ui-composer__editor {
   /* About 40 % of the pane's height, at least 200 px and at most 384, so the card reaches down the pane instead of
@@ -157,10 +171,17 @@
   margin-block: var(--space-6);
 }
 .aplos-compose[data-cards='a'] .ui-composer__to:not(:focus-within),
-.aplos-compose[data-cards='a'] .ui-composer__subject:not(:focus-visible) {
+.aplos-compose[data-cards='a']
+  .ui-composer__subject-row:not(:has(.ui-composer__subject:focus-visible)) {
   box-shadow: 0 var(--hairline) 0 var(--line);
 }
-.aplos-compose[data-cards='a'] .ui-composer__subject {
+.aplos-compose[data-cards='a'] .ui-composer__subject-row:has(.ui-composer__subject:focus-visible) {
+  box-shadow: 0 var(--hairline) 0 var(--accent);
+}
+.aplos-compose[data-cards='a'] .ui-composer__subject:focus-visible {
+  box-shadow: none;
+}
+.aplos-compose[data-cards='a'] .ui-composer__subject-row {
   margin-top: var(--space-1);
 }
 /* The footer is the card's last row: full card width, so its hairline runs edge to edge, with Send and the icons on the

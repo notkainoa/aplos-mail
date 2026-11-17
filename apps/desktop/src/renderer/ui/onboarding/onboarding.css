@@ -100,7 +100,7 @@
   border-radius: var(--radius-xs);
   background: var(--keycap);
   box-shadow: inset 0 0 0 var(--hairline) var(--line);
-  color: var(--dim);
+  color: var(--keycap-ink);
   font: var(--type-caption);
   letter-spacing: var(--track-caption);
 }
@@ -342,6 +342,12 @@
   font: var(--type-small);
   font-weight: 500;
   letter-spacing: var(--track-small);
+}
+
+/* A text button that ends the footer (Skip setup) ends where "Try demo mail" ends above it: one 24 px right margin for the words,
+   so the button's own 12 px padding hangs into the footer's inset. */
+.ui-onboarding-step__buttons > .ui-onb-button[data-variant='text']:last-child {
+  margin-right: calc(-1 * var(--space-3));
 }
 
 /* Four marks, one per step: the one you are on in ink, the ones behind you in --dim. */

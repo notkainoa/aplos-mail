@@ -79,13 +79,16 @@ function weekdayLong(d: Date): string {
   return d.toLocaleDateString(LOCALE, { weekday: 'long' });
 }
 
-/** The list date column: "10:00 AM" today, "Yesterday", "Tuesday" earlier this week, then "Oct 23", "Oct 23, 2025". */
-export function formatListDate(iso: IsoDateTime): string {
+/**
+ * The list date column: "10:00 AM" today, "Yesterday", "Tuesday" earlier this week, then "Oct 23", "Oct 23, 2025". Under
+ * a "Yesterday" group header (`inDayGroup`) the word would repeat the header, so the row shows its clock.
+ */
+export function formatListDate(iso: IsoDateTime, inDayGroup = false): string {
   const d = parse(iso);
   if (!d) return '';
   const off = dayOffset(d);
   if (off === 0) return formatTime(d);
-  if (off === -1) return 'Yesterday';
+  if (off === -1) return inDayGroup ? formatTime(d) : 'Yesterday';
   if (off === 1) return 'Tomorrow';
   if (earlierThisWeek(off)) return weekdayLong(d);
   return monthDay(d);

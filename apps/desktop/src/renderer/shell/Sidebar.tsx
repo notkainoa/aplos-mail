@@ -16,12 +16,19 @@ import {
   placeRoute,
   placeScreen,
   currentPlace,
+  originPlace,
   type Place,
   type PlaceId,
 } from './nav';
 import { handleRegionItemKey } from './regions';
 import { SidebarSlotView } from './SidebarSlotView';
-import { openRoute, useSettingsSection, useSidebarSlotValue, type Screen } from './index';
+import {
+  openRoute,
+  useOpenThreadContext,
+  useSettingsSection,
+  useSidebarSlotValue,
+  type Screen,
+} from './index';
 
 const MAIL_HEAD_ID = 'sidebar-mail';
 
@@ -95,7 +102,10 @@ export function Sidebar({
   accountSwitcher,
   status,
 }: SidebarProps) {
-  const selected = currentPlace(screen, useSettingsSection());
+  const { from } = useOpenThreadContext();
+  const current = currentPlace(screen, useSettingsSection());
+  const origin = current === null ? originPlace(screen, from) : null;
+  const selected = current ?? origin;
   const group = { counts, selected, onNavigate };
   const slot = useSidebarSlotValue();
   return (
@@ -103,6 +113,7 @@ export function Sidebar({
       className="aplos-sidebar"
       aria-label="Sidebar"
       data-region="sidebar"
+      data-origin={origin === null ? undefined : 'true'}
       onKeyDown={handleRegionItemKey}
     >
       <div className="aplos-sidebar__top">

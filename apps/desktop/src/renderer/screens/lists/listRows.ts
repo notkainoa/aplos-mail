@@ -264,7 +264,11 @@ function threadProps(row: ThreadRow, context: ListRowContext): UnpickedProps {
 
 /** Everything `ListRow` needs for one row of this list. */
 export function listRowPropsFor(row: ListRowData, context: ListRowContext): ListRowProps {
-  const picks = { picked: context.picked ?? false, picking: context.picking ?? false };
+  const picks = {
+    picked: context.picked ?? false,
+    picking: context.picking ?? false,
+    dayGrouped: context.config.dateGroups,
+  };
   if (isDraft(row)) return { ...draftProps(row, context), ...picks };
   if (isSubmission(row)) return { ...submissionProps(row, context), ...picks };
   return { ...threadProps(row, context), ...picks };

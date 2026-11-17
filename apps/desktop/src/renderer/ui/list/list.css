@@ -40,7 +40,7 @@
   border-radius: var(--radius-xs);
   background-color: var(--keycap);
   box-shadow: inset 0 0 0 var(--hairline) var(--line);
-  color: var(--dim);
+  color: var(--keycap-ink);
   font: var(--type-caption);
   letter-spacing: var(--track-caption);
 }
@@ -247,9 +247,10 @@
 .ui-list-row[data-layout='later'] .ui-list-row__line .ui-chip[data-overdue='true'] {
   background-color: var(--raised);
 }
-/* Later's return time is plain secondary text with its clock, right-aligned in one fixed-width column at the right,
-   so the subjects keep the same room on every row; the widest label ("Back Wed, Nov 18, 9:00 AM") fits whole. A
-   return is a fact about the row, not a tag on it, so it carries no chip fill; overdue turns it --stamp-ink. */
+/* Later's return time is plain secondary text with its clock, right-aligned at the row's right edge. The column takes the
+   width of its own words on every row (round 7: a fixed 176 px column left ~90 px empty while subjects truncated), so a
+   subject keeps all the room the date does not use. A return is a fact about the row, not a tag on it, so it carries no
+   chip fill; overdue turns it --stamp-ink. */
 .ui-list-row__back {
   display: contents;
 }
@@ -257,7 +258,6 @@
   display: flex;
   flex: none;
   justify-content: flex-end;
-  width: calc(var(--space-10) * 3 - var(--space-4));
 }
 .ui-list-row__back .ui-chip {
   padding: 0;
@@ -1423,7 +1423,8 @@
 .aplos-home-cleared__line,
 .aplos-home-cleared__detail {
   margin: 0;
-  padding-inline: var(--space-3);
+  /* The same edge as the section label and the rows' text: 24 px in, so the line never sits 12 px left of "Do now". */
+  padding-inline: var(--space-6) var(--space-3);
 }
 .aplos-home-cleared__line {
   margin-top: var(--space-4);

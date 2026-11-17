@@ -226,6 +226,10 @@
 .ui-thread-message__line[data-layout='card'] .ui-thread-message__when {
   margin-left: 0;
 }
+/* A list mail's header carries Unsubscribe too: the weekday goes first, so "to me" keeps its words (the tooltip has the full date). */
+.ui-thread-message__line[data-layout='card']:has(.aplos-unsubscribe) .ui-thread-message__when-day {
+  display: none;
+}
 .ui-thread-message__line[data-layout='card'] .ui-thread-message__from {
   font: var(--type-title);
   letter-spacing: var(--track-title);

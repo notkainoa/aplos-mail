@@ -31,7 +31,9 @@ export function UnsubscribeAction({ row }: { readonly row: ThreadRow }) {
   const sender = senderOf(row);
   return (
     <>
-      <Button variant="text" size="sm" label="Unsubscribe" onPress={() => setAsking(true)} />
+      <span className="aplos-unsubscribe">
+        <Button variant="text" size="sm" label="Unsubscribe" onPress={() => setAsking(true)} />
+      </span>
       {asking ? (
         <Confirm
           presentation="dialog"

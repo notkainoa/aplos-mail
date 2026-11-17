@@ -132,8 +132,8 @@ function useResize(size: number, onWidthChange: (width: number) => void) {
 }
 
 const TABS = [
-  { id: 'ask', label: 'Ask' },
-  { id: 'today', label: 'Today' },
+  { id: 'ask', label: 'Ask', hint: 'Ask about your mail and calendar' },
+  { id: 'today', label: 'Today', hint: "Today's events and the mail that needs you" },
 ] as const;
 
 /** The Ask | Today segmented control and the close button. */
@@ -164,6 +164,7 @@ function DockHead({
             role="tab"
             id={`${baseId}-tab-${item.id}`}
             className="ui-ask-dock__tab"
+            title={item.hint}
             aria-selected={tab === item.id}
             aria-controls={tab === item.id ? `${baseId}-panel` : undefined}
             tabIndex={tab === item.id ? 0 : -1}

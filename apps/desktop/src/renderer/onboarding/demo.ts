@@ -134,7 +134,7 @@ export const DEMO_NOTICE = {
 /** The zero-accounts state's two actions' labels (DESIGN 7.14; no-accounts in empty.html). */
 export const ZERO_ACCOUNTS = {
   text: 'Add an account to bring in your mail',
-  add: 'Add an account',
+  add: 'Add account',
   tryDemo: 'Try demo mail',
   /** Shown instead while a first sync runs (DESIGN 7.14; plan 30 §4.5 rows 8 and 10). */
   firstSync: 'Your first mail is on its way',

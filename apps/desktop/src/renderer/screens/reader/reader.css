@@ -296,6 +296,11 @@
   align-items: center;
   min-width: 0;
 }
+/* "to me" is never a bare chevron: the line keeps room for its label and the chevron, and 12 px before the bell. */
+.aplos-recipients {
+  min-width: calc(var(--space-9) + var(--space-5));
+  margin-right: var(--space-1);
+}
 /* But never the tail: with "and N more" the line keeps room for it and the chevron, and then the name gives way. */
 .aplos-recipients:has(.aplos-recipients__more) {
   min-width: calc(var(--space-10) + var(--space-7));

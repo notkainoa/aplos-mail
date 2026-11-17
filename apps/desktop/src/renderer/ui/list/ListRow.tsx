@@ -45,9 +45,11 @@ type RowProps = ListRowProps;
 function DoneStamp({
   doneAt,
   estimated,
+  dayGrouped,
 }: {
   doneAt: RowProps['doneAt'];
   estimated: RowProps['doneEstimated'];
+  dayGrouped: RowProps['dayGrouped'];
 }) {
   // Only a reported finish time may say "Done"; the fallback date is the last message's.
   const title = doneAt
@@ -60,7 +62,7 @@ function DoneStamp({
       <span role="img" aria-label="Done" className="ui-list-row__stamp-mark">
         <Icon name="check" size="sm" />
       </span>
-      {doneAt ? <time dateTime={doneAt}>{formatListDate(doneAt)}</time> : null}
+      {doneAt ? <time dateTime={doneAt}>{formatListDate(doneAt, dayGrouped)}</time> : null}
     </span>
   );
 }
@@ -72,12 +74,14 @@ function DateColumn({
   doneAt,
   doneEstimated,
   laterUntil,
+  dayGrouped,
   hideReturn,
-}: Pick<RowProps, 'layout' | 'date' | 'doneAt' | 'doneEstimated' | 'laterUntil'> & {
+}: Pick<RowProps, 'layout' | 'date' | 'doneAt' | 'doneEstimated' | 'laterUntil' | 'dayGrouped'> & {
   /** The row's due chip already says the day it comes back. */
   hideReturn?: boolean;
 }) {
-  if (layout === 'done') return <DoneStamp doneAt={doneAt} estimated={doneEstimated} />;
+  if (layout === 'done')
+    return <DoneStamp doneAt={doneAt} estimated={doneEstimated} dayGrouped={dayGrouped} />;
   if (layout === 'later' && hideReturn) return null;
   if (layout === 'later' && laterUntil)
     return (
@@ -87,7 +91,7 @@ function DateColumn({
     );
   return (
     <time className="ui-list-row__date" dateTime={date} title={formatFull(date)}>
-      {formatListDate(date)}
+      {formatListDate(date, dayGrouped)}
     </time>
   );
 }
@@ -163,7 +167,7 @@ function RowLine({
 }
 
 const MARKS = [
-  { key: 'replied', title: 'Replied', icon: 'reply', word: 'Replied.' },
+  { key: 'replied', title: 'You replied to this email', icon: 'reply', word: 'Replied.' },
   { key: 'bookmarked', title: 'Bookmarked', icon: 'bookmark', word: 'Bookmarked.' },
   { key: 'attachment', title: 'Has attachments', icon: 'paperclip', word: 'Has attachments.' },
 ] as const;
@@ -174,7 +178,7 @@ export function RowMarks({ marks }: Pick<RowProps, 'marks'>) {
     <>
       {MARKS.map(({ key, title, icon, word }) =>
         marks?.[key] ? (
-          <span key={key} className="ui-list-row__mark" title={title}>
+          <span key={key} className="ui-list-row__mark" title={title} aria-label={title} role="img">
             <Icon name={icon} size="sm" />
             <span className="ui-list-sr">{word}</span>
           </span>
@@ -306,6 +310,7 @@ export function ListRow(props: ListRowProps) {
           doneAt={props.doneAt}
           doneEstimated={props.doneEstimated}
           laterUntil={props.laterUntil}
+          dayGrouped={props.dayGrouped}
           hideReturn={returnsOnDeadline}
         />
         {/* Inside the meta cell so the overlay always covers the whole date column: no half glyph or chip. */}

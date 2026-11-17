@@ -99,7 +99,7 @@ function ImportanceMenu({ row, controls }: Pick<HeadActionsProps, 'row' | 'contr
         ref={menu.ref}
         variant="text"
         size="sm"
-        label={IMPORTANCE_LABEL[at]}
+        label={row.unsubscribe && at === 'low' ? 'Low' : IMPORTANCE_LABEL[at]}
         // The tooltip carries the key that moves the thread the other way: ⌥↓ from Important, ⌥↑ from Low importance.
         commandId={at === 'important' ? 'mail.laneDown' : 'mail.laneUp'}
         ariaLabel={`${IMPORTANCE_LABEL[at]}, change importance`}

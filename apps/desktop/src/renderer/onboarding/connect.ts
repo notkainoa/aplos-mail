@@ -285,7 +285,7 @@ export const ACCOUNTS_LABELS = {
   cancel: 'Cancel',
   tryAgain: 'Try again',
   continue: 'Continue',
-  addAnother: 'Add another account',
+  addAnother: 'Add account',
 } as const;
 
 /** DOM id of the address field. */

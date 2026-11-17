@@ -286,7 +286,7 @@ export function dashesFor(step: StepId): { step: number; of: number } | undefine
 
 /** The label of each step's filled main action, where the step has one fixed action. */
 export const MAIN_LABEL = {
-  welcome: 'Add an account',
+  welcome: 'Add account',
   permissions: 'Finish setup',
 } as const;
 
