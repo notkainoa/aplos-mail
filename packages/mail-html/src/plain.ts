@@ -23,10 +23,11 @@ const COLOUR_MARKERS = [
 
 /**
  * Properties that place text and never colour it: a style attribute made only of these keeps a mail plain. A quote's
- * `border-left` bar is allowed too (a hairline, and a reply's blockquote carries it).
+ * `border-left` bar is allowed too (a reply's blockquote carries it; the dark theme repaints a blockquote's bar and text, with
+ * `!important`, so an inline bar colour cannot stay black on the dark card).
  */
 const LAYOUT_PROPERTY =
-  /^(?:margin|padding)(?:-(?:top|right|bottom|left|inline|block)(?:-(?:start|end))?)?$|^(?:text-align|text-indent|direction|unicode-bidi|white-space|word-break|word-wrap|overflow-wrap|border-(?:left|top)(?:-(?:width|style))?)$/;
+  /^(?:margin|padding)(?:-(?:top|right|bottom|left|inline|block)(?:-(?:start|end))?)?$|^(?:text-align|text-indent|direction|unicode-bidi|white-space|word-break|word-wrap|overflow-wrap|border-left(?:-(?:width|style))?)$/;
 /** Never in a layout value: a URL, a script hook, a variable, an escape. */
 const UNSAFE_VALUE = /url\(|expression|var\(|!important|\\/i;
 
@@ -45,7 +46,7 @@ function layoutOnly(style: string): boolean {
 
 /** The markup with every colour-free `style` attribute taken out (a quote's margin, a paragraph's alignment). */
 function withoutLayoutStyles(html: string): string {
-  return html.replace(/ style="([^"]*)"/g, (whole, style: string) =>
+  return html.replace(/ style="([^"<>]*)"/g, (whole, style: string) =>
     layoutOnly(style) ? '' : whole,
   );
 }

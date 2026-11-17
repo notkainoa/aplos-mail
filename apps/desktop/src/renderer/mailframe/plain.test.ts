@@ -43,6 +43,9 @@ test('a style that only places text keeps a mail plain; one colour beside it doe
     plainOf('<p style="margin:0;background:url(https://example.com/a.png)">x</p>'),
     false,
   );
+  assert.equal(plainOf('<p style="border-top:1px solid #000">x</p>'), false);
+  // A literal style=" in the text must not hide the real markers that follow it.
+  assert.equal(plainOf('<p>see style="margin:0</p><p><font color="#000000">x</font></p>'), false);
 });
 
 test('a plain email paints the card’s own colours: paper in the light theme, the dark surface in the dark one', () => {

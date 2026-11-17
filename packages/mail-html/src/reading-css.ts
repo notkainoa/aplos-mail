@@ -84,7 +84,7 @@ const PLAIN_CSS = [
   `@media (prefers-color-scheme:dark){${PLAIN}{color-scheme:dark}`,
   `${PLAIN} body{background:${PLAIN_DARK.surface};color:${PLAIN_DARK.ink}}`,
   `${PLAIN} a{color:${PLAIN_DARK.accent}}`,
-  `${PLAIN} blockquote{border-left-color:${PLAIN_DARK.rule};color:${PLAIN_DARK.dim}}`,
+  `${PLAIN} blockquote{border-left-color:${PLAIN_DARK.rule}!important;color:${PLAIN_DARK.dim}}`,
   `${PLAIN} details.aplos-quote>summary{color:${PLAIN_DARK.dim}}`,
   `${PLAIN} details.aplos-quote>summary::before{background:${PLAIN_DARK.rule}}}`,
 ].join('\n');

@@ -64,6 +64,10 @@ describe('a plain email', () => {
       '<p style="margin:0;background-color:#eee">Hello</p>',
       '<p style="margin:0;background:url(https://example.com/a.png)">Hello</p>',
       '<p style="border-left:1px solid red;font-family:Georgia">Hello</p>',
+      '<p style="border-top:1px solid #000">Hello</p>',
+      // A literal style=" in the text must not hide the real markers that follow it.
+      '<p>see style="margin:0</p><p><font color="#000000">black</font></p>',
+      '<p>x style="margin:0</p><img src="https://example.com/a.png" alt="a">',
     ])
       assert.doesNotMatch(rootOf(documentOf(html)), new RegExp(PLAIN_ATTRIBUTE), html);
   });
