@@ -529,6 +529,7 @@ Every screen is built from these components in `src/renderer/ui/`. Screens never
   - Rows are 28 px with no gaps between them, and groups are 20 px apart. Selection uses the `slide` puck, and counts use `count`.
   - Counts: Home shows Do now plus Important updates; Later shows items whose date has arrived; Drafts shows the number of drafts. Counts hide during first sync.
   - There are no "Needs reply" or "Awaiting reply" places. Reply work lives on Home.
+- **Collapsed sidebar** (macOS, windowed): the pane rises to the top edge and a notch wraps the window buttons, the sidebar toggle and New message. The two buttons sit 4 px after the last window button (x 79 for buttons ending at 75), with no other blank space before them (owner review of #548, 2026-11-17).
 - **Minimised mode** (your setting) is a ☰ button top-left that opens a menu with the same items and puck. Navigation never moves into the pane header.
 - **Pane header (48 px).**
   - Left: on deeper views, back or close plus a quiet crumb, for example "Home 1 of 9". In the reader, once the summary has scrolled out of view, the crumb shows the subject instead.

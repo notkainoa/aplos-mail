@@ -311,10 +311,10 @@ export function ChromeNotch() {
  * --shell-pad + --pane-head (the notch's bottom meets the header's hairline). The path's 10 and 12 are the step and
  * pane corner radii (12 = --radius-lg).
  */
-export const NOTCH_W = 161;
+export const NOTCH_W = 157;
 export const NOTCH_H = 56;
-const NOTCH_EDGE = 'M161 8A10 10 0 0 0 151 18V32A12 12 0 0 1 139 44H20A12 12 0 0 0 8 56';
-const NOTCH_FILL = `M0 0H161V8${NOTCH_EDGE.slice('M161 8'.length)}H0Z`;
+const NOTCH_EDGE = 'M157 8A10 10 0 0 0 147 18V32A12 12 0 0 1 135 44H20A12 12 0 0 0 8 56';
+const NOTCH_FILL = `M0 0H157V8${NOTCH_EDGE.slice('M157 8'.length)}H0Z`;
 
 /** The shell's frame drawn from plain props: kept apart from the data hooks so the harness can draw any state. */
 export function ShellLayout(props: ShellLayoutProps) {

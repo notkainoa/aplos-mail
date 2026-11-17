@@ -26,9 +26,9 @@
 .aplos-shell[data-mac='true']:not([data-fullscreen='true']) {
   --traffic-center: 21px;
   --traffic-end: 75px;
-  /* The notch spans the dots, the toggle and New message (a --space-2 gap after the last dot, two 28 px buttons 4 px
+  /* The notch spans the dots, the toggle and New message (a --space-1 gap after the last dot, two 28 px buttons 4 px
      apart) and the same right margin as before. */
-  --notch-w: 161px;
+  --notch-w: 157px;
 }
 
 /* Collapsed: the chrome strip sits across the top and the panes drop below it. */
@@ -100,11 +100,12 @@
   stroke: var(--line);
   stroke-width: var(--hairline);
 }
-/* The toggle sits just after the last dot, on the dots' centre line. */
+/* The toggle sits just after the last dot, on the dots' centre line: no blank space before it beyond what clears the
+   window buttons (owner review of #548, 2026-11-17), a 4 px step so its hover fill never touches the last dot. */
 .aplos-shell[data-mac='true']:not([data-fullscreen='true']) .aplos-shell__strip > :not(svg) {
   position: absolute;
   top: calc(var(--traffic-center) - var(--control-sm) / 2);
-  left: calc(var(--traffic-end) + var(--space-2));
+  left: calc(var(--traffic-end) + var(--space-1));
 }
 /* The pane's header starts past the notch so a back button or crumb is never under it. */
 .aplos-shell[data-mac='true']:not([data-fullscreen='true'])[data-collapsed='true']
