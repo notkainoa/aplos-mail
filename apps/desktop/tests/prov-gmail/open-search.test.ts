@@ -106,6 +106,51 @@ test('prov-gmail-T35 D1 AM-1: threads.get full unless exactly one message is kno
   assert.ok(lanes.every(l => l === 'interactive'));
 });
 
+test('a reply that arrived after the count was stored is fetched too: a stale count of 1 opens the whole thread', async () => {
+  // The 2026-11-17 retest: an earlier open stored the thread's count as 1; the owner's reply then arrived by a bare
+  // history fetch, which never moves the count. Every open took the one-message path, fetched the original only, and
+  // the reply showed "Couldn't load this email." with a Try again that could never succeed.
+  const r = await rig();
+  const thread = seedThread(r, 2);
+  const known = (remoteId: string, minutes: number) => ({
+    remoteId,
+    remoteThreadId: thread.threadId,
+    to: [],
+    cc: [],
+    date: minutes,
+    internalDate: minutes,
+    flags: { seen: true, flagged: false, draft: false, fromMe: false },
+    placements: [{ folder: 'INBOX' }],
+    list: {},
+    partial: true,
+  });
+  r.store.commit(
+    { scope: 'window:inbox', lane: 'incremental', origin: 'baseline', trigger: 'first' },
+    {
+      upserts: [known(thread.ids[0], 1), known(thread.ids[1], 2)],
+      nextStates: [],
+      done: true,
+      costUnits: 0,
+    },
+    r.clock.now(),
+  );
+  const since = r.emu.log.length;
+  const opened = await r.adapter.openThread(
+    { remoteThreadId: thread.threadId, knownCount: 1 },
+    'interactive',
+    r.ctx(),
+  );
+  assert.deepEqual(
+    r.emu.log.slice(since).map(e => e.apiMethod),
+    ['gmail.users.threads.get'],
+  );
+  const reply = opened.messages.find(m => m.remoteId === thread.ids[1]);
+  assert.equal(reply?.body.text, 'Plain part 1.');
+  // The open also stores the true size, so the next open is right without this guard.
+  assert.equal(reply?.threadSize, 2);
+  assert.ok(!opened.removed?.length, 'nothing the device holds is removed');
+});
+
 test('prov-gmail-T34/T36 D15 an open resolves body parts held by attachment id in one batch, and lists attachments', async () => {
   const r = await rig();
   const thread = seedThread(r, 8, { htmlAsAttachment: true, draft: true });

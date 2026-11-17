@@ -24,6 +24,19 @@ const FULL_THREAD_FIELDS = `id,messages(${FULL_MESSAGE_FIELDS})`;
 
 type Opened = MessageFacts & { body: ProviderBody };
 
+/**
+ * The one message a `messages.get` open may fetch: only when the server's last count AND this device both say the
+ * thread holds exactly one. The stored count only moves on a `threads.get`, so a reply that arrived since (a bare
+ * history fetch, such as the owner's own send) leaves it at 1 while the device holds two; trusting it alone fetched
+ * `known[0]`, the original, forever, and the reply's body never arrived ("Couldn't load this email.").
+ */
+export function singleMessage(
+  ref: Pick<ThreadOpenRef, 'knownCount'>,
+  known: readonly { remoteId: string }[],
+): string | undefined {
+  return ref.knownCount === 1 && known.length === 1 ? known[0].remoteId : undefined;
+}
+
 export async function openThread(
   deps: GmailDeps,
   ref: ThreadOpenRef,
@@ -34,8 +47,8 @@ export async function openThread(
   const known = await ctx.lookup.threadMessages(ref.remoteThreadId);
   let messages: GmailMessage[];
   let threadSize: number | undefined;
+  const single = singleMessage(ref, known);
   try {
-    const single = ref.knownCount === 1 ? known[0]?.remoteId : undefined;
     if (single) {
       messages = [
         await client.call<GmailMessage>({
@@ -106,8 +119,7 @@ export async function openThread(
   });
 
   const present = new Set(messages.map(m => m.id));
-  const removed =
-    ref.knownCount === 1 ? [] : known.map(k => k.remoteId).filter(id => !present.has(id));
+  const removed = single ? [] : known.map(k => k.remoteId).filter(id => !present.has(id));
   return { messages: opened, ...(removed.length ? { removed } : {}), costUnits: client.spent };
 }
 
