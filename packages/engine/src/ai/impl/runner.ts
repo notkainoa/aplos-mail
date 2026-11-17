@@ -255,12 +255,16 @@ function failSummary(services: EngineServices, row: JobRow): void {
 }
 
 /**
- * AI-off means the card collapses, not "Summarizing…" forever: a `pending` placeholder whose work cannot run —
- * the Summaries gate closed for every account, or the row's own account kept out of AI — flips to `failed` (or
- * `stale` when it carried text), the same settle `failSummary` makes before the job could ever be attempted.
- * Bounded to `summaries` placeholders only; other features have none.
+ * Nothing coming means the card collapses, not "Summarizing…" forever: a `pending` placeholder flips to
+ * `failed` (or `stale` when it carried text), the same settle `failSummary` makes before a job could ever be
+ * attempted, whenever its work cannot run — the Summaries gate closed for every account, the row's own
+ * account kept out of AI, or the `summary:…` singleton-keyed job row gone entirely (orphan: `classify`
+ * shares that key, so one key check covers both kinds). `force` closes every placeholder — the queue's own
+ * pauses (spent day cap, open setup session) hold all due jobs past the card's patience, and a settled row
+ * re-queues when the pause lifts (catch-up and wake sentinels skip only `ready`). Bounded to `summaries`
+ * placeholders; other features have none.
  */
-function closePendingSummaries(services: EngineServices, now: number): void {
+function closePendingSummaries(services: EngineServices, now: number, force = false): void {
   const gateOff = backgroundGate(services, 'summaries').ok ? 0 : 1;
   const rows = services.store.read(q =>
     q.all<{
@@ -274,8 +278,16 @@ function closePendingSummaries(services: EngineServices, now: number): void {
       `SELECT t.account_id, t.remote_id, s.input_hash, s.model, s.text, s.action
        FROM summaries s JOIN threads t ON t.id = s.thread_id
        JOIN accounts a ON a.id = t.account_id
-       WHERE s.state = 'pending' AND (? = 1 OR a.ai_allowed != 1)
+       WHERE s.state = 'pending' AND (
+         ? = 1 OR ? = 1 OR a.ai_allowed != 1
+         OR NOT EXISTS (
+           SELECT 1 FROM jobs j
+           WHERE j.state IN ('queued','running','failed')
+             AND j.key = 'summary:' || t.account_id || ':' || t.remote_id || ':' || s.input_hash
+         )
+       )
        ORDER BY s.created_at LIMIT 200`,
+      force ? 1 : 0,
       gateOff,
     ),
   );
@@ -297,11 +309,18 @@ function closePendingSummaries(services: EngineServices, now: number): void {
 }
 
 /**
- * The release reasons that mean AI is off, not paused: no key, no provider, no AI on this build. The job keeps
- * its queue slot for the owner's fix, but the card's "nothing is coming" is already true — the subset of
- * `RELEASE_CODES` (execute.ts) that is an off state rather than a wait like `dailyLimit`/`gatePaused`.
+ * The release reasons whose card's "nothing is coming" is already true: no key, no provider, no AI on this
+ * build — and a spent day cap, which waits until tomorrow but holds the card on "Summarizing…" for the rest
+ * of today, so it settles the same way (the queue's own cap pause force-closes any placeholder it missed).
+ * `gatePaused` alone stays a real wait: a paused gate lifts in minutes, not overnight. The job keeps its
+ * queue slot either way — the subset of `RELEASE_CODES` (execute.ts) that collapses the placeholder now.
  */
-const AI_OFF_RELEASE: ReadonlySet<string> = new Set(['missingKey', 'unavailable', 'noProvider']);
+const AI_OFF_RELEASE: ReadonlySet<string> = new Set([
+  'missingKey',
+  'unavailable',
+  'noProvider',
+  'dailyLimit',
+]);
 
 const resetDone = new WeakSet<object>();
 /** The day a `budget_exhausted` event was last logged, per engine — a spent cap warns once, then sleeps till tomorrow. */
@@ -333,10 +352,16 @@ export async function runJobs(services: EngineServices, now: number): Promise<vo
     const rows = dueJobs(services, now, ROUND_LIMIT);
     if (!rows.length) return;
     // An open setup session means the backfill is still being composed — don't race it. Push the due rows out a
-    // minute (like the cap pause) so the timer loop sleeps instead of re-firing on rows that are still due.
-    if (setupSessionOpen()) return pauseDue(services, now, now + SETUP_RECHECK_MS);
-    // A spent daily cap pauses the queue until tomorrow, not fail-by-fail and not a 30-minute spin.
+    // minute (like the cap pause) so the timer loop sleeps instead of re-firing on rows that are still due —
+    // and a held placeholder settles first, since the session can stay open far past the card's patience.
+    if (setupSessionOpen()) {
+      closePendingSummaries(services, now, true);
+      return pauseDue(services, now, now + SETUP_RECHECK_MS);
+    }
+    // A spent daily cap pauses the queue until tomorrow, not fail-by-fail and not a 30-minute spin — and every
+    // held placeholder settles first: "Summarizing…" for the rest of the day reads as a hang, not a wait.
     if (!budgetOpen(services)) {
+      closePendingSummaries(services, now, true);
       const d = new Date(now);
       const day = `${d.getFullYear()}-${d.getMonth()}-${d.getDate()}`;
       if (budgetWarned.get(services) !== day) {
@@ -413,7 +438,7 @@ export async function runJobs(services: EngineServices, now: number): Promise<vo
           // A summary job that will not run again clears its `pending` placeholder to `failed` (a Home row
           // collapses); a retryable 'failed' attempt keeps it while the queue retries. So does a release for
           // an AI-off reason — the job stays queued for the owner's fix but nothing is coming now — while a
-          // release for a real wait (daily cap, gate pause) holds the placeholder.
+          // release for a short wait (a paused gate) holds the placeholder.
           if (
             (row.kind === 'summary' || row.kind === 'classify') &&
             (outcome.state === 'dead' ||
