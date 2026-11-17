@@ -287,8 +287,8 @@ test('E removes the thread at once, offers Undo on one toast, and the next threa
     assert.equal(state.open, second, 'the reader moved to the next thread of the list');
     assert.equal(
       controller.snapshot().letter,
-      first,
-      'the letter on paper stays until the next reports',
+      second,
+      'the thread that left is not kept on paper: the next one shows at once',
     );
     const toast = getToasts().find(t => t.kind === 'done');
     assert.ok(toast, 'a Done toast');
@@ -298,14 +298,6 @@ test('E removes the thread at once, offers Undo on one toast, and the next threa
       ['undo'],
     );
     assert.equal(state.left, 0, 'the list was not left: a thread is still open');
-    actions.done();
-    assert.equal(
-      getToasts().filter(t => t.kind === 'done').length,
-      1,
-      'a second E before the next letter is on paper does not Done the same thread twice',
-    );
-    controller.ready(second);
-    assert.equal(controller.snapshot().letter, second, 'and then the next letter is on paper');
     undoStack.undoLast();
     assert.ok(world.home.snapshot().ids.includes(first), 'Undo put it back');
     await world.flush();
@@ -493,7 +485,7 @@ test('an open reply replaces the stub and demotes the filled suggestion; closed,
   }
 });
 
-test('E, J, E before the next letter lands does not run Done on the thread that already left', async () => {
+test('E, J, E before the next letter lands: each E acts on the letter on paper, never the one that left', async () => {
   resetToasts();
   const world = await boot();
   try {
@@ -501,20 +493,16 @@ test('E, J, E before the next letter lands does not run Done on the thread that 
     const { deps, state, controller } = depsOver(world, ids[0]!, false);
     const actions = createReaderActions(deps);
     actions.done();
+    assert.equal(controller.snapshot().letter, ids[1], 'the next thread is on paper at once');
     actions.step('next');
     actions.done();
-    const first = getToasts().filter(t => t.kind === 'done');
-    assert.equal(
-      first.length,
-      1,
-      'the shown letter is still the one that left: nothing happens, nothing is cleared',
+    const doneToasts = getToasts().filter(t => t.kind === 'done');
+    assert.equal(doneToasts.length, 1, 'one triage slot: the second E replaced the first toast');
+    assert.ok(
+      state.gone.has(ids[0]!) && state.gone.has(ids[1]!),
+      'the second E took the thread on paper',
     );
-    assert.ok(state.gone.has(ids[0]!));
-    controller.ready(state.open);
-    actions.done();
-    const second = getToasts().filter(t => t.kind === 'done');
-    assert.equal(second.length, 1, 'one triage slot');
-    assert.notEqual(second[0]?.id, first[0]?.id, 'the next letter takes E once it lands');
+    assert.ok(!state.gone.has(ids[2]!), 'the thread J walked to is untouched');
     await world.flush();
   } finally {
     world.connection.close();

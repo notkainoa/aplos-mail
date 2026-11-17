@@ -20,17 +20,20 @@ function listOf(addresses: readonly Address[]): string {
   return addresses.map(nameOf).join(', ');
 }
 
-/** The header's time in the owner's zone and the app's date style: "Mon, Nov 16, 2026, 5:42 PM". */
-function dateOf(date: number): string {
-  const when = new Date(date);
-  const day = when.toLocaleDateString('en-US', {
+/** "Mon, Oct 26, 2026 at 8:30 AM PDT": the time in the owner's own zone (`timeZone` is for tests), never UTC. */
+export function forwardDate(date: number, timeZone?: string): string {
+  return new Intl.DateTimeFormat('en-US', {
     weekday: 'short',
     month: 'short',
     day: 'numeric',
     year: 'numeric',
-  });
-  const time = when.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' });
-  return `${day}, ${time}`.replace(/[\u202f\u00a0]/g, ' ');
+    hour: 'numeric',
+    minute: '2-digit',
+    timeZoneName: 'short',
+    ...(timeZone ? { timeZone } : {}),
+  })
+    .format(new Date(date))
+    .replace(/, (\d{1,2}:\d{2})/, ' at $1');
 }
 
 /** The line that opens the quoted original; the composer shows what follows it as its own quiet region. */
@@ -60,7 +63,7 @@ export function joinForward(note: string, quote: string): string {
 export function forwardHeader(message: Message): string {
   const lines: readonly (readonly [string, string])[] = [
     ['From', message.from ? nameOf(message.from) : ''],
-    ['Date', dateOf(message.date)],
+    ['Date', forwardDate(message.date)],
     ['Subject', message.subject],
     ['To', listOf(message.to)],
     ['Cc', listOf(message.cc)],

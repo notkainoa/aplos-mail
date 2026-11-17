@@ -4,7 +4,12 @@
 // window (the agenda state draws a 900 px window at either viewport); the window fills the stage otherwise.
 
 import type { ReactElement } from 'react';
-import { calendarStates } from '../../../apps/desktop/src/renderer/screens/calendar/CalendarStates';
+import {
+  calendarStates,
+  demoWorld,
+  FIXTURES,
+  PreviewCalendar,
+} from '../../../apps/desktop/src/renderer/screens/calendar/CalendarStates';
 import '../../../apps/desktop/src/renderer/screens/screens.css';
 
 function sceneOf(id: string): () => ReactElement {
@@ -18,6 +23,16 @@ function sceneOf(id: string): () => ReactElement {
   };
 }
 
-export const calendarScenes: Record<string, () => ReactElement> = Object.fromEntries(
-  Object.keys(calendarStates).map(id => [id, sceneOf(id)]),
-);
+/** N on an account whose grant only reads: the editor leads with Turn on editing and Save waits. */
+function ReadOnlyEditorScene(): ReactElement {
+  const fixture = {
+    ...FIXTURES['editor-new'],
+    accounts: [{ ...demoWorld.accounts[0], grantedScopes: [] }],
+  };
+  return <PreviewCalendar fixture={fixture} />;
+}
+
+export const calendarScenes: Record<string, () => ReactElement> = {
+  ...Object.fromEntries(Object.keys(calendarStates).map(id => [id, sceneOf(id)])),
+  'editor-new-turn-on-editing': ReadOnlyEditorScene,
+};

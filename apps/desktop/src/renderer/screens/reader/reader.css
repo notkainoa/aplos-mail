@@ -71,6 +71,25 @@
   margin-top: var(--space-6);
 }
 
+/* A letter on paper whose messages are still coming: who and what, then the quiet loading line (no skeleton). */
+.aplos-reader__pending {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  margin-top: var(--space-6);
+}
+.aplos-reader__pending-subject {
+  margin: 0;
+  color: var(--ink);
+  font: var(--type-title);
+  overflow-wrap: anywhere;
+}
+.aplos-reader__pending-from {
+  margin: 0;
+  color: var(--ink-2);
+  font: var(--type-ui);
+}
+
 /* Under the sheet by one step (12 px); the body's `p { margin: 0 }` would win over a bare class, so the selector names it. */
 .aplos-reader .ui-thread-message__body .aplos-reader__trackers {
   margin: var(--space-3) 0 0;

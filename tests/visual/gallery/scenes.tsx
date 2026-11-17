@@ -47,6 +47,7 @@ import { homeScenes } from './scenes.home';
 import { readerScenes } from './scenes.reader';
 import { crowdScenes } from './scenes.reader.crowd';
 import { calendarScenes } from './scenes.calendar';
+import { searchScenes } from './scenes.search';
 
 export const registry = createAppRegistry();
 
@@ -668,4 +669,5 @@ export const scenes: Record<string, () => ReactElement> = {
   ...crowdScenes,
   // ui-calendar
   ...calendarScenes,
+  ...searchScenes,
 };

@@ -35,6 +35,8 @@ export interface ReaderDeps {
   markGone(id: string, gone: boolean): void;
   /** Undo of Done, Later or Trash: brings the reader back to the thread, but only while the reader is still open. */
   reopen(id: string): void;
+  /** The thread on paper was read from Trash or Spam, so Restore applies (the ⋯ menu offers it, and so does the palette). */
+  restorable(): boolean;
   /** Esc, or no thread left: close the reader and show the screen it was opened from. */
   leave(): void;
   /** Closes find on the letter on paper when it is open; true when it was (Esc then has done its job). */
@@ -68,6 +70,8 @@ export interface ReaderActions {
   done(): void;
   later(): void;
   trash(): void;
+  /** A thread read from Trash or Spam goes back (to its lane, else the Inbox), leaving the reader like Done. */
+  restore(): void;
   bookmark(): void;
   /** U: marks an unread thread read (the reader stays on it); a read thread is marked unread and the reader returns to its list, like Gmail. */
   toggleRead(): void;
@@ -209,6 +213,13 @@ export function createReaderActions(deps: ReaderDeps): ReaderActions {
     leaveList(row, { type: 'trash' }, { kind: 'trash', message });
   }
 
+  function restore(): void {
+    const row = current();
+    if (!row || !deps.restorable()) return;
+    const message = deps.undoLabel('mail.restore', 'Restored');
+    leaveList(row, { type: 'restore' }, { kind: 'info', message });
+  }
+
   function bookmark(): void {
     const row = current();
     if (!row) return;
@@ -277,6 +288,7 @@ export function createReaderActions(deps: ReaderDeps): ReaderActions {
     done,
     later,
     trash,
+    restore,
     bookmark,
     toggleRead,
     forward,

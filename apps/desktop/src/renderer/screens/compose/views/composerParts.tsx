@@ -86,6 +86,7 @@ export function useSharedComposerProps(
           invalid={view.invalid}
           autoFocus={options.focusTo}
           blockedTo={view.blocked?.field === 'to' ? view.blocked : undefined}
+          registerTyped={controls.registerTyped}
         />
       </>
     ),

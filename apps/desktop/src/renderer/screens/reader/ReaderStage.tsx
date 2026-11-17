@@ -25,11 +25,12 @@ function ignore(_event: UiEvent): void {
   return undefined;
 }
 
-/** The wanted thread's card, with the previous one kept on paper until it is laid out. */
+/** The wanted thread's card; the thread before it is not kept on paper while this one loads. */
 export function ReaderStage({ open, controls }: ReaderStageProps) {
   const cards = useCardStyle(undefined);
   const controller = useLetterController();
-  const buffer = useLetterBuffer(controller, open);
+  // Every change of thread here is an action or a deliberate step: the next one shows at once, never the finished card.
+  const buffer = useLetterBuffer(controller, open, () => true);
   const shown = buffer.letter;
   const wantedRow = useRow('Thread', open);
   const [ui, send] = useReducer(reduceFor, freshUi(null));

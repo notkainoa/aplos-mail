@@ -16,7 +16,14 @@ import { ContractError } from '@aplos/contract/contract-error';
 import type { StandIn } from './data/standin';
 import type { ErrorBody, Frame, HomeSectionKey, WindowBody, WindowSection } from './data';
 import { EmptyLine, LowBand, SectionHeader } from './ui/list';
-import { useAccounts, useAccountsLoaded, useConnection, useCounts, useStatus } from './data';
+import {
+  useAccounts,
+  useAccountsLoaded,
+  useConnection,
+  useCounts,
+  useRow,
+  useStatus,
+} from './data';
 import { statusCopy } from './ui/status';
 import {
   closeCompose,
@@ -35,7 +42,7 @@ import { CalendarScreen } from './screens/calendar';
 import { LaterScreen } from './screens/later';
 import { ListScreen, type ListWhich, type OpenKind } from './screens/lists';
 import { DoneScreen } from './screens/done';
-import { ComposeScreen, composeHeader } from './screens/compose';
+import { ComposeScreen, composeCrumb, composeHeader } from './screens/compose';
 import { ReaderScreen } from './screens/reader';
 import { SearchScreen } from './screens/search';
 import { SettingsMount } from './shell/settingsHost';
@@ -334,15 +341,15 @@ function ListSlot({ which }: { readonly which: ListWhich }) {
 function ComposeSlot() {
   const request = useComposeRequest();
   const runCommand = useRunCommand();
-  const forwarding = request?.forward !== undefined;
+  const draft = useRow('Draft', request?.draftId);
+  const crumb = composeCrumb({
+    forward: request?.forward !== undefined,
+    draft,
+    draftId: request?.draftId,
+  });
   const part = useMemo(
-    () =>
-      composeHeader({
-        close: () => runCommand('compose.close'),
-        saved: false,
-        forward: forwarding,
-      }),
-    [runCommand, forwarding],
+    () => composeHeader({ close: () => runCommand('compose.close'), saved: false, crumb }),
+    [runCommand, crumb],
   );
   usePaneHeaderPart(part);
   if (!request) return null;

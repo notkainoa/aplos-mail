@@ -161,7 +161,7 @@ function demoteUndoToast(opId: string, toast: ToastWording): void {
 function editingNotice(ports: EffectPorts, accountId: string | undefined): void {
   pushToast({
     id: `editing:${accountId ?? 'unknown'}`,
-    kind: 'info',
+    kind: 'locked',
     message: EDITING_COPY.notice,
     // No account behind the write: the line alone — never an Enable editing that opens nothing (review7 8).
     ...(accountId === undefined
@@ -192,7 +192,7 @@ function editingNotice(ports: EffectPorts, accountId: string | undefined): void 
 function reconnectNotice(ports: EffectPorts, accountId: string | undefined): void {
   pushToast({
     id: `reconnect:${accountId ?? 'unknown'}`,
-    kind: 'info',
+    kind: 'locked',
     message: 'Sign in to Google again to change events.',
     ...(accountId === undefined
       ? {}
@@ -289,7 +289,8 @@ function opFailureToast(
 ): void {
   pushToast({
     id: `${opId}:failed`,
-    kind: 'info',
+    // A grant that must change first wears the lock, never the confirming check (a refused write is not a success).
+    kind: failure.enableEditing === true || failure.reconnect === true ? 'locked' : 'info',
     message: failure.message,
     actions: [
       ...(failure.reconnect === true && accountId !== undefined

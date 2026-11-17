@@ -28,6 +28,8 @@ export interface RecipientRowsProps {
   readonly autoFocus?: boolean;
   /** The send block on the To row (a new object each press): the To field takes focus so the line has its place. */
   readonly blockedTo?: object | undefined;
+  /** Each row hands over its "commit what is typed", for the composer's send. */
+  readonly registerTyped?: (commit: () => void) => () => void;
   /** Asks for suggestions; the running app uses `Contact/suggest`, a test passes its own. */
   readonly suggest?: SuggestFn;
 }
@@ -42,6 +44,7 @@ function OneRow(props: {
   readonly ccButton?: { onSelect: () => void; commandId: string };
   readonly autoFocus?: boolean;
   readonly blockedTo?: object | undefined;
+  readonly registerTyped?: (commit: () => void) => () => void;
 }) {
   const box = useRef<HTMLDivElement>(null);
   useEffect(() => {
@@ -67,6 +70,22 @@ function OneRow(props: {
     props.onChange(addRecipients(props.recipients, text));
     reset();
   };
+  // The newest query and rows, read when a send asks for the typed text (not the render it was registered in).
+  const latest = useRef({ query, recipients: props.recipients, onChange: props.onChange, reset });
+  latest.current = { query, recipients: props.recipients, onChange: props.onChange, reset };
+  const { registerTyped } = props;
+  useEffect(
+    () =>
+      registerTyped?.(() => {
+        const now = latest.current;
+        if (now.query.trim() === '') return;
+        const next = addRecipients(now.recipients, now.query);
+        // The text is a chip now (or a duplicate of one): the field is empty, so a refused send does not re-commit it.
+        now.reset();
+        if (next !== now.recipients) now.onChange(next);
+      }),
+    [registerTyped],
+  );
   const pick = (id: string) => {
     const person = list.find(r => r.id === id);
     if (!person) return;
@@ -126,6 +145,7 @@ export function RecipientRows({
   invalid,
   autoFocus,
   blockedTo,
+  registerTyped,
   suggest = contactSuggest,
 }: RecipientRowsProps) {
   const ccButton = showCc ? undefined : { onSelect: onShowCc, commandId: 'compose.ccBcc' };
@@ -141,6 +161,7 @@ export function RecipientRows({
         ccButton={ccButton}
         autoFocus={autoFocus}
         blockedTo={blockedTo}
+        registerTyped={registerTyped}
       />
       {showCc ? (
         <>
@@ -151,6 +172,7 @@ export function RecipientRows({
             recipients={fields.cc}
             onChange={cc => onChange({ cc })}
             invalid={invalid}
+            registerTyped={registerTyped}
           />
           <OneRow
             row="bcc"
@@ -159,6 +181,7 @@ export function RecipientRows({
             recipients={fields.bcc}
             onChange={bcc => onChange({ bcc })}
             invalid={invalid}
+            registerTyped={registerTyped}
           />
         </>
       ) : null}

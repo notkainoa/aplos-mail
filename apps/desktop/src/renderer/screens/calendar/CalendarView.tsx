@@ -567,7 +567,11 @@ function EventEditor({
   const calendarRef = useRef<HTMLButtonElement | null>(null);
   const titleProblem = draft.error === 'Give the event a title.' ? draft.error : undefined;
   const otherProblem = draft.error && !titleProblem ? draft.error : undefined;
-  const save = () => dispatch({ type: 'editorSave' });
+  // Editing off for this calendar's account: the note at the top says so and Save waits (no refusal after the form).
+  const locked = editor.editing !== null;
+  const save = () => {
+    if (!locked) dispatch({ type: 'editorSave' });
+  };
 
   return (
     <Dialog
@@ -599,13 +603,15 @@ function EventEditor({
             label="Save"
             keys="Return"
             keyHint="always"
-            disabled={draft.title.trim() === ''}
+            disabled={locked || draft.title.trim() === ''}
+            disabledReason={locked ? EDITING_COPY.notice : undefined}
             onPress={save}
           />
         </div>
       }
     >
       <div className="cal-editor">
+        {editor.editing ? <EditingNote editing={editor.editing} dispatch={dispatch} /> : null}
         <TextField
           id={TITLE_FIELD_ID}
           label="Title"

@@ -6,7 +6,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import type { Message } from '../../../data';
-import { forwardSeed, forwardSubject, joinForward, splitForward } from './forwardSeed';
+import { forwardDate, forwardSeed, forwardSubject, joinForward, splitForward } from './forwardSeed';
 
 const message = {
   id: 'acct:m1',
@@ -36,11 +36,6 @@ test('a forward starts with nobody in To, an empty note, and the quoted original
     '',
     'the note is empty, so its placeholder shows',
   );
-  assert.match(
-    fields.body,
-    /\nDate: \w{3}, \w{3} \d{1,2}, 2026, \d{1,2}:\d{2} (AM|PM)\n/,
-    'local zone, no seconds, no UTC',
-  );
   assert.match(fields.body, /\nFrom: Drew Bell <drew@example\.com>\n/);
   assert.match(fields.body, /\nSubject: Launch plan\n/);
   assert.match(fields.body, /\nTo: me@example\.com\n/);
@@ -61,4 +56,14 @@ test('the note and the quote split and join without losing a keystroke', () => {
   assert.deepEqual(splitForward('no mark here\n\n'), { note: 'no mark here\n\n', quote: '' });
   // A draft saved before the note area existed opened on two blank lines.
   assert.equal(splitForward(`\n\n${quote}`).note, '');
+});
+
+test('the forwarded Date line is in the owner’s zone, not UTC', () => {
+  assert.equal(
+    forwardDate(message.date, 'America/Los_Angeles'),
+    'Mon, Oct 26, 2026 at 8:30 AM PDT',
+  );
+  assert.equal(forwardDate(message.date, 'Pacific/Honolulu'), 'Mon, Oct 26, 2026 at 5:30 AM HST');
+  const { fields } = forwardSeed(message, 'Hi');
+  assert.match(fields.body, /\nDate: \w{3}, \w{3} \d{1,2}, 2026 at \d{1,2}:\d{2} [AP]M .+\n/);
 });

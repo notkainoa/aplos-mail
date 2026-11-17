@@ -28,7 +28,7 @@ export interface LetterSnapshot {
 /** The store. */
 export interface LetterController {
   /** Asks for a letter. Idempotent for the letter already asked for. */
-  want(id: string | null): void;
+  want(id: string | null, immediate?: boolean): void;
   /** A letter's body is laid out and measured. */
   ready(id: string): void;
   subscribe(listener: () => void): () => void;
@@ -99,8 +99,8 @@ export function createLetterController(timers: Timers): LetterController {
   };
 
   return {
-    want: id => {
-      if (id !== null) apply({ type: 'want', id, now: timers.now() });
+    want: (id, immediate = false) => {
+      if (id !== null) apply({ type: 'want', id, now: timers.now(), immediate });
     },
     ready: id => apply({ type: 'ready', id, now: timers.now() }),
     subscribe: listener => {

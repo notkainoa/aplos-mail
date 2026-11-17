@@ -421,7 +421,8 @@ interface Fixture {
   holds?: readonly FailedHold[];
 }
 
-function PreviewCalendar({ fixture }: { fixture: Fixture }) {
+/** The harness draws a one-off fixture through this (a variant of a named one, such as a read-only account). */
+export function PreviewCalendar({ fixture }: { fixture: Fixture }) {
   const now = fixture.now ?? HARNESS_NOW_MS;
   const weekStartsOn = 0;
   const [state, setState] = useState<CalendarState>(() => ({
@@ -552,7 +553,7 @@ function newEventDraft() {
 }
 const STANDUP_THU = standupOn(THU);
 
-const FIXTURES: Record<string, Fixture> = {
+export const FIXTURES: Record<string, Fixture> = {
   'week-default': {
     title: 'Week of October 25, today Thursday at 10:00 AM',
     state: { view: 'week' },

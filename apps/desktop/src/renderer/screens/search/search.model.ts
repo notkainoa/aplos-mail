@@ -327,8 +327,18 @@ const FAILED_TEXT = {
   error: 'Google didn’t answer. Try again.',
 } as const;
 
+/** Google had nothing new: "either" and "fewer words" only make sense when nothing matched locally either. */
+export function nothingOnGoogle(hasLocal: boolean): string {
+  return hasLocal ? 'No more results on Google' : 'Nothing on Google either. Try fewer words.';
+}
+
 /** The line under the results about Google, for a remote state that belongs to the current query. */
-function remoteLineFor(remote: RemoteState, now: number, remoteCount: number): RemoteLine | null {
+function remoteLineFor(
+  remote: RemoteState,
+  now: number,
+  remoteCount: number,
+  hasLocal: boolean,
+): RemoteLine | null {
   switch (remote.phase) {
     case 'idle':
       return { kind: 'offer', text: SEARCH_GOOGLE };
@@ -336,9 +346,7 @@ function remoteLineFor(remote: RemoteState, now: number, remoteCount: number): R
     case 'running':
       return now - remote.at >= BUSY_DELAY_MS ? { kind: 'busy', text: 'Searching Google…' } : null;
     case 'done':
-      return remoteCount === 0
-        ? { kind: 'none', text: 'Nothing on Google either. Try fewer words.' }
-        : null;
+      return remoteCount === 0 ? { kind: 'none', text: nothingOnGoogle(hasLocal) } : null;
     case 'paused':
       return { kind: 'paused', text: pausedText(remote.resumeAt) };
     default:
@@ -399,9 +407,10 @@ function shownRemoteLine(
   remote: RemoteState,
   now: number,
   remoteCount: number,
+  hasLocal: boolean,
 ): RemoteLine | null {
   if (empty || !supported || localFailed) return null;
-  return remoteLineFor(remote, now, remoteCount);
+  return remoteLineFor(remote, now, remoteCount, hasLocal);
 }
 
 /** The page's view of the state, the local window and the clock. `scope` is the account scope the page shows. */
@@ -424,7 +433,15 @@ export function searchPage(
 
   const localFailed = local.status === 'failed';
   const localLine = localLineFor(local);
-  const remoteLine = shownRemoteLine(localFailed, empty, supported, remote, now, remoteIds.length);
+  const remoteLine = shownRemoteLine(
+    localFailed,
+    empty,
+    supported,
+    remote,
+    now,
+    remoteIds.length,
+    localIds.length > 0,
+  );
   const listFailed = localLine?.kind === 'list';
 
   const settled = local.status === 'live' || local.status === 'reset' || localFailed;

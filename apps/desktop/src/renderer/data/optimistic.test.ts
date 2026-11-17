@@ -273,6 +273,27 @@ test('a provider refusal after the receipt puts the row back in place and offers
   }
 });
 
+test('a quiet act is sent like any other but is not on the undo stack, so Z still undoes the owner’s own change', async () => {
+  const { h, home } = await boot();
+  try {
+    const [first, second] = home.snapshot().ids;
+    const done = h.layer.api.thread.act({ ids: [first!], action: { type: 'done' } });
+    const read = h.layer.api.thread.act({
+      ids: [second!],
+      action: { type: 'read' },
+      quiet: true,
+    });
+    await Promise.all([done.receipt, read.receipt]);
+    assert.equal(h.callsOf('Thread/act').length, 2, 'the quiet write reached the engine');
+    assert.equal(h.layer.undoStack.peek()?.kind, 'operation');
+    const top = h.layer.undoStack.peek();
+    assert.equal(top?.kind === 'operation' ? top.opId : null, done.opId, 'Z undoes the Done');
+    await catchUp(h);
+  } finally {
+    h.close();
+  }
+});
+
 test('Z undoes with an inverse operation, the row returns at once; undoing it again is refused; undoing the undo redoes', async () => {
   const { h, home } = await boot();
   try {

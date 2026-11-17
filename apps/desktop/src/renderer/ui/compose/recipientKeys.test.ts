@@ -35,7 +35,7 @@ describe('recipientKey', () => {
     );
   });
 
-  test('⌘Return and Ctrl+Return with text typed COMMIT it (never a match), so the send cannot go out without it', () => {
+  test('⌘Return and Ctrl+Return with text typed are left to the send (never a match); the composer commits the text as it sends', () => {
     const open = state({
       query: 'mina@example.com',
       recipients: [JORDAN],
@@ -43,7 +43,7 @@ describe('recipientKey', () => {
       activeSuggestionId: 'a@x.com',
     });
     for (const mod of [{ metaKey: true }, { ctrlKey: true }])
-      assert.deepEqual(recipientKey(ev({ key: 'Enter', ...mod }), open), { type: 'commit' });
+      assert.equal(recipientKey(ev({ key: 'Enter', ...mod }), open), null);
   });
 
   test('⌘Return with nothing typed is left to the composer (the send)', () => {

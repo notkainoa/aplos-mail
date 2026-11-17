@@ -435,7 +435,7 @@ export function createDataLayer(options: DataLayerOptions): DataLayer {
         undoUntil: null,
         undoneBy: null,
       });
-      undoStack.pushOperation(opId);
+      if (!args.quiet) undoStack.pushOperation(opId);
     });
     const wire = args.ids?.length
       ? { opId, ids: [...args.ids], action }

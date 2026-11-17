@@ -33,6 +33,8 @@ export interface HeadControls {
   readonly toggleRead?: () => void;
   readonly bookmark: () => void;
   readonly trash: () => void;
+  /** Present only for a thread read from Trash or Spam: the ⋯ menu then offers this instead of Move to Trash. */
+  readonly restore?: { readonly label: string; readonly run: () => void };
   readonly lane: (to: MovableLane) => void;
 }
 
@@ -147,7 +149,13 @@ function NotificationBell({ state }: { readonly state: NotificationState }) {
 export function moreEntries(
   row: ThreadRow,
   suggestion: SuggestedAction,
-  has: { readonly replyAll: boolean; readonly forward: boolean; readonly toggleRead: boolean },
+  has: {
+    readonly replyAll: boolean;
+    readonly forward: boolean;
+    readonly toggleRead: boolean;
+    /** The words of Restore, for a thread in Trash or Spam; absent elsewhere. */
+    readonly restore?: string;
+  },
 ): readonly MenuEntry[] {
   const replyAll: MenuEntry = {
     kind: 'item',
@@ -199,14 +207,16 @@ export function moreEntries(
       commandId: 'mail.bookmark',
     },
     { kind: 'separator' },
-    {
-      kind: 'item',
-      id: 'trash',
-      label: 'Move to Trash',
-      icon: 'trash',
-      commandId: 'mail.trash',
-      danger: true,
-    },
+    has.restore
+      ? { kind: 'item', id: 'restore', label: has.restore, icon: 'undo', commandId: 'mail.restore' }
+      : {
+          kind: 'item',
+          id: 'trash',
+          label: 'Move to Trash',
+          icon: 'trash',
+          commandId: 'mail.trash',
+          danger: true,
+        },
   ];
 }
 
@@ -250,6 +260,7 @@ function MoreMenu({ row, suggestion, controls, topBarMore }: HeadActionsProps) {
     done: controls.done,
     bookmark: controls.bookmark,
     trash: controls.trash,
+    restore: controls.restore?.run ?? noop,
   };
   return (
     <>
@@ -274,6 +285,7 @@ function MoreMenu({ row, suggestion, controls, topBarMore }: HeadActionsProps) {
           replyAll: controls.replyAll !== undefined,
           forward: controls.forward !== undefined,
           toggleRead: controls.toggleRead !== undefined,
+          restore: controls.restore?.label,
         })}
         activeId={menu.active}
         onActiveChange={menu.setActive}

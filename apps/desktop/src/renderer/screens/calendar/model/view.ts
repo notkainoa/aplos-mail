@@ -74,6 +74,11 @@ export interface EditorView {
   readonly calendars: ReadonlyArray<{ id: string; name: string; color: TagColor }>;
   readonly calendar: { id: string; name: string; color: TagColor } | null;
   readonly calendarFixed: boolean;
+  /**
+   * The grant behind the draft's calendar lacks the write scope: the editor says so before anything is typed and
+   * Save waits (the same `editingOff` check the save's own gate uses), so no filled form ends in a refusal.
+   */
+  readonly editing: { accountId: string } | null;
   /** For the day picker's today badge and first weekday. */
   readonly today: IsoDate;
   readonly weekStartsOn: 0 | 1;
@@ -291,6 +296,17 @@ export function viewModel(state: CalendarState, ctx: CalendarContext): CalendarV
   };
 }
 
+/** The account an editor draft would write to: the stored event's for an edit, the chosen calendar's for a new one. */
+function draftAccountId(draft: EditorDraft, ctx: CalendarContext): string | undefined {
+  if (draft.mode === 'edit' && draft.eventId) return ctx.events.get(draft.eventId)?.accountId;
+  return ctx.calendars.find(c => c.id === draft.calendarId)?.accountId;
+}
+
+function editorEditing(draft: EditorDraft, ctx: CalendarContext): { accountId: string } | null {
+  const account = editingOff(ctx.accounts, draftAccountId(draft, ctx));
+  return account ? { accountId: account.id } : null;
+}
+
 function editorView(draft: EditorDraft, ctx: CalendarContext): EditorView {
   const ref = (c: Calendar) => ({ id: c.id, name: c.name, color: tagFor(c, ctx.calendars) });
   const own = ctx.calendars.find(c => c.id === draft.calendarId);
@@ -310,6 +326,7 @@ function editorView(draft: EditorDraft, ctx: CalendarContext): EditorView {
     calendars: writableCalendars(ctx.calendars).map(ref),
     calendar: own ? ref(own) : null,
     calendarFixed: draft.mode === 'edit',
+    editing: editorEditing(draft, ctx),
     today: toIsoDate(ctx.now),
     weekStartsOn: ctx.weekStartsOn,
   };

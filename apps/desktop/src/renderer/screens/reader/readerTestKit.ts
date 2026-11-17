@@ -97,12 +97,16 @@ export function depsOver(world: World, start: string, readyOnGo = true) {
     requests: [] as Array<ReplyRequest | undefined>,
     suggested: [] as string[],
     forwards: [] as string[],
+    /** The thread was read from Trash or Spam. */
+    restorable: true,
   };
   controller.want(start);
   controller.ready(start);
   const go = (id: string) => {
     state.open = id;
-    controller.want(id);
+    // What `useLetterBuffer` does: a letter this reading sent away is not kept on paper while the next one loads.
+    const paper = controller.snapshot().letter;
+    controller.want(id, paper === null || state.gone.has(paper));
     if (readyOnGo) controller.ready(id);
   };
   const deps: ReaderDeps = {
@@ -112,6 +116,7 @@ export function depsOver(world: World, start: string, readyOnGo = true) {
     rowOf: id => world.home.snapshot().rows.get(id) as ThreadRow | undefined,
     go,
     reopen: go,
+    restorable: () => state.restorable,
     markGone: (id, gone) => void (gone ? state.gone.add(id) : state.gone.delete(id)),
     leave: () => void state.left++,
     closeFind: () => {
