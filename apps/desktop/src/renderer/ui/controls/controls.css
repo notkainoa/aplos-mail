@@ -251,7 +251,7 @@
 .ui-text-field-box:focus-within {
   outline: var(--focus-width) solid var(--accent);
   outline-offset: var(--focus-gap);
-  box-shadow: inset 0 0 0 1px var(--accent);
+  box-shadow: none; /* one ring: the outline, not the outline around a second edge */
 }
 .ui-text-field[data-state='invalid'] .ui-text-field-box {
   box-shadow: inset 0 0 0 1px var(--stamp-ink);

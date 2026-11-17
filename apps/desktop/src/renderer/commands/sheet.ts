@@ -42,7 +42,9 @@ export const SHEET_SECTIONS: readonly SectionDef[] = [
   },
   { id: 'done', title: 'Done', column: 0, contexts: ['done'] },
   { id: 'reader', title: 'Reader', column: 0, contexts: ['reader'] },
-  { id: 'lists', title: 'Lists', column: 1, contexts: ['list', 'search'] },
+  { id: 'lists', title: 'Lists', column: 1, contexts: ['list'] },
+  // Return here runs the remote search; in a list the same key opens the row, so the field gets a group of its own.
+  { id: 'search', title: 'Search field', column: 1, contexts: ['search'] },
   {
     id: 'palette',
     title: 'Palette, menus and date picker',
@@ -85,21 +87,20 @@ function uniqueBindings(bindings: readonly Binding[]): Binding[] {
 export function buildSheet(registry: Registry): SheetSection[] {
   const ids = [...registry.list().map(c => c.id), ...registry.controls().map(c => c.id)];
   const all = registry.bindings();
-  // A command bound in several contexts (Ask and Dictate to Ask are Global and inside Ask) is listed once, in the
-  // first section that has it, as long as its keys read the same there.
+  const sheetContexts = new Set(SHEET_SECTIONS.flatMap(section => section.contexts));
+  // A command bound in several contexts (Done is → on Home and E in a list) is one row in the first section that
+  // has it, with every key it answers to there, so "→ or E" reads the same as in Settings → Keyboard.
   const listed = new Set<string>();
   return SHEET_SECTIONS.map(section => {
     const rows: SheetRow[] = [];
     for (const id of ids) {
-      const bound = uniqueBindings(
-        all.filter(b => b.commandId === id && section.contexts.includes(b.context)),
-      );
-      if (bound.length === 0) continue;
+      if (listed.has(id)) continue;
+      const here = all.filter(b => b.commandId === id && section.contexts.includes(b.context));
+      if (here.length === 0) continue;
+      const everywhere = all.filter(b => b.commandId === id && sheetContexts.has(b.context));
       const label = registry.get(id)?.spec.label ?? id;
-      const keys = formatAlternatives(bound);
-      if (listed.has(`${id}|${keys}`)) continue;
-      listed.add(`${id}|${keys}`);
-      rows.push({ id, label, keys, kind: 'key' });
+      listed.add(id);
+      rows.push({ id, label, keys: formatAlternatives(uniqueBindings(everywhere)), kind: 'key' });
     }
     rows.push(...(SHEET_POINTER_ROWS[section.id] ?? []));
     return { id: section.id, title: section.title, column: section.column, rows };

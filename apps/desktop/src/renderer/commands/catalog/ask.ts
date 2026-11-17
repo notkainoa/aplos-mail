@@ -23,7 +23,7 @@ export const ASK_COMMANDS: readonly CommandSpec[] = [
   },
   {
     id: 'ask.sendNow',
-    label: 'Send the queued question now',
+    label: 'Send a queued follow-up now',
     keys: [{ chord: 'meta+Enter', inTextField: true }],
     contexts: ['ask'],
     group: 'Ask',
