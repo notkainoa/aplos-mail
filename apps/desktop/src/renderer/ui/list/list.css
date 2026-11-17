@@ -846,15 +846,17 @@
   background-color: var(--stamp);
 }
 
+/* Row hover takes the cursor's fill (--puck, one step above --hover) so a pointer pass reads at a glance. The
+   cursor row keeps its 2 px bar, so hover and cursor stay distinguishable. */
 @media (hover: hover) {
   .ui-list-row:hover {
-    background-color: var(--hover);
+    background-color: var(--puck);
   }
   .ui-list-row:hover .ui-list-row__actions {
     visibility: visible;
   }
   .ui-list-row:hover .ui-list-row__actions-fill {
-    background-color: var(--hover);
+    background-color: var(--puck);
   }
 }
 
