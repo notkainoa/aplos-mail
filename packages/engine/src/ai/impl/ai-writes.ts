@@ -4,11 +4,127 @@ import { ContractError } from '@aplos/contract/contract-error';
 import { StoreError } from '../../store/port';
 import { BACKFILL_WAKE_SQL, registerAiWrites } from '../writes';
 import type { CommitExtensionTx, IngestBatch } from '../../store/port';
-import type { AiUsageWrite, ConversationWrite, PlanWrite, SummaryWrite } from '../writes';
+import type { AiUsageWrite, ConversationWrite, JobWrite, PlanWrite, SummaryWrite } from '../writes';
 
 const bad = (): never => {
   throw new StoreError('invalid', 'ai write');
 };
+
+/** Mark an `AiJob` change when the update landed. */
+const ok = (tx: CommitExtensionTx, r: { changes: number }, label: string) => {
+  if (r.changes) tx.mark('AiJob', label, 'u');
+};
+
+function jobClaim(write: JobWrite, id: number, sid: string, tx: CommitExtensionTx): void {
+  if (!Number.isFinite(write.at)) bad();
+  ok(
+    tx,
+    tx.run(
+      "UPDATE jobs SET state = 'running', attempts = attempts + 1 WHERE id = ? AND state IN ('queued','failed') AND next_at <= ?",
+      id,
+      write.at!,
+    ),
+    sid,
+  );
+}
+
+function jobSettle(write: JobWrite, id: number, sid: string, tx: CommitExtensionTx): void {
+  if (
+    write.state !== 'done' &&
+    write.state !== 'failed' &&
+    write.state !== 'dead' &&
+    write.state !== 'skipped'
+  )
+    bad();
+  ok(
+    tx,
+    tx.run(
+      "UPDATE jobs SET state = ?, last_error = ?, next_at = ? WHERE id = ? AND state = 'running'",
+      write.state!,
+      write.lastError === undefined ? null : (write.lastError?.slice(0, 1_000) ?? null),
+      write.nextAt ?? tx.now(),
+      id,
+    ),
+    sid,
+  );
+}
+
+function jobMove(write: JobWrite, id: number, sid: string, tx: CommitExtensionTx): void {
+  switch (write.action) {
+    case 'requeue':
+      // A fresh retry budget: manual retry, a forced refresh, a settled row a catch-up re-arms (queueSummary
+      // requeues `dead`/`skipped`/`done`), or a paused `running` row the gate released.
+      return ok(
+        tx,
+        tx.run(
+          "UPDATE jobs SET state = 'queued', attempts = ?, next_at = ? WHERE id = ? AND state IN ('queued','running','failed','dead','done','skipped')",
+          write.attempts ?? 0,
+          write.nextAt ?? tx.now(),
+          id,
+        ),
+        sid,
+      );
+    case 'defer':
+      if (!Number.isFinite(write.nextAt)) bad();
+      if (Number.isInteger(write.id))
+        return ok(
+          tx,
+          tx.run(
+            "UPDATE jobs SET next_at = ? WHERE id = ? AND state IN ('queued','failed')",
+            write.nextAt!,
+            id,
+          ),
+          sid,
+        );
+      // The pause: every due row moves so `next()` sleeps until the horizon — whole-queue, or one feature's
+      // kinds — marked so a later `wake` pulls back only rows the pause deferred — provider backoffs keep
+      // their schedule.
+      if (!Number.isFinite(write.at)) bad();
+      return ok(
+        tx,
+        tx.run(
+          `UPDATE jobs SET next_at = ?, last_error = 'ai.paused' WHERE state IN ('queued','failed') AND next_at <= ?${write.kinds?.length ? ` AND kind IN(${write.kinds.map(() => '?').join()})` : ''}`,
+          write.nextAt!,
+          write.at!,
+          ...(write.kinds ?? []),
+        ),
+        '*',
+      );
+    case 'delete':
+      if (tx.run('DELETE FROM jobs WHERE id = ?', id).changes) tx.mark('AiJob', sid, 'd');
+      return;
+    case 'wake': {
+      const at = write.at ?? tx.now();
+      return ok(
+        tx,
+        tx.run(
+          "UPDATE jobs SET next_at = ? WHERE state IN ('queued','failed') AND next_at > ?",
+          at,
+          at,
+        ),
+        '*',
+      );
+    }
+    case 'reset':
+      return ok(tx, tx.run("UPDATE jobs SET state = 'queued' WHERE state = 'running'"), '*');
+  }
+}
+
+/** Every `job` action but `enqueue` (that one stays in `ai/writes.ts` for the ingest/catch-up callers). */
+function jobWrite(write: JobWrite, tx: CommitExtensionTx): void {
+  if (
+    write.action === 'wake' ||
+    write.action === 'reset' ||
+    (write.action === 'defer' && write.id === undefined)
+  )
+    return jobMove(write, 0, '*', tx);
+  if (!Number.isInteger(write.id)) bad();
+  const id = write.id!;
+  const sid = String(id);
+  if (write.action === 'claim') return jobClaim(write, id, sid, tx);
+  if (write.action === 'settle') return jobSettle(write, id, sid, tx);
+  return jobMove(write, id, sid, tx);
+}
 
 function planParams(write: PlanWrite, tx: CommitExtensionTx): number {
   const threadId =
@@ -230,4 +346,4 @@ function ingest(batch: IngestBatch, tx: CommitExtensionTx): void {
   if (armed) tx.mark('AiJob', 'ingest', 'u');
 }
 
-registerAiWrites({ plan: planWrite, summary, aiUsage, conversation, ingest });
+registerAiWrites({ job: jobWrite, plan: planWrite, summary, aiUsage, conversation, ingest });

@@ -12,6 +12,9 @@ import { nonce, type AreaHandlers, type MethodContext } from './types';
 const notFound = () =>
   new ContractError({ type: 'notFound', message: 'This item is no longer in the queue.' });
 
+/** The `job` row writers are lazy (`ai/impl/ai-writes`); load them before retrying or discarding one. */
+const aiWrites = () => import('../ai/impl/ai-writes');
+
 function needScope(ctx: MethodContext, scope: string) {
   if (!ctx.caller.scopes.includes(scope as 'send'))
     throw new ContractError({ type: 'forbidden', message: `This needs the ${scope} permission.` });
@@ -198,6 +201,7 @@ async function retry(
     if (!Number.isInteger(jobId) || !jobState) throw notFound();
     if (jobState !== 'failed' && jobState !== 'dead')
       throw new ContractError({ type: 'conflict', message: 'That job is not waiting to retry.' });
+    await aiWrites();
     ctx.services.store.commit({
       opId: `queue-retry-${nonce(ctx)}`,
       origin: 'local',
@@ -270,6 +274,7 @@ async function discard(
     if (!Number.isInteger(jobId) || !jobState) throw notFound();
     if (jobState === 'running')
       throw new ContractError({ type: 'conflict', message: 'That job is already running.' });
+    await aiWrites();
     ctx.services.store.commit({
       opId: `queue-discard-${nonce(ctx)}`,
       origin: 'local',

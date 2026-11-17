@@ -4,6 +4,8 @@ import { auditWrites } from '../../host/audit';
 import { nonce, type MethodContext } from '../../methods/types';
 import { parseStored, withDefaults } from '../../runtime/settings';
 import { CONSENT_KEY_META, consentKey, type ConsentRow } from '../consent';
+// Registers the lazy `job` handlers (the `wake` write below dispatches through them).
+import './ai-writes';
 
 /**
  * The `consent` area's working half (lazy-loaded by `methods/consent.ts`). The record lives in `consent`; the
