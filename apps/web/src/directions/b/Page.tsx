@@ -1,6 +1,19 @@
 import type { ReactNode } from 'react';
 import { AppShot, Logo } from '../../shared/brand';
+import homeCropDark from './home-mobile.webp';
+import homeCropLight from './home-mobile-light.webp';
+import calCropDark from './calendar-mobile.webp';
+import calCropLight from './calendar-mobile-light.webp';
 import { AskMock, HomeMock, KeyGrid } from './Mocks';
+
+function Crop({ light, dark, alt }: { light: string; dark: string; alt: string }) {
+  return (
+    <picture className="b-crop">
+      <source srcSet={dark} media="(prefers-color-scheme: dark)" />
+      <img src={light} alt={alt} loading="lazy" decoding="async" />
+    </picture>
+  );
+}
 
 const download = '../../download/';
 const privacy = '../../privacy/';
@@ -36,7 +49,7 @@ function Hero() {
       <Nav />
       <div className="b-hero-body b-wrap">
         <div className="b-hero-logo">
-          <Logo size={112} alt="Aplos Mail" />
+          <Logo size={72} alt="Aplos Mail" />
         </div>
         <h1 data-claim="home-focus">Finish your inbox, one email at a time.</h1>
         <p className="b-hero-sub" data-claim="gmail-google-calendar keyboard-first">
@@ -62,6 +75,11 @@ function HeroShot() {
           name="home"
           eager
           alt="Aplos Mail's Home: Jordan Park's email in focus with Reply, Later and Done, and five more emails below"
+        />
+        <Crop
+          light={homeCropLight}
+          dark={homeCropDark}
+          alt="Aplos Mail's Home: Jordan Park's email, A quieter home for our project, in focus with Reply, Later and Done"
         />
       </div>
     </div>
@@ -148,6 +166,11 @@ function Calendar() {
             name="calendar"
             alt="Aplos Mail's calendar: a week in November with a design critique and a dentist appointment"
           />
+          <Crop
+            light={calCropLight}
+            dark={calCropDark}
+            alt="Aplos Mail's calendar, Wednesday to Saturday, with a design critique and a dentist appointment on Thursday"
+          />
         </div>
       </div>
     </section>
@@ -177,8 +200,8 @@ function Keyboard() {
       aside={<KeyGrid />}
     >
       <p data-claim="keyboard-first">
-        Your hands stay on the keyboard from the first email to the last. One key for the main
-        action, two arrows to clear the way.
+        One key for the main action, two arrows to clear the way. Your hands stay on the keyboard
+        from the first email to the last.
       </p>
     </Feature>
   );
@@ -215,29 +238,23 @@ function Privacy() {
       <div className="b-wrap b-privacy-grid">
         <div className="b-privacy-text">
           <Tag>AI and privacy</Tag>
-          <h2 id="b-ai">Your providers. Your Mac.</h2>
+          <h2 id="b-ai">Pick a provider for each feature.</h2>
           <p data-claim="groq-default">Every AI feature runs on Groq by default.</p>
-          <p data-claim="provider-per-feature">
-            In Settings you pick a provider for each feature, and a feature's text goes only to that
-            feature's provider.
-          </p>
-          <p className="b-small" data-claim="ai-providers">
-            Voice works with Groq or OpenAI.
+          <p data-claim="provider-per-feature ai-routers">
+            A feature's text goes only to its provider. OpenRouter and OpenCode Go pass each request
+            on to the company that runs the chosen model.
           </p>
         </div>
         <div className="b-privacy-side">
           <Providers />
           <dl className="b-facts">
-            <div data-claim="keys-on-mac">
-              <dt>Keys</dt>
-              <dd>Your AI keys stay on your Mac.</dd>
-            </div>
             <div data-claim="local-models">
-              <dt>Local models</dt>
-              <dd>
-                Ollama and LM Studio run on your Mac at their default addresses, so text sent to
-                them stays there.
-              </dd>
+              <dt>Run it locally</dt>
+              <dd>Ollama and LM Studio run on your Mac, so text sent to them stays there.</dd>
+            </div>
+            <div data-claim="keys-on-mac">
+              <dt>Your keys</dt>
+              <dd>Your AI keys stay on your Mac.</dd>
             </div>
             <div data-claim="no-aplos-server">
               <dt>No middleman</dt>
@@ -259,7 +276,7 @@ function Footer() {
       </a>
       <p data-claim="mac-only">Independent software for Mac.</p>
       <nav className="b-footer-links" aria-label="Footer">
-        <a href={download}>Download</a>
+        <a href={download}>How to get it</a>
         <a href={privacy}>Privacy</a>
       </nav>
     </footer>

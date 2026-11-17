@@ -8,6 +8,8 @@ const rows = [
   { from: 'Maya Chen', subject: 'Saturday in the community garden', when: 'Nov 13' },
   { from: 'Maple Library', subject: 'Your holds are ready to collect', when: 'Nov 13' },
   { from: 'Theo Kim', subject: 'Friday review: agenda and room', when: '8:32 PM' },
+  { from: 'Sam Rivera', subject: 'Cabin weekend: a few loose ends', when: 'Nov 13' },
+  { from: 'Rowan Pottery', subject: 'A place opened in the evening class', when: 'Nov 12' },
 ];
 
 function FocusCard() {
@@ -18,6 +20,7 @@ function FocusCard() {
         <span className="b-focus-time">9:17 PM</span>
       </div>
       <p className="b-focus-subject">A quieter home for our project</p>
+      <p className="b-summary-label">Summary of this email, once AI is on</p>
       <p className="b-summary">Jordan wants your pick between two layouts by tomorrow.</p>
       <div className="b-focus-actions">
         <span className="b-reply">
@@ -39,11 +42,11 @@ export function HomeMock() {
   return (
     <figure
       className="b-mock"
-      aria-label="Home with Jordan Park's email in focus and three more emails under Do now"
+      aria-label="Home with Jordan Park's email in focus and five more emails under Do now"
     >
       <div className="b-mock-head">
         <span>
-          <strong>Do now</strong> <span className="b-dim">4</span>
+          <strong>Do now</strong> <span className="b-dim">6</span>
         </span>
         <span className="b-dim">Go one by one</span>
       </div>
@@ -96,27 +99,40 @@ export function AskMock() {
   );
 }
 
-const keys = [
-  { key: 'Space', label: 'Main action', main: true },
+const mainKeys = [
+  { key: 'Space', label: 'Main action' },
   { key: '←', label: 'Later' },
   { key: '→', label: 'Done' },
   { key: 'Z', label: 'Undo' },
+];
+
+const moreKeys = [
   { key: 'B', label: 'Bookmark' },
   { key: 'A', label: 'Ask, hold to dictate' },
   { key: 'C', label: 'Compose' },
   { key: '?', label: 'Shortcuts' },
 ];
 
-/** The main keys, as keycaps with what they do. */
+/** The four keys that clear a list, then the rest in a short line. */
 export function KeyGrid() {
   return (
-    <ul className="b-keys" data-claim="key-list">
-      {keys.map(k => (
-        <li key={k.key} className={k.main ? 'is-main' : undefined}>
-          <kbd className="b-cap">{k.key}</kbd>
-          <span>{k.label}</span>
-        </li>
-      ))}
-    </ul>
+    <div className="b-keys" data-claim="key-list">
+      <ul className="b-keys-main">
+        {mainKeys.map(k => (
+          <li key={k.key}>
+            <kbd className="b-cap">{k.key}</kbd>
+            <span>{k.label}</span>
+          </li>
+        ))}
+      </ul>
+      <ul className="b-keys-more">
+        {moreKeys.map(k => (
+          <li key={k.key}>
+            <kbd className="b-kbd">{k.key}</kbd>
+            <span>{k.label}</span>
+          </li>
+        ))}
+      </ul>
+    </div>
   );
 }

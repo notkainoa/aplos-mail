@@ -125,28 +125,44 @@ export function AskMock() {
 
 type Key = { cap: string; does: string };
 
-const keys: Key[] = [
+const mainKeys: Key[] = [
   { cap: 'Space', does: 'Main action' },
   { cap: '←', does: 'Later' },
   { cap: '→', does: 'Done' },
   { cap: 'Z', does: 'Undo' },
+];
+
+const moreKeys: Key[] = [
   { cap: 'B', does: 'Bookmark' },
   { cap: 'A', does: 'Ask, hold to dictate' },
   { cap: 'C', does: 'Compose' },
   { cap: '?', does: 'All shortcuts' },
 ];
 
-/** The keys that run Aplos, as a plain two-column list. */
+function KeyItem({ item, large }: { item: Key; large?: boolean }) {
+  return (
+    <li className={large ? 'key-main' : 'key-more'}>
+      <kbd className="cap">{item.cap}</kbd>
+      <span>{item.does}</span>
+    </li>
+  );
+}
+
+/** The four keys that run Home first, the rest as a quieter list. */
 export function KeyList() {
   return (
-    <ul className="key-list" data-claim="key-list">
-      {keys.map(key => (
-        <li key={key.cap} className="key-row">
-          <kbd className="cap">{key.cap}</kbd>
-          <span>{key.does}</span>
-        </li>
-      ))}
-    </ul>
+    <div className="keys" data-claim="key-list">
+      <ul className="key-grid">
+        {mainKeys.map(key => (
+          <KeyItem key={key.cap} item={key} large />
+        ))}
+      </ul>
+      <ul className="key-rest">
+        {moreKeys.map(key => (
+          <KeyItem key={key.cap} item={key} />
+        ))}
+      </ul>
+    </div>
   );
 }
 

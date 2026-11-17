@@ -1,5 +1,6 @@
 import type { ReactNode } from 'react';
-import { AppShot, Logo } from '../../shared/brand';
+import { Logo } from '../../shared/brand';
+import { CalendarCrop, HomeCrop } from './Crop';
 import { AskMock, HomeMock, KeyList, ProviderMock } from './Mocks';
 
 const DOWNLOAD = '../../download/';
@@ -34,6 +35,7 @@ function Hero() {
   return (
     <section className="hero" aria-labelledby="hero-title">
       <div className="hero-copy">
+        <Logo size={72} />
         <h1 id="hero-title">Finish your inbox, one email at a time.</h1>
         <p className="hero-sub" data-claim="gmail-google-calendar home-focus">
           Aplos Mail is a Mac app for Gmail and Google Calendar. It puts the email that needs you in
@@ -43,19 +45,32 @@ function Hero() {
           <a className="button button-large" href={DOWNLOAD}>
             How to get it
           </a>
-          <p className="hero-note" data-claim="mac-chips macos-13">
-            For Macs with Apple silicon or Intel, on macOS 13 or later.
-          </p>
+          <div className="hero-note">
+            <p data-claim="invited-testers-builds">
+              No public download. Builds are shared with invited testers.
+            </p>
+            <p data-claim="mac-chips macos-13">
+              For Macs with Apple silicon or Intel, on macOS 13 or later.
+            </p>
+          </div>
         </div>
       </div>
       <div className="window">
-        <AppShot
-          name="home"
-          eager
-          alt="Aplos Mail's Home on All accounts: Jordan Park's email in focus with Reply, Later and Done, the rest of Do now below it, and Low importance folded into one line."
-        />
+        <HomeCrop alt="Aplos Mail's Home on All accounts: Jordan Park's email in focus with Reply, Later and Done, and the rest of Do now below it." />
       </div>
     </section>
+  );
+}
+
+/** One editorial line in the app's own voice, on the shell between hero and panes. */
+function Voice() {
+  return (
+    <figure className="voice">
+      <blockquote>Jordan wants your pick between two layouts by tomorrow.</blockquote>
+      <figcaption data-claim="summaries-with-ai">
+        A summary in Aplos Mail, once you turn on AI.
+      </figcaption>
+    </figure>
   );
 }
 
@@ -67,9 +82,10 @@ type PaneProps = {
   aside: ReactNode;
   flip?: boolean;
   wide?: boolean;
+  asideClass?: string;
 };
 
-function Pane({ id, label, title, children, aside, flip, wide }: PaneProps) {
+function Pane({ id, label, title, children, aside, flip, wide, asideClass }: PaneProps) {
   const layout = wide ? 'pane-wide' : flip ? 'pane-split pane-flip' : 'pane-split';
   return (
     <section className={`pane ${layout}`} aria-labelledby={id}>
@@ -78,7 +94,7 @@ function Pane({ id, label, title, children, aside, flip, wide }: PaneProps) {
         <h2 id={id}>{title}</h2>
         {children}
       </div>
-      <div className="pane-aside">{aside}</div>
+      <div className={`pane-aside ${asideClass ?? ''}`}>{aside}</div>
     </section>
   );
 }
@@ -89,15 +105,12 @@ function HomePane() {
       id="home"
       label="Home"
       title="One email in focus, the rest can wait."
+      asideClass="aside-home"
       aside={<HomeMock />}
     >
       <p data-claim="home-focus">
         Home puts the email that needs you at the top. Reply, Later or Done, and the next one takes
         its place.
-      </p>
-      <p data-claim="summaries-with-ai">
-        Once you turn on AI, each email gets a short summary of what it says and what it needs from
-        you.
       </p>
     </Pane>
   );
@@ -111,12 +124,10 @@ function CalendarPane() {
       title="Your calendar sits next to your mail."
       wide
       aside={
-        <div className="window window-in-pane">
-          <AppShot
-            name="calendar"
-            alt="Aplos Mail's calendar week for November 15 to 21, with events from two Google accounts."
-          />
-        </div>
+        <figure className="window window-in-pane">
+          <CalendarCrop alt="Aplos Mail's calendar week for November 15 to 21, with Design critique and Dentist on Thursday." />
+          <figcaption data-claim="mac-only">Calendar in the Mac app, week view.</figcaption>
+        </figure>
       }
     >
       <div className="pane-columns">
@@ -166,17 +177,17 @@ function AiPane() {
       flip
       aside={<ProviderMock />}
     >
-      <p data-claim="groq-default provider-per-feature">
-        Every AI feature runs on Groq by default. In Settings you can pick a provider for each
-        feature, and a feature&rsquo;s text goes only to that provider.
+      <p data-claim="groq-default provider-per-feature ai-providers">
+        Every AI feature runs on Groq by default. In Settings you pick a provider for each one:
+        OpenAI, Claude, Gemini, OpenRouter, OpenCode Go, Ollama, LM Studio or your own server.
       </p>
-      <p data-claim="ai-providers">
-        Choose from Groq, OpenAI, Claude, Gemini, OpenRouter, OpenCode Go, Ollama, LM Studio or your
-        own server. Voice uses Groq or OpenAI.
+      <p data-claim="provider-per-feature ai-routers">
+        A feature&rsquo;s text goes only to its provider. OpenRouter and OpenCode Go pass each
+        request on to the company that runs the chosen model.
       </p>
       <p data-claim="keys-on-mac local-models no-aplos-server">
-        Your AI keys stay on your Mac. Ollama and LM Studio run on it too, so what you send them
-        stays there. No Aplos server ever sees your mail, calendar or sign‑in details.
+        Your keys stay on your Mac, and Ollama and LM Studio run on it too. No Aplos server ever
+        sees your mail, calendar or sign&#8209;in details.
       </p>
     </Pane>
   );
@@ -184,14 +195,10 @@ function AiPane() {
 
 function Close() {
   return (
-    <section className="pane close" aria-labelledby="close-title">
-      <Logo size={56} />
-      <h2 id="close-title">Shared with invited testers.</h2>
-      <p data-claim="invited-testers-builds gmail-invited-testers">
-        There is no public download. Builds are shared directly with invited testers, and Gmail and
-        Google Calendar are available to invited testers.
-      </p>
-      <a className="button button-large" href={DOWNLOAD}>
+    <section className="close" aria-labelledby="close-title">
+      <h2 id="close-title">See it on your Mac.</h2>
+      <p data-claim="gmail-invited-testers">Gmail is available to invited testers.</p>
+      <a className="button button-light button-large" href={DOWNLOAD}>
         How to get it
       </a>
     </section>
@@ -202,12 +209,12 @@ function Footer() {
   return (
     <footer className="footer">
       <div className="footer-brand">
-        <Logo size={20} />
+        <Logo size={28} />
         <p data-claim="mac-only">Independent software for Mac.</p>
       </div>
       <nav className="footer-links" aria-label="Footer">
         <a className="text-link" href={DOWNLOAD}>
-          Download
+          How to get it
         </a>
         <a className="text-link" href={PRIVACY}>
           Privacy
@@ -224,14 +231,15 @@ export function Page() {
       <Nav />
       <main>
         <Hero />
+        <Voice />
         <div className="panes">
           <HomePane />
           <CalendarPane />
           <AskPane />
           <KeysPane />
           <AiPane />
-          <Close />
         </div>
+        <Close />
       </main>
       <Footer />
     </div>
