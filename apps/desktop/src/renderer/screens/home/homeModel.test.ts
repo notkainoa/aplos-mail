@@ -250,9 +250,9 @@ test('Space runs Reply on Follow up, Done on an update, and the summary action e
   assert.equal(suggestedCommand(row({ id: 'd', action: 'done' }), 'do'), 'mail.done');
 });
 
-test('Done offers the reminder on Follow up and on a thread needing or awaiting a reply', () => {
+test('Done offers the reminder on Follow up and on a thread awaiting a reply, never on one that needs yours', () => {
   assert.equal(offersReminder(row({ id: 'f' }), 'follow'), true);
-  assert.equal(offersReminder(row({ id: 'n', replyStatus: 'needsReply' }), 'do'), true);
+  assert.equal(offersReminder(row({ id: 'n', replyStatus: 'needsReply' }), 'do'), false);
   assert.equal(offersReminder(row({ id: 'w', replyStatus: 'awaitingReply' }), 'update'), true);
   assert.equal(offersReminder(row({ id: 'p', replyStatus: 'none' }), 'do'), false);
 });

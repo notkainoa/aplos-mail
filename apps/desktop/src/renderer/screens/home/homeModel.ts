@@ -387,10 +387,13 @@ export function suggestedCommand(row: ThreadRow, section: SectionKey): string {
   return 'mail.open';
 }
 
-/** Whether Done on this row should offer "Remind me if no reply": Follow up, or a thread that needs or awaits a reply (DESIGN 7.2). */
+/**
+ * Whether Done on this row should offer "Remind me if no reply" (DESIGN 7.2). The reminder fires only if nobody has
+ * answered by its date, so it means something only when the owner sent the last message: Follow up, or a thread awaiting
+ * a reply. A thread that needs the owner's own reply has no one to wait for, so it offers nothing.
+ */
 export function offersReminder(row: ThreadRow, section: SectionKey): boolean {
-  const status = row.workflow.replyStatus;
-  return section === 'follow' || status === 'awaitingReply' || status === 'needsReply';
+  return section === 'follow' || row.workflow.replyStatus === 'awaitingReply';
 }
 
 // ---------------------------------------------------------------------------
