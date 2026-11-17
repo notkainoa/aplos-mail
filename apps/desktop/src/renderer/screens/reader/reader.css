@@ -294,10 +294,7 @@
      loses nothing while the line can still give), the names inside it first of all. */
   flex: 0 1000000 auto;
   align-items: center;
-  min-width: 0;
-}
-/* "to me" is never a bare chevron: the line keeps room for its label and the chevron, and 12 px before the bell. */
-.aplos-recipients {
+  /* "to me" is never a bare chevron: the line keeps room for its label and the chevron, and 12 px before the bell. */
   min-width: calc(var(--space-9) + var(--space-5));
   margin-right: var(--space-1);
 }
