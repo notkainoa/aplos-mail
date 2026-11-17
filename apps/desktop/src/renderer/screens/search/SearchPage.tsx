@@ -81,6 +81,13 @@ function Row({ row, props }: { row: ResultRow; props: SearchPageProps }) {
   );
 }
 
+/** The Google line that belongs inside the no-match empty state (busy, none, paused), else undefined. */
+function emptyDetailOf(model: SearchPageModel): string | undefined {
+  const line = model.remoteLine;
+  if (model.noMatch === null || !line) return undefined;
+  return ['busy', 'none', 'paused'].includes(line.kind) ? line.text : undefined;
+}
+
 export function SearchPage(props: SearchPageProps) {
   const { model, localRows, remoteRows, handlers, cursorId } = props;
   const line = model.remoteLine;
@@ -98,6 +105,9 @@ export function SearchPage(props: SearchPageProps) {
       inputRef={props.inputRef}
     />
   );
+  // With nothing local, the Google line is part of the centred empty state, not a stray line at the pane's foot.
+  const emptyDetail = emptyDetailOf(model);
+  const inEmpty = emptyDetail !== undefined;
   const showList = localRows.length > 0 || remoteRows.length > 0;
   // With nothing typed the rows are the newest mail, not results, so the label does not read like a count of hits.
   const browsing = model.empty;
@@ -165,6 +175,7 @@ export function SearchPage(props: SearchPageProps) {
           <EmptyLine
             icon="search"
             text={model.noMatch}
+            detail={emptyDetail}
             action={
               model.noMatchOffer
                 ? {
@@ -190,14 +201,14 @@ export function SearchPage(props: SearchPageProps) {
             />
           </div>
         ) : null}
-        {line && (line.kind === 'busy' || line.kind === 'none') ? (
+        {line && !inEmpty && (line.kind === 'busy' || line.kind === 'none') ? (
           <div className="search-screen__remote" role="status">
             <Text variant="small" tone="dim" icon="globe">
               {line.text}
             </Text>
           </div>
         ) : null}
-        {line?.kind === 'paused' ? (
+        {line?.kind === 'paused' && !inEmpty ? (
           <div className="search-screen__remote" role="status">
             <Text variant="small" tone="dim" icon="pause">
               {line.text}

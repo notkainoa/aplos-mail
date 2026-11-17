@@ -239,6 +239,13 @@
   color: var(--dim);
 }
 
+/* In the editor the note leads the form: no hairline above, none of the detail's spacing. */
+.cal-editor > .cal-editing {
+  margin-top: 0;
+  padding-top: 0;
+  border-top: 0;
+}
+
 /* The action's words start where the line above starts, like the accounts block's action. */
 .cal-editing .ui-button {
   padding-left: 0;

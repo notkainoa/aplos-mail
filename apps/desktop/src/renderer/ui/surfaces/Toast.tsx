@@ -23,6 +23,7 @@ const KIND: Record<ToastKind, { icon: IconName; tone?: 'hill' | 'dusk' | 'stamp'
   offline: { icon: 'cloud-off' },
   tip: { icon: 'keyboard' },
   info: { icon: 'check' },
+  locked: { icon: 'lock' },
   error: { icon: 'alert', tone: 'stamp' },
 };
 

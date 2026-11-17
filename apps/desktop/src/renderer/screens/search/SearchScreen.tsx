@@ -33,6 +33,7 @@ import {
   useShellKeyLayer,
   type ReturnPoint,
 } from '../../shell';
+import { scopeLabel } from '../../shell/AccountMenu';
 import { accountMark, densityOf } from '../home/homeRows';
 import { requestPaletteOpen } from '../palette';
 import { Reopenable, useReopen } from '../lists/Reopenable';
@@ -422,7 +423,6 @@ function SearchBody(props: SearchBodyProps): ReactElement {
     perform(clearField(current));
   }
 
-  const scoped = accountId ? accounts.find(a => a.id === accountId) : undefined;
   return (
     <div className="aplos-screen-fill" data-keyctx="search,list" onKeyDown={onScreenKeyDown}>
       <SearchPage
@@ -431,7 +431,7 @@ function SearchBody(props: SearchBodyProps): ReactElement {
         remoteRows={remoteRows}
         cursorId={cursorRow?.id}
         density={density}
-        scopeLabel={scoped?.name ?? 'All accounts'}
+        scopeLabel={scopeLabel(accounts, accountId).label}
         handlers={handlers}
         inputRef={inputRef}
         listRef={listRef}
