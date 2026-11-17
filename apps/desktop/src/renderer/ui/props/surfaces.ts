@@ -348,6 +348,8 @@ export type ToastKind =
   | 'offline'
   | 'tip'
   | 'info'
+  /** Nothing was done and the person's account must change first (turn on editing, sign in again): a lock, never the confirming check. */
+  | 'locked'
   | 'error';
 
 /** A verb on a toast with its keycap, e.g. "Undo" Z, "Set a date" D. */

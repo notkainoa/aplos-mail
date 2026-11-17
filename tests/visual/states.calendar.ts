@@ -128,6 +128,16 @@ export const calendarStates: readonly VisualState[] = [
     filled: 1,
   },
   {
+    id: 'editor-new-turn-on-editing',
+    frame: 'shell',
+    title:
+      'Calendar: N on a read-only account, the editor leads with Turn on editing and Save waits',
+    components: [...GRID, 'Dialog', 'TextField'],
+    design: '7.8, 7.15',
+    mockup: 'calendar-event.html (editor)',
+    filled: 1,
+  },
+  {
     id: 'editor-existing',
     frame: 'shell',
     title: 'Calendar: E on a stored event shows Delete beside Cancel and Save',
