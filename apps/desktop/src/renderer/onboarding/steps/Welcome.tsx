@@ -15,11 +15,12 @@ export interface WelcomeProps {
   readonly chrome: StepChrome;
   /** "Add an account" (Return). */
   readonly onAddAccount: () => void;
-  /** "Skip setup" (Esc). */
+  /** "Skip setup" (Esc), or "Close" when accounts exist and the window was only reopened to look. */
   readonly onSkip: () => void;
+  readonly hasAccounts?: boolean;
 }
 
-export function Welcome({ chrome, onAddAccount, onSkip }: WelcomeProps) {
+export function Welcome({ chrome, onAddAccount, onSkip, hasAccounts = false }: WelcomeProps) {
   return (
     <OnboardingStep
       layout="welcome"
@@ -39,7 +40,13 @@ export function Welcome({ chrome, onAddAccount, onSkip }: WelcomeProps) {
         ...(chrome.dashes ? { dashes: chrome.dashes } : {}),
         note: 'none',
         buttons: [
-          { label: 'Skip setup', emphasis: 'text', keys: 'Esc', keyHint: 'hint', onSelect: onSkip },
+          {
+            label: hasAccounts ? 'Close' : 'Skip setup',
+            emphasis: 'text',
+            keys: 'Esc',
+            keyHint: 'hint',
+            onSelect: onSkip,
+          },
         ],
       }}
       {...(chrome.onTryDemo ? { onTryDemo: chrome.onTryDemo } : {})}

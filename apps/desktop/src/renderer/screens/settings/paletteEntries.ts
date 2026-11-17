@@ -150,7 +150,7 @@ export const SETTING_ROWS: readonly RowSpec[] = [
   // Help & about
   row('help', 'version', 'About Aplos Mail', ['version', 'build', 'update', 'macos']),
   row('help', 'shortcutSheet', 'See all shortcuts', ['cheat sheet', 'keys', 'help']),
-  row('help', 'showWelcome', 'Replay onboarding', [
+  row('help', 'showWelcome', 'Show welcome again', [
     'show welcome',
     'welcome window',
     'setup',

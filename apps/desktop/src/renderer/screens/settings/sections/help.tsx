@@ -43,7 +43,7 @@ export function Help(props: SectionProps) {
           control={
             <Button
               variant="text"
-              label="Replay"
+              label="Show welcome"
               disabled={!host.showWelcome}
               onPress={() => actions.showWelcome()}
             />
