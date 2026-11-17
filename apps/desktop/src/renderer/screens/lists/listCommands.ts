@@ -42,6 +42,7 @@ export function commandsForList(actions: ListActions): CommandHandlerTable {
     'mail.later': run(() => actions.later()),
     'mail.bookmark': run(() => actions.bookmark()),
     'mail.trash': run(() => actions.trash()),
+    'mail.forward': run(() => actions.forward()),
     'mail.restore': run(() => actions.restore()),
   };
 }

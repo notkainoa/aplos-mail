@@ -182,6 +182,7 @@ test('the registry runs Later: L and D open the date presets, E is Done, the arr
       confirmation: () => null,
       setConfirmation: () => undefined,
       undoLabel: (_id, fallback) => fallback,
+      forward: () => undefined,
     });
     const actions: LaterActions = { ...list, openPicker: key => void opened.push(key) };
     const registry = createAppRegistry();

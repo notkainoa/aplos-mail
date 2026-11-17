@@ -27,6 +27,10 @@ export interface HeadControls {
   readonly done: () => void;
   /** Absent where the view has no reply-all of its own (one by one): the ⋯ menu then leaves the row out. */
   readonly replyAll?: () => void;
+  /** Absent where the view cannot open a forward (one by one): the ⋯ menu then leaves the rows out. */
+  readonly forward?: () => void;
+  /** Marks the thread read or unread (a read thread is marked unread and the reader returns to its list). */
+  readonly toggleRead?: () => void;
   readonly bookmark: () => void;
   readonly trash: () => void;
   readonly lane: (to: MovableLane) => void;
@@ -139,7 +143,7 @@ function NotificationBell({ state }: { readonly state: NotificationState }) {
 export function moreEntries(
   row: ThreadRow,
   suggestion: SuggestedAction,
-  canReplyAll: boolean,
+  has: { readonly replyAll: boolean; readonly forward: boolean; readonly toggleRead: boolean },
 ): readonly MenuEntry[] {
   const replyAll: MenuEntry = {
     kind: 'item',
@@ -147,6 +151,20 @@ export function moreEntries(
     label: 'Reply all',
     icon: 'reply-all',
     commandId: 'mail.replyAll',
+  };
+  const forward: MenuEntry = {
+    kind: 'item',
+    id: 'forward',
+    label: 'Forward',
+    icon: 'forward',
+    commandId: 'mail.forward',
+  };
+  const toggleRead: MenuEntry = {
+    kind: 'item',
+    id: 'toggleRead',
+    label: row.unread ? 'Mark read' : 'Mark unread',
+    icon: 'mail',
+    commandId: 'mail.toggleRead',
   };
   const done: MenuEntry = {
     kind: 'item',
@@ -163,7 +181,9 @@ export function moreEntries(
       icon: suggestion.icon,
       commandId: 'mail.suggested',
     },
-    ...(canReplyAll ? [replyAll] : []),
+    ...(has.replyAll ? [replyAll] : []),
+    ...(has.forward ? [forward] : []),
+    ...(has.toggleRead ? [toggleRead] : []),
     { kind: 'item', id: 'later', label: 'Later', icon: 'clock', commandId: 'mail.later' },
     ...(suggestion.isDone ? [] : [done]),
     { kind: 'separator' },
@@ -220,6 +240,8 @@ function MoreMenu({ row, suggestion, controls, topBarMore }: HeadActionsProps) {
   const run: Readonly<Record<string, () => void>> = {
     suggested: controls.suggest,
     replyAll: controls.replyAll ?? noop,
+    forward: controls.forward ?? noop,
+    toggleRead: controls.toggleRead ?? noop,
     later: controls.later,
     done: controls.done,
     bookmark: controls.bookmark,
@@ -244,7 +266,11 @@ function MoreMenu({ row, suggestion, controls, topBarMore }: HeadActionsProps) {
         open={menu.open}
         anchor={from ?? menu.ref.current}
         label={from ? 'Thread actions' : 'Message actions'}
-        entries={moreEntries(row, suggestion, controls.replyAll !== undefined)}
+        entries={moreEntries(row, suggestion, {
+          replyAll: controls.replyAll !== undefined,
+          forward: controls.forward !== undefined,
+          toggleRead: controls.toggleRead !== undefined,
+        })}
         activeId={menu.active}
         onActiveChange={menu.setActive}
         onSelect={id => {

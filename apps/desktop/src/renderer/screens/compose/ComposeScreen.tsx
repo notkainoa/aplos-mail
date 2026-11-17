@@ -8,12 +8,22 @@
  * Edit. A save that fails meanwhile brings the composer back with "Couldn’t save · Retry"; nothing closes silently.
  */
 import { useEffect, useMemo, useRef } from 'react';
-import { getNow, useAccounts, useRow, type Account, type Draft, type Message } from '../../data';
+import {
+  getNow,
+  useAccounts,
+  useMessageBody,
+  useRow,
+  useView,
+  type Account,
+  type Draft,
+  type Message,
+} from '../../data';
 import { useAccountScope, useRegisterCommands, type CommandHandlerTable } from '../../shell';
 import { Composer } from '../../ui/compose';
 import { useCardStyle, type CardStyle } from '../cardStyle';
 import { headerMenu, headerMoreButton } from './composeHeader';
 import { composeFromDraft, freshCompose, type ComposeState } from './model/composeState';
+import { forwardSeed } from './model/forwardSeed';
 import { ownAddresses, replySeed } from './model/replySeed';
 import { undoSendCommands } from './runtime/composeCommands';
 import type { DictationSource } from './runtime/dictationSource';
@@ -34,6 +44,8 @@ export interface ComposeScreenProps {
     readonly messageId: string;
     readonly replyAll?: boolean;
   };
+  /** A forward of this thread's latest message: the page opens once the message and its text have loaded. */
+  readonly forward?: { readonly threadId: string };
   /** The page has gone (Esc, discarded, sent): the shell goes back. */
   readonly onClose?: () => void;
   readonly dictationSource?: DictationSource | null;
@@ -187,9 +199,55 @@ export function ComposePageView({
   );
 }
 
-/** `ComposeScreen({draftId?, replyTo?})`: the compose page. */
+/**
+ * A forward's starting state, decided once the thread's latest message and its text are in (a body that failed to load
+ * quotes the snippet instead). A thread that cannot be read closes the page rather than leave it blank.
+ */
+function useForwardCompose(
+  threadId: string,
+  onClose: (() => void) | undefined,
+): ComposeState | null {
+  const view = useView({ kind: 'thread', threadId });
+  const ids = view.ids;
+  const latest = ids.length > 0 ? view.rows.get(ids[ids.length - 1]) : undefined;
+  const body = useMessageBody(latest?.id);
+  const decided = useRef<ComposeState | null>(null);
+  const failed = view.status === 'failed' || (view.status === 'live' && ids.length === 0);
+  useEffect(() => {
+    if (failed) onClose?.();
+  }, [failed, onClose]);
+  if (decided.current || !latest) return decided.current;
+  if (body.status !== 'ready' && body.status !== 'failed') return null;
+  const seed = forwardSeed(latest, body.body?.text ?? latest.snippet);
+  decided.current = freshCompose(seed.context, seed.fields);
+  return decided.current;
+}
+
+/** `ComposeScreen({draftId?, replyTo?, forward?})`: the compose page. */
 export function ComposeScreen(props: ComposeScreenProps) {
-  const initial = useInitialCompose(props);
+  return props.forward ? (
+    <ForwardScreen {...props} threadId={props.forward.threadId} />
+  ) : (
+    <ComposePage {...props} />
+  );
+}
+
+function ForwardScreen(props: ComposeScreenProps & { readonly threadId: string }) {
+  const initial = useForwardCompose(props.threadId, props.onClose);
+  return <ComposeBound initial={initial} props={props} />;
+}
+
+function ComposePage(props: ComposeScreenProps) {
+  return <ComposeBound initial={useInitialCompose(props)} props={props} />;
+}
+
+function ComposeBound({
+  initial,
+  props,
+}: {
+  readonly initial: ComposeState | null;
+  readonly props: ComposeScreenProps;
+}) {
   const binding = useComposeSession(initial);
   useCloseWhenDone(binding, props.onClose);
   usePendingUndo(binding);

@@ -96,6 +96,7 @@ export function depsOver(world: World, start: string, readyOnGo = true) {
     replies: [] as string[],
     requests: [] as Array<ReplyRequest | undefined>,
     suggested: [] as string[],
+    forwards: [] as string[],
   };
   controller.want(start);
   controller.ready(start);
@@ -122,6 +123,7 @@ export function depsOver(world: World, start: string, readyOnGo = true) {
     push: pushToast,
     dismiss: () => undefined,
     undoLabel: (_id, fallback) => fallback,
+    forward: id => void state.forwards.push(id),
     reply: (id, request) => {
       state.replies.push(id);
       state.requests.push(request);

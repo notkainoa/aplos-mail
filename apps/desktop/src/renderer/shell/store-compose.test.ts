@@ -63,3 +63,19 @@ test('C resolves to mail.compose and opens the compose route on every screen', (
   assert.deepEqual(getScreen(), { label: 'compose' });
   assert.equal(getComposeRequest()?.from, 'later');
 });
+
+test('a forward opens the compose page from a reader, and a second forward replaces the first', () => {
+  navigate('home');
+  openCompose({ forward: { threadId: 't1' } });
+  assert.deepEqual(getScreen(), { label: 'compose' });
+  const first = getComposeRequest();
+  assert.equal(first?.forward?.threadId, 't1');
+  assert.equal(first?.from, 'home');
+  openCompose({ forward: { threadId: 't2' } });
+  assert.equal(
+    getComposeRequest()?.forward?.threadId,
+    't2',
+    'F on another thread starts a new page',
+  );
+  assert.equal(getComposeRequest()?.from, 'home', 'the way back is kept');
+});

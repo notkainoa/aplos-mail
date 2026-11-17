@@ -34,6 +34,7 @@ export function commandsForHome(actions: HomeActions, extra: HomeExtras): Comman
     'mail.reply': run(() => actions.reply()),
     'mail.replyAll': run(() => actions.reply(REPLY_ALL)),
     'mail.dictateReply': run(() => actions.reply(DICTATE)),
+    'mail.forward': run(() => actions.forward()),
     'mail.toggleRead': run(() => actions.toggleRead()),
     'mail.open': run(() => actions.open()),
     'home.clearFromHome': run(() => actions.clearFromHome()),

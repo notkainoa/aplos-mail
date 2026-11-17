@@ -41,6 +41,7 @@ export function commandsForOneByOne(
     'mail.reply': run(() => actions.reply()),
     'mail.replyAll': run(() => actions.reply(REPLY_ALL)),
     'mail.dictateReply': run(() => actions.reply(DICTATE)),
+    'mail.forward': run(() => actions.forward()),
     'mail.toggleRead': run(() => actions.toggleRead()),
     'mail.setDate': run(() => actions.setDate()),
     'mail.bookmark': run(() => actions.bookmark()),

@@ -138,6 +138,7 @@ function depsOver(world: Awaited<ReturnType<typeof boot>>, key: { current: strin
     openDatePicker: id => void calls.push(`picker:${id}`),
     commit: (kind, _ids, rowId) => void calls.push(`commit:${kind}:${rowId}`),
     undoLabel: (_id, fallback) => fallback,
+    forward: () => undefined,
   };
   return { deps, calls, offer: () => offer };
 }
