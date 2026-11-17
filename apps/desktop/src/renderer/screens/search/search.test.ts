@@ -34,6 +34,7 @@ import {
   remoteStarted,
   removeToken,
   resultRow,
+  beyondSubject,
   snippetAround,
   snippetFit,
   withoutGreeting,
@@ -457,6 +458,20 @@ test('a snippet whose match sits far in starts a few words before it, one leadin
   assert.equal(snippetAround(text, ['invoice']), '…and the invoice reminder went out before nine');
   assert.equal(snippetAround(text, ['printer']), text, 'a match near the start is left alone');
   assert.equal(snippetAround(text, ['nothing']), text, 'no match, no cut');
+});
+
+test('a snippet that starts by repeating the subject shows what follows it, or nothing', () => {
+  const subject = 'Saturday in the community garden';
+  assert.equal(
+    beyondSubject('Saturday in the community garden this week needs hands.', subject),
+    'this week needs hands.',
+  );
+  assert.equal(beyondSubject('Saturday in the community garden', subject), undefined);
+  assert.equal(
+    beyondSubject('Bring gloves for the garden.', subject),
+    'Bring gloves for the garden.',
+  );
+  assert.equal(beyondSubject('anything', ''), 'anything', 'no subject, nothing to repeat');
 });
 
 test('a snippet is cut after a whole word, keeps its match, and short text is left alone', () => {

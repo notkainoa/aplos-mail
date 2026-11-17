@@ -536,6 +536,29 @@ export function withoutGreeting(text: string): string {
   return rest.length > 0 ? rest : text;
 }
 
+/**
+ * The snippet without the subject it starts by repeating ("Saturday in the community garden" then "Saturday in the
+ * community garden this week…"): what follows is what the mail adds. Nothing left means nothing to show.
+ */
+export function beyondSubject(snippet: string, subject: string): string | undefined {
+  const echo = subject.trim().toLowerCase();
+  const body = snippet.trim();
+  const rest =
+    echo !== '' && body.toLowerCase().startsWith(echo)
+      ? body.slice(echo.length).replace(/^[\s,;:.\u2013\u2014-]+/, '')
+      : body;
+  return rest === '' ? undefined : rest;
+}
+
+function snippetOf(
+  thread: Pick<ThreadRow, 'snippet' | 'subject'>,
+  highlight: readonly string[],
+): string | undefined {
+  if (!thread.snippet) return undefined;
+  const body = beyondSubject(withoutGreeting(thread.snippet), thread.subject);
+  return body ? snippetFit(snippetAround(body, highlight), highlight) : undefined;
+}
+
 /** One row from a thread. */
 export function resultRow(
   thread: Pick<
@@ -561,9 +584,7 @@ export function resultRow(
     sender: thread.fromName || '(no sender)',
     // The subject is shown whole (the cell ellipsises its own end); only the snippet is windowed to the match.
     primary: thread.subject || '(no subject)',
-    secondary: thread.snippet
-      ? snippetFit(snippetAround(withoutGreeting(thread.snippet), highlight), highlight)
-      : undefined,
+    secondary: snippetOf(thread, highlight),
     highlight,
     unread: thread.unread,
     date: toIsoDateTime(thread.lastDate),

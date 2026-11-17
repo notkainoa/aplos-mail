@@ -715,14 +715,15 @@
   white-space: nowrap;
 }
 /* One chip slot per list: when any row carries a due chip, every row's subject starts after the same slot, the chip
-   filling it from the left and a row with no chip leaving it empty, so the subject column never goes ragged. A list
+   centred in it, and a row with no chip leaving it empty, so the subject column never goes ragged. A list
    with no chip at all has no slot. */
 .ui-list-box:has(.ui-list-row__line > .ui-chip[data-kind='due']) {
-  --ui-due-slot: calc(var(--space-10) + var(--space-7));
+  --ui-due-slot: calc(var(--space-9) + var(--space-8));
 }
 .ui-list-box:has(.ui-list-row__line > .ui-chip[data-kind='due'])
   .ui-list-row__line
   > .ui-chip[data-kind='due'] {
+  justify-content: center;
   width: var(--ui-due-slot);
 }
 .ui-list-box:has(.ui-list-row__line > .ui-chip[data-kind='due'])
@@ -740,6 +741,8 @@
 .ui-list-row__primary[data-has-secondary='true'] {
   flex: 0 1 auto;
   max-width: 45%;
+  /* 16 px to the snippet (the line's 8 px gap plus this), so subject and snippet never run together. */
+  margin-right: var(--space-2);
 }
 .ui-list-row__secondary {
   flex: 1 1 0;
