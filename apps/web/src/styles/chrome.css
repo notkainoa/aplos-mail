@@ -98,12 +98,16 @@
 }
 
 .footer {
+  padding: 40px 0 0;
+  container-type: inline-size;
+}
+
+.footer-row {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
   justify-content: space-between;
   gap: 8px 24px;
-  padding: 32px 0 40px;
   color: var(--dim);
   font-size: 15px;
 }
@@ -112,6 +116,17 @@
   display: flex;
   align-items: center;
   gap: 10px;
+}
+
+/* The name fills the page width; a quiet tone keeps it a signature, not a second headline. */
+.footer-mark {
+  margin: 40px 0 0;
+  padding-bottom: 0.12em;
+  color: color-mix(in srgb, var(--ink) 16%, var(--shell));
+  font: 600 24.6cqi / 0.9 var(--font-display);
+  letter-spacing: -0.05em;
+  white-space: nowrap;
+  user-select: none;
 }
 
 .footer-links {
@@ -129,7 +144,7 @@
     padding: 0 8px;
   }
 
-  .footer {
+  .footer-row {
     flex-direction: column;
     align-items: flex-start;
   }

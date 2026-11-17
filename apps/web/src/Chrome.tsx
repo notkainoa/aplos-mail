@@ -29,21 +29,27 @@ export function Header({ home, page }: { home: string; page?: Page }) {
   );
 }
 
+// The footer: the links on one quiet line, then the name set across the full width as the page's signature.
 export function Footer({ home }: { home: string }) {
   return (
     <footer className="footer">
-      <div className="footer-brand">
-        <Logo size={24} />
-        <p data-claim="mac-only">Independent software for Mac.</p>
+      <div className="footer-row">
+        <div className="footer-brand">
+          <Logo size={24} />
+          <p data-claim="mac-only">Independent software for Mac.</p>
+        </div>
+        <nav className="footer-links" aria-label="Footer">
+          <a className="text-link" href={`${home}privacy/`}>
+            Privacy
+          </a>
+          <a className="text-link" href={`${home}download/`}>
+            How to get it
+          </a>
+        </nav>
       </div>
-      <nav className="footer-links" aria-label="Footer">
-        <a className="text-link" href={`${home}privacy/`}>
-          Privacy
-        </a>
-        <a className="text-link" href={`${home}download/`}>
-          How to get it
-        </a>
-      </nav>
+      <p className="footer-mark" aria-hidden="true">
+        Aplos Mail
+      </p>
     </footer>
   );
 }
