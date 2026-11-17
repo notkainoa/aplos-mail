@@ -27,6 +27,12 @@ export interface SlotProps<S extends FrameSource> {
   onKey: (key: MailFrameKey) => boolean | void;
 }
 
+/** A plain email's text sits in the name's column and stops short of the card's edge by as much as it starts after it. */
+const PLAIN_INSETS = {
+  paddingLeft: 'var(--plain-indent, 0px)',
+  paddingRight: 'var(--plain-inset, 0px)',
+} as const;
+
 const HIDDEN: CSSProperties = {
   position: 'absolute',
   insetInline: 0,
@@ -227,7 +233,7 @@ export function TextSlot(props: SlotProps<Extract<FrameSource, { kind: 'text' }>
     onMeasured.current(source, { height, bg: 'transparent', blocked: 0, trackers: 0 });
   }, [source, onMeasured]);
   return (
-    <div ref={ref} style={{ ...(hidden ? HIDDEN : null), paddingLeft: 'var(--plain-indent, 0px)' }}>
+    <div ref={ref} style={{ ...(hidden ? HIDDEN : null), ...PLAIN_INSETS }}>
       <PlainText
         text={source.text}
         findQuery={findQuery}

@@ -75,7 +75,8 @@ export function sheetOf(
     colorScheme: dark ? 'dark' : 'light',
     padding: '0',
     // The name's column, and never wider than the reading measure (about 65 to 70 characters).
-    width: 'min(calc(100% - var(--plain-indent, 0px)), var(--measure-read))',
+    width:
+      'min(calc(100% - var(--plain-indent, 0px) - var(--plain-inset, 0px)), var(--measure-read))',
     marginLeft: 'var(--plain-indent, 0px)',
     borderRadius: '0',
   };

@@ -11,6 +11,7 @@
 .aplos-reader {
   /* The sender mark's width and its gap: where a plain body's text starts (below). */
   --plain-indent: 0px;
+  --plain-inset: 0px;
   position: relative;
   box-sizing: border-box;
   display: flex;
@@ -271,9 +272,10 @@
   padding-block: var(--space-5) var(--space-4);
 }
 
-/* The pinned bar lifts the toasts: they sit above it, centred over it, never over the buttons, with 24 px between. */
+/* The pinned bar lifts the toasts: they sit above it, centred over it, never over the buttons, with 32 px between. The
+   two are pills of different widths, so a wider gap reads them as two things, not as a misaligned stack. */
 .ui-pane:has(.aplos-reader .ui-reader-actions) .ui-toast-stack {
-  bottom: calc(var(--space-4) + var(--control-lg) + var(--space-6));
+  bottom: calc(var(--space-4) + var(--control-lg) + var(--space-7));
 }
 
 /* Dark: cards are lifted by --raised (--elev-pane adds the sheen). */
@@ -521,6 +523,9 @@
     > .ui-thread-message__head > .ui-thread-message__line[data-layout='card']
   ) {
   --plain-indent: calc(var(--control-xs) + var(--space-2));
+  /* The body's right inset matches its left one, so the lines end short of the header's hairline by as much as they start
+     after it. */
+  --plain-inset: var(--plain-indent);
 }
 
 /* An invite email's own HTML, folded behind "Show original" while the native invitation block is shown. */
