@@ -1,0 +1,285 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width,initial-scale=1" />
+    <meta name="robots" content="noindex,nofollow" />
+    <title>Aplos Mail website directions</title>
+    <link rel="icon" type="image/svg+xml" href="../brand/aplos-mail.svg" />
+    <style>
+      /* A review viewer for the homepage directions: the page in a frame, a toolbar at the bottom. */
+      :root {
+        --bar: #1d1e21;
+        --bar-ink: #ececed;
+        --bar-dim: #9a9da4;
+        --bar-line: rgba(236, 236, 237, 0.12);
+        --seg: #121314;
+        --on: #ececed;
+        --on-ink: #1d1e21;
+        --stage: #e9e9eb;
+        --font: -apple-system, BlinkMacSystemFont, 'SF Pro Text', 'Helvetica Neue', sans-serif;
+      }
+      * {
+        box-sizing: border-box;
+      }
+      html,
+      body {
+        margin: 0;
+        height: 100%;
+        background: var(--stage);
+        font: 400 13px/18px var(--font);
+        -webkit-font-smoothing: antialiased;
+      }
+      body.dark {
+        --stage: #0b0c0d;
+      }
+      .stage {
+        position: fixed;
+        inset: 0 0 var(--bar-h, 56px) 0;
+        display: flex;
+        justify-content: center;
+        overflow: hidden;
+      }
+      iframe {
+        border: 0;
+        width: 100%;
+        height: 100%;
+        background: transparent;
+        display: block;
+      }
+      body.phone iframe {
+        width: 390px;
+        max-width: 100%;
+        box-shadow:
+          0 0 0 1px rgba(0, 0, 0, 0.12),
+          0 12px 40px rgba(0, 0, 0, 0.18);
+      }
+      body.phone .stage {
+        padding: 16px 0;
+      }
+      .bar {
+        position: fixed;
+        left: 0;
+        right: 0;
+        bottom: 0;
+        min-height: var(--bar-h, 56px);
+        background: var(--bar);
+        color: var(--bar-ink);
+        border-top: 1px solid var(--bar-line);
+        display: flex;
+        align-items: center;
+        gap: 16px;
+        padding: 8px 16px;
+        overflow-x: auto;
+        scrollbar-width: none;
+      }
+      .group {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        flex: none;
+      }
+      .label {
+        color: var(--bar-dim);
+        font-weight: 500;
+      }
+      .seg {
+        display: flex;
+        gap: 2px;
+        padding: 2px;
+        background: var(--seg);
+        border-radius: 8px;
+      }
+      .seg button {
+        appearance: none;
+        border: 0;
+        background: transparent;
+        color: var(--bar-ink);
+        font: 500 13px/20px var(--font);
+        padding: 6px 10px;
+        border-radius: 6px;
+        cursor: pointer;
+        white-space: nowrap;
+        transition: background-color 0.1s;
+      }
+      .seg button:hover {
+        background: rgba(236, 236, 237, 0.08);
+      }
+      .seg button[aria-pressed='true'] {
+        background: var(--on);
+        color: var(--on-ink);
+      }
+      .seg button .tag {
+        color: var(--bar-dim);
+        font-weight: 400;
+        margin-left: 4px;
+      }
+      .seg button[aria-pressed='true'] .tag {
+        color: #63666c;
+      }
+      .divider {
+        width: 1px;
+        align-self: stretch;
+        background: var(--bar-line);
+        flex: none;
+      }
+      .brand {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        font-weight: 600;
+        flex: none;
+      }
+      .brand img {
+        width: 20px;
+        height: 20px;
+        display: block;
+      }
+      .keys {
+        color: var(--bar-dim);
+        margin-left: auto;
+        flex: none;
+      }
+      kbd {
+        font: 500 11px/16px var(--font);
+        padding: 0 4px;
+        border-radius: 4px;
+        background: var(--seg);
+        color: var(--bar-ink);
+      }
+      :focus-visible {
+        outline: 2px solid #88aee0;
+        outline-offset: 1px;
+      }
+    </style>
+  </head>
+  <body>
+    <div class="stage"><iframe id="view" title="Homepage direction"></iframe></div>
+    <nav class="bar" aria-label="Viewer">
+      <span class="brand"><img src="../brand/aplos-mail.svg" alt="" />Directions</span>
+      <div class="divider"></div>
+      <div class="group">
+        <span class="label">Finalists</span>
+        <div class="seg" data-key="dir">
+          <button data-v="b">B<span class="tag">Evergreen</span></button>
+          <button data-v="a">A<span class="tag">Paper desk</span></button>
+        </div>
+      </div>
+      <div class="group">
+        <span class="label">Dropped</span>
+        <div class="seg" data-key="dir">
+          <button data-v="c">C<span class="tag">Letter</span></button>
+          <button data-v="d">D<span class="tag">Inbox</span></button>
+          <button data-v="e">E<span class="tag">Keys</span></button>
+        </div>
+      </div>
+      <div class="divider"></div>
+      <div class="group">
+        <div class="seg" data-key="theme">
+          <button data-v="light">Light</button>
+          <button data-v="dark">Dark</button>
+        </div>
+        <div class="seg" data-key="size">
+          <button data-v="desktop">Desktop</button>
+          <button data-v="phone">Phone</button>
+        </div>
+      </div>
+      <span class="keys"><kbd>1</kbd>–<kbd>5</kbd> direction · <kbd>T</kbd> theme · <kbd>P</kbd> phone</span>
+    </nav>
+    <script type="module">
+      // State lives in the hash (#b/dark/desktop) so a view can be linked.
+      const order = ['b', 'a', 'c', 'd', 'e'];
+      const frame = document.getElementById('view');
+      const prefersDark = matchMedia('(prefers-color-scheme: dark)').matches;
+      const state = readHash();
+
+      function readHash() {
+        const [dir, theme, size] = location.hash.slice(1).split('/');
+        return {
+          dir: order.includes(dir) ? dir : 'b',
+          theme: theme === 'dark' || theme === 'light' ? theme : prefersDark ? 'dark' : 'light',
+          size: size === 'phone' ? 'phone' : 'desktop',
+        };
+      }
+
+      // The directions follow prefers-color-scheme. Force the chosen theme inside the frame by rewriting
+      // its media queries: the matching scheme becomes always-true, the other never-true.
+      const yes = '(min-width: 0px)';
+      const no = '(min-width: 999999px)';
+      function rewrite(text, theme) {
+        return text
+          .replace(/\(\s*prefers-color-scheme:\s*dark\s*\)/g, theme === 'dark' ? yes : no)
+          .replace(/\(\s*prefers-color-scheme:\s*light\s*\)/g, theme === 'light' ? yes : no);
+      }
+      function walk(rules, theme) {
+        for (const rule of rules) {
+          if (rule.media && rule.media.mediaText.includes('prefers-color-scheme')) {
+            rule.media.mediaText = rewrite(rule.media.mediaText, theme);
+          }
+          if (rule.cssRules) walk(rule.cssRules, theme);
+        }
+      }
+      function applyTheme(doc, theme) {
+        for (const sheet of doc.styleSheets) {
+          try {
+            walk(sheet.cssRules, theme);
+          } catch {
+            // A cross-origin sheet cannot be read; the directions have none.
+          }
+        }
+        for (const el of doc.querySelectorAll('[media*="prefers-color-scheme"]')) {
+          el.setAttribute('media', rewrite(el.getAttribute('media'), theme));
+        }
+        doc.documentElement.style.colorScheme = theme;
+      }
+      function watch() {
+        const doc = frame.contentDocument;
+        if (!doc) return;
+        const theme = state.theme;
+        applyTheme(doc, theme);
+        const observer = new MutationObserver(() => applyTheme(doc, theme));
+        observer.observe(doc.documentElement, { childList: true, subtree: true });
+        setTimeout(() => observer.disconnect(), 4000);
+      }
+      frame.addEventListener('load', watch);
+
+      function render(reload) {
+        document.body.classList.toggle('dark', state.theme === 'dark');
+        document.body.classList.toggle('phone', state.size === 'phone');
+        for (const seg of document.querySelectorAll('.seg')) {
+          for (const b of seg.querySelectorAll('button')) {
+            b.setAttribute('aria-pressed', String(state[seg.dataset.key] === b.dataset.v));
+          }
+        }
+        history.replaceState(null, '', `#${state.dir}/${state.theme}/${state.size}`);
+        if (reload) frame.src = `./${state.dir}/`;
+      }
+
+      function set(key, value) {
+        const changed = state[key] !== value;
+        state[key] = value;
+        // A new theme needs a fresh page, because rewritten media rules cannot be flipped back cleanly.
+        render(changed && key !== 'size');
+      }
+
+      for (const seg of document.querySelectorAll('.seg')) {
+        seg.addEventListener('click', e => {
+          const b = e.target.closest('button');
+          if (b) set(seg.dataset.key, b.dataset.v);
+        });
+      }
+      document.addEventListener('keydown', e => {
+        if (e.metaKey || e.ctrlKey || e.altKey || e.isComposing) return;
+        const n = Number(e.key);
+        if (n >= 1 && n <= 5) set('dir', order[n - 1]);
+        else if (e.key === 't' || e.key === 'T') set('theme', state.theme === 'dark' ? 'light' : 'dark');
+        else if (e.key === 'p' || e.key === 'P') set('size', state.size === 'phone' ? 'desktop' : 'phone');
+      });
+      const barH = () =>
+        document.documentElement.style.setProperty('--bar-h', `${document.querySelector('.bar').offsetHeight}px`);
+      addEventListener('resize', barH);
+      barH();
+      render(true);
+    </script>
+  </body>
+</html>
