@@ -97,6 +97,25 @@ function pauseDue(services: EngineServices, now: number, until: number): void {
   });
 }
 
+/** A rate-limited feature's due rows wait until `until`; its held "Summarizing…" cards collapse meanwhile. */
+function pauseFeature(services: EngineServices, now: number, feature: string, until: number): void {
+  const due = dueJobs(services, now, Number.MAX_SAFE_INTEGER).filter(
+    r => r.kind !== 'wake' && featureOf(r.kind) === feature,
+  );
+  if (due.length)
+    services.store.commit({
+      opId: `ai-limit-${feature}-${now}-${hexId(services.randomBytes, 'l')}`,
+      origin: 'system',
+      writes: due.map(r => ({
+        kind: 'job' as const,
+        action: 'defer' as const,
+        id: r.id,
+        nextAt: until,
+      })),
+    });
+  if (feature === 'summaries') closePendingSummaries(services, now, true);
+}
+
 /**
  * One fire of the `jobs` source: claim and run what is due, then leave `next()` at the next due row.
  * The crash-reset is per STORE, not per process: two engines (or a test store) each reclaim once.
@@ -397,7 +416,8 @@ export async function runJobs(services: EngineServices, now: number): Promise<vo
       return;
     }
     let handled = 0;
-    let rateLimitedUntil = 0;
+    /** Per feature, until when the provider asked it to wait. */
+    const limited = new Map<string, number>();
     // Due 'wake' sentinels run in one batched pass: every wake action is idempotent under the job/summary
     // singleton keys, so there is no claim, and the whole set is deleted in a single commit — a delivery
     // burst must not spend a claim-plus-settle pair per touched thread. Deleting (not settling) is the whole
@@ -448,19 +468,19 @@ export async function runJobs(services: EngineServices, now: number): Promise<vo
           const outcome = await executeJob(services, row);
           logOutcome(services, row, outcome, started);
           settle(services, row, outcome);
-          if (outcome.code === 'rateLimited')
-            rateLimitedUntil = Math.max(rateLimitedUntil, outcome.nextAt ?? now);
+          if (outcome.code === 'rateLimited') {
+            const feature = featureOf(row.kind);
+            limited.set(feature, Math.max(limited.get(feature) ?? 0, outcome.nextAt ?? now));
+          }
           // The card collapses unless this work is still really going (see `holdsPlaceholder`).
           if ((row.kind === 'summary' || row.kind === 'classify') && !holdsPlaceholder(outcome))
             failSummary(services, row);
         }),
     );
-    // The provider said "slow down": every other due row waits out the same window instead of each spending an
-    // attempt on its own 429 — the queue then drains at the provider's pace, Home's priority-0 cards first.
-    if (rateLimitedUntil) {
-      closePendingSummaries(services, now, true);
-      return pauseDue(services, now, rateLimitedUntil);
-    }
+    // The provider said "slow down": every other due row of that feature waits out the same window instead of
+    // each spending an attempt on its own 429 — the feature then drains at the provider's pace, Home's priority-0
+    // cards first. Other features keep running; a waiting Summaries settles its held cards now.
+    for (const [feature, until] of limited) pauseFeature(services, now, feature, until);
     if (!handled) return;
     // A round finished; loop while more work is due right now — an ingest sentinel's `summary` job lands here.
     // The yield is a real timer turn, not a microtask: a pass of only sentinels awaits nothing else, and a

@@ -8,6 +8,7 @@ import { openStore } from '../../src/store';
 import { AiCallError, type AiChatRequest, type AiTransport } from '../../src/ai/host';
 import { runJobs } from '../../src/ai/impl/runner';
 import { queueSummary } from '../../src/ai/impl/jobs';
+import { RATE_LIMIT_MAX_MS, rateLimitWait } from '../../src/ai/impl/execute';
 import { CHAT_TIMEOUT_MS, LONG_CHAT_TIMEOUT_MS, meteredChat } from '../../src/ai/impl/runtime';
 import { ACCOUNT, accountWrite, folderWrites, msg, tempDb } from '../store/helpers';
 import { manualClock, silentDeadlines } from '../runtime.helpers';
@@ -460,4 +461,56 @@ test('a rate limit pauses the queue: one 429, not every queued job burning its a
   await runJobs(w.engine.services, w.clock.now());
   assert.equal((await threadSummary(w)).state, 'ready');
   assert.ok(jobsOf(w, 'summary').every(j => j.state === 'done'));
+});
+
+test('a rate limit pauses only its own feature, and a long Retry-After is capped', async () => {
+  // Only Summaries' provider is limited: the summary prompt gets a six-hour 429, anything else answers.
+  const base = stubTransport({});
+  const limited: AiTransport = {
+    ...base,
+    chat: req =>
+      String(req.messages[0]?.content).startsWith('Summarize')
+        ? Promise.reject(new AiCallError('rateLimited', 'quota', 6 * 3_600_000))
+        : base.chat(req),
+  };
+  const w = await world(limited);
+  seedMail(w);
+  await consentNow(w);
+  w.engine.services.store.commit({
+    opId: 'two',
+    origin: 'sync',
+    writes: [msg('t2', 'T-two', 7, { subject: 'Second', snippet: 'Second note.' })],
+  });
+  // Two summary jobs fill the round's two slots; the due plan job behind them is left to the next round.
+  queueSummary(w.engine.services, ACCOUNT, 'T-thread');
+  queueSummary(w.engine.services, ACCOUNT, 'T-two');
+  // A due job of another feature: a rate-limited Summaries must not hold it back.
+  w.engine.services.store.commit({
+    opId: 'other-feature',
+    origin: 'system',
+    writes: [
+      {
+        kind: 'job',
+        action: 'enqueue',
+        job: { kind: 'plan', key: 'plan:x', priority: 5, payload: '{}', nextAt: w.clock.now() },
+      },
+    ],
+  });
+  await runJobs(w.engine.services, w.clock.now());
+  const rows = w.engine.services.store.read(q =>
+    q.all<{ kind: string; next_at: number }>('SELECT kind, next_at FROM jobs ORDER BY id'),
+  );
+  const summary = rows.find(r => r.kind === 'summary')!;
+  assert.equal(
+    summary.next_at,
+    w.clock.now() + RATE_LIMIT_MAX_MS,
+    'six hours asked, fifteen minutes waited',
+  );
+  // The due plan job is not pushed to Summaries' window (a global pause used to defer it with everything else).
+  assert.ok(
+    rows.find(r => r.kind === 'plan')!.next_at <= w.clock.now(),
+    'Plans keeps its own schedule',
+  );
+  assert.equal(rateLimitWait(Number.NaN), 60_000);
+  assert.equal(rateLimitWait(Number.POSITIVE_INFINITY), 60_000);
 });
