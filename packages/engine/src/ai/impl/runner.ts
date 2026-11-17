@@ -259,10 +259,13 @@ function failSummary(services: EngineServices, row: JobRow): void {
  * `failed` (or `stale` when it carried text), the same settle `failSummary` makes before a job could ever be
  * attempted, whenever its work cannot run — the Summaries gate closed for every account, the row's own
  * account kept out of AI, or the `summary:…` singleton-keyed job row gone entirely (orphan: `classify`
- * shares that key, so one key check covers both kinds). `force` closes every placeholder — the queue's own
- * pauses (spent day cap, open setup session) hold all due jobs past the card's patience, and a settled row
- * re-queues when the pause lifts (catch-up and wake sentinels skip only `ready`). Bounded to `summaries`
- * placeholders; other features have none.
+ * shares that key, so one key check covers both kinds). The live-state list keeps `running` defensively —
+ * a claimed job owns its placeholder — but the check never actually sees one: `runJobs` is sequential, the
+ * sweep only runs before the loop or inside a pause branch (never while claimed work is mid-flight), and
+ * the per-store crash reset requeues stranded `running` rows up front. `force` closes every placeholder —
+ * the queue's own pauses (spent day cap, open setup session) hold all due jobs past the card's patience,
+ * and a settled row re-queues when the pause lifts (catch-up and wake sentinels skip only `ready`).
+ * Bounded to `summaries` placeholders; other features have none.
  */
 function closePendingSummaries(services: EngineServices, now: number, force = false): void {
   const gateOff = backgroundGate(services, 'summaries').ok ? 0 : 1;
