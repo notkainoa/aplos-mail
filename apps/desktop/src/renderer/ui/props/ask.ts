@@ -45,7 +45,7 @@ export interface AskDockProps {
   width: number;
   /** Width changed by dragging the edge; the screen remembers it. */
   onWidthChange: (width: number) => void;
-  /** No provider: the body says "Ask needs an AI key." with an Add a key button; the field and Ask are disabled; no red error. */
+  /** No provider: the body says "Ask needs an AI provider key" with an Add an AI key button; the field and Ask are disabled; no red error. */
   providerReady: boolean;
   /** The Settings link. */
   onOpenSettings: () => void;

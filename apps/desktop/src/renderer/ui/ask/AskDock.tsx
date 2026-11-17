@@ -230,9 +230,9 @@ function SetupLine({ onOpenSettings }: { onOpenSettings: () => void }) {
   return (
     <div className="ui-ask-dock__setup">
       <p className="ui-ask-dock__setup-text">
-        Ask about your mail and calendar. Answers appear here.
+        Ask needs an AI provider key to answer questions about your mail and calendar.
       </p>
-      <Btn variant="text" label="Add a key" onPress={() => onOpenSettings()} />
+      <Btn variant="text" label="Add an AI key" onPress={() => onOpenSettings()} />
     </div>
   );
 }
@@ -270,7 +270,9 @@ function DockFoot(props: AskDockProps & { activeOption: string | undefined; empt
             rows={1}
             dir="auto"
             aria-label="Ask"
-            placeholder={providerReady ? 'Ask about your mail or calendar' : 'Add a key to ask'}
+            placeholder={
+              providerReady ? 'Ask about your mail or calendar' : 'Add an AI key above to ask'
+            }
             disabled={!providerReady}
             data-dictation="body"
             aria-controls={props.activeOption ? props.emptyId : undefined}
