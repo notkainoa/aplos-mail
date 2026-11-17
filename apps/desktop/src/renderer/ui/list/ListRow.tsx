@@ -133,9 +133,14 @@ function RowLine({
             {highlighted(primary, highlight)}
           </span>
           {secondary ? (
-            <span className="ui-list-row__secondary" dir="auto">
-              {highlighted(secondary, highlight)}
-            </span>
+            <>
+              <span className="ui-list-row__sep" aria-hidden="true">
+                ·
+              </span>
+              <span className="ui-list-row__secondary" dir="auto">
+                {highlighted(secondary, highlight)}
+              </span>
+            </>
           ) : null}
         </>
       )}

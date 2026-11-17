@@ -502,6 +502,30 @@ test('a result keeps its whole subject and windows only the snippet, past a lead
   assert.equal(withoutGreeting('Hi,'), 'Hi,', 'a bare greeting is left alone');
 });
 
+test('a search row keeps the subject first and puts a written summary after it, else the snippet', () => {
+  const thread = {
+    id: 't2',
+    fromName: 'Maya',
+    subject: 'Invoice 114',
+    snippet: 'the invoice went out before nine',
+    unread: false,
+    lastDate: 0,
+    hasAttachments: false,
+    workflow: { status: 'new', bookmarked: false, hiddenFromHome: false },
+    accountId: 'a1',
+  } as const;
+  const query = toSearchQuery([], 'invoice');
+  const plain = resultRow(thread, query, false);
+  assert.ok(plain.secondary?.startsWith('the invoice went out'), 'no summary: the match snippet');
+  const summarized = resultRow(
+    { ...thread, summary: { state: 'ready', text: 'Maya sent the invoice.' } } as never,
+    query,
+    false,
+  );
+  assert.equal(summarized.primary, 'Invoice 114');
+  assert.equal(summarized.secondary, 'Maya sent the invoice.');
+});
+
 test('a saved cursor lands once its row is there, or once the local window has settled (never on a local neighbour early)', () => {
   const local = ['l1', 'l2'];
   assert.equal(returnReady('g1', local, 'opening'), false, 'the window is still opening');

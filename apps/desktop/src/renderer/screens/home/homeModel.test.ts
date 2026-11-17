@@ -7,7 +7,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import type { ThreadRow } from '../../data';
 import { LIST_WINDOW } from '../lists/listModel';
-import { primaryOf, senderOf, subjectOf, summaryOf } from './homeRows';
+import { primaryOf, secondaryOf, senderOf, subjectOf, summaryOf } from './homeRows';
 import {
   LOW_KEY,
   buildItems,
@@ -474,27 +474,30 @@ test('a row with no sender name and no subject still reads something', () => {
   assert.equal(primaryOf(named), 'Lunch');
 });
 
-test("every list row's main line is the summary when it is written, else the subject", () => {
-  // The one row rule for Home, Important updates, Sent and All mail — all funnel through the shared
-  // `primaryOf` (DESIGN "summary or subject", DECISIONS 2026-11-14): a ready or stale summary's text leads,
-  // every other state — pending, failed, none, or text never written — shows the subject.
+test("every list row's main line is the subject; a written summary follows it, muted", () => {
+  // The one row rule for every list (owner decision 2026-11-16, DECISIONS; it replaces "summary or subject"):
+  // `primaryOf` is always the subject, and `secondaryOf` is a ready or stale summary's text, else nothing.
   const base = { ...row({ id: 'r' }), subject: 'Print run' } as ThreadRow;
-  for (const state of ['ready', 'stale'] as const)
+  for (const state of ['ready', 'stale'] as const) {
+    const withSummary = {
+      ...base,
+      summary: { state, text: 'Ada asked about\n the invoice.' },
+    } as ThreadRow;
+    assert.equal(primaryOf(withSummary), 'Print run', `${state} never replaces the subject`);
     assert.equal(
-      primaryOf({ ...base, summary: { state, text: 'Ada asked about the invoice.' } } as ThreadRow),
+      secondaryOf(withSummary),
       'Ada asked about the invoice.',
+      'one line, whitespace folded',
     );
-  for (const state of ['pending', 'failed', 'none'] as const)
-    assert.equal(
-      primaryOf({ ...base, summary: { state, text: '' } } as ThreadRow),
-      'Print run',
-      `${state} shows the subject, not an AI line`,
-    );
-  assert.equal(
-    primaryOf({ ...base, summary: { state: 'ready', text: '' } } as ThreadRow),
-    'Print run',
-    'a ready row with no text still shows the subject',
-  );
+  }
+  for (const state of ['pending', 'failed', 'none'] as const) {
+    const without = { ...base, summary: { state, text: 'old words' } } as ThreadRow;
+    assert.equal(primaryOf(without), 'Print run');
+    assert.equal(secondaryOf(without), undefined, `${state} shows the subject alone`);
+  }
+  const empty = { ...base, summary: { state: 'ready', text: '  ' } } as ThreadRow;
+  assert.equal(secondaryOf(empty), undefined, 'a ready row with no text shows the subject alone');
+  assert.equal(secondaryOf({}), undefined, 'a row with no summary field shows the subject alone');
 });
 
 test('a bulk action that includes the card moves the cursor on, and Undo hands the card back', () => {

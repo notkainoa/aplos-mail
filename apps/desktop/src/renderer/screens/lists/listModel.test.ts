@@ -300,6 +300,24 @@ test('a Sent thread prefers who the owner sent it to over who else wrote in it',
   assert.equal(listRowPropsFor(sent, context(SENT_CONFIG)).sender, 'To: Priya Raman, jo');
 });
 
+test('every thread list shows the subject, then the summary when one is written', () => {
+  const summary = { state: 'ready', text: 'Ada asked about the invoice.' } as never;
+  for (const config of [ALL_CONFIG, SENT_CONFIG, DONE_CONFIG]) {
+    const written = listRowPropsFor(
+      thread({ id: 's', subject: 'Print run', summary }),
+      context(config),
+    );
+    assert.equal(written.primary, 'Print run', 'the subject leads and is never replaced');
+    assert.equal(written.secondary, 'Ada asked about the invoice.');
+    const none = listRowPropsFor(
+      thread({ id: 'n', subject: 'Print run', summary: { state: 'none' } as never }),
+      context(config),
+    );
+    assert.equal(none.primary, 'Print run');
+    assert.equal(none.secondary, undefined, 'no summary: the subject alone');
+  }
+});
+
 test('a Draft row shows recipients, subject and the edited time; an empty draft says so', () => {
   const draft = {
     id: 'd1',
