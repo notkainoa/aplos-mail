@@ -236,7 +236,7 @@ describe('CommitChip and CommitEdge', () => {
 
 describe('Chip', () => {
   test('due formats and provenance; overdue uses the tint with a clock', () => {
-    assert.match(text(render(<Chip kind="due" due={TOMORROW} format="short" />)), /^Tomorrow$/);
+    assert.match(text(render(<Chip kind="due" due={TOMORROW} format="short" />)), /^Due tomorrow$/);
     assert.match(
       text(render(<Chip kind="due" due={TOMORROW} format="sentence" />)),
       /^Due tomorrow$/,
@@ -259,7 +259,7 @@ describe('Chip', () => {
           <Chip kind="due" due={{ ...TOMORROW, at: '2026-10-31T00:00:00-07:00' }} format="short" />,
         ),
       ),
-      /^Sat$/,
+      /^Due Sat$/,
     );
     assert.match(
       text(
@@ -267,11 +267,11 @@ describe('Chip', () => {
           <Chip kind="due" due={{ ...TOMORROW, at: '2026-11-04T00:00:00-08:00' }} format="short" />,
         ),
       ),
-      /^Nov 4$/,
+      /^Due Nov 4$/,
     );
     const overdue = render(<Chip kind="due" due={DUE_TODAY} format="short" />);
     assert.match(overdue, /data-overdue="true"/);
-    assert.match(overdue, /data-icon="clock"/);
+    assert.match(overdue, /data-icon="calendar"/);
     assert.match(
       render(<Chip kind="due" due={FOUND} format="sentence" />),
       /title="[^"]+ · from the email"/,

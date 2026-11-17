@@ -237,21 +237,32 @@
 .ui-chip[data-overdue='true'] .ui-list-icon {
   background-color: transparent;
 }
-/* Later (DESIGN 7.3): the Later-until chip on the right carries the one overdue fill, so the due chip before the
+/* Later (DESIGN 7.3): the return time on the right carries the one overdue colour, so the due chip before the
    summary keeps its words and clock but sheds the tint (the section label and that chip already say overdue). */
 .ui-list-row[data-layout='later'] .ui-list-row__line .ui-chip[data-overdue='true'] {
   background-color: var(--raised);
 }
-/* Later's return time sits in one fixed-width column at the right, so the subjects keep the same room on every row;
-   the widest label ("Back Wed, Nov 18, 9:00 AM") fits whole. */
+/* Later's return time is plain secondary text with its clock, right-aligned in one fixed-width column at the right,
+   so the subjects keep the same room on every row; the widest label ("Back Wed, Nov 18, 9:00 AM") fits whole. A
+   return is a fact about the row, not a tag on it, so it carries no chip fill; overdue turns it --stamp-ink. */
 .ui-list-row__back {
   display: contents;
 }
 .ui-list-row[data-layout='later'] .ui-list-row__meta .ui-list-row__back {
   display: flex;
   flex: none;
-  justify-content: flex-start;
-  width: calc(var(--space-10) * 3 - var(--space-2));
+  justify-content: flex-end;
+  width: calc(var(--space-10) * 3 - var(--space-4));
+}
+.ui-list-row__back .ui-chip {
+  padding: 0;
+  background-color: transparent;
+  box-shadow: none;
+  color: var(--dim);
+}
+.ui-list-row__back .ui-chip[data-overdue='true'] {
+  background-color: transparent;
+  color: var(--stamp-ink);
 }
 .ui-chip[data-kind='label'][data-color] {
   box-shadow: inset 0 0 0 1px var(--swatch);
@@ -642,6 +653,8 @@
 .ui-list-row {
   --ui-row-base: var(--canvas);
   --ui-sender-w: var(--sender-w);
+  /* The chip slot: wide enough for "Due yesterday", the same on every row of every list. */
+  --ui-due-slot: calc(var(--space-10) + var(--space-9) + var(--space-2));
   --ui-date-w: auto;
   --ui-actions: 0;
   box-sizing: border-box;
@@ -666,9 +679,6 @@
 }
 .ui-list-row[data-density='compact'] {
   height: var(--row-compact);
-}
-.ui-list-row[data-layout='home'] {
-  --ui-sender-w: var(--sender-w-home);
 }
 .ui-list-row[data-layout='done'] {
   /* Sized for the worst row: three marks, the check and a dated stamp ("Oct 22, 2025"). */
@@ -729,27 +739,17 @@
   text-overflow: ellipsis;
   white-space: nowrap;
 }
-/* One chip slot per list: once any row carries a due chip, every row's subject starts after the same slot, the chip
-   hugging its words at the slot's leading edge, and a row with no chip leaving it empty, so the subject column never
-   goes ragged. The ListBox keeps data-chip-slot once it has shown a chip, so the slot also holds while triage takes the
-   last chip row away. A list that never shows a chip has no slot. The slot fits "Due today" and "Yesterday" whole: a
-   chip is never cut. */
+/* One grid for every mail list (Home, All mail, Done, Drafts, Sent, Spam, Trash, Later, Bookmarks, search, the Low
+   sheet): the sender column, then ALWAYS one chip slot, then the subject. A row with a due chip fills the slot (the chip
+   hugging its words at the slot's leading edge); a row with none leaves it empty, so the subject starts at one x in
+   every place and never moves, whatever triage takes away. The slot fits "Due yesterday" whole: a chip is never cut. */
 .ui-list-row__due {
-  display: contents;
-}
-.ui-list-box:is(:has(.ui-list-row__line > .ui-list-row__due), [data-chip-slot]) {
-  --ui-due-slot: calc(var(--space-10) + var(--space-9));
-}
-.ui-list-box:is(:has(.ui-list-row__line > .ui-list-row__due), [data-chip-slot])
-  .ui-list-row__line
-  > .ui-list-row__due {
   display: flex;
   flex: none;
   justify-content: flex-start;
   width: var(--ui-due-slot);
 }
-.ui-list-box:is(:has(.ui-list-row__line > .ui-list-row__due), [data-chip-slot])
-  .ui-list-row__line:not(:has(> .ui-list-row__due, > .ui-error-line)) {
+.ui-list-row__line:not(:has(> .ui-list-row__due, > .ui-error-line)) {
   padding-left: calc(var(--ui-due-slot) + var(--space-2));
 }
 .ui-chip[data-kind='due'] .ui-chip__text {

@@ -107,10 +107,10 @@ export function formatDue(iso: IsoDateTime, format: 'short' | 'withTime' | 'sent
   const off = dayOffset(d);
   if (format === 'short') {
     if (off === 0) return 'Due today';
-    if (off === 1) return 'Tomorrow';
-    if (off === -1) return 'Yesterday';
-    if (laterThisWeek(off)) return weekdayShort(d);
-    return monthDay(d);
+    if (off === 1) return 'Due tomorrow';
+    if (off === -1) return 'Due yesterday';
+    if (laterThisWeek(off)) return `Due ${weekdayShort(d)}`;
+    return `Due ${monthDay(d)}`;
   }
   if (format === 'withTime') {
     const day = relativeDay(d, 'short');

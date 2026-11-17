@@ -73,19 +73,16 @@ function DateColumn({
   doneEstimated,
   laterUntil,
   hideReturn,
-  afterDue,
 }: Pick<RowProps, 'layout' | 'date' | 'doneAt' | 'doneEstimated' | 'laterUntil'> & {
   /** The row's due chip already says the day it comes back. */
   hideReturn?: boolean;
-  /** The row shows a due chip: the return time reads "Back …". */
-  afterDue?: boolean;
 }) {
   if (layout === 'done') return <DoneStamp doneAt={doneAt} estimated={doneEstimated} />;
   if (layout === 'later' && hideReturn) return null;
   if (layout === 'later' && laterUntil)
     return (
       <span className="ui-list-row__back">
-        <Chip kind="laterUntil" until={laterUntil} afterDue={afterDue} />
+        <Chip kind="laterUntil" until={laterUntil} />
       </span>
     );
   return (
@@ -305,7 +302,6 @@ export function ListRow(props: ListRowProps) {
           doneEstimated={props.doneEstimated}
           laterUntil={props.laterUntil}
           hideReturn={returnsOnDeadline}
-          afterDue={!laterOverdue && props.due !== undefined}
         />
         {/* Inside the meta cell so the overlay always covers the whole date column: no half glyph or chip. */}
         {hoverActions.length > 0 ? (

@@ -39,7 +39,8 @@ describe('ListRow', () => {
     assert.match(m, /aria-selected="true"/);
     assert.match(m, /data-unread="true" data-cursor="true"/);
     assert.match(m, /Unread\./);
-    assert.match(m, /data-kind="due"[^>]*>.*Tomorrow/);
+    assert.match(m, /data-kind="due"[^>]*>.*Due tomorrow/);
+    assert.match(m, /data-icon="calendar"/, 'a due date wears the calendar, never the Later clock');
     assert.doesNotMatch(m, /ui-list-row__account|ui-list-row__dot|--swatch/, 'no dots on a row');
     assert.match(m, /title="alex@fernworks.studio"/, 'account always in the row tooltip');
   });
@@ -106,12 +107,12 @@ describe('ListRow', () => {
       />,
     );
     assert.match(m, /data-kind="laterUntil" data-overdue="true"/);
-    assert.match(m, /Tue, Oct 27/);
+    assert.match(m, /Back Tue, Oct 27/);
     assert.doesNotMatch(m, /ui-list-row__date/);
     const someday = render(
       <ListRow {...row({ layout: 'later', laterUntil: { kind: 'someday' } })} />,
     );
-    assert.match(someday, /Someday/);
+    assert.match(someday, /Back someday/);
   });
 
   test('later layout: a return on the deadline day is not said twice', () => {
@@ -149,7 +150,11 @@ describe('ListRow', () => {
         })}
       />,
     );
-    assert.doesNotMatch(text(alone), /Back /, 'with no due chip the return time stands alone');
+    assert.match(
+      text(alone),
+      /Back /,
+      'a return time always says Back, with or without a due chip',
+    );
   });
 
   test('rejected write: back in place with "Couldn’t move to Later." and Retry', () => {
@@ -379,10 +384,10 @@ describe('FocusSlot and FocusLetter', () => {
       /ui-focus-letter__sender" dir="auto" title="Jordan Park">Jordan Park</,
       'a name cut short in the card can still be read in full',
     );
-    assert.match(m, /data-kind="due"[^>]*>.*Tomorrow/);
+    assert.match(m, /data-kind="due"[^>]*>.*Due tomorrow/);
     assert.match(
       m,
-      /ui-focus-letter__sender" dir="auto" title="Jordan Park">Jordan Park<\/span><span class="ui-chip" data-kind="due"[\s\S]*Tomorrow[\s\S]*<time class="ui-focus-letter__date"/,
+      /ui-focus-letter__sender" dir="auto" title="Jordan Park">Jordan Park<\/span><span class="ui-chip" data-kind="due"[\s\S]*Due tomorrow[\s\S]*<time class="ui-focus-letter__date"/,
       'the chip sits on the sender line, right after the name',
     );
     assert.doesNotMatch(m, /ui-summary__lead/, 'nothing leads the summary on the card');

@@ -15,10 +15,9 @@ function dueTitle(due: { at: string; source: string }, found: boolean): string {
 }
 
 /** A due, Later-until, label, attachment or operator chip. */
-/** "Tomorrow, 9:00 AM", or after a due chip "Back tomorrow, 9:00 AM" / "Back Thu, Nov 19, 9:00 AM". */
-function laterUntilText(at: IsoDateTime, afterDue: boolean): string {
+/** A return time always reads "Back tomorrow, 9:00 AM" / "Back Thu, Nov 19, 9:00 AM", never a bare time. */
+function laterUntilText(at: IsoDateTime): string {
   const text = formatLaterUntil(at);
-  if (!afterDue) return text;
   return `Back ${text.replace(/^(Today|Tomorrow|Yesterday)/, word => word.toLowerCase())}`;
 }
 
@@ -35,13 +34,13 @@ export function Chip(props: ChipProps) {
           data-source={due.source}
           title={dueTitle(due, found)}
         >
-          <Icon name="clock" size="sm" />
+          <Icon name="calendar" size="sm" />
           <span className="ui-chip__text">{formatDue(due.at, format)}</span>
         </span>
       );
     }
     case 'laterUntil': {
-      const { until, afterDue } = props;
+      const { until } = props;
       const overdue = until.kind === 'at' && until.overdue;
       return (
         <span
@@ -52,7 +51,7 @@ export function Chip(props: ChipProps) {
         >
           <Icon name="clock" size="sm" />
           <span className="ui-chip__text">
-            {until.kind === 'someday' ? 'Someday' : laterUntilText(until.at, afterDue === true)}
+            {until.kind === 'someday' ? 'Back someday' : laterUntilText(until.at)}
           </span>
         </span>
       );

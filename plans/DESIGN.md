@@ -281,7 +281,7 @@ Six pairs, assigned by a stable hash of the name, with a manual override in Sett
 | Pane | Inset 8 px (`--shell-pad`) on top, right and bottom; radius 12; `--elev-pane` |
 | Pane header | 48 px. Back or close plus a crumb on the left; at most three icon tools, then Ask and the calendar button, on the right. A hairline appears only after content scrolls under it. |
 | Page controls row (`PageHead`) | Only on pages with page-level controls, which sit on the right: Later's Later \| Bookmarks switch, the search field, the calendar's date label with Today, previous/next and D \| W \| M |
-| List column | `min(720px, 100% − 2 gutters)` (`--list-w`), centred in the pane. Sender column 152 px (148 on Home). |
+| List column | `min(720px, 100% − 2 gutters)` (`--list-w`), centred in the pane. Sender column 152 px, then one always-reserved chip slot (128 px), then the subject: the subject starts at one x in every list, Home included. |
 | Reader | One 640 px column (`--reader-w`), no card |
 | One-by-one card | A centred reading column: `min(100% − 2 × clamp(16 px, 3 %, 24 px), --card-w)` — `--card-w` is 680 px. Shrinks with the pane, keeps a 16–24 px side margin, never wider; a rich email's frame uses the full card width and only a plain body is held to `--measure-read` (§16 amendment 2026-11-11). |
 | Composer | A 640 px page in the pane (`--composer-w`) |

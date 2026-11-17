@@ -303,20 +303,18 @@ export interface CommitEdgeProps {
 /** Due, label, attachment and operator chips: 24 px, radius 6, `--raised`; overdue on `--stamp-tint`; pill only for operator tokens (DESIGN §6 Chip). Mockups: home.html, reader.html (due, attachments), later.html, search.html (operators). Plain + refines: ui-foundation; operator kind delegates to OperatorToken. */
 export type ChipProps =
   | {
-      /** A due date with a clock icon. */
+      /** A due date with a calendar icon; the clock belongs to Later and return times. */
       kind: 'due';
       /** The due date. */
       due: DueInfo;
-      /** 'short' = "Tomorrow" / "Sat" / "Nov 4"; 'withTime' = "Today, 5:00 PM"; 'sentence' = "Due tomorrow" (reader). */
+      /** 'short' = "Due tomorrow" / "Due Sat" / "Due Nov 4"; 'withTime' = "Today, 5:00 PM"; 'sentence' = "Due tomorrow" (reader). */
       format: 'short' | 'withTime' | 'sentence';
     }
   | {
-      /** When a Later item comes back, with a clock: "Yesterday", "Tue, Oct 27", "Today, 5:00 PM", "Someday" (later.html). */
+      /** When a Later item comes back, with a clock: "Back yesterday", "Back Tue, Oct 27", "Back today, 5:00 PM", "Back someday" (later.html). */
       kind: 'laterUntil';
       /** The Later date. */
       until: LaterUntil;
-      /** The row also carries a due chip: this one says "Back tomorrow, 9:00 AM" so the two read as two facts. */
-      afterDue?: boolean;
     }
   | {
       /** A mail label. */
