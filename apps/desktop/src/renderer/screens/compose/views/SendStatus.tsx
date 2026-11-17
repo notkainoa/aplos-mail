@@ -50,11 +50,21 @@ export interface SendStatusProps {
   /** When the send was pressed or queued, for the message's time. */
   readonly at: number;
   readonly reducedMotion: boolean;
+  /** The undo window is over (sending, offline, sent): the message stays, with no tray, until the thread holds it. */
+  readonly bare?: boolean;
   readonly onAction: (action: SendAction) => void;
 }
 
 /** The sent message with its tray, or the send-failed line; nothing for phases that show neither. */
-export function SendStatus({ id, view, fields, at, reducedMotion, onAction }: SendStatusProps) {
+export function SendStatus({
+  id,
+  view,
+  fields,
+  at,
+  reducedMotion,
+  bare = false,
+  onAction,
+}: SendStatusProps) {
   if (view.failure) {
     return (
       <ErrorLine
@@ -68,7 +78,7 @@ export function SendStatus({ id, view, fields, at, reducedMotion, onAction }: Se
       />
     );
   }
-  if (!view.tray) return null;
+  if (!view.tray && !bare) return null;
   return (
     <ThreadMessage
       id={id}
@@ -77,12 +87,16 @@ export function SendStatus({ id, view, fields, at, reducedMotion, onAction }: Se
       date={toIsoDateTime(at)}
       cursor={false}
       body={<p className="aplos-compose-sent__body">{fields.body}</p>}
-      undoTray={{
-        state: view.tray,
-        reducedMotion,
-        undoCommandId: 'app.undo',
-        onAction: (action: UndoTrayAction) => onAction(action),
-      }}
+      undoTray={
+        view.tray
+          ? {
+              state: view.tray,
+              reducedMotion,
+              undoCommandId: 'app.undo',
+              onAction: (action: UndoTrayAction) => onAction(action),
+            }
+          : undefined
+      }
     />
   );
 }

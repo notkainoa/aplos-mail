@@ -115,3 +115,45 @@ test('a message with no From is not taken for yours: Reply-To, else an empty To 
   const withReplyTo = message({ from: undefined, replyTo: [{ address: 'list@example.com' }] });
   assert.deepEqual(addresses(replySeed(withReplyTo, me, false).fields.to), ['list@example.com']);
 });
+
+test('a reply to your own message to another of your addresses goes back to it, not to an empty To', () => {
+  const both = new Set(['me@example.com', 'work@example.com']);
+  const sent = message({
+    fromMe: true,
+    from: { address: 'me@example.com' },
+    to: [{ address: 'work@example.com' }],
+  });
+  for (const replyAll of [false, true]) {
+    const seed = replySeed(sent, both, replyAll);
+    assert.deepEqual(addresses(seed.fields.to), ['work@example.com']);
+    assert.deepEqual(seed.fields.cc, []);
+  }
+});
+
+test('a reply to your own Bcc-only message goes to the thread’s last other sender', () => {
+  const earlier = message({ id: 'm0', date: 1, from: { address: 'jordan@example.com' } });
+  const older = message({ id: 'm00', date: 0, from: { address: 'sam@example.com' } });
+  const sent = message({
+    id: 'm2',
+    date: 2,
+    fromMe: true,
+    from: { address: 'me@example.com' },
+    to: [],
+    cc: [],
+  });
+  const seed = replySeed(sent, me, true, [sent, older, earlier]);
+  assert.deepEqual(addresses(seed.fields.to), ['jordan@example.com']);
+  assert.deepEqual(addresses(replySeed(sent, me, false).fields.to), [], 'nobody to name: empty');
+});
+
+test('reply all to your own message copies its Cc and keeps its To', () => {
+  const sent = message({
+    fromMe: true,
+    from: { address: 'me@example.com' },
+    to: [{ address: 'mina@example.com' }, { address: 'me@example.com' }],
+    cc: [{ address: 'sam@example.com' }],
+  });
+  const seed = replySeed(sent, me, true);
+  assert.deepEqual(addresses(seed.fields.to), ['mina@example.com']);
+  assert.deepEqual(addresses(seed.fields.cc), ['sam@example.com']);
+});
