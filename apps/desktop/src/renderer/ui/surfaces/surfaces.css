@@ -403,7 +403,7 @@ html[data-real-key] .ui-part-tipwrap:has(> :focus-visible) > .ui-part-tip {
   flex: none;
   display: flex;
   align-items: center;
-  gap: var(--space-1);
+  gap: var(--space-2);
   margin-left: auto;
 }
 .ui-pane__tools > .ui-part-tipwrap:last-child > .ui-part-tip {
@@ -522,7 +522,8 @@ html[data-real-key] .ui-part-tipwrap:has(> :focus-visible) > .ui-part-tip {
   height: var(--space-5);
   flex: none;
   border-radius: var(--radius-sm);
-  background: var(--raised);
+  /* --puck: the same quiet ink step on the shell by day and at night (--raised all but vanished on the light shell). */
+  background: var(--puck);
   color: var(--ink);
   font: var(--type-caption);
   font-weight: 600;

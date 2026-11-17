@@ -811,7 +811,8 @@
   gap: var(--space-1);
 }
 .ui-list-row__stamp .ui-list-icon {
-  color: var(--hill);
+  /* Every row in Done is done, so the check is quiet (DESIGN 7.4's "quiet check"), not the green of a fresh completion. */
+  color: var(--faint);
 }
 
 /* Hover actions overlay the date column and never reflow the row. They sit in the meta cell and are at least

@@ -2,9 +2,10 @@
  * The shared list's non-row states (DESIGN 7.14, 6 Confirm): the empty sentence, the first-sync line while mail is
  * still arriving, and the two destructive confirmations. One plain sentence, at most one action, no illustration.
  */
+import { openCompose } from '../../shell';
 import { FirstSyncLine } from '../../shell/states';
 import { EmptyLine, ErrorLine } from '../../ui/list';
-import type { IconName } from '../../ui/props';
+import type { CommandId, IconName } from '../../ui/props';
 import { Confirm } from '../../ui/surfaces';
 import type { Confirmation } from './listActions';
 import { useReopen } from './Reopenable';
@@ -18,13 +19,24 @@ export interface ListEmptyProps {
   readonly icon?: IconName;
   /** The quieter second line (its config's `emptyDetail`), if any. */
   readonly detail?: string;
+  /** The one text action (its config's `emptyAction`), if any. */
+  readonly action?: { readonly label: string; readonly commandId: CommandId };
   readonly state: EmptyState;
 }
 
 /** The line a list shows when it holds nothing, centred in the pane. */
-export function ListEmpty({ text, icon, detail, state }: ListEmptyProps) {
+export function ListEmpty({ text, icon, detail, action, state }: ListEmptyProps) {
   if (state.settling) return <FirstSyncLine reason={state.reason} />;
-  return <EmptyLine placement="pane" text={text} icon={icon} detail={detail} />;
+  // The same hierarchy as a search with no match: the sentence, a quieter hint, then one text action.
+  return (
+    <EmptyLine
+      placement="pane"
+      text={text}
+      icon={icon}
+      detail={detail}
+      action={action ? { ...action, emphasis: 'text', onSelect: () => openCompose({}) } : undefined}
+    />
+  );
 }
 
 /**

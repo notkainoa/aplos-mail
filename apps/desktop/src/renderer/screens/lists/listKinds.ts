@@ -5,7 +5,7 @@
  */
 import type { AccountId, ViewSpec } from '../../data';
 import type { ContextName } from '../../commands';
-import type { IconName, RowAction, RowLayout } from '../../ui/props';
+import type { CommandId, IconName, RowAction, RowLayout } from '../../ui/props';
 
 /** Which list a `ListScreen` shows. A label is named by its folder id (the `label` view's `folderId`). */
 export type ListWhich = 'all' | 'drafts' | 'sent' | 'trash' | 'spam' | { readonly label: string };
@@ -32,6 +32,8 @@ export interface ListConfig {
   readonly emptyIcon: IconName;
   /** A second, quieter line under the empty sentence, only where it helps. */
   readonly emptyDetail?: string;
+  /** The one text action under an empty list ("Write a message", C), only where there is something to do. */
+  readonly emptyAction?: { readonly label: string; readonly commandId: CommandId };
   /** Date groups ("Today", "Yesterday") use section labels in All mail, Done, Drafts, Sent, Trash and Spam (DESIGN 7.4). */
   readonly dateGroups: boolean;
   /** Which date a date group reads: when the thread last moved, or when it was finished. */
@@ -91,7 +93,8 @@ export const DRAFTS_CONFIG: ListConfig = {
     view: { kind: 'drafts' },
     empty: 'No drafts',
     emptyIcon: 'file',
-    emptyDetail: 'Press C to write a message',
+    emptyDetail: 'Messages you start and leave are saved here',
+    emptyAction: { label: 'Write a message', commandId: 'mail.compose' },
     hoverActions: [],
   }),
   dateGroups: true,

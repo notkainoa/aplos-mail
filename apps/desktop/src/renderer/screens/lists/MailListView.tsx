@@ -129,6 +129,7 @@ export function MailListView({ list }: { readonly list: MailListState }) {
         text={config.empty}
         icon={config.emptyIcon}
         detail={config.emptyDetail}
+        action={config.emptyAction}
         state={list.empty}
       />
     );

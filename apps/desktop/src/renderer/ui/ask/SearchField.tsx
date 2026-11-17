@@ -101,21 +101,19 @@ export function SearchField(props: SearchFieldProps) {
       <div className="ui-search-field__meta">
         <span className="ui-search-field__tokens">
           {tokens.length === 0 ? (
-            // The hint belongs to an empty field: once there is text, the results are what matter.
-            value.length === 0 ? (
-              <span className="ui-search-field__hint" role="group" aria-label="Search operators">
-                <span>Narrow with</span>
-                {HINT_OPERATORS.map(({ label, insert }) => (
-                  <Btn
-                    key={label}
-                    variant="text"
-                    label={label}
-                    hint={`Add ${label} to the search`}
-                    onPress={() => insertOperator(insert)}
-                  />
-                ))}
-              </span>
-            ) : null
+            // With no operator yet the hint stays, typed text or not (mockups/search.html): the operators remain a click away.
+            <span className="ui-search-field__hint" role="group" aria-label="Search operators">
+              <span>Narrow with</span>
+              {HINT_OPERATORS.map(({ label, insert }) => (
+                <Btn
+                  key={label}
+                  variant="text"
+                  label={label}
+                  hint={`Add ${label} to the search`}
+                  onPress={() => insertOperator(insert)}
+                />
+              ))}
+            </span>
           ) : (
             tokens.map((token, index) => (
               <OperatorToken
