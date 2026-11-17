@@ -34,7 +34,7 @@
 .hero-note {
   display: grid;
   gap: 2px;
-  color: var(--dim);
+  color: var(--ink-2);
   font-size: 14px;
   line-height: 1.5;
 }
@@ -88,7 +88,7 @@
 
 .window figcaption {
   margin-top: 14px;
-  color: var(--dim);
+  color: var(--ink-2);
   font-size: 14px;
 }
 
@@ -235,8 +235,12 @@
 }
 
 @media (max-width: 640px) {
-  /* The working Home demo right below shows the card at full size. */
+  /* The sidebar is cropped out of the phone image, so its window buttons go too. */
   .window {
+    margin-top: 40px;
+  }
+
+  .traffic-lights {
     display: none;
   }
 

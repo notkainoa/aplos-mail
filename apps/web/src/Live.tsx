@@ -14,6 +14,9 @@ const keys: [string, string, string[]][] = [
   ['?', 'Every shortcut', ['?']],
 ];
 
+// On phones only the first CORE_KEYS show as caps; the rest fold into one quiet line.
+const CORE_KEYS = 4;
+
 function useKeyboardPress(list: React.RefObject<HTMLElement | null>) {
   const [pressed, setPressed] = useState<string | null>(null);
   useEffect(() => {
@@ -45,23 +48,28 @@ export function KeyList() {
   const ref = useRef<HTMLDListElement>(null);
   const [pressed, setPressed] = useKeyboardPress(ref);
   return (
-    <dl className="key-grid" data-claim="key-list" ref={ref}>
-      {keys.map(([key, label]) => (
-        <div
-          key={key}
-          className="key-item"
-          data-pressed={pressed === key || undefined}
-          onPointerDown={() => setPressed(key)}
-          onPointerUp={() => setPressed(null)}
-          onPointerLeave={() => setPressed(p => (p === key ? null : p))}
-        >
-          <dt>
-            <kbd className="cap">{key}</kbd>
-          </dt>
-          <dd>{label}</dd>
-        </div>
-      ))}
-    </dl>
+    <div className="key-wrap" data-claim="key-list">
+      <dl className="key-grid" ref={ref}>
+        {keys.map(([key, label], index) => (
+          <div
+            key={key}
+            className={`key-item${index >= CORE_KEYS ? ' key-more' : ''}`}
+            data-pressed={pressed === key || undefined}
+            onPointerDown={() => setPressed(key)}
+            onPointerUp={() => setPressed(null)}
+            onPointerLeave={() => setPressed(p => (p === key ? null : p))}
+          >
+            <dt>
+              <kbd className="cap">{key}</kbd>
+            </dt>
+            <dd>{label}</dd>
+          </div>
+        ))}
+      </dl>
+      <p className="key-rest">
+        Also B for bookmark, C for compose, A for Ask (hold it to dictate) and ? for every shortcut.
+      </p>
+    </div>
   );
 }
 

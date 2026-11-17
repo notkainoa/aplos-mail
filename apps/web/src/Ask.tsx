@@ -72,19 +72,23 @@ function AskField({ typed, listening, listen, release }: FieldProps) {
   );
 }
 
-function Suggestions({ onAsk }: { onAsk: (index: number) => void }) {
+type SuggestionsProps = { onAsk: (index: number) => void; label: string; skip?: number | null };
+
+function Suggestions({ onAsk, label, skip = null }: SuggestionsProps) {
   return (
     <div className="ask-body">
-      <p className="ask-label">Try asking</p>
+      <p className="ask-label">{label}</p>
       <ul className="ask-list">
-        {questions.map(([question], index) => (
-          <li key={question}>
-            <button type="button" onClick={() => onAsk(index)}>
-              <BubbleIcon />
-              {question}
-            </button>
-          </li>
-        ))}
+        {questions.map(([question], index) =>
+          index === skip ? null : (
+            <li key={question}>
+              <button type="button" onClick={() => onAsk(index)}>
+                <BubbleIcon />
+                {question}
+              </button>
+            </li>
+          ),
+        )}
       </ul>
     </div>
   );
@@ -179,7 +183,7 @@ function AnswerView({ question, answer, words, booking, onBook }: AnswerProps) {
 // anywhere. A question types itself into the field, then the answer streams in a word at a time, like the app.
 export function Ask() {
   const panel = useRef<HTMLDivElement>(null);
-  const script = useAskScript();
+  const script = useAskScript(0);
   const [booking, setBooking] = useState<Booking>('open');
   // The pressed suggestion or clear button goes away with the view it was in; keep keyboard focus in the panel.
   const keepFocus = () =>
@@ -226,7 +230,7 @@ export function Ask() {
         ) : null}
       </div>
       {asked === null || !answer ? (
-        <Suggestions onAsk={ask} />
+        <Suggestions onAsk={ask} label="Try asking" />
       ) : (
         <AnswerView
           key={`${asked}-${script.run}`}
@@ -237,6 +241,11 @@ export function Ask() {
           onBook={book}
         />
       )}
+      {done && asked !== null ? (
+        <div className="ask-more">
+          <Suggestions onAsk={ask} label="Try another" skip={asked} />
+        </div>
+      ) : null}
       <AskField typed={typed} {...dictate} />
       {/* One region that stays mounted, so screen readers hear the answer once it is complete. */}
       <p className="sr" aria-live="polite">

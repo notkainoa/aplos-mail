@@ -10,8 +10,8 @@
   --raised: #f2f2f4;
   --sunken: #ececee;
   --ink: #1d1e21;
-  --ink-2: #46484d;
-  --dim: #63666c;
+  --ink-2: #3e4045;
+  --dim: #55585f;
   --line: color-mix(in srgb, var(--ink) 9%, transparent);
   --line-strong: color-mix(in srgb, var(--ink) 14%, transparent);
   --hover: color-mix(in srgb, var(--ink) 5%, transparent);
@@ -41,6 +41,8 @@
   --mac-folder-back: #5d8fbf;
   --mac-folder-front: #7aaad6;
   --mac-select: #2c6fd1;
+  --mac-disk: #8d939c;
+  --mac-disk-label: #c9cdd3;
   --mac-select-ink: #ffffff;
   --mac-pointer-fill: #ffffff;
   --mac-pointer-stroke: #111111;
@@ -91,8 +93,8 @@
     --raised: #26272a;
     --sunken: #0e0f10;
     --ink: #ececed;
-    --ink-2: #c4c5c9;
-    --dim: #9da0a7;
+    --ink-2: #cfd0d4;
+    --dim: #b0b3ba;
     --line: color-mix(in srgb, var(--ink) 10%, transparent);
     --line-strong: color-mix(in srgb, var(--ink) 15%, transparent);
     --hover: color-mix(in srgb, var(--ink) 6%, transparent);
@@ -116,6 +118,8 @@
     --mac-folder-back: #4c7aa6;
     --mac-folder-front: #6595c4;
     --mac-select: #3b78d6;
+    --mac-disk: #8a9099;
+    --mac-disk-label: #5a5f68;
     --w-summary: 410;
     --w-answer: 390;
 

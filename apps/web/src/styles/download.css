@@ -12,11 +12,6 @@
   padding: clamp(32px, 6vw, 80px) 0 0;
 }
 
-.dl-hero .logo {
-  margin-bottom: 8px;
-  border-radius: 14px;
-}
-
 .dl-hero h1 {
   font-size: clamp(36px, 5.4vw, 64px);
   line-height: 1.08;
@@ -25,7 +20,7 @@
 
 .dl-lead {
   max-width: 32em;
-  color: var(--ink-2);
+  color: var(--ink);
   font-size: clamp(18px, 1.7vw, 21px);
   line-height: 1.55;
 }
@@ -42,6 +37,8 @@
 
 .dl-steps {
   margin-top: var(--section-gap);
+  padding-top: var(--section-gap);
+  border-top: 1px solid var(--line);
 }
 
 .dl-steps ol {
@@ -82,9 +79,7 @@
 }
 
 .dl-all {
-  margin-top: var(--section-gap);
-  padding-top: var(--section-gap);
-  border-top: 1px solid var(--line);
+  margin-top: clamp(40px, 5vw, 64px);
 }
 
 .dl-all-lead {
@@ -190,95 +185,33 @@
   width: 5cqw;
 }
 
-/* Step 1: Downloads in the Dock */
-.art-tip {
-  position: absolute;
-  z-index: 1;
-  left: 31cqw;
-  top: 9cqw;
-  padding: 1.6cqw 4.4cqw;
-  border-radius: 2cqw;
-  background: var(--paper);
-  box-shadow: var(--elev-card);
-  font-size: 4.6cqw;
-  font-weight: 600;
-}
-
-.art-dock-bar {
-  position: absolute;
-  left: 10cqw;
-  right: 10cqw;
-  top: 32cqw;
-  height: 42cqw;
-  border-radius: 10cqw;
-  background: var(--paper);
-  box-shadow: var(--elev-card);
-}
-
-.art-stack {
-  position: absolute;
-  left: 50%;
-  top: 6cqw;
-  width: 32cqw;
-  height: 30cqw;
-  transform: translateX(-50%);
-}
-
-.art-stack-folder {
-  position: absolute;
-  left: 0;
-  bottom: 0;
-  width: 100%;
-}
-
-.art-stack-doc {
-  position: absolute;
-  left: 22%;
-  top: 0;
-  width: 56%;
-  aspect-ratio: 0.8;
-  display: grid;
-  place-items: center;
-  border-radius: 1.6cqw;
-  background: var(--canvas);
-  box-shadow: 0 0 0 0.75px var(--line-strong);
-}
-
-.art-stack-doc img {
-  width: 70%;
-  border-radius: 22%;
-}
-
 /* Step 2: the disk image window */
 .art-dmg {
   position: absolute;
   left: 8cqw;
   right: 8cqw;
-  top: 12cqw;
-  bottom: 12cqw;
-  display: grid;
-  align-content: center;
-  gap: 6cqw;
+  top: 10cqw;
+  bottom: 10cqw;
+  overflow: hidden;
   border-radius: 3cqw;
-  background: var(--shell);
+  background: var(--win);
   box-shadow: var(--elev-card);
+  font-size: 3.6cqw;
 }
 
-.art-dmg-line {
-  color: var(--dim);
-  font-size: 3.4cqw;
+.art-dmg .art-win-bar b {
+  margin-left: 0;
+  flex: 1;
+  padding-right: 8cqw;
   text-align: center;
-}
-
-.art-dmg-line b {
-  color: var(--ink);
-  font-weight: 600;
 }
 
 .art-dmg-row {
   display: flex;
   align-items: center;
   justify-content: space-evenly;
+  height: calc(100% - 9cqw);
+  padding: 0 3cqw 4cqw;
 }
 
 .art-dmg-item {
@@ -299,18 +232,44 @@
   width: 20cqw;
 }
 
-.art-arrows {
-  width: 13cqw;
+.art-arrow {
+  width: 12cqw;
+  margin-bottom: 6cqw;
   fill: none;
-  stroke: var(--brand);
-  stroke-width: 3.2;
+  stroke: var(--dim);
+  stroke-width: 2.4;
   stroke-linecap: round;
   stroke-linejoin: round;
 }
 
 .art-pointer-drag {
-  left: 29cqw;
-  top: 47cqw;
+  left: 31cqw;
+  top: 32cqw;
+}
+
+.art-disk {
+  flex: none;
+  width: 4.4cqw;
+  height: 4.4cqw;
+  fill: var(--mac-disk);
+}
+
+.art-disk-label {
+  fill: var(--mac-disk-label);
+}
+
+.is-ours .art-disk {
+  fill: var(--mac-select-ink);
+}
+
+.is-ours .art-disk-label {
+  fill: var(--mac-select);
+  opacity: 0.35;
+}
+
+.art-pointer-one {
+  left: 78cqw;
+  top: 27cqw;
 }
 
 /* Step 3: Applications in the Finder */

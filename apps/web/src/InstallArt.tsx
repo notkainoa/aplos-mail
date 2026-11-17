@@ -34,47 +34,39 @@ const appsGlyph = (
   </g>
 );
 
-// Step 1: the Downloads stack in the Dock, with the disk image on top and its name above it.
-export function DockArt() {
+function Arrow() {
   return (
-    <div className="art art-dock">
-      <span className="art-tip">Downloads</span>
-      <div className="art-dock-bar">
-        <span className="art-stack">
-          <Folder className="art-stack-folder" />
-          <span className="art-stack-doc">
-            <img src={logo} alt="" />
-          </span>
-        </span>
-      </div>
-    </div>
-  );
-}
-
-function Chevrons() {
-  return (
-    <svg className="art-arrows" viewBox="0 0 64 30" aria-hidden="true">
-      <path d="M5 5l10 10-10 10" opacity=".3" />
-      <path d="M27 5l10 10-10 10" opacity=".6" />
-      <path d="M49 5l10 10-10 10" />
+    <svg className="art-arrow" viewBox="0 0 64 24" aria-hidden="true">
+      <path d="M4 12h54M47 3l11 9-11 9" />
     </svg>
   );
 }
 
-// Step 2: the disk image's window, as it opens: Aplos Mail on the left, Applications on the right.
+function TrafficDots() {
+  return (
+    <>
+      <i />
+      <i />
+      <i />
+    </>
+  );
+}
+
+// Step 2: the disk image's window, as it opens: Aplos Mail on the left, an arrow, Applications on the right.
 export function DragArt() {
   return (
     <div className="art art-drag">
       <div className="art-dmg">
-        <p className="art-dmg-line">
-          Drag <b>Aplos Mail</b> to <b>Applications</b>
-        </p>
+        <div className="art-win-bar">
+          <TrafficDots />
+          <b>Aplos Mail</b>
+        </div>
         <div className="art-dmg-row">
           <span className="art-dmg-item">
             <img src={logo} alt="" />
             Aplos Mail
           </span>
-          <Chevrons />
+          <Arrow />
           <span className="art-dmg-item">
             <Folder className="art-dmg-folder" glyph={appsGlyph} />
             Applications
@@ -86,46 +78,84 @@ export function DragArt() {
   );
 }
 
-const apps = ['Calculator', 'Chess', 'Aplos Mail', 'Dictionary', 'Maps', 'Notes'];
-const side = ['Recents', 'Applications', 'Desktop', 'Documents', 'Downloads'];
-const PICK = 2;
+type Item = { name: string; ours?: boolean; disk?: boolean };
 
-function FinderList() {
+const applications: Item[] = [
+  { name: 'Calculator' },
+  { name: 'Chess' },
+  { name: 'Aplos Mail', ours: true },
+  { name: 'Dictionary' },
+  { name: 'Maps' },
+  { name: 'Notes' },
+];
+const downloads: Item[] = [
+  { name: 'Invoice.pdf' },
+  { name: 'Aplos Mail.dmg', ours: true, disk: true },
+  { name: 'Photo.jpg' },
+  { name: 'Notes.txt' },
+];
+const side = ['Recents', 'Applications', 'Desktop', 'Documents', 'Downloads'];
+
+function DiskIcon() {
+  return (
+    <svg className="art-disk" viewBox="0 0 20 20" aria-hidden="true">
+      <rect x="1" y="3" width="18" height="14" rx="3.5" />
+      <rect className="art-disk-label" x="1" y="11" width="18" height="6" rx="3" />
+    </svg>
+  );
+}
+
+function ItemIcon({ item }: { item: Item }) {
+  if (item.disk) return <DiskIcon />;
+  if (item.ours) return <img src={logo} alt="" />;
+  return <span className="art-app" />;
+}
+
+function FinderList({ items }: { items: Item[] }) {
   return (
     <ul className="art-list">
-      {apps.map((name, i) => (
-        <li key={name} className={i === PICK ? 'is-ours' : ''}>
-          {i === PICK ? <img src={logo} alt="" /> : <span className="art-app" />}
-          {name}
+      {items.map(item => (
+        <li key={item.name} className={item.ours ? 'is-ours' : ''}>
+          <ItemIcon item={item} />
+          {item.name}
         </li>
       ))}
     </ul>
   );
 }
 
-// Step 3: Applications in the Finder, with Aplos Mail selected under the pointer.
-export function FinderArt() {
+type FinderProps = { title: string; items: Item[]; pointer: string };
+
+function Finder({ title, items, pointer }: FinderProps) {
   return (
     <div className="art art-finder">
       <div className="art-win">
         <div className="art-win-bar">
-          <i />
-          <i />
-          <i />
-          <b>Applications</b>
+          <TrafficDots />
+          <b>{title}</b>
         </div>
         <div className="art-win-body">
           <ul className="art-side">
             {side.map(name => (
-              <li key={name} className={name === 'Applications' ? 'is-on' : ''}>
+              <li key={name} className={name === title ? 'is-on' : ''}>
                 {name}
               </li>
             ))}
           </ul>
-          <FinderList />
+          <FinderList items={items} />
         </div>
       </div>
-      <Pointer className="art-pointer art-pointer-finder" />
+      <Pointer className={`art-pointer ${pointer}`} />
     </div>
   );
+}
+
+// Step 1: the disk image in the Downloads folder, selected under the pointer.
+export function DownloadsArt() {
+  return <Finder title="Downloads" items={downloads} pointer="art-pointer-one" />;
+}
+
+// Step 3: Applications in the Finder, with Aplos Mail selected under the pointer.
+export function FinderArt() {
+  return <Finder title="Applications" items={applications} pointer="art-pointer-finder" />;
 }

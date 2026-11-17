@@ -89,7 +89,11 @@ function HomeSection() {
         Once AI is on, the email in focus carries a short summary of what it says and needs. Reply,
         set it aside for Later or mark it Done, and the next one takes its place.
       </p>
-      <p className="note">This is a working copy of Home. Click it and try the keys.</p>
+      <p className="note">
+        This is a working copy of Home.{' '}
+        <span className="pointer-only">Click it and try the keys.</span>
+        <span className="touch-only">Tap the card, then use the buttons, or swipe it.</span>
+      </p>
     </Section>
   );
 }
@@ -112,8 +116,11 @@ function SuggestedSection() {
       <p data-claim="suggested-action">
         Once AI is on, Aplos reads each email and suggests one next step: reply, open a link or
         attachment, a plan for your calendar, or just Done. The main button names it with its own
-        icon, and Space starts it. A reply opens, Done clears the email, and the rest open the
-        email. Nothing is sent or added to your calendar on its own.
+        icon, and Space starts it.
+      </p>
+      <p data-claim="suggested-action">
+        A reply opens, Done clears the email, and the rest open the email. Nothing is sent or added
+        to your calendar on its own.
       </p>
       <p data-claim="suggested-action-ai-off">
         With AI off, the button is Reply on Do now and Done on Important updates.
@@ -159,7 +166,7 @@ function AskSection() {
       <p data-claim="ask-never-sends">
         It can draft a reply for you to review. It never sends on its own.
       </p>
-      <p className="note">Pick a question to see how it answers.</p>
+      <p className="note">Pick a question to see another answer.</p>
     </Section>
   );
 }
@@ -170,7 +177,7 @@ function KeysSection() {
       <p data-claim="keyboard-first">
         Your hands stay on the keyboard from the first email to the last.
       </p>
-      <p className="note">Press a key to see its cap press.</p>
+      <p className="note pointer-only">Press a key to see its cap press.</p>
     </Section>
   );
 }

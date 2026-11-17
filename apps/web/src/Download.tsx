@@ -1,8 +1,7 @@
 import { useEffect, useState } from 'react';
-import { Logo } from './brand';
 import { Footer, Header } from './Chrome';
 import { ArrowDownIcon, DownloadIcon } from './Icons';
-import { DockArt, DragArt, FinderArt } from './InstallArt';
+import { DownloadsArt, DragArt, FinderArt } from './InstallArt';
 import { detect, type Detected } from './platform';
 import { megabytes, release, requires, type Release } from './release';
 import { useReveal } from './reveal';
@@ -35,9 +34,8 @@ function releasedOn(date: string) {
 function Intro() {
   return (
     <section className="dl-hero" aria-labelledby="dl-title" data-reveal>
-      <Logo size={64} />
       <h1 id="dl-title">
-        {release ? 'Download Aplos Mail' : 'Aplos Mail is with invited testers'}
+        {release ? 'Download Aplos Mail' : 'Aplos Mail is with invited testers.'}
       </h1>
       {release ? (
         <p className="dl-lead">
@@ -48,8 +46,8 @@ function Intro() {
           There is no public download yet. Builds are shared directly with invited testers.
         </p>
       )}
-      <a className="text-link text-link-strong dl-jump" href="#all">
-        {release ? 'All versions' : 'Who can use it'}
+      <a className="text-link text-link-strong dl-jump" href="#install">
+        How to install
         <ArrowDownIcon />
       </a>
     </section>
@@ -59,7 +57,7 @@ function Intro() {
 // Install steps on a Mac, each with a close-up drawing from InstallArt.
 const steps: [() => React.ReactElement, React.ReactNode][] = [
   [
-    DockArt,
+    DownloadsArt,
     <>
       Open the <b>Aplos Mail</b> disk image from your <b>Downloads</b> folder.
     </>,
@@ -80,7 +78,7 @@ const steps: [() => React.ReactElement, React.ReactNode][] = [
 
 function Steps() {
   return (
-    <section className="dl-steps" aria-labelledby="steps-title">
+    <section className="dl-steps" id="install" aria-labelledby="steps-title">
       <h2 id="steps-title" className="dl-section-title" data-reveal>
         How to install
       </h2>
@@ -167,8 +165,8 @@ export function Download() {
         <Header home="../" page="download" />
         <main className="dl">
           <Intro />
-          <Steps />
           <WhoCanUse found={found} />
+          <Steps />
         </main>
         <Footer home="../" />
       </div>

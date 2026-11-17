@@ -8,16 +8,17 @@ const PAUSE_MS = 260;
 const WORD_MS = 38;
 const HOLD_MS = 350;
 
-/** Types the asked question into the field, then streams the answer a word at a time. */
-export function useAskScript() {
-  const [asked, setAsked] = useState<number | null>(null);
+/** Starts on question `first` already answered, or on the list of questions when null. Types the asked question into the field, then streams the answer a word at a time. */
+export function useAskScript(first: number | null = null) {
+  const [asked, setAsked] = useState<number | null>(first);
   const [typed, setTyped] = useState('');
-  const [words, setWords] = useState(0);
+  const [words, setWords] = useState(first === null ? 0 : wordCount(questions[first][1].text));
   const [run, setRun] = useState(0); // counts asks, so asking the same question again replays it
   const timer = useRef(0);
 
   useEffect(() => {
-    if (asked === null) return;
+    // The panel starts on a finished answer (run 0), so there is nothing to type or stream until a new question.
+    if (asked === null || run === 0) return;
     const [question, answer] = questions[asked];
     const total = wordCount(answer.text);
     if (reduced()) {

@@ -133,8 +133,23 @@ button {
 }
 
 .note {
-  color: var(--dim);
+  color: var(--ink-2);
   font-size: 15px;
+}
+
+/* Copy that depends on the input: a keyboard and pointer, or touch. */
+.touch-only {
+  display: none;
+}
+
+@media (hover: none), (pointer: coarse) {
+  .pointer-only {
+    display: none;
+  }
+
+  .touch-only {
+    display: inline;
+  }
 }
 
 /* Elements marked data-reveal fade in once as they enter the viewport (reveal.ts). */

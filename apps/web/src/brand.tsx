@@ -1,8 +1,8 @@
 import logo from '../brand/aplos-mail.svg';
 import homeWideLight from './assets/app/home-wide-light.webp';
 import homeWideDark from './assets/app/home-wide-dark.webp';
-import homeCardLight from './assets/app/home-card-light.webp';
-import homeCardDark from './assets/app/home-card-dark.webp';
+import homeMainLight from './assets/app/home-main-light.webp';
+import homeMainDark from './assets/app/home-main-dark.webp';
 
 /** The Aplos Mail logo, flat, built from brand/aplos-mail.icon. Decorative unless given alt text. */
 export function Logo({ size, alt = '' }: { size: number; alt?: string }) {
@@ -14,13 +14,13 @@ const DARK = '(prefers-color-scheme: dark)';
 
 /**
  * Home in the real app on its demo data (scripts/capture-screenshots.mjs): the top of the window on wide screens,
- * just the focus card on phones, each in the visitor's appearance.
+ * the main pane's focus card and first rows on phones, each in the visitor's appearance.
  */
 export function HomeShot({ alt }: { alt: string }) {
   return (
     <picture className="shot">
-      <source srcSet={homeCardDark} media={`${NARROW} and ${DARK}`} width={1488} height={398} />
-      <source srcSet={homeCardLight} media={NARROW} width={1488} height={398} />
+      <source srcSet={homeMainDark} media={`${NARROW} and ${DARK}`} width={840} height={830} />
+      <source srcSet={homeMainLight} media={NARROW} width={840} height={830} />
       <source srcSet={homeWideDark} media={DARK} />
       <img
         src={homeWideLight}

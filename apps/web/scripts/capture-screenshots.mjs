@@ -1,6 +1,6 @@
-// Re-creates the website's screenshot of the app (src/assets/app/home-{wide,card}-{light,dark}.webp) from the app's
-// original demo data, with AI off. The wide crop is the top of a 1240 × 760 window at 2x; the card crop is Home's
-// section label and focus card, for phones.
+// Re-creates the website's screenshot of the app (src/assets/app/home-{wide,main}-{light,dark}.webp) from the app's
+// original demo data, with AI off. The wide crop is the top of a 1240 × 760 window at 2x; the main crop is the left of
+// Home's main pane (focus card and first rows), for phones.
 //
 //   1. Build the app: npm run build -w @aplos/desktop
 //   2. From apps/desktop, start it with throwaway storage and a debugging port (never with real mail or accounts):
@@ -56,13 +56,9 @@ async function setWindow(page) {
   });
 }
 
-// The phone crop: Home's section label above the focus card, with a little room around both.
-async function cardBox(page) {
-  const box = await page.locator('.ui-focus-letter').first().boundingBox();
-  const x = Math.max(0, box.x - 12);
-  const y = Math.max(0, box.y - 40);
-  return { x, y, width: box.width + 24, height: box.height + 52 };
-}
+// The phone crop: the main pane's left part (section label, focus card and the first rows, no sidebar), so its text
+// reads at phone width.
+const MAIN_BOX = { x: 380, y: 55, width: 420, height: 415 };
 
 async function save(png, name, region) {
   const s = SIZE.scale;
@@ -100,7 +96,7 @@ async function shoot(page, scheme) {
   const png = await page.screenshot();
   const wide = { x: 0, y: 0, width: SIZE.width, height: WIDE_HEIGHT };
   await save(png, `home-wide-${scheme}`, wide);
-  await save(png, `home-card-${scheme}`, await cardBox(page));
+  await save(png, `home-main-${scheme}`, MAIN_BOX);
 }
 
 const browser = await chromium.connectOverCDP(CDP);
