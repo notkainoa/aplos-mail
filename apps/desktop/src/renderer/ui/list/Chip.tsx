@@ -5,7 +5,7 @@
 import type { CSSProperties } from 'react';
 import type { ChipProps, IsoDateTime } from '../props';
 import { Action } from './internal/Action';
-import { formatBytes, formatDue, formatFull, formatLaterUntil } from './internal/format';
+import { formatBytes, formatDue, formatFull, formatLaterUntilCompact } from './internal/format';
 import { Icon } from './internal/Icon';
 
 /** What a due chip is, in words: "Due Wednesday · Wed, Nov 18, 11:59 PM", and "from the email" when Aplos found it. */
@@ -14,13 +14,13 @@ function dueTitle(due: { at: string; source: string }, found: boolean): string {
   return found ? `${phrase} · from the email` : phrase;
 }
 
-/** A due, Later-until, label, attachment or operator chip. */
-/** A return time always reads "Back tomorrow, 9:00 AM" / "Back Thu, Nov 19, 9:00 AM", never a bare time. */
+/** A return time always reads "Back tomorrow 9 AM" / "Back Thu 9 AM", never a bare time; the tooltip has the full date. */
 function laterUntilText(at: IsoDateTime): string {
-  const text = formatLaterUntil(at);
+  const text = formatLaterUntilCompact(at);
   return `Back ${text.replace(/^(Today|Tomorrow|Yesterday)/, word => word.toLowerCase())}`;
 }
 
+/** A due, Later-until, label, attachment or operator chip. */
 export function Chip(props: ChipProps) {
   switch (props.kind) {
     case 'due': {

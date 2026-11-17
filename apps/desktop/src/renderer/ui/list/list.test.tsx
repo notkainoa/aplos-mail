@@ -139,7 +139,7 @@ describe('ListRow', () => {
     assert.match(other, /data-kind="laterUntil"/);
     assert.match(
       text(other),
-      /Back (Oct 31|Sat, Oct 31|\w+, Oct 31)/,
+      /Back (Sat 9 AM|Oct 31|Sat, Oct 31|\w+, Oct 31)/,
       'beside a due chip it says Back',
     );
     const alone = render(
