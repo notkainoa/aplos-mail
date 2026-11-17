@@ -31,15 +31,31 @@ const LAYOUT_PROPERTY =
 /** Never in a layout value: a URL, a script hook, a variable, an escape. */
 const UNSAFE_VALUE = /url\(|expression|var\(|!important|\\/i;
 
+/** A quote's bar is a hairline: every number in a `border-left` value is at most 4 px (no `thick`, no em, no percentage). */
+function thinBar(value: string): boolean {
+  const tokens = value
+    .replace(/(?:rgb|hsl)a?\([^)]*\)/gi, ' ')
+    .trim()
+    .split(/\s+/)
+    .filter(token => token !== '');
+  return tokens.every(token => {
+    const width = /^(\d+(?:\.\d+)?)(?:px)?$/i.exec(token);
+    if (width) return Number(width[1]) <= 4;
+    return !/^[\d.]/.test(token) && token.toLowerCase() !== 'thick';
+  });
+}
+
 function layoutOnly(style: string): boolean {
   const declarations = style.split(';').filter(d => d.trim() !== '');
   return declarations.every(declaration => {
     const at = declaration.indexOf(':');
     if (at < 1) return false;
     const value = declaration.slice(at + 1);
+    const property = declaration.slice(0, at).trim().toLowerCase();
     return (
-      LAYOUT_PROPERTY.test(declaration.slice(0, at).trim().toLowerCase()) &&
-      !UNSAFE_VALUE.test(value)
+      LAYOUT_PROPERTY.test(property) &&
+      !UNSAFE_VALUE.test(value) &&
+      (!property.startsWith('border-left') || thinBar(value))
     );
   });
 }

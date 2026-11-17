@@ -126,6 +126,8 @@ class Walker {
   private quotedCount = 0;
   /** Real text has been written outside any quote: only history that follows it is folded away. */
   private ownText = false;
+  /** A quote or forward was met and left open: nothing after it (its own words included) makes a later quote fold. */
+  private leftOpen = false;
   /** `style` attributes tokenized, sanitized and read for hiding, by source text: mail repeats them. */
   private readonly styleTokens = new Map<string, CSSToken[]>();
   private readonly cleanStyles = new Map<string, string>();
@@ -178,7 +180,8 @@ class Walker {
   }
 
   private text(data: string, context: Context): void {
-    if (!context.quoted && !context.hidden && data.trim() !== '') this.ownText = true;
+    if (!this.leftOpen && !context.quoted && !context.hidden && data.trim() !== '')
+      this.ownText = true;
     this.out.push(markText(data, this.finder));
   }
 
@@ -188,7 +191,11 @@ class Walker {
     const start = quoteStart(node);
     // A quote is folded only when it follows words of the sender's own: a forward, or a message that is nothing but
     // quoted history, is the whole content and stays open.
-    if (!start || !this.ownText || isForwarded(node)) return;
+    if (!start) return;
+    if (!this.ownText || isForwarded(node)) {
+      this.leftOpen = true;
+      return;
+    }
     const entry: Written = { name: 'details', open: false };
     frame.quote = { entry, last: start === 'self' ? index : frame.children.length - 1 };
     this.openQuote(entry);

@@ -44,6 +44,31 @@ test('a style that only places text keeps a mail plain; one colour beside it doe
     false,
   );
   assert.equal(plainOf('<p style="border-top:1px solid #000">x</p>'), false);
+  for (const style of [
+    'border-left:2000px solid #fff',
+    'border-left:5px solid #ccc',
+    'border-left:thick solid #ccc',
+  ])
+    assert.equal(plainOf(`<p style="${style}">x</p>`), false, style);
+  // The sanitiser drops most unsafe values before this runs; the rule itself still rejects them.
+  for (const style of [
+    'margin:0 url(https://example.com/a.png)',
+    'margin:expression(alert(1))',
+    'margin:var(--x)',
+    'margin:0 !important',
+    'margin:0\\0',
+  ])
+    assert.equal(
+      isPlainBody({ html: `<p style="${style}">x</p>`, bodyAttributes: '' }),
+      false,
+      style,
+    );
+  assert.equal(
+    plainOf(
+      '<span hidden> style="margin:0</span><div style="color:#fff;background:#b00;font-size:28px">Your account is locked</div>',
+    ),
+    false,
+  );
   // A literal style=" in the text must not hide the real markers that follow it.
   assert.equal(plainOf('<p>see style="margin:0</p><p><font color="#000000">x</font></p>'), false);
 });

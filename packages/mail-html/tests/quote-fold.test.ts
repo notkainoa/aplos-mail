@@ -30,4 +30,23 @@ describe('folding quoted history', () => {
     const reply = html('<p>Thanks</p><blockquote type="cite">old text</blockquote>');
     assert.equal(reply.quotedCount, 1, 'a reply still folds its history');
   });
+
+  it('counts only visible words outside a quote as the sender’s own', () => {
+    const hidden = html(
+      '<span style="display:none">preheader words</span><blockquote type="cite">old text</blockquote>',
+    );
+    assert.equal(hidden.quotedCount, 0, 'hidden text is not words of the sender');
+    const quotedFirst = html(
+      '<blockquote type="cite">first old text</blockquote><blockquote type="cite">second old text</blockquote>',
+    );
+    assert.equal(quotedFirst.quotedCount, 0, 'text inside a quote does not count as own');
+    const inCell = html(
+      '<blockquote type="cite"><table><tr><td>old text in a cell</td></tr></table></blockquote><blockquote type="cite">more old text</blockquote>',
+    );
+    assert.equal(inCell.quotedCount, 0, 'a table cell inside a quote is still quoted');
+    const ownCell = html(
+      '<table><tr><td>my words</td></tr></table><blockquote type="cite">old text</blockquote>',
+    );
+    assert.equal(ownCell.quotedCount, 1, 'my words in a cell before the quote count');
+  });
 });

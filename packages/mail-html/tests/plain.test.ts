@@ -3,7 +3,7 @@ import { readFileSync } from 'node:fs';
 import { describe, it } from 'node:test';
 import { fileURLToPath } from 'node:url';
 import { render } from '../src/index';
-import { PLAIN_ATTRIBUTE } from '../src/plain';
+import { PLAIN_ATTRIBUTE, isPlainWalk } from '../src/plain';
 import { PLAIN_DARK, PLAIN_LIGHT, PLAIN_TYPE, READING_CSS } from '../src/reading-css';
 
 // A plain email (owner request 2026-11-10) is drawn straight on the card in the app's type and colours: the frame marks its
@@ -65,6 +65,12 @@ describe('a plain email', () => {
       '<p style="margin:0;background:url(https://example.com/a.png)">Hello</p>',
       '<p style="border-left:1px solid red;font-family:Georgia">Hello</p>',
       '<p style="border-top:1px solid #000">Hello</p>',
+      '<p style="border-left:2000px solid #fff">Hello</p>',
+      '<p style="border-left:5px solid #ccc">Hello</p>',
+      '<p style="border-left:thick solid #ccc">Hello</p>',
+      '<p style="border-left-width:2em">Hello</p>',
+      // A hidden or visible text with a stray quote must not swallow the real style that follows it.
+      '<span hidden> style="margin:0</span><div style="color:#fff;background:#b00;font-size:28px;border-radius:8px">Your account is locked</div>',
       // A literal style=" in the text must not hide the real markers that follow it.
       '<p>see style="margin:0</p><p><font color="#000000">black</font></p>',
       '<p>x style="margin:0</p><img src="https://example.com/a.png" alt="a">',
@@ -177,5 +183,21 @@ describe('the reading CSS for a plain email', () => {
     );
     assert.ok(here.length >= 9, `read ${here.length} markers`);
     assert.deepEqual(there, here);
+  });
+});
+
+describe('the layout style rule on its own (the sanitiser already drops most of these values)', () => {
+  const plain = (style: string) =>
+    isPlainWalk({ bodyAttributes: '', body: `<p style="${style}">x</p>` });
+  it('keeps text-placing declarations plain and rejects a URL, a script hook, a variable, !important or an escape', () => {
+    assert.equal(plain('margin:0;text-align:center'), true);
+    for (const style of [
+      'margin:0 url(https://example.com/a.png)',
+      'margin:expression(alert(1))',
+      'margin:var(--x)',
+      'margin:0 !important',
+      'margin:0\\0',
+    ])
+      assert.equal(plain(style), false, style);
   });
 });
