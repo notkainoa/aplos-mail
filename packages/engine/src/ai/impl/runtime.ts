@@ -111,6 +111,13 @@ export interface MeteredCall {
   trackId?: string;
 }
 
+/**
+ * One provider call's whole budget — headers AND the streamed body. The transport's own timeout stops at the
+ * response headers, so a provider that opens a stream and then stalls would otherwise hold a `background` job
+ * (and, through `runJobs`' `Promise.all`, the whole `jobs` deadline source) open for the rest of the session.
+ */
+export const CHAT_TIMEOUT_MS = 120_000;
+
 /** One provider chat call with usage accounting; a capped day refuses `background` calls only. */
 export async function meteredChat(
   services: EngineServices,
@@ -123,9 +130,24 @@ export async function meteredChat(
   // The tracked signal AND the caller's own must both abort the call — a disconnected caller kills it
   // even when Ai/cancel never runs.
   const tracked = call.trackId ? services.ai.track(call.trackId) : undefined;
-  const signal = combine(req.signal, tracked);
+  const timedOut = new AbortController();
+  const signal = combine(req.signal, tracked, timedOut.signal);
   try {
-    const turn = await transport.chat({ ...req, model: call.model, signal });
+    // Both arms open inside the try: a transport or clock that throws synchronously still reaches the
+    // finally, retiring the timer and the tracking slot instead of leaving them armed.
+    const sleeping = services.clock.sleep(CHAT_TIMEOUT_MS, timedOut.signal);
+    const work = transport.chat({ ...req, model: call.model, signal });
+    // The clock's sleep aborts in `finally`, so a settled call leaves no timer behind; the race observes the
+    // sleeping promise even after `work` wins, so the cleanup abort never surfaces as an unhandled rejection.
+    const turn = await Promise.race([
+      work,
+      sleeping.then(() => {
+        // A stalled call reports as unreachable after the bound, never as a caller cancel; the abandoned
+        // `work` may still settle (an abort the transport honours, or a very late answer) — never unhandled.
+        work.catch(() => {});
+        throw new AiCallError('unreachable', 'ai.timeout');
+      }),
+    ]);
     // A provider that reports no usage still spent compute — estimate ~4 chars/token so the daily cap
     // is never blind (local servers and un-metered responses included).
     const estimated = turn.usage ?? {
@@ -135,7 +157,10 @@ export async function meteredChat(
     recordUsage(services, call.model, call.lane, estimated);
 
     return turn;
+    // No catch: the race's sleeping arm owns the timeout reason, and a caller cancel or provider failure
+    // keeps its own class — `finally` only retires the clock and the tracking slot.
   } finally {
+    timedOut.abort();
     if (call.trackId) services.ai.release(call.trackId);
   }
 }

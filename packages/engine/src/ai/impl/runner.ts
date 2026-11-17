@@ -151,9 +151,10 @@ const reasonOf = (raw: string | null | undefined): string => {
 };
 
 /**
- * One log event per settled job: `done` at debug, a dead-letter at warn (a 'failed' attempt stays quiet — it
- * retries on its own; 'release' and 'skipped' are by-design pauses, not failures). Provider text never reaches
- * the log: the fields carry codes and the feature's configured model only.
+ * One log event per settled job: `done` at debug, a 'failed' attempt and a dead-letter at warn — a quiet
+ * failure would leave the card's "Summarizing…" collapse with no recorded reason; 'release' and 'skipped' are
+ * by-design pauses, not failures. Provider text never reaches the log: the fields carry codes and the
+ * feature's configured model only.
  */
 function logOutcome(
   services: EngineServices,
@@ -180,14 +181,18 @@ function logOutcome(
       model: model?.model ?? 'unknown',
       durationMs: Math.max(0, services.clock.now() - started),
     });
-  if (outcome.state === 'dead')
+  if (outcome.state === 'failed' || outcome.state === 'dead')
     services.log.event('ai.job.failed', {
       job: String(row.id),
       feature,
       provider: model?.provider ?? 'unknown',
       model: model?.model ?? 'unknown',
+      attempt: row.attempts + 1,
+      ...(outcome.nextAt !== undefined
+        ? { nextInMs: Math.max(0, outcome.nextAt - services.clock.now()) }
+        : {}),
       error: {
-        class: 'permanent',
+        class: outcome.state === 'dead' ? 'permanent' : 'transient',
         provider: 'ai',
         method: 'chat',
         reason: reasonOf(outcome.lastError),
@@ -249,6 +254,55 @@ function failSummary(services: EngineServices, row: JobRow): void {
   }
 }
 
+/**
+ * AI-off means the card collapses, not "Summarizing…" forever: a `pending` placeholder whose work cannot run —
+ * the Summaries gate closed for every account, or the row's own account kept out of AI — flips to `failed` (or
+ * `stale` when it carried text), the same settle `failSummary` makes before the job could ever be attempted.
+ * Bounded to `summaries` placeholders only; other features have none.
+ */
+function closePendingSummaries(services: EngineServices, now: number): void {
+  const gateOff = backgroundGate(services, 'summaries').ok ? 0 : 1;
+  const rows = services.store.read(q =>
+    q.all<{
+      account_id: string;
+      remote_id: string;
+      input_hash: string;
+      model: string;
+      text: string;
+      action: string | null;
+    }>(
+      `SELECT t.account_id, t.remote_id, s.input_hash, s.model, s.text, s.action
+       FROM summaries s JOIN threads t ON t.id = s.thread_id
+       JOIN accounts a ON a.id = t.account_id
+       WHERE s.state = 'pending' AND (? = 1 OR a.ai_allowed != 1)
+       ORDER BY s.created_at LIMIT 200`,
+      gateOff,
+    ),
+  );
+  if (!rows.length) return;
+  services.store.commit({
+    opId: `ai-pending-closed-${now}-${hexId(services.randomBytes, 'p')}`,
+    origin: 'system',
+    writes: rows.map(r => ({
+      kind: 'summary' as const,
+      accountId: r.account_id,
+      remoteThreadId: r.remote_id,
+      inputHash: r.input_hash,
+      model: r.model,
+      text: r.text,
+      ...(r.action !== null ? { action: r.action } : {}),
+      state: (r.text ? 'stale' : 'failed') as 'stale' | 'failed',
+    })),
+  });
+}
+
+/**
+ * The release reasons that mean AI is off, not paused: no key, no provider, no AI on this build. The job keeps
+ * its queue slot for the owner's fix, but the card's "nothing is coming" is already true — the subset of
+ * `RELEASE_CODES` (execute.ts) that is an off state rather than a wait like `dailyLimit`/`gatePaused`.
+ */
+const AI_OFF_RELEASE: ReadonlySet<string> = new Set(['missingKey', 'unavailable', 'noProvider']);
+
 const resetDone = new WeakSet<object>();
 /** The day a `budget_exhausted` event was last logged, per engine — a spent cap warns once, then sleeps till tomorrow. */
 const budgetWarned = new WeakMap<object, string>();
@@ -272,6 +326,9 @@ export async function runJobs(services: EngineServices, now: number): Promise<vo
   } catch {
     /* the wake sentinel and the sweep re-arm together at the next pass */
   }
+  // AI off is a collapse, not a wait: a placeholder whose gate is closed settles up front rather than hanging
+  // on a queued job that may sit hours out on backoff — a reopened gate re-queues it from wakes.
+  closePendingSummaries(services, now);
   for (;;) {
     const rows = dueJobs(services, now, ROUND_LIMIT);
     if (!rows.length) return;
@@ -350,12 +407,19 @@ export async function runJobs(services: EngineServices, now: number): Promise<vo
           if (!claim(services, row, now)) return;
           handled++;
           const started = services.clock.now();
-          const outcome = await executeJob(services, row, now);
+          const outcome = await executeJob(services, row);
           logOutcome(services, row, outcome, started);
           settle(services, row, outcome);
           // A summary job that will not run again clears its `pending` placeholder to `failed` (a Home row
-          // collapses); a retryable 'failed' attempt keeps it while the queue retries.
-          if (row.kind === 'summary' && (outcome.state === 'dead' || outcome.state === 'skipped'))
+          // collapses); a retryable 'failed' attempt keeps it while the queue retries. So does a release for
+          // an AI-off reason — the job stays queued for the owner's fix but nothing is coming now — while a
+          // release for a real wait (daily cap, gate pause) holds the placeholder.
+          if (
+            (row.kind === 'summary' || row.kind === 'classify') &&
+            (outcome.state === 'dead' ||
+              outcome.state === 'skipped' ||
+              (outcome.state === 'release' && AI_OFF_RELEASE.has(outcome.code ?? '')))
+          )
             failSummary(services, row);
         }),
     );

@@ -449,14 +449,14 @@ test('the Low importance sheet pages: every one of 230 and of 1000 threads is re
   assert.deepEqual(fits, { reached: LIST_WINDOW, asked: 0 }, 'one window never asks');
 });
 
-test('a pending summary shows the placeholder until the card gives up, then the subject alone', () => {
+test('a pending summary keeps the placeholder until the engine settles the row, then the subject alone', () => {
   const pending = {
     ...row({ id: 'p' }),
     subject: 'Print run',
     summary: { state: 'pending' },
   } as ThreadRow;
+  // Pending means live or queued work: the card waits on the engine, never a clock (owner rule 2026-11-16).
   assert.deepEqual(summaryOf(pending), { state: 'pending', subject: 'Print run' });
-  assert.deepEqual(summaryOf(pending, true), { state: 'absent', subject: 'Print run' });
   const failed = { ...pending, summary: { state: 'failed' } } as ThreadRow;
   assert.equal(summaryOf(failed).state, 'absent');
   const none = { ...pending, summary: { state: 'none' } } as ThreadRow;
