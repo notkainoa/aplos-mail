@@ -533,11 +533,11 @@ test('KeyRecorder idle: label, a button that names the shortcut, keycaps, no Res
   const out = html(<KeyRecorder {...recorder({ chords: ['j', 'ArrowDown'] })} />);
   assert.match(out, /data-state="idle"/);
   assert.match(out, />Done</);
-  assert.match(out, /aria-label="Change the shortcut for Done\. Now J or ↓"/);
+  assert.match(out, /aria-label="Change the shortcut for Done\. Now ↓ or J"/);
   assert.match(out, /title="Click to change"/);
   assert.match(
     out,
-    /<kbd class="ui-key-recorder__kbd">J<\/kbd><span class="ui-key-recorder__or">or<\/span><kbd class="ui-key-recorder__kbd">↓<\/kbd>/,
+    /<kbd class="ui-key-recorder__kbd">↓<\/kbd><span class="ui-key-recorder__or">or<\/span><kbd class="ui-key-recorder__kbd">J<\/kbd>/,
   );
   assert.doesNotMatch(out, />Reset</);
   assert.doesNotMatch(out, /conflict/);

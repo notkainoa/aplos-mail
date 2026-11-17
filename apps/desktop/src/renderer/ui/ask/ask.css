@@ -904,6 +904,12 @@
 .ui-palette__right .ui-compose-kbd + .ui-compose-kbd {
   margin-left: 0;
 }
+.ui-palette__or {
+  margin: 0 calc(-1 * var(--space-1));
+  color: var(--dim);
+  font: var(--type-small);
+  letter-spacing: var(--track-small);
+}
 .ui-palette__group {
   color: var(--dim);
   font: var(--type-small);

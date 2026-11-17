@@ -1,6 +1,6 @@
 import { Fragment, useEffect, useId, useRef } from 'react';
 import type { KeyboardEvent } from 'react';
-import { formatChord } from '../../commands';
+import { arrowsFirst, formatChord } from '../../commands';
 import { chordFromEvent, chordId, parseChord } from '../../commands/internal';
 import type { KeyRecorderProps } from '../props';
 import { ChordText, displayChord } from '../buttons-keys/keyHints';
@@ -55,7 +55,8 @@ export function KeyRecorder({
   const captureRef = useRef<HTMLButtonElement>(null);
   const keysRef = useRef<HTMLButtonElement>(null);
   const was = useRef(state);
-  const shown = chords.map(chordText);
+  // The one pair notation everywhere: the arrow first, then "or", then the letter (storage order keeps the letter first).
+  const shown = arrowsFirst(chords.map(chordText));
   const pending = pendingChord ? chordText(pendingChord) : undefined;
 
   // Recording takes focus so the next key is ours; ending it gives focus back to the keys.

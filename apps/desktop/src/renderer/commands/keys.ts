@@ -349,7 +349,14 @@ function digitRange(bindings: readonly Bindable[]): string | null {
   return `${prefix}${digits[0]}–${digits[digits.length - 1]}`;
 }
 
-/** Alternatives joined with "or" ("J or ↓"); a run of digits reads "1–9". */
+const ARROW_KEY = /^[←→↑↓]$/u;
+
+/** One notation for a key pair everywhere (menus, palette, Settings, the sheet, tooltips): the arrow first, then the letter. */
+export function arrowsFirst(texts: readonly string[]): string[] {
+  return [...texts.filter(t => ARROW_KEY.test(t)), ...texts.filter(t => !ARROW_KEY.test(t))];
+}
+
+/** Alternatives joined with "or", the arrow first ("↓ or J", "→ or E"); a run of digits reads "1–9". */
 export function formatAlternatives(bindings: readonly Bindable[]): string {
   const range = digitRange(bindings);
   if (range) return range;
@@ -358,7 +365,7 @@ export function formatAlternatives(bindings: readonly Bindable[]): string {
     const text = formatBinding(b);
     if (!seen.includes(text)) seen.push(text);
   }
-  return seen.join(' or ');
+  return arrowsFirst(seen).join(' or ');
 }
 
 interface FocusLike {
