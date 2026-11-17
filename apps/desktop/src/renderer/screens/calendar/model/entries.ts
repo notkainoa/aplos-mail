@@ -66,14 +66,15 @@ export function writableCalendars(calendars: readonly Calendar[]): Calendar[] {
 }
 
 /**
- * Where N, a drag and a confirmed plan land: the solo calendar; else the saved default, the primary, then the
- * first — each only while it is shown and writable, so a new event never lands on a calendar it would vanish
- * from the moment it was added (review2 3).
+ * Where N, a drag and a confirmed plan land: the solo calendar; else the saved default, the one the last new event
+ * went to, the primary, then the first — each only while it is shown and writable, so a new event never lands on a
+ * calendar it would vanish from the moment it was added (review2 3). Null when none is shown and writable.
  */
 export function defaultCalendarId(
   calendars: readonly Calendar[],
   setting?: string,
   solo?: string | null,
+  lastUsed?: string | null,
 ): string | null {
   const writable = writableCalendars(calendars);
   // Solo draws that one calendar alone; anywhere else is invisible.
@@ -81,6 +82,7 @@ export function defaultCalendarId(
     return writable.find(c => c.id === solo)?.id ?? null;
   return (
     writable.find(c => c.id === setting && c.shown)?.id ??
+    writable.find(c => c.id === lastUsed && c.shown)?.id ??
     writable.find(c => c.primary && c.shown)?.id ??
     writable.find(c => c.shown)?.id ??
     null

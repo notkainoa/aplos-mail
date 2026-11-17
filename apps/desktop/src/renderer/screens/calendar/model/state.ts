@@ -59,6 +59,8 @@ export interface CalendarState {
   readonly miniMonth: IsoYearMonth | null;
   /** The failed-holds Review list (DESIGN 7.15): the Popover under the pane's quiet line. */
   readonly holdsReview: boolean;
+  /** The calendar the last new event was saved on this session: where the next one starts. */
+  readonly lastCalendarId: string | null;
 }
 
 export function initialState(today: IsoDate, view: GridView = 'week'): CalendarState {
@@ -76,6 +78,7 @@ export function initialState(today: IsoDate, view: GridView = 'week'): CalendarS
     solo: null,
     miniMonth: null,
     holdsReview: false,
+    lastCalendarId: null,
   };
 }
 

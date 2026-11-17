@@ -549,6 +549,8 @@ export function CalendarView({ vm, dispatch, announce, focus }: CalendarViewProp
 }
 
 const TITLE_FIELD_ID = 'cal-editor-title';
+/** Said once, in the dialog, when every calendar is read-only (the demo's are): no silent disabled Save. */
+const NOTHING_WRITABLE = 'None of your calendars can take new events here.';
 
 /** The editor: title, day, start and end, calendar; Save and Cancel; Delete only on a stored event (DESIGN 7.8 Fixes). */
 function EventEditor({
@@ -567,6 +569,8 @@ function EventEditor({
   const calendarRef = useRef<HTMLButtonElement | null>(null);
   const titleProblem = draft.error === 'Give the event a title.' ? draft.error : undefined;
   const otherProblem = draft.error && !titleProblem ? draft.error : undefined;
+  // No calendar here can take a new event (a demo or read-only account): say so, not a silent disabled Save.
+  const nothingWritable = !editor.calendarFixed && editor.calendars.length === 0;
   // Editing off for this calendar's account: the note at the top says so and Save waits (no refusal after the form).
   const locked = editor.editing !== null;
   const save = () => {
@@ -603,8 +607,10 @@ function EventEditor({
             label="Save"
             keys="Return"
             keyHint="always"
-            disabled={locked || draft.title.trim() === ''}
-            disabledReason={locked ? EDITING_COPY.notice : undefined}
+            disabled={locked || nothingWritable || draft.title.trim() === ''}
+            disabledReason={
+              locked ? EDITING_COPY.notice : nothingWritable ? NOTHING_WRITABLE : undefined
+            }
             onPress={save}
           />
         </div>
@@ -682,6 +688,14 @@ function EventEditor({
                 disabledReason="An event stays on the calendar it was made on."
                 onPress={() => undefined}
               />
+            ) : nothingWritable ? (
+              <Button
+                variant="text"
+                label="No calendar to add to"
+                disabled
+                disabledReason={NOTHING_WRITABLE}
+                onPress={() => undefined}
+              />
             ) : (
               <Button
                 ref={calendarRef}
@@ -698,6 +712,13 @@ function EventEditor({
             )}
           </span>
         </div>
+        {nothingWritable ? (
+          <div role="status" className="cal-editor__problem">
+            <Text variant="small" as="span" tone="ink-2">
+              {NOTHING_WRITABLE}
+            </Text>
+          </div>
+        ) : null}
         {otherProblem ? (
           <div role="alert" className="cal-editor__problem">
             <Text variant="small" as="span" tone="ink-2">

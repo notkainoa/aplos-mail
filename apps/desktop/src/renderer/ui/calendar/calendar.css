@@ -551,6 +551,11 @@
 .ui-calendar-grid__col[data-today='true'] {
   background-color: var(--today-tint);
 }
+/* One day is one column: tinting all of it says nothing, so the day view keeps only the date's accent badge. */
+.ui-calendar-grid[data-view='day']
+  :is(.ui-calendar-grid__col, .ui-calendar-grid__dh)[data-today='true'] {
+  background: none;
+}
 
 /* The track is the hour grid: its top is the first hour line, so pointer position maps straight to time. */
 .ui-calendar-grid__track {
@@ -763,9 +768,9 @@
   overflow-wrap: anywhere;
 }
 
-/* Crowded lanes (overlapping entries share the column): the time line goes, so the name gets the whole tile and
-   stays readable instead of cutting at five characters. A tile of 90 minutes or more has a line to spare, so it
-   keeps its time (cut with an ellipsis, never wrapped) and the title takes the lines left. */
+/* Crowded lanes (overlapping entries share the column): the title takes one line, cut with an ellipsis, and the start
+   time sits on the second (council 2, round 5: a wrapped name over two lines read as clutter). A tile of 90 minutes or
+   more has lines to spare, so it keeps its whole time range and the title takes the lines left. */
 :is(
   .ui-event-block[data-crowded='true'],
   .ui-calendar-grid__slot[data-beside='true'] .ui-event-block
@@ -779,15 +784,7 @@
     .ui-calendar-grid__slot[data-beside='true'] .ui-event-block
   )[data-density='full']:not([data-tall='true'])
   .ui-event-block__title {
-  -webkit-line-clamp: var(--title-lines-solo);
-}
-
-:is(
-    .ui-event-block[data-crowded='true'],
-    .ui-calendar-grid__slot[data-beside='true'] .ui-event-block
-  )[data-density='full']:not([data-tall='true'])
-  .ui-event-block__time {
-  display: none;
+  -webkit-line-clamp: 1;
 }
 
 .ui-event-block[data-selected='true'],

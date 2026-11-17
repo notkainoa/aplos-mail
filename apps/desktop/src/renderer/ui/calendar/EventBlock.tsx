@@ -27,6 +27,26 @@ function isTall(event: CalendarEventData, density: ReturnType<typeof densityOf>)
   return density === 'full' && minutesBetween(event.start, event.end) >= TALL_MINUTES;
 }
 
+/** The words a timed block draws beyond its title, and the name that carries them (WCAG 2.5.3). */
+function blockWords(
+  event: CalendarEventData,
+  placement: { readonly wide: boolean; readonly lanes: number },
+  density: ReturnType<typeof densityOf>,
+) {
+  // A wide day column has room beside the title, so a short tile (30 minutes or less included) says its time there.
+  const showTime =
+    density === 'full' || ((density === 'one' || density === 'tiny') && placement.wide);
+  const compactStart = showTime ? null : compactStartOf(event, density, placement.lanes);
+  // Overlapping tiles are narrow: the title takes one line (cut with an ellipsis) and the start time the second.
+  const startOnly = placement.lanes > 1 && density === 'full' && !isTall(event, density);
+  const time = startOnly ? timeOf(event.start) : rangeOf(event.start, event.end);
+  const showPlace = placement.wide && !!event.place && density === 'full';
+  const detail = showPlace ? `${time} · ${event.place}` : time;
+  // The name holds every visible word: when the place is drawn, it is in the label too.
+  const label = eventLabel(event, { place: showPlace, startOnly });
+  return { showTime, compactStart, detail, label };
+}
+
 /**
  * One entry on the grid: radius 6, a 2 px leading rule in the calendar colour, the DESIGN 4.2 fill composited over
  * the canvas, title `small` 500, time dim (dark: ink-2). Up to 30 minutes it is one title line using the full width. Or the "+N"
@@ -63,15 +83,7 @@ export function EventBlock(props: EventBlockProps) {
   const { event, placement, selected, onSelect, onOpen } = props;
   const locked = props.locked ?? event.locked ?? false;
   const density = densityOf(event);
-  // A wide day column has room beside the title, so a short tile (30 minutes or less included) says its time there.
-  const showTime =
-    density === 'full' || ((density === 'one' || density === 'tiny') && placement.wide);
-  const compactStart = showTime ? null : compactStartOf(event, density, placement.lanes);
-  const time = rangeOf(event.start, event.end);
-  const showPlace = placement.wide && !!event.place && density === 'full';
-  const detail = showPlace ? `${time} · ${event.place}` : time;
-  // The name holds every visible word: when the place is drawn, it is in the label too (WCAG 2.5.3).
-  const label = eventLabel(event, { place: showPlace });
+  const { showTime, compactStart, detail, label } = blockWords(event, placement, density);
 
   const onKeyDown = (e: KeyboardEvent<HTMLButtonElement>): void => {
     if (e.nativeEvent.isComposing) return;

@@ -78,6 +78,9 @@ export function busyOn(
   return out;
 }
 
+/** From this wall-clock minute (9 PM) a new event starts tomorrow morning, not at 10:30 PM tonight. */
+const LATE_MINUTES = 21 * 60;
+
 /**
  * Where N puts a new hour: today, the next half hour from now; another day, 9 AM. It steps past timed events
  * (declined ones too, which the window leaves out by default) and keeps the start if the day is full.
@@ -141,12 +144,15 @@ export function newDraft(
   entries: readonly CalendarEventData[],
   calendarId: string | null,
 ): EditorDraft {
-  const slot = nextFreeSlot(day, now, entries);
+  // Late in the evening there is no honest next hour today: the next working-hours slot, tomorrow 9:00–10:00.
+  const late = toIsoDate(now) === day && wallMinutes(now) >= LATE_MINUTES;
+  const date = late ? addDays(day, 1) : day;
+  const slot = nextFreeSlot(date, now, entries);
   return {
     mode: 'new',
     title: '',
-    date: day,
-    endDate: day,
+    date,
+    endDate: date,
     start: slot.start,
     end: slot.end,
     allDay: false,

@@ -48,6 +48,8 @@ export function whenOf(event: CalendarEventData): string {
 export interface LabelDrawn {
   /** The place is drawn after the time (a wide, full-height block). */
   readonly place?: boolean;
+  /** A crowded tile draws only its start ("2:00 PM"), so the name says the same. */
+  readonly startOnly?: boolean;
 }
 
 /** Accessible name of an entry. It begins with the words the block draws, in the order it draws them (title, time,
@@ -57,7 +59,8 @@ export function eventLabel(event: CalendarEventData, drawn: LabelDrawn = {}): st
   if (event.kind === 'plan')
     return [event.title, 'from mail', whenOf(event), 'not added yet'].join(', ');
   const place = drawn.place && event.place ? [event.place] : [];
-  const parts = [event.title, whenOf(event), ...place, event.calendar.name];
+  const when = drawn.startOnly && !event.allDay ? startOf(event) : whenOf(event);
+  const parts = [event.title, when, ...place, event.calendar.name];
   if (event.unanswered) parts.push('invitation, not answered yet');
   return parts.join(', ');
 }
