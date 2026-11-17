@@ -80,8 +80,9 @@ function Tag({ children }: { children: string }) {
   return <p className="b-tag">{children}</p>;
 }
 
-function featureClass(flip?: boolean) {
-  return flip ? 'b-feature b-wrap is-flip' : 'b-feature b-wrap';
+function featureClass(flip?: boolean, compact?: boolean) {
+  const flipped = flip ? ' is-flip' : '';
+  return `b-feature b-wrap${flipped}${compact ? ' is-compact' : ''}`;
 }
 
 function Line({ children }: { children: string }) {
@@ -93,6 +94,7 @@ function Feature({
   tag,
   title,
   flip,
+  compact,
   aside,
   children,
 }: {
@@ -100,11 +102,12 @@ function Feature({
   tag: string;
   title: ReactNode;
   flip?: boolean;
+  compact?: boolean;
   aside: ReactNode;
   children: ReactNode;
 }) {
   return (
-    <section className={featureClass(flip)} aria-labelledby={id}>
+    <section className={featureClass(flip, compact)} aria-labelledby={id}>
       <div className="b-feature-text">
         <Tag>{tag}</Tag>
         <h2 id={id}>{title}</h2>
@@ -143,6 +146,7 @@ function Calendar() {
   return (
     <Feature
       id="b-cal"
+      compact
       tag="Calendar"
       title={
         <>
@@ -170,6 +174,7 @@ function Ask() {
   return (
     <Feature
       id="b-ask"
+      compact
       tag="Ask"
       title={
         <>
@@ -195,6 +200,7 @@ function Keyboard() {
   return (
     <Feature
       id="b-keys"
+      compact
       tag="Keyboard"
       title={
         <>
@@ -206,8 +212,8 @@ function Keyboard() {
       aside={<KeyGrid />}
     >
       <p data-claim="keyboard-first">
-        Space does the main thing for the email in front of you. The arrow keys sort it, and Z
-        undoes the last move.
+        Space runs the main action on the email in front of you, such as Reply. The arrow keys sort
+        it, and Z undoes the last move.
       </p>
     </Feature>
   );
@@ -255,6 +261,9 @@ function Privacy() {
             chosen model.
           </p>
         </div>
+        <div className="b-privacy-side">
+          <Providers />
+        </div>
         <dl className="b-facts">
           <div data-claim="local-models">
             <dt>Run it locally</dt>
@@ -269,9 +278,6 @@ function Privacy() {
             <dd>No Aplos server ever sees your mail, calendar or sign‑in details.</dd>
           </div>
         </dl>
-        <div className="b-privacy-side">
-          <Providers />
-        </div>
       </div>
     </section>
   );
@@ -323,8 +329,10 @@ export function Page() {
       <Hero />
       <main id="b-main">
         <HeroShot />
-        <Home />
-        <Keyboard />
+        <div className="b-primary">
+          <Home />
+          <Keyboard />
+        </div>
         <Calendar />
         <Ask />
         <Privacy />

@@ -56,7 +56,7 @@ function Hero() {
             <p data-claim="invited-testers-builds">
               No public download. Builds are shared with invited testers.
             </p>
-            <p data-claim="mac-chips macos-13">
+            <p className="hero-spec" data-claim="mac-chips macos-13">
               For Macs with Apple silicon or Intel, on macOS 13 or later.
             </p>
           </div>
@@ -81,10 +81,23 @@ type PaneProps = {
   flip?: boolean;
   wide?: boolean;
   asideClass?: string;
+  featured?: boolean;
+  extraClass?: string;
 };
 
-function Pane({ id, title, children, aside, flip, wide, asideClass }: PaneProps) {
-  const layout = wide ? 'pane-wide' : flip ? 'pane-split pane-flip' : 'pane-split';
+function Pane({
+  id,
+  title,
+  children,
+  aside,
+  flip,
+  wide,
+  asideClass,
+  featured,
+  extraClass,
+}: PaneProps) {
+  const base = wide ? 'pane-wide' : flip ? 'pane-split pane-flip' : 'pane-split';
+  const layout = [base, featured ? 'pane-featured' : '', extraClass ?? ''].join(' ');
   return (
     <section className={`pane ${layout}`} aria-labelledby={id}>
       <div className="pane-copy">
@@ -102,6 +115,7 @@ function HomePane() {
       id="home"
       title="Read the point, then decide."
       asideClass="aside-home"
+      featured
       aside={
         <>
           <HomeMock focus={summaryFocus} summaryOnly />
@@ -163,7 +177,14 @@ function AskPane() {
 
 function KeysPane() {
   return (
-    <Pane id="keys" title="Made for the keyboard." aside={<KeyList />}>
+    <Pane
+      id="keys"
+      title="Made for the keyboard."
+      wide
+      extraClass="pane-keys"
+      asideClass="aside-keys"
+      aside={<KeyList />}
+    >
       <p data-claim="keyboard-first">
         Your hands stay on the keyboard from the first email to the last.
       </p>
@@ -198,6 +219,9 @@ function Close() {
         <p data-claim="gmail-invited-testers">
           Aplos Mail works with Gmail and Google Calendar, available to invited testers.
         </p>
+        <p className="close-spec" data-claim="mac-chips macos-13">
+          For Macs with Apple silicon or Intel, on macOS 13 or later.
+        </p>
         <a className="button button-light button-large" href={DOWNLOAD}>
           How to get it
         </a>
@@ -218,7 +242,7 @@ function Footer() {
       </div>
       <nav className="footer-links" aria-label="Footer">
         <a className="text-link" href={DOWNLOAD}>
-          Get Aplos Mail
+          How to get it
         </a>
         <a className="text-link" href={PRIVACY}>
           Privacy
