@@ -266,46 +266,54 @@ function failSummary(services: EngineServices, row: JobRow): void {
  */
 function closePendingSummaries(services: EngineServices, now: number, force = false): void {
   const gateOff = backgroundGate(services, 'summaries').ok ? 0 : 1;
-  const rows = services.store.read(q =>
-    q.all<{
-      account_id: string;
-      remote_id: string;
-      input_hash: string;
-      model: string;
-      text: string;
-      action: string | null;
-    }>(
-      `SELECT t.account_id, t.remote_id, s.input_hash, s.model, s.text, s.action
-       FROM summaries s JOIN threads t ON t.id = s.thread_id
-       JOIN accounts a ON a.id = t.account_id
-       WHERE s.state = 'pending' AND (
-         ? = 1 OR ? = 1 OR a.ai_allowed != 1
-         OR NOT EXISTS (
-           SELECT 1 FROM jobs j
-           WHERE j.state IN ('queued','running','failed')
-             AND j.key = 'summary:' || t.account_id || ':' || t.remote_id || ':' || s.input_hash
+  // Each pass settles at most 200 rows in one commit — the periodic sweep stays bounded — but `force`
+  // drains: the pause that calls it may not fire again until tomorrow, so every held card must collapse
+  // now. Settled rows fall out of the WHERE, so the next read continues where the last stopped.
+  for (let pass = 0; ; pass++) {
+    const rows = services.store.read(q =>
+      q.all<{
+        account_id: string;
+        remote_id: string;
+        input_hash: string;
+        model: string;
+        text: string;
+        action: string | null;
+      }>(
+        `SELECT t.account_id, t.remote_id, s.input_hash, s.model, s.text, s.action
+         FROM summaries s JOIN threads t ON t.id = s.thread_id
+         JOIN accounts a ON a.id = t.account_id
+         WHERE s.state = 'pending' AND (
+           ? = 1 OR ? = 1 OR a.ai_allowed != 1
+           OR NOT EXISTS (
+             SELECT 1 FROM jobs j
+             WHERE j.state IN ('queued','running','failed')
+               AND j.key = 'summary:' || t.account_id || ':' || t.remote_id || ':' || s.input_hash
+           )
          )
-       )
-       ORDER BY s.created_at LIMIT 200`,
-      force ? 1 : 0,
-      gateOff,
-    ),
-  );
-  if (!rows.length) return;
-  services.store.commit({
-    opId: `ai-pending-closed-${now}-${hexId(services.randomBytes, 'p')}`,
-    origin: 'system',
-    writes: rows.map(r => ({
-      kind: 'summary' as const,
-      accountId: r.account_id,
-      remoteThreadId: r.remote_id,
-      inputHash: r.input_hash,
-      model: r.model,
-      text: r.text,
-      ...(r.action !== null ? { action: r.action } : {}),
-      state: (r.text ? 'stale' : 'failed') as 'stale' | 'failed',
-    })),
-  });
+         ORDER BY s.created_at LIMIT 200`,
+        force ? 1 : 0,
+        gateOff,
+      ),
+    );
+    if (!rows.length) return;
+    services.store.commit({
+      opId: `ai-pending-closed-${now}-${hexId(services.randomBytes, 'p')}`,
+      origin: 'system',
+      writes: rows.map(r => ({
+        kind: 'summary' as const,
+        accountId: r.account_id,
+        remoteThreadId: r.remote_id,
+        inputHash: r.input_hash,
+        model: r.model,
+        text: r.text,
+        ...(r.action !== null ? { action: r.action } : {}),
+        state: (r.text ? 'stale' : 'failed') as 'stale' | 'failed',
+      })),
+    });
+    // A non-force pass is one bounded sweep. `force` loops until the backlog is gone; the absurd ceiling
+    // exists so a store that lies about changed counts still returns control instead of spinning.
+    if (!force || pass >= 99) return;
+  }
 }
 
 /**

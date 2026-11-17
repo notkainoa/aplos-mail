@@ -278,6 +278,58 @@ test('the daily-cap pause settles every held placeholder', async () => {
   assert.equal(job.state, 'queued', 'the job waits for tomorrow — only the placeholder collapsed');
 });
 
+test('a spent cap settles a held placeholder backlog past one sweep', async () => {
+  const w = await world(stubTransport({}));
+  seedMail(w);
+  await consentNow(w);
+  // 255 pendings — past the 200-row sweep bound — across five threads; every one must collapse, not
+  // just the oldest 200 (the pause that force-closes may not fire again until tomorrow).
+  const writes = ['T-a', 'T-b', 'T-c', 'T-d', 'T-e'].flatMap(remoteId =>
+    Array.from({ length: 51 }, (_, i) => ({
+      kind: 'summary' as const,
+      accountId: ACCOUNT,
+      remoteThreadId: remoteId,
+      inputHash: `orphan-${i}`,
+      model: 'openai/gpt-oss-120b',
+      text: '',
+      action: null,
+      state: 'pending' as const,
+    })),
+  );
+  w.engine.services.store.commit({
+    opId: 'backlog',
+    origin: 'sync',
+    writes: ['T-a', 'T-b', 'T-c', 'T-d', 'T-e'].map((t, i) => msg(`bm${i}`, t, 8 + i)),
+  });
+  w.engine.services.store.commit({ opId: 'pendings', origin: 'system', writes });
+  // A spent day: the next pass pauses the queue instead of running the seeded work.
+  w.engine.services.store.commit({
+    opId: 'spent',
+    origin: 'system',
+    writes: [
+      {
+        kind: 'aiUsage',
+        day: new Date(w.clock.now()).toISOString().slice(0, 10),
+        provider: 'groq',
+        model: 'm',
+        lane: 'background',
+        requests: 1,
+        tokensIn: 150_000,
+        tokensOut: 1,
+      },
+    ],
+  });
+  await runJobs(w.engine.services, w.clock.now());
+  const left = w.engine.services.store.read(q =>
+    q.get<{ c: number }>("SELECT count(*) AS c FROM summaries WHERE state = 'pending'"),
+  );
+  assert.equal(
+    left?.c,
+    0,
+    'every held placeholder settles — no spinning card past the sweep bound',
+  );
+});
+
 test('an open setup session settles held placeholders while it pauses the queue', async () => {
   const w = await world(stubTransport({}));
   seedMail(w);
