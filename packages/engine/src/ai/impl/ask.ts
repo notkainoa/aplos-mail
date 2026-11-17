@@ -11,6 +11,7 @@ import { ftsPhrases } from '../../views/search';
 import type { AiChatMessage } from '../host';
 import { accountAllowed, allowedAccounts, interactiveModel } from './gate';
 import { callMessage, meteredChat } from './runtime';
+import { isRecencyQuestion, newestFirst, newestMessages, wantsNewest } from './ask-recency';
 import './ai-writes';
 
 /**
@@ -325,6 +326,12 @@ function findSources(
       ))
         push(m as never);
   }
+  // The open thread and the selection lead; everything after them is retrieval.
+  const lead = out.length;
+  if (wantsNewest(question)) {
+    for (const m of newestMessages(q, allowed, MAX_SOURCES)) push(m as never);
+    return out;
+  }
   const phrases = ftsPhrases(question).join(' ');
   if (phrases && allowed.length) {
     const hits = q.all<{
@@ -385,7 +392,8 @@ function findSources(
       }
     }
   }
-  return out;
+  // "The latest from Ada" keeps its keyword hits, listed newest first so the first one is the latest.
+  return isRecencyQuestion(question) ? newestFirst(out, lead) : out;
 }
 
 /** The open draft, when the question is about it — its text is user input, not mail, so it needs no gate. */
@@ -601,7 +609,8 @@ async function askRun(
           ((s.fromAddr && byAddress.get(s.fromAddr.toLowerCase())) ??
             (s.fromName && maskOwners(s.fromName, byAddress).slice(0, 200))) ||
           'unknown';
-        return `[${s.n}]${multi ? ` Account: ${labels.get(s.accountId)!}` : ''}\nFrom: ${from}\nSubject: ${maskOwners(s.subject, byAddress).slice(0, 500)}\n\n${quoteText(s.text, byAddress)}`;
+        const date = s.date !== undefined ? `\nDate: ${new Date(s.date).toISOString()}` : '';
+        return `[${s.n}]${multi ? ` Account: ${labels.get(s.accountId)!}` : ''}\nFrom: ${from}\nSubject: ${maskOwners(s.subject, byAddress).slice(0, 500)}${date}\n\n${quoteText(s.text, byAddress)}`;
       })
       .join('\n\n---\n\n');
     const history = args.conversationId
@@ -644,7 +653,7 @@ async function askRun(
       ]),
       {
         role: 'user',
-        content: `${maskOwners(args.question, byAddress)}\n\nSources:\n${quoted || '(no matching mail found)'}${draftCtx(args.context?.draft, byAddress)}${args.timeZone ? `\n\nThe reader's time zone: ${args.timeZone}.` : ''}`,
+        content: `${maskOwners(args.question, byAddress)}\n\nSources:\n${quoted || '(no matching mail found)'}${draftCtx(args.context?.draft, byAddress)}\n\nNow: ${new Date(services.clock.now()).toISOString()}.${args.timeZone ? `\n\nThe reader's time zone: ${args.timeZone}.` : ''}`,
       },
     ];
     const turnId = hexId(services.randomBytes, 'turn');
