@@ -1,10 +1,18 @@
-import { useEffect, useRef } from 'react';
+import { useEffect, useRef, type ReactNode } from 'react';
 import type { AskTurnProps, CitationData } from '../props';
 import { Icon } from '../compose/icons';
 import { Btn } from '../compose/parts';
+import { answerBlocks } from './answerBlocks';
 import { Citation } from './Citation';
 import { ProposalCard } from './ProposalCard';
 import { StepLog } from './StepLog';
+
+/** A run of list items: numbered (it may start above 1) or bulleted. */
+function ListTag(props: { ordered: boolean; start?: number; items: ReactNode }) {
+  const { ordered, start, items } = props;
+  if (!ordered) return <ul>{items}</ul>;
+  return <ol start={start && start > 1 ? start : undefined}>{items}</ol>;
+}
 
 /**
  * Whether the "Answered" status announces: only when this mount saw the turn unfinished first. A turn that mounts
@@ -51,6 +59,32 @@ export function AskTurn(props: AskTurnProps) {
     ? `Answer by ${provenance.provider}${provenance.local ? ' on this Mac' : ''}`
     : undefined;
 
+  // One paragraph's runs: text, the decisive fact, citation chips, and the streaming caret on the last one.
+  const prose = (at: number) => (
+    <>
+      {answer![at].map((segment, s) => {
+        if (segment.kind === 'item') return null;
+        if (segment.kind === 'text') {
+          return segment.strong ? (
+            <strong key={s}>{segment.text}</strong>
+          ) : (
+            <span key={s}>{segment.text}</span>
+          );
+        }
+        const source = byIndex.get(segment.index);
+        referenced.add(segment.index);
+        return source ? (
+          <Citation key={s} {...source} onOpen={onOpenCitation} onOpenEvent={onOpenEventCitation} />
+        ) : (
+          <span key={s} className="ui-ask-turn__orphan">{`[${segment.index}]`}</span>
+        );
+      })}
+      {state === 'streaming' && at === answer!.length - 1 ? (
+        <span className="ui-ask-turn__caret" aria-hidden="true" />
+      ) : null}
+    </>
+  );
+
   return (
     <article
       id={id}
@@ -70,34 +104,20 @@ export function AskTurn(props: AskTurnProps) {
       {steps ? <StepLog {...steps} /> : null}
       {hasAnswer ? (
         <div className="ui-ask-turn__answer" dir="auto" title={provenanceText}>
-          {answer!.map((paragraph, p) => (
-            <p key={p}>
-              {paragraph.map((segment, s) => {
-                if (segment.kind === 'text') {
-                  return segment.strong ? (
-                    <strong key={s}>{segment.text}</strong>
-                  ) : (
-                    <span key={s}>{segment.text}</span>
-                  );
-                }
-                const source = byIndex.get(segment.index);
-                referenced.add(segment.index);
-                return source ? (
-                  <Citation
-                    key={s}
-                    {...source}
-                    onOpen={onOpenCitation}
-                    onOpenEvent={onOpenEventCitation}
-                  />
-                ) : (
-                  <span key={s} className="ui-ask-turn__orphan">{`[${segment.index}]`}</span>
-                );
-              })}
-              {state === 'streaming' && p === answer!.length - 1 ? (
-                <span className="ui-ask-turn__caret" aria-hidden="true" />
-              ) : null}
-            </p>
-          ))}
+          {answerBlocks(answer!).map(block =>
+            block.kind === 'paragraph' ? (
+              <p key={block.at}>{prose(block.at)}</p>
+            ) : (
+              <ListTag
+                key={block.items[0]}
+                ordered={block.ordered}
+                start={block.start}
+                items={block.items.map(at => (
+                  <li key={at}>{prose(at)}</li>
+                ))}
+              />
+            ),
+          )}
         </div>
       ) : null}
       {hasAnswer && citations.some(c => !referenced.has(c.index)) ? (

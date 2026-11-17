@@ -20,6 +20,8 @@ export interface JobOutcome {
   state: 'done' | 'failed' | 'dead' | 'skipped' | 'release';
   lastError?: string | null;
   nextAt?: number;
+  /** A `release`'s AiCallError code — the runner reads it to tell an off state from a wait. */
+  code?: string;
 }
 
 const BACKOFF_MS = [60_000, 5 * 60_000, 15 * 60_000, 60 * 60_000, 4 * 60 * 60_000];
@@ -160,11 +162,10 @@ async function summarize(
   const inputHash = String(payload.inputHash ?? '');
   const wireId = String(payload.threadId ?? '');
   const gate = backgroundGate(services, 'summaries', accountId);
-  if (!gate.ok)
-    throw new AiCallError(
-      gate.reasonCode === 'ai.accountExcluded' ? 'gatePermanent' : 'gatePaused',
-      gate.reasonCode,
-    );
+  // Every gate refusal is an off state (background off, no consent, no provider, provider trains, account
+  // excluded): the job skips rather than pausing, so the thread's `pending` placeholder collapses instead of
+  // showing "Summarizing…" while the gate is closed. A reopened gate re-queues from the next wake.
+  if (!gate.ok) throw new AiCallError('gatePermanent', gate.reasonCode);
   const thread = services.store.read(q => {
     const t = q.get<{ id: number }>(
       'SELECT id FROM threads WHERE account_id = ? AND remote_id = ?',
@@ -368,11 +369,7 @@ async function writeFollowup(
 }
 
 /** Run one claimed job; its outcome lands through `settle`. */
-export async function executeJob(
-  services: EngineServices,
-  row: JobRow,
-  now: number,
-): Promise<JobOutcome> {
+export async function executeJob(services: EngineServices, row: JobRow): Promise<JobOutcome> {
   try {
     const payload = JSON.parse(row.payload) as Record<string, unknown>;
     switch (row.kind) {
@@ -405,8 +402,10 @@ export async function executeJob(
         lastError: JSON.stringify({ reasonCode: error.message.slice(0, 60) }),
       };
     // No transport, no key and no provider are conditions the owner can fix later: they pause the row like a
-    // closed gate, so a backfill queued before AI is connected is never dead-lettered by its own waiting.
-    if (error instanceof AiCallError && RELEASE_CODES.has(error.code)) return { state: 'release' };
+    // closed gate, so a backfill queued before AI is connected is never dead-lettered by its own waiting. The
+    // code rides along so the runner can tell an off state (placeholder collapses) from a wait (it holds).
+    if (error instanceof AiCallError && RELEASE_CODES.has(error.code))
+      return { state: 'release', code: error.code };
     const reason =
       error instanceof AiCallError
         ? error.message.startsWith('ai.')
@@ -422,7 +421,8 @@ export async function executeJob(
     return {
       state: 'failed',
       lastError: JSON.stringify({ reasonCode: reason.slice(0, 60) }),
-      nextAt: now + wait,
+      // The backoff starts at settle, not at the pass's fire — a long call must not eat its own wait.
+      nextAt: services.clock.now() + wait,
     };
   }
 }

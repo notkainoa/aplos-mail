@@ -50,6 +50,28 @@ describe('a plain email', () => {
     );
   });
 
+  it("stays plain when a style only places text (a reply's blockquote bar, margins, alignment)", () => {
+    for (const html of [
+      '<div dir="ltr">Hi</div><blockquote style="margin:0px 0px 0px 0.8ex;border-left:1px solid rgb(204,204,204);padding-left:1ex">old</blockquote>',
+      '<p style="text-align:center;margin:0">Hello</p>',
+    ])
+      assert.match(rootOf(documentOf(html)), new RegExp(PLAIN_ATTRIBUTE), html);
+  });
+
+  it('is not plain when one declaration beside the layout ones sets a colour or loads something', () => {
+    for (const html of [
+      '<p style="margin:0;color:#c00">Hello</p>',
+      '<p style="margin:0;background-color:#eee">Hello</p>',
+      '<p style="margin:0;background:url(https://example.com/a.png)">Hello</p>',
+      '<p style="border-left:1px solid red;font-family:Georgia">Hello</p>',
+      '<p style="border-top:1px solid #000">Hello</p>',
+      // A literal style=" in the text must not hide the real markers that follow it.
+      '<p>see style="margin:0</p><p><font color="#000000">black</font></p>',
+      '<p>x style="margin:0</p><img src="https://example.com/a.png" alt="a">',
+    ])
+      assert.doesNotMatch(rootOf(documentOf(html)), new RegExp(PLAIN_ATTRIBUTE), html);
+  });
+
   for (const [name, html] of Object.entries(RICH))
     it(`is not plain with ${name}: it keeps its paper`, () => {
       assert.doesNotMatch(rootOf(documentOf(html)), new RegExp(PLAIN_ATTRIBUTE));

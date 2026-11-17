@@ -5,7 +5,7 @@
 
 import { useMemo, type MouseEvent } from 'react';
 import { handleLinkClick } from './links';
-import { quotedParts, type QuotedRange } from './quoted';
+import { hasOwnText, quotedParts, type QuotedRange } from './quoted';
 import { textSegments } from './text';
 
 /** Props of PlainText. */
@@ -63,6 +63,8 @@ function Parts({
   showQuoted,
 }: Required<Omit<PlainTextProps, 'findQuery'>> & { findQuery?: string }) {
   const parts = useMemo(() => quotedParts(text, quoted), [text, quoted]);
+  // A body that is nothing but quote (a forward) is the content: it has no words of the sender's to fold it under.
+  const open = showQuoted || !hasOwnText(parts);
   return parts.map((part, i) => {
     if (part.kind === 'own')
       return (
@@ -70,7 +72,7 @@ function Parts({
           <Paragraphs text={part.text} findQuery={findQuery} />
         </div>
       );
-    if (!showQuoted) return null;
+    if (!open) return null;
     return (
       <blockquote key={i} className="aplos-mailframe__quote">
         <Paragraphs text={part.text} findQuery={findQuery} />

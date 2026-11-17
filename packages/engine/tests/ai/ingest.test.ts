@@ -203,14 +203,20 @@ test('a kept-out account and a Spam thread never produce summary work', async ()
   assert.equal((await threadSummary(w, 'T-spam', 'acct-2')).state, 'none');
 });
 
-test('a provider that is not connected keeps the job pending and logs nothing but the truth', async () => {
+test('a provider that is not connected keeps the job queued but collapses the card', async () => {
   const w = await world(stubTransport({}));
   seedMail(w);
   await consentNow(w);
-  // Detach the transport: the job releases without burning attempts, stays queued = 'pending', not 'failed'.
+  // No key is an off state, not a wait: the job releases without burning attempts and stays queued for the
+  // owner's fix, while the card's placeholder settles 'failed' — nothing is coming until the key exists.
   w.engine.services.ai.useTransport(stubTransport({ fail: new AiCallError('missingKey', 'x') }));
   await runJobs(w.engine.services, w.clock.now());
   assert.equal(jobsOf(w, 'summary')[0].state, 'queued');
-  assert.equal((await threadSummary(w)).state, 'pending');
+  assert.equal((await threadSummary(w)).state, 'failed');
   assert.ok(!w.lines.some(l => l.event === 'ai.job.failed'));
+  // The owner adds the key: the same queued job runs and lands the summary.
+  w.engine.services.ai.useTransport(stubTransport({}));
+  w.clock.advance(31 * 60_000);
+  await runJobs(w.engine.services, w.clock.now());
+  assert.equal((await threadSummary(w)).state, 'ready');
 });

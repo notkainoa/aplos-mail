@@ -143,13 +143,14 @@ export function primaryOf(row: ThreadRow): string {
 
 /**
  * What the focus letter's summary slot shows: serif when written, the placeholder while it is being made, and the
- * subject alone (the space collapses) when no summary is coming. `gaveUp`: it was pending too long (owner decision
- * 2026-11-13: never a placeholder that spins forever, never an error on the card).
+ * subject alone (the space collapses) when no summary is coming. Pending means pending — the placeholder holds
+ * while the engine has live or queued work and the space collapses only when the engine settles the row `failed`
+ * (the request failed) or `none` (AI off, no job): never an error on the card (owner rule, hands-on 2026-11-16).
  */
-export function summaryOf(row: ThreadRow, gaveUp = false): SummaryContent {
+export function summaryOf(row: ThreadRow): SummaryContent {
   const { state, text, provider, local } = row.summary;
   const subject = subjectOf(row);
-  if (state === 'pending' && !gaveUp) return { state: 'pending', subject };
+  if (state === 'pending') return { state: 'pending', subject };
   if ((state === 'ready' || state === 'stale') && text)
     return {
       state: 'ready',

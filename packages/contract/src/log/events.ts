@@ -322,6 +322,10 @@ export const logEvents = {
     feature: f.oneOf(['ask', 'summaries', 'drafts', 'plans', 'voice', 'triage']),
     provider: f.code(),
     model: f.code(),
+    /** Set on a retryable 'failed' settle and on the dead-letter: the attempt that just ran. */
+    attempt: opt(f.count()),
+    /** A retryable attempt's wait before the queue takes the row again. */
+    nextInMs: opt(f.duration()),
     error: f.error(),
   }),
   'ai.budget_exhausted': event('info', ['eng-ai'], { used: f.count(), limit: f.count() }),

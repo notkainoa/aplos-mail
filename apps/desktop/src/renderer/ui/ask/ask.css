@@ -301,8 +301,33 @@
 .ui-ask-turn__answer p {
   margin: 0;
 }
-.ui-ask-turn__answer p + p {
+.ui-ask-turn__answer p + p,
+.ui-ask-turn__answer p + ol,
+.ui-ask-turn__answer p + ul,
+.ui-ask-turn__answer ol + p,
+.ui-ask-turn__answer ul + p,
+.ui-ask-turn__answer ol + ol,
+.ui-ask-turn__answer ul + ul,
+.ui-ask-turn__answer ol + ul,
+.ui-ask-turn__answer ul + ol {
   margin-top: var(--space-3);
+}
+.ui-ask-turn__answer ol,
+.ui-ask-turn__answer ul {
+  margin: 0;
+  padding-left: var(--space-5);
+}
+.ui-ask-turn__answer ol {
+  list-style: decimal;
+}
+.ui-ask-turn__answer ul {
+  list-style: disc;
+}
+.ui-ask-turn__answer li + li {
+  margin-top: var(--space-1);
+}
+.ui-ask-turn__answer li::marker {
+  color: var(--dim);
 }
 .ui-ask-turn__answer strong {
   font-weight: 500;

@@ -21,7 +21,14 @@ import {
   keepsAttribute,
   VOID,
 } from './policy';
-import { canWrapIn, isQuoteWrapper, QUOTE_CLASS, QUOTE_SUMMARY, quoteStart } from './quotes';
+import {
+  canWrapIn,
+  isForwarded,
+  isQuoteWrapper,
+  QUOTE_CLASS,
+  QUOTE_SUMMARY,
+  quoteStart,
+} from './quotes';
 import { declarationsHide, isTrackingPixel } from './trackers';
 
 // The walk: the mail is parsed into a tree once (parse.ts), then written out element by element
@@ -117,6 +124,8 @@ class Walker {
   private bodyAttributes: string | undefined;
   private trackersRemoved = 0;
   private quotedCount = 0;
+  /** Real text has been written outside any quote: only history that follows it is folded away. */
+  private ownText = false;
   /** `style` attributes tokenized, sanitized and read for hiding, by source text: mail repeats them. */
   private readonly styleTokens = new Map<string, CSSToken[]>();
   private readonly cleanStyles = new Map<string, string>();
@@ -164,14 +173,22 @@ class Walker {
     if (frame.wrap && !frame.quote) this.startQuote(frame, index);
     const { hidden, fallback } = frame.context;
     const context = frame.quote ? contextOf(hidden, true, fallback) : frame.context;
-    if (child.kind === 'text') this.out.push(markText(child.data, this.finder));
+    if (child.kind === 'text') this.text(child.data, context);
     else this.element(child, context);
+  }
+
+  private text(data: string, context: Context): void {
+    if (!context.quoted && !context.hidden && data.trim() !== '') this.ownText = true;
+    this.out.push(markText(data, this.finder));
   }
 
   /** Wraps quoted history in `<details>`: this child alone, or it and every later sibling. */
   private startQuote(frame: Frame, index: number): void {
-    const start = quoteStart(frame.children[index]);
-    if (!start) return;
+    const node = frame.children[index];
+    const start = quoteStart(node);
+    // A quote is folded only when it follows words of the sender's own: a forward, or a message that is nothing but
+    // quoted history, is the whole content and stays open.
+    if (!start || !this.ownText || isForwarded(node)) return;
     const entry: Written = { name: 'details', open: false };
     frame.quote = { entry, last: start === 'self' ? index : frame.children.length - 1 };
     this.openQuote(entry);
@@ -267,7 +284,7 @@ class Walker {
     const only = element.children.length === 1 ? element.children[0] : undefined;
     if (only?.kind === 'text') {
       // The common leaf, `<td>text</td>`: no frame needed (a text node starts no quote).
-      this.out.push(markText(only.data, this.finder));
+      this.text(only.data, contextOf(context.hidden, context.quoted || wrapper, context.fallback));
       return this.close(entry);
     }
     const inner = contextOf(context.hidden, context.quoted || wrapper, context.fallback);

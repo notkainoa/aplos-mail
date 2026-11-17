@@ -294,7 +294,9 @@ test('toParagraphs keeps only the first strong range and drops orphan chips', ()
   assert.equal(out.length, 2);
   const flat = out[0];
   assert.deepEqual(
-    flat.map(s => (s.kind === 'text' ? `${s.strong ? '!' : ''}${s.text}` : `[${s.index}]`)),
+    flat.map(s =>
+      s.kind === 'text' ? `${s.strong ? '!' : ''}${s.text}` : `[${'index' in s ? s.index : '-'}]`,
+    ),
     ['!alpha', '[1]', ' beta'],
   );
 });
@@ -486,4 +488,41 @@ test('a queued send-now and a cursor pick hold for consent the same way', () => 
   const picked = pickCursor(emptyGate, dockView(emptyGate, gate));
   assert.deepEqual(picked.effects, []);
   assert.deepEqual(picked.state.consentHeld, { question: 'a?', searchAll: false });
+});
+
+test('toParagraphs turns numbered and bulleted lines into list items, keeping chips with their item', () => {
+  const text =
+    'Three things:\n1. Review the draft\n2. Send it by noon\n   then wait\n3. File the receipt';
+  const out = toParagraphs(
+    [{ text, cites: [{ at: text.indexOf('noon') + 4, n: 1 }] }],
+    new Set([1]),
+  );
+  const shape = out.map(p =>
+    p.map(s =>
+      s.kind === 'item'
+        ? `item${s.number ?? ''}`
+        : s.kind === 'cite'
+          ? `[${s.index}]`
+          : s.text.trim(),
+    ),
+  );
+  assert.deepEqual(shape, [
+    ['Three things:'],
+    ['item1', 'Review the draft'],
+    ['item2', 'Send it by noon', '[1]', 'then wait'],
+    ['item3', 'File the receipt'],
+  ]);
+  const bullets = toParagraphs([{ text: '- one\n* two\n• three' }], new Set());
+  assert.deepEqual(
+    bullets.map(p => p[0]),
+    [
+      { kind: 'item', ordered: false },
+      { kind: 'item', ordered: false },
+      { kind: 'item', ordered: false },
+    ],
+  );
+  assert.equal(
+    toParagraphs([{ text: 'No list, 2024. Just words.\nSecond line.' }], new Set()).length,
+    1,
+  );
 });

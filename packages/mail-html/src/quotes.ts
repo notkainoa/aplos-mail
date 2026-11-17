@@ -85,3 +85,10 @@ function leadingText(element: ElementNode): string {
   }
   return '';
 }
+
+const FORWARDED = /^\s{0,40}-{2,40}\s{0,40}forwarded message\b/i;
+
+/** A forwarded message: the sender chose to pass it on, so it is the content, not history to fold away. */
+export function isForwarded(node: MailNode): boolean {
+  return node.kind === 'element' && FORWARDED.test(leadingText(node));
+}

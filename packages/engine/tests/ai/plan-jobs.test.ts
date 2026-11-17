@@ -214,9 +214,50 @@ test('jobs runner: a broken Summaries provider never blocks Plans work (per-feat
   const sumJob = jobs.find(j => j.kind === 'summary')!;
   const planJob = jobs.find(j => j.kind === 'plan')!;
   assert.equal(planJob.state, 'done', 'the open Plans gate let the job run');
-  assert.equal(sumJob.state, 'queued', 'the closed Summaries gate deferred its own job');
+  assert.equal(
+    sumJob.state,
+    'skipped',
+    'the closed Summaries gate settles its own job — the thread\'s pending placeholder collapses rather than waiting "Summarizing…" on a gate that may stay shut',
+  );
   const got = await w.call('Plan/get', { ids: ['acct-1:plan-1'] });
   assert.equal(got.list[0]?.title, 'Garden day');
+  // The owner re-points Summaries at Groq — a provider change drifts the consent fingerprint, so the grant
+  // repeats — and re-asks: the forced request re-queues the skipped job and it lands.
+  await w.call('Settings/set', {
+    opId: 'fix',
+    patch: {
+      ai: {
+        features: {
+          ...cur,
+          summaries: { provider: 'groq', model: 'openai/gpt-oss-120b' },
+          plans: { provider: 'groq', model: 'openai/gpt-oss-120b' },
+        },
+      },
+    },
+  });
+  await consentNow(w);
+  w.engine.services.ai.useTransport(
+    stubTransport('{"summary":"They asked about the garden day.","action":null}'),
+  );
+  await w.call('Ai/request', {
+    opId: 's2',
+    kind: 'summary',
+    threadId: 'acct-1:T-plans',
+    force: true,
+  });
+  // The settings change also armed the `ai:backfill` sentinel, which shares the pass — drain until done.
+  let reopened: { kind: string; state: string }[] = [];
+  for (let i = 0; i < 6 && reopened[0]?.state !== 'done'; i++) {
+    await runJobs(w.engine.services, w.clock.now());
+    reopened = w.engine.services.store.read(q =>
+      q.all<{ kind: string; state: string }>(
+        'SELECT kind, state FROM jobs WHERE kind = ?',
+        'summary',
+      ),
+    );
+    if (reopened[0]?.state === 'running') await new Promise(r => setTimeout(r, 0));
+  }
+  assert.equal(reopened[0]?.state, 'done', 'a reopened gate re-queues what it skipped');
   w.file.cleanup();
 });
 

@@ -449,14 +449,14 @@ test('the Low importance sheet pages: every one of 230 and of 1000 threads is re
   assert.deepEqual(fits, { reached: LIST_WINDOW, asked: 0 }, 'one window never asks');
 });
 
-test('a pending summary shows the placeholder until the card gives up, then the subject alone', () => {
+test('a pending summary keeps the placeholder until the engine settles the row, then the subject alone', () => {
   const pending = {
     ...row({ id: 'p' }),
     subject: 'Print run',
     summary: { state: 'pending' },
   } as ThreadRow;
+  // Pending means live or queued work: the card waits on the engine, never a clock (owner rule 2026-11-16).
   assert.deepEqual(summaryOf(pending), { state: 'pending', subject: 'Print run' });
-  assert.deepEqual(summaryOf(pending, true), { state: 'absent', subject: 'Print run' });
   const failed = { ...pending, summary: { state: 'failed' } } as ThreadRow;
   assert.equal(summaryOf(failed).state, 'absent');
   const none = { ...pending, summary: { state: 'none' } } as ThreadRow;
@@ -472,6 +472,29 @@ test('a row with no sender name and no subject still reads something', () => {
   const named = { ...blank, subject: '  Lunch ', fromName: 'Ada' } as ThreadRow;
   assert.equal(senderOf(named), 'Ada');
   assert.equal(primaryOf(named), 'Lunch');
+});
+
+test("every list row's main line is the summary when it is written, else the subject", () => {
+  // The one row rule for Home, Important updates, Sent and All mail — all funnel through the shared
+  // `primaryOf` (DESIGN "summary or subject", DECISIONS 2026-11-14): a ready or stale summary's text leads,
+  // every other state — pending, failed, none, or text never written — shows the subject.
+  const base = { ...row({ id: 'r' }), subject: 'Print run' } as ThreadRow;
+  for (const state of ['ready', 'stale'] as const)
+    assert.equal(
+      primaryOf({ ...base, summary: { state, text: 'Ada asked about the invoice.' } } as ThreadRow),
+      'Ada asked about the invoice.',
+    );
+  for (const state of ['pending', 'failed', 'none'] as const)
+    assert.equal(
+      primaryOf({ ...base, summary: { state, text: '' } } as ThreadRow),
+      'Print run',
+      `${state} shows the subject, not an AI line`,
+    );
+  assert.equal(
+    primaryOf({ ...base, summary: { state: 'ready', text: '' } } as ThreadRow),
+    'Print run',
+    'a ready row with no text still shows the subject',
+  );
 });
 
 test('a bulk action that includes the card moves the cursor on, and Undo hands the card back', () => {

@@ -322,6 +322,30 @@ export const states: Record<string, StateEntry> = {
         }),
       ),
   },
+  'ask-list': {
+    title: 'Ask: a numbered answer and a bulleted one render as lists, not one run-on paragraph',
+    render: () =>
+      dock(
+        answered,
+        inputs({
+          conversation: conversation([
+            turn('t-1', 'What do I need to do before Thursday?', {
+              answer: {
+                blocks: [
+                  {
+                    text: 'Three things are open before Thursday:\n1. Send Jordan your layout pick.\n2. Confirm the review time with Mina.\n3. Upload the signed proofs to the shared folder.',
+                    cites: [{ at: 83, n: 1 }],
+                  },
+                  { text: 'Also worth bringing:\n- The printed proofs\n- Your laptop charger' },
+                ],
+              },
+              citations: [REVIEW],
+              noSource: false,
+            }),
+          ]),
+        }),
+      ),
+  },
   'ask-answer': {
     title: 'Ask: serif answer, decisive fact, citations, folded step log, the proposal card',
     render: () =>
