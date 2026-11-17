@@ -409,7 +409,7 @@ test('AskDock empty view: placeholder, three suggestions, recent chats with time
   clean(markup);
 });
 
-test('AskDock: input is never disabled; working shows Stop; queued follow-ups are editable cards', () => {
+test('AskDock: with a provider the input stays enabled while working; working shows Stop; queued follow-ups are editable cards', () => {
   const markup = html(
     dock({
       working: true,
