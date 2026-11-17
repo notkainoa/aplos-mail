@@ -25,6 +25,12 @@ const FILLER = new Set(
     .filter(Boolean),
 );
 
+/** A stored date as ISO text, or `undefined` when it is outside what a JS Date holds (the store only checks it is finite). */
+export function isoDate(ms: number | undefined): string | undefined {
+  const d = new Date(ms ?? Number.NaN);
+  return Number.isNaN(d.getTime()) ? undefined : d.toISOString();
+}
+
 /** Does the question ask about the newest mail ("most recent", "latest", "today", "just got")? */
 export function isRecencyQuestion(question: string): boolean {
   return RECENT.test(question);
