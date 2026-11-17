@@ -1,0 +1,380 @@
+/* The download page: who can use it, and the install steps with their drawings (InstallArt.tsx). */
+
+.dl {
+  padding-bottom: var(--section-gap);
+}
+
+.dl-hero {
+  display: grid;
+  justify-items: start;
+  gap: 20px;
+  max-width: 760px;
+  padding: clamp(32px, 6vw, 80px) 0 0;
+}
+
+.dl-hero h1 {
+  font-size: clamp(36px, 5.4vw, 64px);
+  line-height: 1.08;
+  letter-spacing: -0.024em;
+}
+
+.dl-lead {
+  max-width: 32em;
+  color: var(--ink);
+  font-size: clamp(18px, 1.7vw, 21px);
+  line-height: 1.55;
+}
+
+.dl-jump {
+  margin-left: -12px;
+}
+
+.dl-section-title {
+  font-size: clamp(26px, 2.8vw, 34px);
+  line-height: 1.15;
+  letter-spacing: -0.02em;
+}
+
+.dl-steps {
+  margin-top: var(--section-gap);
+  padding-top: var(--section-gap);
+  border-top: 1px solid var(--line);
+}
+
+.dl-steps ol {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 32px;
+  margin-top: 32px;
+  padding: 0;
+  list-style: none;
+}
+
+.dl-steps li p {
+  display: flex;
+  gap: 12px;
+  margin-top: 20px;
+  color: var(--ink-2);
+  line-height: 1.5;
+}
+
+.dl-steps b {
+  color: var(--ink);
+  font-weight: 500;
+}
+
+.dl-step-number {
+  flex: none;
+  display: inline-grid;
+  place-items: center;
+  width: 26px;
+  height: 26px;
+  margin-top: 1px;
+  border-radius: 6px;
+  background: var(--raised);
+  color: var(--ink);
+  font-size: 13px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+
+.dl-all {
+  margin-top: clamp(40px, 5vw, 64px);
+}
+
+.dl-all-lead {
+  margin-top: 12px;
+  color: var(--dim);
+}
+
+.dl-all-lead a {
+  color: var(--link);
+}
+
+.dl-columns {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 32px var(--column-gap);
+  margin-top: 40px;
+}
+
+.dl-columns article {
+  padding-top: 20px;
+  border-top: 1px solid var(--line);
+}
+
+.dl-columns h3 {
+  font-size: 19px;
+  letter-spacing: -0.012em;
+}
+
+.dl-columns p {
+  max-width: 32em;
+  margin-top: 10px;
+  color: var(--ink-2);
+}
+
+.dl-files {
+  display: grid;
+  gap: 8px;
+  margin-top: 20px;
+}
+
+.dl-file {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 14px;
+  border-radius: 8px;
+  box-shadow: 0 0 0 0.75px var(--line-strong);
+  text-decoration: none;
+}
+
+.dl-file.is-yours {
+  background: var(--brand);
+  color: var(--brand-ink);
+}
+
+.dl-file small {
+  color: inherit;
+  opacity: 0.8;
+}
+
+.dl-file > small {
+  margin-left: auto;
+}
+
+/* Install drawings: a cropped close-up of the Mac per step, on a quiet tile. Sizes are container units. */
+
+.dl-art {
+  --tile: var(--raised);
+  --win: var(--paper);
+
+  container-type: inline-size;
+  aspect-ratio: 4 / 3;
+  overflow: hidden;
+  border-radius: 12px;
+  background: var(--tile);
+  box-shadow: inset 0 0 0 0.75px var(--line);
+}
+
+.art {
+  position: relative;
+  width: 100%;
+  height: 100%;
+  color: var(--ink);
+  line-height: 1.2;
+}
+
+.folder-back {
+  fill: var(--mac-folder-back);
+}
+
+.folder-front {
+  fill: var(--mac-folder-front);
+}
+
+.folder-glyph {
+  fill: var(--mac-select-ink);
+  opacity: 0.85;
+}
+
+.art-pointer {
+  position: absolute;
+  z-index: 2;
+  width: 5cqw;
+}
+
+/* Step 2: the disk image window */
+.art-dmg {
+  position: absolute;
+  left: 8cqw;
+  right: 8cqw;
+  top: 10cqw;
+  bottom: 10cqw;
+  overflow: hidden;
+  border-radius: 3cqw;
+  background: var(--win);
+  box-shadow: var(--elev-card);
+  font-size: 3.6cqw;
+}
+
+.art-dmg .art-win-bar b {
+  margin-left: 0;
+  flex: 1;
+  padding-right: 8cqw;
+  text-align: center;
+}
+
+.art-dmg-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-evenly;
+  height: calc(100% - 9cqw);
+  padding: 0 3cqw 4cqw;
+}
+
+.art-dmg-item {
+  display: grid;
+  justify-items: center;
+  gap: 2cqw;
+  width: 24cqw;
+  font-size: 3.4cqw;
+  font-weight: 500;
+}
+
+.art-dmg-item img {
+  width: 17cqw;
+  border-radius: 22%;
+}
+
+.art-dmg-folder {
+  width: 20cqw;
+}
+
+.art-arrow {
+  width: 12cqw;
+  margin-bottom: 6cqw;
+  fill: none;
+  stroke: var(--dim);
+  stroke-width: 2.4;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.art-pointer-drag {
+  left: 31cqw;
+  top: 32cqw;
+}
+
+.art-disk {
+  flex: none;
+  width: 4.4cqw;
+  height: 4.4cqw;
+  fill: var(--mac-disk);
+}
+
+.art-disk-label {
+  fill: var(--mac-disk-label);
+}
+
+.is-ours .art-disk {
+  fill: var(--mac-select-ink);
+}
+
+.is-ours .art-disk-label {
+  fill: var(--mac-select);
+  opacity: 0.35;
+}
+
+.art-pointer-one {
+  left: 78cqw;
+  top: 27cqw;
+}
+
+/* Step 3: Applications in the Finder */
+.art-win {
+  position: absolute;
+  left: 8cqw;
+  top: 10cqw;
+  width: 110cqw;
+  height: 70cqw;
+  overflow: hidden;
+  border-radius: 3cqw;
+  background: var(--win);
+  box-shadow: var(--elev-card);
+  font-size: 3.6cqw;
+}
+
+.art-win-bar {
+  display: flex;
+  align-items: center;
+  gap: 1.6cqw;
+  height: 9cqw;
+  padding: 0 3.4cqw;
+  border-bottom: 1px solid var(--line);
+}
+
+.art-win-bar i {
+  width: 2.4cqw;
+  height: 2.4cqw;
+  border-radius: 50%;
+  background: var(--line-strong);
+}
+
+.art-win-bar b {
+  margin-left: 22cqw;
+  font-weight: 600;
+}
+
+.art-win-body {
+  display: grid;
+  grid-template-columns: 30cqw 1fr;
+  height: calc(100% - 9cqw);
+}
+
+.art-side,
+.art-list {
+  margin: 0;
+  padding: 1.6cqw 2cqw;
+  list-style: none;
+}
+
+.art-side {
+  background: var(--shell);
+  color: var(--ink-2);
+}
+
+.art-side li,
+.art-list li {
+  display: flex;
+  align-items: center;
+  gap: 2cqw;
+  height: 7cqw;
+  padding: 0 2cqw;
+  border-radius: 1.4cqw;
+  white-space: nowrap;
+}
+
+.art-side .is-on {
+  background: var(--puck);
+  color: var(--ink);
+}
+
+.art-app,
+.art-list img {
+  flex: none;
+  width: 4cqw;
+  height: 4cqw;
+  border-radius: 1cqw;
+}
+
+.art-app {
+  background: var(--line-strong);
+}
+
+.art-list .is-ours {
+  background: var(--mac-select);
+  color: var(--mac-select-ink);
+}
+
+.art-pointer-finder {
+  left: 76cqw;
+  top: 37cqw;
+}
+
+@media (max-width: 900px) {
+  .dl-steps ol {
+    grid-template-columns: minmax(0, 1fr);
+    max-width: 480px;
+  }
+
+  .dl-columns {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+.art-pointer path {
+  fill: var(--mac-pointer-fill);
+  stroke: var(--mac-pointer-stroke);
+}

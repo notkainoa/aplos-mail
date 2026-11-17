@@ -20,7 +20,7 @@ function listOf(addresses: readonly Address[]): string {
   return addresses.map(nameOf).join(', ');
 }
 
-/** "Mon, Oct 26, 2026 at 8:30 AM PDT": the time in the owner's own zone (`timeZone` is for tests), never UTC. */
+/** "Mon, Oct 26, 2026 at 8:30 AM": Gmail's forwarded Date line, in the owner's own zone (`timeZone` is for tests), never UTC. */
 export function forwardDate(date: number, timeZone?: string): string {
   return new Intl.DateTimeFormat('en-US', {
     weekday: 'short',
@@ -29,11 +29,11 @@ export function forwardDate(date: number, timeZone?: string): string {
     year: 'numeric',
     hour: 'numeric',
     minute: '2-digit',
-    timeZoneName: 'short',
     ...(timeZone ? { timeZone } : {}),
   })
     .format(new Date(date))
-    .replace(/, (\d{1,2}:\d{2})/, ' at $1');
+    .replace(/, (\d{1,2}:\d{2})/, ' at $1')
+    .replace(/\u202f/g, ' ');
 }
 
 /** The line that opens the quoted original; the composer shows what follows it as its own quiet region. */

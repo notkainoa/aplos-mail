@@ -102,7 +102,7 @@ export interface LoadingLineProps {
 
 /** The quiet "Reply to Jordan…" field with an R keycap at the end of the thread (DESIGN §6 ReplyStub, §7.5 item 5). Mockups: reader.html, errors.html. Plain + refines: ui-foundation; used by ui-reader. */
 export interface ReplyStubProps {
-  /** First name in "Reply to <name>…". */
+  /** First name in "Reply to <name>…"; empty when there is no one to name, and the stub reads "Reply…". */
   recipientName: string;
   /** Registry id for R (always shown). */
   commandId: CommandId;

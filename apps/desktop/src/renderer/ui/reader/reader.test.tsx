@@ -452,6 +452,11 @@ describe('LoadingLine and ReplyStub', () => {
       ),
       'Reply to Q… R',
     );
+    // No one to name (the owner wrote last to no one else): "Reply…", never "Reply to sender…".
+    assert.equal(
+      text(render(<ReplyStub recipientName="" commandId="mail.reply" onOpen={noop} />)),
+      'Reply… R',
+    );
   });
 });
 

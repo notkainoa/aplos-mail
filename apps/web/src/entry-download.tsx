@@ -1,5 +1,8 @@
 import { createRoot } from 'react-dom/client';
+import './styles/tokens.css';
+import './styles/base.css';
+import './styles/chrome.css';
+import './styles/download.css';
 import { Download } from './Download';
-import '@fontsource-variable/newsreader/opsz.css';
-import './styles.css';
+
 createRoot(document.getElementById('root')!).render(<Download />);

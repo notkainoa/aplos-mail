@@ -1,5 +1,5 @@
 <!doctype html>
-<!-- The DMG window background. Rendered to background.png and background@2x.png by scripts/build-dmg-background.mjs.
+<!-- The DMG window background. Rendered to background.png and background@2x.png by scripts/build-dmg-background.cjs.
      Finder draws the icons and labels on top; their centers are set in package.json build.dmg.contents. -->
 <html>
 <head>
@@ -7,33 +7,20 @@
 <style>
   html,body{margin:0;width:800px;height:392px;overflow:hidden}
   /* Finder counts its 32pt title bar in the window height, so the canvas is 32pt taller than the visible 800×360 and the bottom strip is never seen. */
-  body{position:relative;background:#f8fbff;font-family:-apple-system,BlinkMacSystemFont,"SF Pro Text",sans-serif;-webkit-font-smoothing:antialiased}
-  /* Sky in the corners, like the icon's background, fading to near-white behind the icons. */
-  .sky{position:absolute;left:0;right:0;top:0;height:360px;background:
-    radial-gradient(420px 260px at 0% 0%,rgba(102,170,236,.72),rgba(118,182,240,0) 70%),
-    radial-gradient(420px 260px at 100% 0%,rgba(102,170,236,.72),rgba(118,182,240,0) 70%),
-    radial-gradient(520px 180px at 50% 118%,rgba(140,196,96,.34),rgba(146,200,104,0) 70%),
-    radial-gradient(300px 160px at 0% 100%,rgba(160,206,246,.35),rgba(160,206,246,0) 70%),
-    radial-gradient(300px 160px at 100% 100%,rgba(160,206,246,.35),rgba(160,206,246,0) 70%)}
-  /* A few soft clouds drifting through the sky corners. */
-  .cloud{position:absolute;border-radius:50%;background:#fff;filter:blur(14px);opacity:.95}
-  h1{position:absolute;top:44px;left:0;right:0;margin:0;text-align:center;font-size:21px;font-weight:400;letter-spacing:-.01em;color:#7a8594}
-  h1 b{font-weight:600;color:#1d2733}
+  /* The app's light shell grey, flat, with the logo's green for the arrows and grey text for the line. */
+  body{position:relative;background:#f5f5f6;font-family:-apple-system,BlinkMacSystemFont,"SF Pro Text",sans-serif;-webkit-font-smoothing:antialiased}
+  h1{position:absolute;top:44px;left:0;right:0;margin:0;text-align:center;font-size:21px;font-weight:400;letter-spacing:-.01em;color:#63666c}
+  h1 b{font-weight:600;color:#1d1e21}
   .arrows{position:absolute;left:400px;top:190px;transform:translate(-50%,-50%);display:flex;gap:2px}
   .arrows svg{width:20px;height:30px}
 </style>
 </head>
 <body>
-  <div class="sky"></div>
-  <div class="cloud" style="left:34px;top:22px;width:120px;height:38px"></div>
-  <div class="cloud" style="left:96px;top:8px;width:80px;height:34px"></div>
-  <div class="cloud" style="right:40px;top:30px;width:130px;height:40px"></div>
-  <div class="cloud" style="right:120px;top:12px;width:70px;height:28px"></div>
   <h1>To install, drag <b>Aplos Mail</b> to <b>Applications</b></h1>
   <div class="arrows">
-    <svg viewBox="0 0 20 30"><path d="M5 5l10 10-10 10" fill="none" stroke="#2f62c0" stroke-opacity=".25" stroke-width="3.2" stroke-linecap="round" stroke-linejoin="round"/></svg>
-    <svg viewBox="0 0 20 30"><path d="M5 5l10 10-10 10" fill="none" stroke="#2f62c0" stroke-opacity=".55" stroke-width="3.2" stroke-linecap="round" stroke-linejoin="round"/></svg>
-    <svg viewBox="0 0 20 30"><path d="M5 5l10 10-10 10" fill="none" stroke="#2f62c0" stroke-width="3.2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+    <svg viewBox="0 0 20 30"><path d="M5 5l10 10-10 10" fill="none" stroke="#075244" stroke-opacity=".25" stroke-width="3.2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+    <svg viewBox="0 0 20 30"><path d="M5 5l10 10-10 10" fill="none" stroke="#075244" stroke-opacity=".55" stroke-width="3.2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+    <svg viewBox="0 0 20 30"><path d="M5 5l10 10-10 10" fill="none" stroke="#075244" stroke-width="3.2" stroke-linecap="round" stroke-linejoin="round"/></svg>
   </div>
 </body>
 </html>
