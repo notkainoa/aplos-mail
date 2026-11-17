@@ -1,6 +1,6 @@
 import { useContext } from 'react';
 import type { CSSProperties, KeyboardEvent } from 'react';
-import type { EventBlockProps } from '../props';
+import type { CalendarEventData, EventBlockProps } from '../props';
 import { minutesBetween, rangeOf, timeOf } from './dates';
 import {
   calVar,
@@ -12,6 +12,20 @@ import {
   walkAt,
 } from './eventText';
 import { ActiveStack, FirstSegment } from './segment';
+
+/** A short tile alone in a narrow week column still says when it starts, "Weekly sync · 9:00", if the tile has room. */
+function compactStartOf(
+  event: CalendarEventData,
+  density: ReturnType<typeof densityOf>,
+  lanes: number,
+): string | null {
+  if (lanes !== 1 || (density !== 'one' && density !== 'tiny')) return null;
+  return timeOf(event.start).replace(/\s?[AP]M$/, '');
+}
+
+function isTall(event: CalendarEventData, density: ReturnType<typeof densityOf>): boolean {
+  return density === 'full' && minutesBetween(event.start, event.end) >= TALL_MINUTES;
+}
 
 /**
  * One entry on the grid: radius 6, a 2 px leading rule in the calendar colour, the DESIGN 4.2 fill composited over
@@ -52,6 +66,7 @@ export function EventBlock(props: EventBlockProps) {
   // A wide day column has room beside the title, so a short tile (30 minutes or less included) says its time there.
   const showTime =
     density === 'full' || ((density === 'one' || density === 'tiny') && placement.wide);
+  const compactStart = showTime ? null : compactStartOf(event, density, placement.lanes);
   const time = rangeOf(event.start, event.end);
   const showPlace = placement.wide && !!event.place && density === 'full';
   const detail = showPlace ? `${time} · ${event.place}` : time;
@@ -77,12 +92,9 @@ export function EventBlock(props: EventBlockProps) {
       data-density={density}
       data-selected={selected ? 'true' : 'false'}
       data-wide={placement.wide ? 'true' : 'false'}
+      data-compact-time={compactStart ? 'true' : undefined}
       data-crowded={placement.lanes > 1 ? 'true' : undefined}
-      data-tall={
-        density === 'full' && minutesBetween(event.start, event.end) >= TALL_MINUTES
-          ? 'true'
-          : undefined
-      }
+      data-tall={isTall(event, density) ? 'true' : undefined}
       data-unanswered={event.unanswered ? 'true' : undefined}
       data-locked={locked ? 'true' : undefined}
       aria-pressed={selected}
@@ -100,6 +112,11 @@ export function EventBlock(props: EventBlockProps) {
           "Dental 9:30" like the label, which axe label-content-name-mismatch needs. */}
       {showTime ? ' ' : null}
       {showTime ? <span className="ui-event-block__time">{detail}</span> : null}
+      {compactStart ? (
+        <span className="ui-event-block__time" data-compact="true">
+          · {compactStart}
+        </span>
+      ) : null}
     </button>
   );
 }

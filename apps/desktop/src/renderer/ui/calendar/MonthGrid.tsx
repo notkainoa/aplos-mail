@@ -68,14 +68,20 @@ export function MonthGrid({
 }: CalendarGridProps) {
   const ym = yearMonthOf(start);
   const month = parseYearMonth(ym).m;
-  const weeks = monthMatrix(ym, weekStartsOn);
+  // Only the weeks that hold the month's days draw (five rows for November 2026); the rows grow to fill the pane.
+  const weeks = monthMatrix(ym, weekStartsOn).filter(week =>
+    week.some(day => parseYearMonth(day.slice(0, 7)).m === month),
+  );
   const today = dayOf(now);
   const empty = events.length === 0;
   const activeStack = useContext(ActiveStack);
   const seen = new Set<string>(); // a multi-day entry shows in each cell it covers, but only the first is the DOM target
 
   return (
-    <div className="ui-calendar-grid__month">
+    <div
+      className="ui-calendar-grid__month"
+      style={{ '--month-weeks': weeks.length } as CSSProperties}
+    >
       <div className="ui-calendar-grid__mrow" role="row" data-head="true">
         {weekdayOrder(weekStartsOn).map(d => (
           <div

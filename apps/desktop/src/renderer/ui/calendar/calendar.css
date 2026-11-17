@@ -728,6 +728,15 @@
   padding-bottom: 0;
 }
 
+/* The compact start time shows only when the tile is wide enough to keep the whole title beside it. */
+.ui-event-block[data-compact-time='true'] {
+  container-type: inline-size;
+}
+@container (max-width: 8.5rem) {
+  .ui-event-block__time[data-compact='true'] {
+    display: none;
+  }
+}
 .ui-event-block[data-density='one'] .ui-event-block__time,
 .ui-event-block[data-density='tiny'] .ui-event-block__time {
   flex: none;
@@ -902,7 +911,7 @@
   overflow-y: auto;
   padding-bottom: var(--space-6);
   display: grid;
-  grid-template-rows: max-content repeat(6, minmax(var(--month-row), 1fr));
+  grid-template-rows: max-content repeat(var(--month-weeks, 6), minmax(var(--month-row), 1fr));
   position: relative;
 }
 

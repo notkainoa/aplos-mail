@@ -164,7 +164,8 @@
   color: var(--dim);
 }
 .ui-list-btn[data-variant='filled']:disabled {
-  background-color: var(--sunken);
+  /* the primary, faded: the same by day and at night */
+  background-color: color-mix(in srgb, var(--accent) 30%, transparent);
   box-shadow: none;
 }
 

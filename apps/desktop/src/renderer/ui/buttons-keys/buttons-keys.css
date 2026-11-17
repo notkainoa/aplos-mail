@@ -225,7 +225,8 @@
 }
 .ui-button[data-variant='filled']:disabled,
 .ui-button[data-variant='filled'][aria-disabled='true'] {
-  background: var(--sunken);
+  /* the primary, faded: the same by day and at night (a --sunken well read as an enabled black slab in dark) */
+  background: color-mix(in srgb, var(--accent) 30%, transparent);
   color: var(--dim);
   box-shadow: none;
 }
