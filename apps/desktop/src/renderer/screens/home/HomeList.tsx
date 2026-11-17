@@ -236,13 +236,17 @@ export function isCleared(layout: HomeLayout): boolean {
   return rows.every(ids => ids.length === 0) && showsLowBand(layout);
 }
 
-/** The cleared state: Do now keeps its place, with a calm line where the letter was (DESIGN 7.14). */
+/**
+ * The cleared state: one small muted line exactly where the "Do now" label sits, and nothing else (owner review of
+ * #548, 2026-11-17). It takes the section label's own box, so it lands on the label's place in every density.
+ */
 function Cleared() {
   return (
-    <ListGroup header={{ id: 'home-do', label: SECTION_LABELS.do, variant: 'section' }}>
-      <p className="aplos-home-cleared__line">Nothing needs you right now.</p>
-      <p className="aplos-home-cleared__detail">Mail that needs you will show up here.</p>
-    </ListGroup>
+    <div className="aplos-home-cleared" role="group" aria-labelledby="home-do">
+      <p id="home-do" className="ui-section-header aplos-home-cleared__line">
+        Nothing to do right now
+      </p>
+    </div>
   );
 }
 

@@ -345,6 +345,7 @@ How Home behaves:
 - **Sorting rule:** respond → Do now; only need to see it → Important updates; don't need to see it → Low importance. It is decided by the conversation, never the sender.
 - The focus letter is a fixed-height `--elev-card` (it fits its content when no summary is coming). It holds the meta line, the serif summary (two lines at most on Home; while it is being written, a quiet two-line placeholder with "Summarizing…") and the action row: the filled suggestion with its Space keycap, then Later and Done as text buttons, then ⋯. There is no subject.
 - Empty sections don't render, except while held.
+- Cleared Home (only the Low band left): one small `--dim` line "Nothing to do right now" in the Do now label's place, then the band (owner review of #548, 2026-11-17).
 - The sidebar count is Do now plus Important updates.
 - Rows always show the subject (a written summary follows it, muted); with no AI the focus letter shows the subject at `summary` size in SF, and there is no error.
 

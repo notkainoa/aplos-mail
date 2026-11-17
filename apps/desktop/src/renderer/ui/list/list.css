@@ -1423,23 +1423,16 @@
   min-height: 1lh;
 }
 
-/* ---------- Home cleared: Do now keeps its place with a calm line where the letter was ---------- */
+/* ---------- Home cleared: one small muted line where the "Do now" label sits (owner review of #548) ---------- */
 
-.aplos-home-cleared__line,
-.aplos-home-cleared__detail {
-  margin: 0;
-  /* The same edge as the section label and the rows' text: 24 px in, so the line never sits 12 px left of "Do now". */
-  padding-inline: var(--space-6) var(--space-3);
-}
+/* The line is a section label's box (.ui-section-header: its height, margin and left edge), in the small role and the
+   muted ink, so it sits exactly where "Do now" would. The Low band keeps its place below it, one group gap down. */
 .aplos-home-cleared__line {
-  margin-top: var(--space-4);
-  color: var(--ink);
-  font: var(--type-summary);
-  letter-spacing: var(--track-summary);
-}
-.aplos-home-cleared__detail {
-  margin-top: var(--space-1);
   color: var(--dim);
-  font: var(--type-ui);
-  letter-spacing: var(--track-ui);
+  font: var(--type-small);
+  font-variant-numeric: var(--num-small);
+  letter-spacing: var(--track-small);
+}
+.aplos-home-cleared + .ui-low-band {
+  margin-top: var(--group-gap);
 }

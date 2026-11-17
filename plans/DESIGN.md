@@ -646,6 +646,7 @@ The Back from Later block uses the same order, below the new items. Rows in Do n
   - Loading (local): never a skeleton; the cached list paints.
   - First sync: §7.12. While an account is backfilling or paused, an empty Home shows "Your first mail is on its way." with the status slot's reason, never inbox zero.
   - Empty: the inbox-zero block (§7.14).
+  - Cleared (Do now, Important updates and Follow up are empty, only the Low band is left): one small `--dim` line, "Nothing to do right now", exactly where the Do now label sits, then the band; no headline and no second line (owner review of #548, 2026-11-17).
   - No AI provider: rows show the subject alone (no summary after it), the focus letter shows the subject at `summary` size in SF (not serif), lanes come from the heuristics alone, and there is no error.
   - Offline: the status slot only.
   - Narrow (under 700 px of pane): the action row drops its labels, keeping the Space verb.
