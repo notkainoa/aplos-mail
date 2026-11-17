@@ -142,7 +142,8 @@ All tokens live in one source file, `apps/desktop/src/renderer/ui/tokens.json`, 
 |---|---|---|---|
 | `--shell` | `#f5f5f6` | `#121314` | The window background. The sidebar sits on it, transparent. |
 | `--canvas` | `#ffffff` | `#191a1c` | The pane that lists, the reader, compose and settings sit on |
-| `--paper` | `#ffffff` | `#1f2023` | Cards on the pane: the focus letter, the inline reply, proposal cards, dialogs, menus, toasts. In dark it is *lighter* than the pane (the Redakt lesson) [V: `redakt/inbox-desktop-dark.png`]. |
+| `--paper` | `#ffffff` | `#1f2023` | Cards on the pane: the focus letter, the inline reply, proposal cards. In dark it is *lighter* than the pane (the Redakt lesson) [V: `redakt/inbox-desktop-dark.png`]. |
+| `--float` | `#ffffff` | ink 8 % over `--paper` (opaque) | Floating surfaces: dialogs, menus, popovers, tooltips, toasts, the palette, the selected segment. White by day; at night one clear step lighter than a card, so a floating surface never melts into what is under it (UI council 2, round 2). |
 | `--raised` | `#f6f6f7` | `#212225` | Quiet fills: the low-importance band, chips, attachments, the undo-send line |
 | `--sunken` | `#efeff1` | `#0e0f10` | Keycaps, segmented tracks, fields |
 | `--ink` | `#1d1e21` | `#ececed` | Primary text, unread senders |
@@ -313,14 +314,14 @@ Light comes from hairline rings and soft shadows. There is no glass.
 | shell | no shadow | no shadow | The window background and the sidebar |
 | `--elev-pane` | `--line` ring + `0 1px 2px` shadow-ink 3 % | ring + inset `0 1px 0` `--sheen` | The pane, the Ask dock |
 | `--elev-card` | `--line-strong` ring + `0 1px 2px` 4 % + `0 6px 20px` 5 % | ring + sheen + `0 8px 24px` black 30 % | The focus letter, the inline reply card, proposal cards |
-| `--elev-float` | `--line-strong` ring + `0 4px 12px` 6 % + `0 16px 40px` 10 %, on opaque `--paper` | ring + sheen + black 30 % / 40 % | Menus, popovers, tooltips, toasts, the palette |
+| `--elev-float` | `--line-strong` ring + `0 4px 12px` 6 % + `0 16px 40px` 10 %, on opaque `--float` | ring + sheen + black 30 % / 40 % | Menus, popovers, tooltips, toasts, the palette |
 | `--elev-dialog` | `--line-strong` ring + `0 8px 24px` 8 % + `0 32px 72px` 14 %, `--scrim` behind | ring + sheen + black 40 % / 50 % | Dialogs and confirmations |
 | `--elev-lift` | `--elev-card` + `0 12px 32px` 10 % | + black 45 % | A dragged row or letter |
 | `--elev-puck` | `--line-strong` ring + `0 1px 2px` 6 % | ring + sheen | The thumb of a segmented control |
 
 **Material rules**
 
-- **No glass.** No surface uses `backdrop-filter` or translucency. Every floating surface is opaque `--paper`, so Reduce Transparency changes nothing.
+- **No glass.** No surface uses `backdrop-filter` or translucency. Every floating surface is opaque `--float`, so Reduce Transparency changes nothing.
 - **Press feel** (from Carried): the filled button has a 1 px inset highlight at the top (white 16 %) and a 1 px inset shade at the bottom (shadow-ink 14 %, dark black 22 %). On `:active` they swap, and the button scales 0.97 (icon buttons 0.94).
 - **No paper or desk texture** (Appendix B). Depth comes from light, not noise.
 - **Three button idioms only:** **filled**, **text** and **icon**. Today's glass pills are removed [V: baseline §6.8].
@@ -466,7 +467,7 @@ Every screen is built from these components in `src/renderer/ui/`. Screens never
 | `Button` | Rework | Three variants: `filled`, `text`, `icon`. Radius 8, heights 28 / 32 / 40, press inset. Glass and pill variants are deleted. |
 | `Kbd` (keycap) | Rework | 18 px, radius 4, `caption`, `--sunken`. Shown in tooltips, as badges while ⌘ is held, with "Show all key hints", and always on main actions (Space in the mail window, Return in onboarding and dialogs, ⌘↩ on Send). Never revealed by hover. |
 | `Tooltip` | Keep | Label + keycaps from the registry, `reveal`, `--elev-float`. This is where key hints live. |
-| `Menu`, `Popover` | Rework | Opaque `--paper`, `--elev-float`, radius 12, 32 px items, at least 220 px wide. Number keys 1–9 pick in short menus. The double-blink on the chosen item is removed. |
+| `Menu`, `Popover` | Rework | Opaque `--float`, `--elev-float`, radius 12, 32 px items, at least 220 px wide. Number keys 1–9 pick in short menus. The double-blink on the chosen item is removed. |
 | `Dialog` / `Confirm` | Rework | `--elev-dialog`, `settle`. Confirmations are two key rows; destructive ones default to Cancel (§7.9). |
 | `Puck` (segmented / selection) | New | One shared indicator per group, moved by `slide`. Used by the sidebar, D/W/M, Ask/Today, Settings nav and Later \| Bookmarks. Replaces the tab indicator that animates width and height (baseline §4). |
 | `ListRow` | Rework | Fixed height per density. Sender, summary or subject, due chip, date; unread is weight alone (no dot) and no account dot (owner decision 2026-11-13). No avatar. Hosts the cursor layer, bulk-pick wash, swipe underlay and hover actions that overlay the date column. Option: a fixed stamp column ("Done 9:41 AM") with the hover action to its left. |
@@ -785,7 +786,7 @@ One 640 px column, top to bottom, with no card and nothing beside it (superseded
   - Recognised operators (`from:`, `to:`, `subject:`, `has:attachment`, `before:`, `after:`, `in:`, including `in:done`) become removable pill tokens under the field.
   - Local results appear as you type, as ordinary rows; the Lists keymap applies. "Search all mail on Google · Return" sits under them. Remote Gmail search runs **only on Return**, to protect quota (`protocols/proto-google.md`).
   - **No match:** "No mail matches 'dentist'." plus "Search all mail on Google · Return".
-- **⌘K is the only overlay.** It is opaque `--paper` with `--elev-float`, 600 px wide, centred on the window, with a light scrim, and it `settle`s. Typing `>` in Search switches to it.
+- **⌘K is the only overlay.** It is opaque `--float` with `--elev-float`, 600 px wide, centred on the window, with a light scrim, and it `settle`s. Typing `>` in Search switches to it.
   - The first line is a **context line** naming the target ("For: Drew Bell · October illustrations"), so commands know what they act on.
   - On first open it shows Suggested and Go to; everything else appears as you type, in Actions, Go to, Ask and Settings, each command with its keycap from the registry. Nested pages use breadcrumbs.
   - 1–9 run the Nth result, only while the field is empty.
@@ -875,7 +876,7 @@ This is the screen shown after setup, before the inbox (the last step of the onb
 
 *Mockup: `toasts.html` (stack, pending, remind, offline).*
 
-- **Stack.** Toasts stack bottom-centre of the *main pane*, never under the dock, up to three. They are opaque `--paper` with `--elev-float`, radius 12, `ui` text, up to 440 px wide. Hover or focus pauses them. Plain toasts last 4 s; Undo toasts last 8 s, then fade over 400 ms.
+- **Stack.** Toasts stack bottom-centre of the *main pane*, never under the dock, up to three. They are opaque `--float` with `--elev-float`, radius 12, `ui` text, up to 440 px wide. Hover or focus pauses them. Plain toasts last 4 s; Undo toasts last 8 s, then fade over 400 ms.
 - **Wording follows the op queue:**
   - Pending: "Archiving…"
   - Confirmed: "Done · Undo Z"
