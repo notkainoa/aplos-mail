@@ -133,6 +133,19 @@ export function formatLaterUntil(iso: IsoDateTime): string {
   return isMidnight(d) ? day : `${day}, ${formatTime(d)}`;
 }
 
+/**
+ * The Later chip's short return, so the subject keeps its room: "today 5 PM", "tomorrow 9 AM", "Thu 9 AM" for the next
+ * week; a past day or a farther one keeps its date, "Tue, Oct 27". The full date rides in the chip's tooltip.
+ */
+export function formatLaterUntilCompact(iso: IsoDateTime): string {
+  const d = parse(iso);
+  if (!d) return '';
+  const off = dayOffset(d);
+  if (off < 0 || off > 6) return formatLaterUntil(iso);
+  const day = off === 0 ? 'today' : off === 1 ? 'tomorrow' : weekdayShort(d);
+  return isMidnight(d) ? day : `${day} ${formatTime(d).replace(/:00(?=\s)/, '')}`;
+}
+
 /** The reader's sender-line time: "10:00 AM" today, otherwise day plus time. */
 export function formatReaderTime(iso: IsoDateTime): string {
   const d = parse(iso);
@@ -145,8 +158,8 @@ export function formatReaderTime(iso: IsoDateTime): string {
 }
 
 /**
- * A message header time: "Just now", "Today, 10:00 AM", "Oct 23, 4:12 PM". Before today it is always the date, never
- * a weekday or "Yesterday", so one thread never mixes "Oct 21" with "Friday".
+ * A message header time: "Just now", "Today, 10:00 AM", "Yesterday, 4:12 PM", then the long form with its weekday,
+ * "Fri, Nov 13, 10:42 PM". Always the date and the clock, so one thread never mixes "Oct 21" with "Friday".
  */
 export function formatMessageTime(iso: IsoDateTime): string {
   const d = parse(iso);
@@ -155,7 +168,8 @@ export function formatMessageTime(iso: IsoDateTime): string {
   if (age >= 0 && age < 60_000) return 'Just now';
   const off = dayOffset(d);
   if (off === 0) return `Today, ${formatTime(d)}`;
-  return `${monthDay(d)}, ${formatTime(d)}`;
+  if (off === -1) return `Yesterday, ${formatTime(d)}`;
+  return `${weekdayShort(d)}, ${monthDay(d)}, ${formatTime(d)}`;
 }
 
 /** Full date for `title` and screen readers: "Thursday, October 29, 2026 at 10:00 AM". */
