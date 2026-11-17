@@ -68,6 +68,8 @@ export interface ReaderActions {
   done(): void;
   later(): void;
   trash(): void;
+  /** A thread read from Trash or Spam goes back (to its lane, else the Inbox), leaving the reader like Done. */
+  restore(): void;
   bookmark(): void;
   /** U: marks an unread thread read (the reader stays on it); a read thread is marked unread and the reader returns to its list, like Gmail. */
   toggleRead(): void;
@@ -206,6 +208,13 @@ export function createReaderActions(deps: ReaderDeps): ReaderActions {
     leaveList(row, { type: 'trash' }, { kind: 'trash', message });
   }
 
+  function restore(): void {
+    const row = current();
+    if (!row) return;
+    const message = deps.undoLabel('mail.restore', 'Restored');
+    leaveList(row, { type: 'restore' }, { kind: 'info', message });
+  }
+
   function bookmark(): void {
     const row = current();
     if (!row) return;
@@ -274,6 +283,7 @@ export function createReaderActions(deps: ReaderDeps): ReaderActions {
     done,
     later,
     trash,
+    restore,
     bookmark,
     toggleRead,
     forward,

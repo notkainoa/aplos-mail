@@ -39,6 +39,8 @@ type Request<M extends MethodName> = (args: RequestArgs<M>) => ReturnType<Resolv
 export type ThreadActArgs = Omit<Input<'Thread/act'>, 'opId' | 'selector'> & {
   readonly opId?: OpId;
   readonly selector?: ThreadListSelector;
+  /** A change the owner did not ask for (opening a thread marks it read): applied and sent like any act, but never put on the undo stack, so Z still undoes the owner's last action. */
+  readonly quiet?: boolean;
 };
 
 /** `api.operation.undo`'s arguments: `opId` is the operation to undo; `undoOpId`, the inverse's id, is minted by the data layer when absent. */

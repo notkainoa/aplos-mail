@@ -106,6 +106,11 @@ export function setToastCommandRunner(runner: ((commandId: string) => unknown) |
   runCommand = runner;
 }
 
+/** Runs a command through the shell's registry (the native menu's items); false when it did not run or nothing is wired yet. */
+export function runShellCommand(commandId: string): boolean {
+  return runCommand !== null && commandRan(runCommand(commandId));
+}
+
 /** Wires the targeted undo: `undo(opId)` undoes that one operation and returns true when it was accepted. A toast's id is its operation's id. */
 export function setToastUndoRunner(runner: ((opId: string) => boolean) | null): void {
   undoOperation = runner;

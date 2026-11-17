@@ -4,7 +4,7 @@
  * around the cursor are asked for through the data layer's prefetch on intent (80 ms), which cancels when the cursor
  * moves on.
  */
-import { useEffect, useState, useSyncExternalStore } from 'react';
+import { useEffect, useRef, useState, useSyncExternalStore } from 'react';
 import { usePrefetchIntent } from '../../data';
 import { realTimers, type Timers } from '../../data/scheduler';
 import {
@@ -14,18 +14,30 @@ import {
 } from './letterController';
 import { PREFETCH_RADIUS, prefetchTargets } from './model/letterBuffer';
 
+const NOBODY: ReadonlySet<string> = new Set();
+
 /** The buffer for the reader's lifetime. */
 export function useLetterController(timers: Timers = realTimers): LetterController {
   const [controller] = useState(() => createLetterController(timers));
   return controller;
 }
 
-/** Tells the buffer which letter is wanted and returns what is on paper. */
+/**
+ * Tells the buffer which letter is wanted and returns what is on paper. A letter on paper that this reading sent away
+ * (`gone`: Done, Later, Trash), or no letter at all, is not kept while the next one loads: the next one is shown at
+ * once, so what is on screen is always a thread the keys can act on.
+ */
 export function useLetterBuffer(
   controller: LetterController,
   wanted: string | null,
+  gone: ReadonlySet<string> = NOBODY,
 ): LetterSnapshot {
-  useEffect(() => controller.want(wanted), [controller, wanted]);
+  const away = useRef(gone);
+  away.current = gone;
+  useEffect(() => {
+    const paper = controller.snapshot().letter;
+    controller.want(wanted, paper === null || away.current.has(paper));
+  }, [controller, wanted]);
   return useSyncExternalStore(controller.subscribe, controller.snapshot, controller.snapshot);
 }
 

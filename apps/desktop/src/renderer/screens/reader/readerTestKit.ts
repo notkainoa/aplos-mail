@@ -102,7 +102,9 @@ export function depsOver(world: World, start: string, readyOnGo = true) {
   controller.ready(start);
   const go = (id: string) => {
     state.open = id;
-    controller.want(id);
+    // What `useLetterBuffer` does: a letter this reading sent away is not kept on paper while the next one loads.
+    const paper = controller.snapshot().letter;
+    controller.want(id, paper === null || state.gone.has(paper));
     if (readyOnGo) controller.ready(id);
   };
   const deps: ReaderDeps = {

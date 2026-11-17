@@ -256,6 +256,7 @@ export {
   releaseToast,
   runToastAction,
   setToastCommandRunner,
+  runShellCommand,
   setToastUndoRefusal,
   setToastUndoRunner,
   toastUndoRefused,

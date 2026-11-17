@@ -96,3 +96,15 @@ test('the ⋯ menu says Mark read on an unread thread, and leaves both rows out 
   const ids = bare.flatMap(e => (e.kind === 'item' ? [e.id] : []));
   assert.ok(!ids.includes('forward') && !ids.includes('toggleRead'));
 });
+
+test('in Trash the ⋯ menu offers Restore instead of Move to Trash; in Spam it says Not spam', () => {
+  const ids = (restore?: string) =>
+    moreEntries(row, suggestion, { replyAll: false, forward: false, toggleRead: false, restore })
+      .flatMap(e => (e.kind === 'item' ? [e] : []))
+      .map(e => `${e.id}:${e.label}`);
+  assert.ok(ids().includes('trash:Move to Trash'));
+  assert.ok(!ids().some(id => id.startsWith('restore')));
+  assert.ok(ids('Restore').includes('restore:Restore'));
+  assert.ok(!ids('Restore').some(id => id.startsWith('trash')), 'no Move to Trash inside Trash');
+  assert.ok(ids('Not spam').includes('restore:Not spam'));
+});

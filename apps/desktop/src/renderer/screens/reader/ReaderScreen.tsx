@@ -190,8 +190,16 @@ function useReaderHeader(input: {
   usePaneHeaderPart(part);
 }
 
-function controlsOf(actions: ReaderActions): LetterControls {
+/** What Restore says for a thread read from Trash or Spam; null from anywhere else. */
+function restoreFor(from: Screen | null, actions: ReaderActions): LetterControls['restore'] {
+  if (from === 'trash') return { label: 'Restore', run: actions.restore };
+  if (from === 'spam') return { label: 'Not spam', run: actions.restore };
+  return undefined;
+}
+
+function controlsOf(actions: ReaderActions, from: Screen | null): LetterControls {
   return {
+    restore: restoreFor(from, actions),
     popOut: popOutToCompose,
     suggest: actions.suggest,
     later: actions.later,
@@ -229,7 +237,7 @@ function OpenReader(props: OpenProps & { readonly source: readonly string[] }) {
   const [gone, markGone] = useReducer(goneReducer, NOBODY);
   const list = useReaderList(props.source, open, gone);
   const controller = useLetterController();
-  const buffer = useLetterBuffer(controller, open);
+  const buffer = useLetterBuffer(controller, open, gone);
   const shown = buffer.letter;
   const row = useRow('Thread', shown ?? undefined);
   const wantedRow = useRow('Thread', open);
@@ -279,7 +287,8 @@ function OpenReader(props: OpenProps & { readonly source: readonly string[] }) {
     back: actions.back,
   });
 
-  const controls = useMemo(() => controlsOf(actions), [actions]);
+  const origin = props.backTo ?? context.from;
+  const controls = useMemo(() => controlsOf(actions, origin), [actions, origin]);
   const root = useRef<HTMLDivElement>(null);
   const findOpen = shown !== null && uiFor(ui, shown).find !== null;
   // The element that held focus may be gone (find closed, the letter changed): the reader's root takes it.
