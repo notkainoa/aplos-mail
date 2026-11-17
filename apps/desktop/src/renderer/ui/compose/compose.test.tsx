@@ -220,7 +220,10 @@ test('InlineReply: the card, Send with its keycap, draft state, attach, more and
   assert.match(markup, /aria-label="Attach"/);
   assert.match(markup, /aria-label="More"/);
   assert.doesNotMatch(markup, /title="Attach a file/);
-  assert.match(markup, /data-variant="filled"[^>]*>.*Send.*<kbd[^>]*>⌘↩<\/kbd>/);
+  assert.match(
+    markup,
+    /data-variant="filled"[^>]*>.*Send.*<kbd[^>]*><span class="ui-key-mod">⌘<\/span>↩<\/kbd>/,
+  );
   assert.equal((markup.match(/data-variant="filled"/g) ?? []).length, 1, 'one filled button');
   assert.match(markup, /Draft saved/);
   assert.doesNotMatch(markup, /Listening/);
@@ -284,7 +287,7 @@ test('Composer: To row, heading-size subject, body, footer with Send, draft stat
     /<input[^>]*aria-label="Subject"[^>]*placeholder="Subject"[^>]*value="Hollow Creek: going with Direction B"/,
   );
   assert.match(markup, /<footer[^>]*class="ui-composer__foot"/);
-  assert.match(markup, /<kbd[^>]*>⌘↩<\/kbd>/);
+  assert.match(markup, /<kbd[^>]*><span class="ui-key-mod">⌘<\/span>↩<\/kbd>/);
   assert.match(markup, /aria-label="Formatting"/);
   // The page's ⋯ is in the pane header, so the footer has no second one (owner call 2026-11-14: no extra buttons).
   const footer = markup.slice(markup.indexOf('ui-composer__foot'));

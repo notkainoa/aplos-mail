@@ -9,11 +9,16 @@
   --shell: #f5f5f6;
   --canvas: #ffffff;
   --paper: #ffffff;
+  --float: #ffffff;
   --raised: #f6f6f7;
   --sunken: #efeff1;
+  --keycap: #efeff1;
+  --keycap-ink: var(--dim);
   --ink: #1d1e21;
   --ink-2: #46484d;
   --dim: #63666c;
+  --dim-on-float: var(--dim);
+  --dim-inactive: var(--dim);
   --faint: #8f9298;
   --line: color-mix(in srgb, var(--ink) 9%, transparent);
   --line-strong: color-mix(in srgb, var(--ink) 14%, transparent);
@@ -47,7 +52,7 @@
     'Newsreader', 'Newsreader Fallback New York', 'Newsreader Fallback Georgia', 'New York',
     'Georgia', serif;
   --font-mono: ui-monospace, 'SF Mono', 'Menlo', monospace;
-  --type-caption: 500 0.6875rem/1rem var(--font-sans);
+  --type-caption: 500 0.7188rem/1rem var(--font-sans);
   --track-caption: calc(0.04px + var(--track-boost));
   --type-small: 400 0.75rem/1.125rem var(--font-sans);
   --track-small: calc(0px + var(--track-boost));
@@ -118,7 +123,8 @@
   --settings-nav: 11.25rem;
   --settings-content: 37.5rem;
   --toast-max: 27.5rem;
-  --sender-w: 9.5rem;
+  --toast-grow-max: 35rem;
+  --sender-w: 8.5rem;
   --sender-w-home: 9.25rem;
   --menu-min: 13.75rem;
   --icon: 1rem;
@@ -147,12 +153,12 @@
   --radius-xl: 1rem;
   --radius-pill: 62.4375rem;
   --elev-pane:
-    0px 0px 0px var(--hairline) var(--line),
-    0px 1px 2px 0px color-mix(in srgb, var(--shadow-ink) 3%, transparent);
+    0px 0px 0px var(--hairline) var(--line-strong),
+    0px 1px 2px 0px color-mix(in srgb, var(--shadow-ink) 5%, transparent);
   --elev-card:
     0px 0px 0px var(--hairline) var(--line-strong),
-    0px 1px 2px 0px color-mix(in srgb, var(--shadow-ink) 4%, transparent),
-    0px 6px 20px 0px color-mix(in srgb, var(--shadow-ink) 5%, transparent);
+    0px 1px 2px 0px color-mix(in srgb, var(--shadow-ink) 6%, transparent),
+    0px 6px 20px 0px color-mix(in srgb, var(--shadow-ink) 8%, transparent);
   --elev-float:
     0px 0px 0px var(--hairline) var(--line-strong),
     0px 4px 12px 0px color-mix(in srgb, var(--shadow-ink) 6%, transparent),
@@ -351,12 +357,16 @@
   color-scheme: dark;
   --shell: #121314;
   --canvas: #191a1c;
-  --paper: #1f2023;
-  --raised: #212225;
+  --paper: #242528;
+  --float: color-mix(in srgb, var(--ink) 8%, var(--paper));
+  --raised: #2b2c30;
   --sunken: #0e0f10;
+  --keycap: color-mix(in srgb, var(--ink) 8%, transparent);
+  --keycap-ink: var(--ink-2);
   --ink: #ececed;
   --ink-2: #c4c5c9;
   --dim: #9a9da4;
+  --dim-on-float: var(--ink-2);
   --faint: #6f7278;
   --line: color-mix(in srgb, var(--ink) 8%, transparent);
   --line-strong: color-mix(in srgb, var(--ink) 12%, transparent);
@@ -373,7 +383,7 @@
   --hover: color-mix(in srgb, var(--ink) 5%, transparent);
   --press: color-mix(in srgb, var(--ink) 10%, transparent);
   --puck: color-mix(in srgb, var(--ink) 8%, transparent);
-  --today-tint: color-mix(in srgb, var(--accent) 10%, transparent);
+  --today-tint: color-mix(in srgb, var(--accent) 6%, transparent);
   --selection: color-mix(in srgb, var(--accent) 30%, var(--canvas));
   --scrim: color-mix(in srgb, #000000 50%, transparent);
   --shadow-ink: #000000;

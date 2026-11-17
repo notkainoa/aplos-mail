@@ -56,8 +56,9 @@
   height: var(--kbd);
   padding: 0 var(--space-1);
   border-radius: var(--radius-xs);
-  background: var(--sunken);
-  color: var(--dim);
+  background: var(--keycap);
+  box-shadow: inset 0 0 0 var(--hairline) var(--line);
+  color: var(--keycap-ink);
   font: var(--type-caption);
   letter-spacing: var(--track-caption);
   flex: none;
@@ -183,7 +184,8 @@
 }
 .ui-part-button[data-variant='filled']:disabled,
 .ui-part-button[data-variant='filled'][aria-disabled='true'] {
-  background: var(--sunken);
+  /* the primary, faded: the same by day and at night (a --sunken well read as an enabled black slab in dark) */
+  background: color-mix(in srgb, var(--accent) 30%, transparent);
   color: var(--dim);
   box-shadow: none;
 }
@@ -214,6 +216,14 @@
 .ui-part-button[data-variant='icon']:active {
   background: var(--press);
 }
+/* A pane tool that cannot run right now (New event on view-only calendars): clearly faded, a not-allowed cursor on its wrapper, and the wrapper still shows the tooltip that says why. */
+.ui-pane__tools > .ui-part-tipwrap:has(> .ui-part-button:disabled) {
+  cursor: not-allowed;
+}
+.ui-pane__tools .ui-part-button:disabled,
+.ui-pane__tools .ui-part-button:disabled .ui-part-icon {
+  color: var(--faint);
+}
 
 /* Overlay tooltip: label + keys, opaque paper. It never moves layout; hover or keyboard focus shows it. */
 .ui-part-tipwrap {
@@ -238,7 +248,7 @@
   max-width: calc(var(--menu-min) + var(--space-9));
   padding: var(--space-1) var(--space-2);
   border-radius: var(--radius-md);
-  background: var(--paper);
+  background: var(--float);
   box-shadow: var(--elev-float);
   color: var(--ink);
   font: var(--type-small);
@@ -401,8 +411,13 @@ html[data-real-key] .ui-part-tipwrap:has(> :focus-visible) > .ui-part-tip {
   flex: none;
   display: flex;
   align-items: center;
-  gap: var(--space-1);
+  gap: var(--space-2);
   margin-left: auto;
+}
+/* Ask and Today are the window's own pair: 16 px (the 8 px gap and 8 more) of air between them and a screen's local
+   tools (the reader's ↑ ↓ ⋯), so the two groups read as two. */
+.ui-pane__tools > .ui-part-tipwrap:nth-last-child(2) {
+  margin-left: var(--space-2);
 }
 .ui-pane__tools > .ui-part-tipwrap:last-child > .ui-part-tip {
   left: auto;
@@ -520,7 +535,8 @@ html[data-real-key] .ui-part-tipwrap:has(> :focus-visible) > .ui-part-tip {
   height: var(--space-5);
   flex: none;
   border-radius: var(--radius-sm);
-  background: var(--raised);
+  /* --puck: the same quiet ink step on the shell by day and at night (--raised all but vanished on the light shell). */
+  background: var(--puck);
   color: var(--ink);
   font: var(--type-caption);
   font-weight: 600;
@@ -602,7 +618,7 @@ html[data-real-key] .ui-part-tipwrap:has(> :focus-visible) > .ui-part-tip {
   color: var(--dim);
 }
 
-/* ───────────── Floating: Menu, Popover (opaque --paper, --elev-float, `reveal`) ───────────── */
+/* ───────────── Floating: Menu, Popover (opaque --float, --elev-float, `reveal`) ───────────── */
 
 .ui-menu,
 .ui-popover {
@@ -612,12 +628,53 @@ html[data-real-key] .ui-part-tipwrap:has(> :focus-visible) > .ui-part-tip {
   /* --z-menu is being added to the layer tokens; until it lands, the existing popover layer holds. */
   z-index: var(--z-menu, var(--z-popover));
   border-radius: var(--radius-lg);
-  background: var(--paper);
+  background: var(--float);
   box-shadow: var(--elev-float);
   color: var(--ink);
   font: var(--type-ui);
   letter-spacing: var(--track-ui);
   animation: ui-reveal var(--dur-reveal-in) var(--ease-out) both;
+}
+/* Night: a menu or popover on a card needs an edge you can see, so the 1 px ring is laid twice (the stronger line, over the one
+   --elev-float already draws). */
+:root[data-theme='dark'] .ui-menu,
+:root[data-theme='dark'] .ui-popover {
+  box-shadow:
+    0 0 0 1px var(--line-strong),
+    var(--elev-float);
+}
+/* Night: --dim is 4.4:1 on --float and 3.6:1 on the cursor row over it, under the 4.5:1 DESIGN 12.4 asks of text. So inside every
+   surface at --float or lighter, --dim is re-pointed at --dim-on-float (the secondary ink at night; the same dim step by day, so
+   light does not change) and every dim line there follows, hovered, selected or not. A disabled control takes --dim-inactive and
+   keeps the dim step, so it still reads as quieter than an enabled one. */
+.ui-menu,
+.ui-popover,
+.ui-dialog,
+.ui-toast,
+.ui-part-tip,
+.ui-palette__panel,
+.ui-low-sheet__panel,
+.ui-shortcut-sheet-dialog,
+.ui-recipient-field__list,
+.ui-date-presets,
+.cal-screen__empty-box {
+  --dim: var(--dim-on-float);
+}
+:is(
+    .ui-menu,
+    .ui-popover,
+    .ui-dialog,
+    .ui-toast,
+    .ui-part-tip,
+    .ui-palette__panel,
+    .ui-low-sheet__panel,
+    .ui-shortcut-sheet-dialog,
+    .ui-recipient-field__list,
+    .ui-date-presets,
+    .cal-screen__empty-box
+  )
+  :is(:disabled, [aria-disabled='true']) {
+  --dim: var(--dim-inactive);
 }
 .ui-menu:not([data-placed]),
 .ui-popover:not([data-placed]) {
@@ -724,7 +781,7 @@ html[data-real-key] .ui-part-tipwrap:has(> :focus-visible) > .ui-part-tip {
 }
 .ui-menu__swatch + .ui-menu__swatch {
   margin-left: calc(-1 * var(--space-half));
-  box-shadow: calc(-1 * 1px) 0 0 var(--paper);
+  box-shadow: calc(-1 * 1px) 0 0 var(--float);
 }
 .ui-menu__text {
   display: flex;
@@ -859,7 +916,7 @@ html[data-real-key] .ui-part-tipwrap:has(> :focus-visible) > .ui-part-tip {
   width: 100%;
   max-height: 100%;
   border-radius: var(--radius-xl);
-  background: var(--paper);
+  background: var(--float);
   box-shadow: var(--elev-dialog);
   color: var(--ink);
   font: var(--type-ui);
@@ -1098,7 +1155,7 @@ html[data-real-key] .ui-part-tipwrap:has(> :focus-visible) > .ui-part-tip {
   text-overflow: ellipsis;
 }
 
-/* segmented: a --sunken track, a --paper thumb */
+/* segmented: a --sunken track, a --float thumb (one clear step lighter than the track at night) */
 .ui-puck[data-kind='segmented'] {
   display: inline-flex;
   padding: var(--space-half);
@@ -1107,7 +1164,7 @@ html[data-real-key] .ui-part-tipwrap:has(> :focus-visible) > .ui-part-tip {
 }
 .ui-puck[data-kind='segmented'] > .ui-puck__thumb {
   border-radius: var(--radius-sm);
-  background: var(--paper);
+  background: var(--float);
   box-shadow: var(--elev-puck);
 }
 .ui-puck[data-kind='segmented'] .ui-puck__item {
@@ -1121,17 +1178,15 @@ html[data-real-key] .ui-part-tipwrap:has(> :focus-visible) > .ui-part-tip {
   font-weight: 500;
 }
 .ui-puck[data-kind='segmented']:not([data-ready]) .ui-puck__item[data-selected='true'] {
-  background: var(--paper);
+  background: var(--float);
   box-shadow: var(--elev-puck);
 }
 
-/* Dark: --paper is barely lighter than the track, so the thumb takes --puck (the token's role for segmented
-   thumbs), which reads clearly against --sunken. */
-:root[data-theme='dark'] .ui-puck[data-kind='segmented'] > .ui-puck__thumb,
+/* Dark: the options you are not on read one step above --dim on the near-black track. */
 :root[data-theme='dark']
-  .ui-puck[data-kind='segmented']:not([data-ready])
-  .ui-puck__item[data-selected='true'] {
-  background: var(--puck);
+  .ui-puck[data-kind='segmented']
+  .ui-puck__item:not([data-selected='true']) {
+  color: var(--ink-2);
 }
 
 /* selection: rows with a --puck fill (sidebar, Settings nav) */
@@ -1141,6 +1196,14 @@ html[data-real-key] .ui-part-tipwrap:has(> :focus-visible) > .ui-part-tip {
 }
 .ui-puck[data-kind='selection'] .ui-puck__cell {
   display: flex;
+}
+/* The reader is open over this place: it stays marked, with the lighter hover fill instead of the puck, so it reads as where
+   you came from and not as where you are. */
+.aplos-sidebar[data-origin='true'] .ui-puck[data-kind='selection'] > .ui-puck__thumb,
+.aplos-sidebar[data-origin='true']
+  .ui-puck[data-kind='selection']:not([data-ready])
+  .ui-puck__item[data-selected='true'] {
+  background: var(--hover);
 }
 .ui-puck[data-kind='selection'] .ui-puck__item {
   flex: 1;
@@ -1191,7 +1254,7 @@ html[data-real-key] .ui-part-tipwrap:has(> :focus-visible) > .ui-part-tip {
   }
 }
 
-/* ───────────── Toasts (opaque --paper, --elev-float, radius 12, up to 440 px) ───────────── */
+/* ───────────── Toasts (opaque --float, --elev-float, radius 12, up to 440 px) ───────────── */
 
 .ui-toast-stack {
   position: absolute;
@@ -1199,14 +1262,54 @@ html[data-real-key] .ui-part-tipwrap:has(> :focus-visible) > .ui-part-tip {
   bottom: var(--space-6);
   z-index: var(--z-toast);
   display: flex;
-  flex-direction: column-reverse;
-  /* One column, one width: the stack is --toast-max wide (less in a narrow pane) and every toast fills it, so a single
-     toast, a persistent error and a stack of three are the same width; the words wrap inside. */
+  /* Oldest first, the newest at the bottom: the front card of the deck sits nearest the pane edge. */
+  flex-direction: column;
+  /* One column, one width: the stack is at least --toast-max wide and grows to fit its longest toast up to --toast-grow-max
+     (less in a narrow pane), and every toast fills it, so a stack of three is one width; a sender's name is never cut
+     while it fits. */
   align-items: stretch;
-  gap: var(--space-2);
-  width: min(var(--toast-max), calc(100% - var(--space-6) * 2));
+  width: max-content;
+  min-width: min(var(--toast-max), calc(100% - var(--space-6) * 2));
+  max-width: min(var(--toast-grow-max), calc(100% - var(--space-6) * 2));
   transform: translateX(-50%);
   pointer-events: none;
+}
+/* The deck (owner review of #548, 2026-11-17). Every card keeps its place in the list (so the stack keeps one width and
+   the fanned-out list is plain layout); folded, a transform brings each older card down onto the front one
+   (--toast-lift, measured by ToastStack), peeks it up by its depth and scales it back a little. The 8 px gap above each
+   card is part of the card, so the pointer never falls between two cards of the open list. Hover and focus fan it out
+   with the named `close` motion (the FLIP of things that move apart); under reduced motion it is 0 ms, so the deck
+   just switches between its two states. The newest card is last in the DOM, so it paints over the ones behind it. */
+.ui-toast-card {
+  --toast-peek: var(--space-3);
+  --toast-step: 0.05;
+  padding-top: var(--space-2);
+  transform-origin: 50% 100%;
+  transform: translateY(calc(var(--toast-lift, 0px) - var(--toast-depth) * var(--toast-peek)))
+    scale(calc(1 - var(--toast-depth) * var(--toast-step)));
+  transition:
+    transform var(--dur-close) var(--ease-out),
+    opacity var(--dur-close) var(--ease-out);
+  pointer-events: auto;
+}
+/* Folded, the cards behind show only their edge: their words would print through the front card's shadow. */
+.ui-toast-stack:not([data-expanded]) .ui-toast-card:not([data-depth='0']) .ui-toast > * {
+  opacity: 0;
+}
+.ui-toast-card .ui-toast > * {
+  transition: opacity var(--dur-close) var(--ease-out);
+}
+/* Only two cards peek; deeper ones wait unseen until the deck fans out or the cards in front of them leave. */
+.ui-toast-stack:not([data-expanded])
+  .ui-toast-card:not([data-depth='0'], [data-depth='1'], [data-depth='2']),
+.ui-toast-stack:not([data-expanded])
+  .ui-toast-card:not([data-depth='0'], [data-depth='1'], [data-depth='2'])
+  .ui-toast {
+  opacity: 0;
+  pointer-events: none;
+}
+.ui-toast-stack[data-expanded] .ui-toast-card {
+  transform: none;
 }
 .ui-toast {
   box-sizing: content-box; /* the sizes below are the content; the padding sits outside them */
@@ -1218,7 +1321,7 @@ html[data-real-key] .ui-part-tipwrap:has(> :focus-visible) > .ui-part-tip {
   padding: var(--space-1) var(--space-2) var(--space-1) var(--space-4);
   overflow: hidden;
   border-radius: var(--radius-lg);
-  background: var(--paper);
+  background: var(--float);
   box-shadow: var(--elev-float);
   color: var(--ink);
   font: var(--type-ui);
@@ -1313,6 +1416,14 @@ html[data-real-key] .ui-part-tipwrap:has(> :focus-visible) > .ui-part-tip {
 .ui-toast__message + .ui-toast__action {
   margin-left: var(--space-2);
 }
+/* A toast with buttons keeps its words on one line (the sender gives way with an ellipsis), so "Done · Jordan Park"
+   never wraps beside Remind me and Undo. An error keeps up to two lines: its words are the whole point. */
+.ui-toast[data-actions]:not([data-kind='error']) .ui-toast__message {
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
 .ui-toast__message:last-child {
   padding-right: var(--space-2);
 }
@@ -1339,4 +1450,10 @@ html[data-real-key] .ui-part-tipwrap:has(> :focus-visible) > .ui-part-tip {
     background: var(--hover);
     color: var(--ink);
   }
+}
+/* A toast's quiet actions ("Set a date", "Remind me if no reply") sit back in --dim so the one keycapped action beside
+   them (Undo Z) stays the loudest thing to reach for. */
+.ui-toast__action:not(:has(.ui-part-kbd)):has(~ .ui-toast__action .ui-part-kbd) {
+  color: var(--dim);
+  font-weight: 400;
 }

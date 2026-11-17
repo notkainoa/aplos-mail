@@ -33,6 +33,8 @@ function statusView(status: ProviderStatus): StatusView {
       return { text: 'Needs a key', tone: 'neutral' };
     case 'notRunning':
       return { text: 'Not running', tone: 'quiet' };
+    case 'notTested':
+      return { text: 'Not tested', tone: 'quiet' };
     case 'testing':
       return { text: 'Testing…', tone: 'busy' };
     case 'works':
@@ -45,6 +47,8 @@ function statusView(status: ProviderStatus): StatusView {
 }
 
 function StatusCell({ status }: { status: ProviderStatus }) {
+  // The row's "No key yet" line already says it, so a missing key adds no second status; the cell keeps its column.
+  if (status.kind === 'needsKey') return <span aria-hidden="true" />;
   const view = statusView(status);
   return (
     <span
@@ -63,19 +67,22 @@ function StatusCell({ status }: { status: ProviderStatus }) {
   );
 }
 
-/** A quiet text button for a row action. A disabled one keeps its tooltip and says why, for screen readers too. */
+/** A small outlined button for a row action (the one style every Settings row action shares). A disabled one keeps its tooltip and says why, for screen readers too. */
 function RowButton({
   label,
   onClick,
   disabled,
   reason,
   aria,
+  danger,
 }: {
   label: string;
   onClick?: () => void;
   disabled?: boolean;
   reason?: string;
   aria?: string;
+  /** The quiet danger text (Remove): no outline, the danger colour. */
+  danger?: boolean;
 }) {
   const reasonId = useId();
   return (
@@ -83,6 +90,7 @@ function RowButton({
       <button
         type="button"
         className="ui-provider-table__button"
+        data-tone={danger ? 'danger' : undefined}
         aria-disabled={disabled ? true : undefined}
         aria-label={aria}
         aria-describedby={disabled && reason ? reasonId : undefined}
@@ -104,7 +112,7 @@ function removeReason(source: KeySource): string | undefined {
   return source.kind === 'environment' ? envKeyReason(source.variable) : undefined;
 }
 
-/** The actions of a keyed row: Test, then Replace key and Remove, or Add key when no key is set. */
+/** The actions of a keyed row: Test, then Replace key and Remove, or Add a key when no key is set. */
 function Actions({
   name,
   source,
@@ -133,8 +141,8 @@ function Actions({
           />
         ) : null}
         <RowButton
-          label="Add key"
-          aria={`Add key for ${name}`}
+          label="Add a key"
+          aria={`Add a key for ${name}`}
           onClick={() => onAction('addKey')}
         />
       </>
@@ -159,6 +167,7 @@ function Actions({
       {source.kind === 'local' ? null : (
         <RowButton
           label="Remove"
+          danger
           aria={`Remove key for ${name}`}
           disabled={Boolean(reason)}
           reason={reason}
@@ -249,9 +258,9 @@ function localDescription(
   const where =
     row.provider === 'custom'
       ? 'Any OpenAI-compatible server'
-      : row.status?.kind === 'notRunning'
-        ? 'On this Mac'
-        : `On this Mac · ${row.running ? 'running' : 'not running'}`;
+      : row.running === true
+        ? 'On this Mac · running'
+        : 'On this Mac';
   const source = row.keySource;
   if (!source || source.kind === 'local')
     return row.provider === 'custom' ? `${where} · key optional` : `${where} · no key needed`;

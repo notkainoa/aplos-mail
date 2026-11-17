@@ -60,7 +60,7 @@ export function NoAccountsLine({ onAddAccount, onTryDemo }: NoAccountsLineProps)
       placement="pane"
       icon="user"
       text="Add an account to bring in your mail"
-      action={{ label: 'Add an account', icon: 'plus', emphasis: 'filled', onSelect: onAddAccount }}
+      action={{ label: 'Add account', icon: 'plus', emphasis: 'filled', onSelect: onAddAccount }}
       secondaryAction={{ label: 'Try demo mail', onSelect: onTryDemo }}
     />
   );

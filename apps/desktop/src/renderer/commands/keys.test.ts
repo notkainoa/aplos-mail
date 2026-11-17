@@ -113,7 +113,13 @@ test('formatChord draws macOS keycaps', () => {
 
 test('alternatives join with "or", holds say Hold, digit runs read as a range', () => {
   const tap = (s: string) => ({ chord: parseChord(s), phase: 'tap' as const });
-  assert.equal(formatAlternatives([tap('j'), tap('ArrowDown')]), 'J or ↓');
+  assert.equal(formatAlternatives([tap('j'), tap('ArrowDown')]), '↓ or J');
+  assert.equal(
+    formatAlternatives([tap('e'), tap('ArrowRight')]),
+    '→ or E',
+    'arrow first, then the letter',
+  );
+  assert.equal(formatAlternatives([tap('l'), tap('ArrowLeft')]), '← or L');
   assert.equal(formatBinding({ chord: parseChord('r'), phase: 'hold' }), 'Hold R');
   assert.equal(formatAlternatives(['1', '2', '3', '4', '5'].map(tap)), '1–5');
   assert.equal(formatAlternatives([tap('1'), tap('3'), tap('4')]), '1 or 3 or 4');

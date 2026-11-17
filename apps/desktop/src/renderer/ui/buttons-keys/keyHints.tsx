@@ -32,6 +32,27 @@ export function displayChord(chord: string): string {
   return chord.replace(/Return$/, '↩');
 }
 
+const MODIFIERS = '⌃⌥⇧⌘';
+
+/**
+ * A keycap's text with each modifier glyph in a span of its own (`.ui-key-mod`, base.css), so ⌃ and ⌥ draw in the
+ * system face, a touch larger and centred, and read as Control and Option instead of a caret and a tilde, and a
+ * chord like ⌘⇧↩ gets a hair of air between its marks. The string is `displayChord`'s, so the words never change.
+ */
+export function ChordText({ chord }: { chord: string }): ReactNode {
+  const text = displayChord(chord);
+  if (![...text].some(char => MODIFIERS.includes(char))) return text;
+  return [...text].map((char, index) =>
+    MODIFIERS.includes(char) ? (
+      <span key={index} className="ui-key-mod">
+        {char}
+      </span>
+    ) : (
+      char
+    ),
+  );
+}
+
 /** The app-wide key-hint mode. Default 'tooltips'. */
 export const KeyHintsContext = createContext<KeyHintsContextValue>(DEFAULT_HINTS);
 

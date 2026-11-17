@@ -12,7 +12,7 @@
 import { toIsoDateTime } from '../../data';
 import type { ErrorBody, ProgressFrame, SearchQuery, ThreadRow } from '../../data';
 import type { SearchOperator } from '../../ui/props';
-import { secondaryOf } from '../home/homeRows';
+import { secondaryOf, senderOf } from '../home/homeRows';
 import {
   absorbTokens,
   currentSearch,
@@ -502,7 +502,7 @@ export function highlightTerms(query: SearchQuery): string[] {
 }
 
 /** How many characters of snippet may come before the first match; the rest of the cell is for the match itself. */
-const SNIPPET_LEAD = 20;
+const SNIPPET_LEAD = 14;
 /**
  * The snippet with its first match near the left edge, so the one ellipsis the cell draws at its end never hides the
  * matched word. A leading "…" marks the cut; text with no match or a match already near the start is unchanged.
@@ -520,12 +520,14 @@ export function snippetAround(
   const at = Math.min(...found);
   if (at <= fits) return text;
   const boundary = text.indexOf(' ', at - lead);
-  const start = boundary >= 0 && boundary < at ? boundary + 1 : at - lead;
+  // Whole words at the cut: the nearest space inside the lead, else the start of the word the match sits in.
+  const wordStart = text.lastIndexOf(' ', at - 1) + 1;
+  const start = boundary >= 0 && boundary < at ? boundary + 1 : wordStart;
   return `…${text.slice(start)}`;
 }
 
-/** About how many characters of snippet the cell shows; the cut falls on a word so no word is left half-drawn. */
-const SNIPPET_FIT = 25;
+/** About how many characters of snippet travel to the cell, which draws its own ellipsis; the cut falls on a word so no word is left half-drawn. */
+const SNIPPET_FIT = 100;
 /**
  * The snippet cut after a whole word, with a "…" when text follows. The match always stays inside the kept text, so
  * the cell's own ellipsis rarely has to cut a word in half.
@@ -554,6 +556,29 @@ export function withoutGreeting(text: string): string {
   return rest.length > 0 ? rest : text;
 }
 
+/**
+ * The snippet without the subject it starts by repeating ("Saturday in the community garden" then "Saturday in the
+ * community garden this week…"): what follows is what the mail adds. Nothing left means nothing to show.
+ */
+export function beyondSubject(snippet: string, subject: string): string | undefined {
+  const echo = subject.trim().toLowerCase();
+  const body = snippet.trim();
+  const rest =
+    echo !== '' && body.toLowerCase().startsWith(echo)
+      ? body.slice(echo.length).replace(/^[\s,;:.\u2013\u2014-]+/, '')
+      : body;
+  return rest === '' ? undefined : rest;
+}
+
+function snippetOf(
+  thread: Pick<ThreadRow, 'snippet' | 'subject'>,
+  highlight: readonly string[],
+): string | undefined {
+  if (!thread.snippet) return undefined;
+  const body = beyondSubject(withoutGreeting(thread.snippet), thread.subject);
+  return body ? snippetFit(snippetAround(body, highlight), highlight) : undefined;
+}
+
 /** One row from a thread. */
 export function resultRow(
   thread: Pick<
@@ -568,7 +593,7 @@ export function resultRow(
     | 'workflow'
     | 'accountId'
   > &
-    Partial<Pick<ThreadRow, 'summary'>>,
+    Partial<Pick<ThreadRow, 'participants' | 'recipients' | 'summary'>>,
   query: SearchQuery,
   remote: boolean,
   account?: { label: string },
@@ -577,16 +602,13 @@ export function resultRow(
   return {
     id: `search-row-${thread.id.replace(/[^A-Za-z0-9_-]/g, '_')}`,
     threadId: thread.id,
-    sender: thread.fromName || '(no sender)',
+    // The same name every other list shows (`senderOf`): a message you sent names who it went to, not you.
+    sender: senderOf(thread),
     // The subject is shown whole (the cell ellipsises its own end); only the snippet is windowed to the match.
     primary: thread.subject || '(no subject)',
     // The muted phrase after the subject: the summary when one is written (owner decision 2026-11-16), else the
-    // snippet windowed to the match.
-    secondary:
-      secondaryOf(thread) ??
-      (thread.snippet
-        ? snippetFit(snippetAround(withoutGreeting(thread.snippet), highlight), highlight)
-        : undefined),
+    // snippet windowed to the match, past what the subject already says.
+    secondary: secondaryOf(thread) ?? snippetOf(thread, highlight),
     highlight,
     unread: thread.unread,
     date: toIsoDateTime(thread.lastDate),

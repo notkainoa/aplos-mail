@@ -3,10 +3,22 @@
 // with --stamp-ink and a clock so colour is never the only cue; pill only for operator tokens.
 
 import type { CSSProperties } from 'react';
-import type { ChipProps } from '../props';
+import type { ChipProps, IsoDateTime } from '../props';
 import { Action } from './internal/Action';
-import { formatBytes, formatDue, formatFull, formatLaterUntil } from './internal/format';
+import { formatBytes, formatDue, formatFull, formatLaterUntilCompact } from './internal/format';
 import { Icon } from './internal/Icon';
+
+/** What a due chip is, in words: "Due Wednesday · Wed, Nov 18, 11:59 PM", and "from the email" when Aplos found it. */
+function dueTitle(due: { at: string; source: string }, found: boolean): string {
+  const phrase = `${formatDue(due.at, 'sentence')} · ${formatFull(due.at)}`;
+  return found ? `${phrase} · from the email` : phrase;
+}
+
+/** A return time always reads "Back tomorrow 9 AM" / "Back Thu 9 AM", never a bare time; the tooltip has the full date. */
+function laterUntilText(at: IsoDateTime): string {
+  const text = formatLaterUntilCompact(at);
+  return `Back ${text.replace(/^(Today|Tomorrow|Yesterday)/, word => word.toLowerCase())}`;
+}
 
 /** A due, Later-until, label, attachment or operator chip. */
 export function Chip(props: ChipProps) {
@@ -20,7 +32,7 @@ export function Chip(props: ChipProps) {
           data-kind="due"
           data-overdue={due.overdue ? 'true' : undefined}
           data-source={due.source}
-          title={found ? `${formatFull(due.at)} · from the email` : formatFull(due.at)}
+          title={dueTitle(due, found)}
         >
           <Icon name="clock" size="sm" />
           <span className="ui-chip__text">{formatDue(due.at, format)}</span>
@@ -35,11 +47,11 @@ export function Chip(props: ChipProps) {
           className="ui-chip"
           data-kind="laterUntil"
           data-overdue={overdue ? 'true' : undefined}
-          title={until.kind === 'at' ? formatFull(until.at) : undefined}
+          title={until.kind === 'at' ? `Back ${formatFull(until.at)}` : 'Back someday'}
         >
           <Icon name="clock" size="sm" />
           <span className="ui-chip__text">
-            {until.kind === 'someday' ? 'Someday' : formatLaterUntil(until.at)}
+            {until.kind === 'someday' ? 'Back someday' : laterUntilText(until.at)}
           </span>
         </span>
       );

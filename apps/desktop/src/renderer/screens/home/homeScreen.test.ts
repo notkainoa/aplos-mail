@@ -289,7 +289,7 @@ test('Done: the row leaves at once, one toast with the opId offers Undo, and Z b
     );
     const toast = getToasts().find(t => t.kind === 'done');
     assert.ok(toast, 'a Done toast');
-    assert.equal(toast.message, 'Done');
+    assert.match(toast.message, /^Done · \S/, 'Done names the sender');
     assert.equal(toast.undoable, true);
     assert.deepEqual(
       toast.actions?.map(a => a.id),
@@ -320,7 +320,7 @@ test('Done on a Follow up row offers Remind me if no reply, and R sets the remin
       ['remind', 'undo'],
     );
     assert.equal(toast?.actions?.[0]?.commandId, undefined, 'the button acts on its own thread');
-    assert.equal(toast?.actions?.[0]?.keysFrom, 'mail.remindIfNoReply', 'R is drawn, not run');
+    assert.equal(toast?.actions?.[0]?.keysFrom, undefined, 'no R keycap');
     assert.equal(offer(), follow);
     actions.remind();
     assert.equal(offer(), null);
@@ -496,7 +496,12 @@ for (const lane of LANE_CARDS) {
         return registry.run(resolution.commandId, context).status;
       };
       const opened = () => calls.filter(c => c.startsWith('open:'));
-      const toasted = (kind: string) => getToasts().filter(t => t.kind === kind).length;
+      // A verb adds its own toast to the stack (the ids it shows change).
+      const toasted = (kind: string) =>
+        getToasts()
+          .filter(t => t.kind === kind)
+          .map(t => t.id)
+          .join();
       const undo = () => {
         assert.equal(press('z'), 'ran');
         key.current = id;
@@ -505,13 +510,13 @@ for (const lane of LANE_CARDS) {
       for (const k of ['ArrowRight', 'e']) {
         const before = toasted('done');
         assert.equal(press(k), 'ran', k);
-        assert.equal(toasted('done'), before + 1, `${k} is Done on the ${lane} card`);
+        assert.notEqual(toasted('done'), before, `${k} is Done on the ${lane} card`);
         undo();
       }
       for (const k of ['ArrowLeft', 'l']) {
         const before = toasted('later');
         assert.equal(press(k), 'ran', k);
-        assert.equal(toasted('later'), before + 1, `${k} is Later on the ${lane} card`);
+        assert.notEqual(toasted('later'), before, `${k} is Later on the ${lane} card`);
         undo();
       }
       assert.equal(press('r'), 'ran');
@@ -528,7 +533,7 @@ for (const lane of LANE_CARDS) {
       const doneBefore = toasted('done');
       const openedBefore = opened().length;
       assert.equal(press(' '), 'ran');
-      if (command === 'mail.done') assert.equal(toasted('done'), doneBefore + 1);
+      if (command === 'mail.done') assert.notEqual(toasted('done'), doneBefore);
       else {
         const how = command === 'mail.open' ? 'open' : lane === 'follow' ? 'nudge' : 'reply';
         assert.equal(opened()[openedBefore], `open:${how}:${id}`);
@@ -541,7 +546,7 @@ for (const lane of LANE_CARDS) {
   });
 }
 
-test('a toast Undo undoes its own operation, not the newest one', async () => {
+test('two Dones stack two toasts naming their senders; a toast Undo undoes its own, Z the newest', async () => {
   resetToasts();
   const world = await boot();
   try {
@@ -555,10 +560,15 @@ test('a toast Undo undoes its own operation, not the newest one', async () => {
     assert.ok(older, 'the first Done toast');
     key.current = second;
     actions.done();
+    const shown = getToasts().filter(t => t.kind === 'done');
+    assert.equal(shown.length, 2, 'the toasts stack, one per Done (owner review of #548)');
+    assert.equal(shown[0]?.id, older.id, 'the older toast stays, behind the newer one');
+    for (const toast of shown) assert.match(toast.message, /^Done · \S/, 'each names its sender');
     runToastAction(older.id, 'undo');
-    const ids = world.home.snapshot().ids;
-    assert.ok(ids.includes(first), 'the older toast restored its own thread');
-    assert.ok(!ids.includes(second), 'and left the newer one done');
+    assert.ok(world.home.snapshot().ids.includes(first), 'the older toast restored its own thread');
+    assert.ok(!world.home.snapshot().ids.includes(second), 'and left the newer one done');
+    undoStack.undoLast();
+    assert.ok(world.home.snapshot().ids.includes(second), 'Z undid the newest');
     await world.flush();
   } finally {
     world.connection.close();
@@ -608,7 +618,8 @@ test('Later offers Set a date for its own thread, and D opens the picker for the
       toast?.actions?.map(a => a.id),
       ['setDate', 'undo'],
     );
-    assert.equal(toast?.actions?.[0]?.keysFrom, 'mail.setDate', 'D is drawn, not run');
+    assert.equal(toast?.actions?.[0]?.keysFrom, undefined, 'no D keycap');
+    assert.match(toast?.message ?? '', /^Moved to Later · no date · /);
     key.current = second;
     runToastAction(toast!.id, 'setDate');
     assert.deepEqual(

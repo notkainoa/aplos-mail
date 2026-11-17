@@ -10,6 +10,8 @@ export interface SheetRow {
   /** "J or ↓", "Hold R", "1–9", "⌥-click". */
   readonly keys: string;
   readonly kind: 'key' | 'pointer';
+  /** A short qualifier for a key that several commands share ("while queued"). */
+  readonly note?: string;
 }
 
 export interface SheetSection {
@@ -42,7 +44,9 @@ export const SHEET_SECTIONS: readonly SectionDef[] = [
   },
   { id: 'done', title: 'Done', column: 0, contexts: ['done'] },
   { id: 'reader', title: 'Reader', column: 0, contexts: ['reader'] },
-  { id: 'lists', title: 'Lists', column: 1, contexts: ['list', 'search'] },
+  { id: 'lists', title: 'Lists', column: 1, contexts: ['list'] },
+  // Return here runs the remote search; in a list the same key opens the row, so the field gets a group of its own.
+  { id: 'search', title: 'Search field', column: 1, contexts: ['search'] },
   {
     id: 'palette',
     title: 'Palette, menus and date picker',
@@ -53,6 +57,25 @@ export const SHEET_SECTIONS: readonly SectionDef[] = [
   { id: 'ask', title: 'Ask', column: 2, contexts: ['ask'] },
   { id: 'calendar', title: 'Calendar', column: 2, contexts: ['calendar'] },
 ];
+
+/** When a key is shared between commands, the context that picks which one runs, said beside the row. */
+export const SHEET_NOTES: Readonly<Record<string, string>> = {
+  'ask.sendNow': 'while queued',
+  'ask.stop': 'while it answers',
+  'ask.clear': 'with a question typed',
+  'ask.close': 'when it is empty',
+  'ask.declineProposal': 'on a proposal',
+  'compose.dismissSuggestion': 'while one shows',
+  'compose.close': 'otherwise',
+};
+
+/**
+ * Commands a section lists again beside its own, because the owner looks for them there: triage works from a list's
+ * cursor, so Done and Later sit near the top of Lists, after the suggested action.
+ */
+const SHEET_ALSO: Readonly<
+  Record<string, { readonly after: CommandId; readonly ids: CommandId[] }>
+> = { lists: { after: 'mail.suggested', ids: ['mail.done', 'mail.later'] } };
 
 /** Pointer gestures DESIGN §8 lists beside the keys; they have no binding to generate from. */
 export const SHEET_POINTER_ROWS: Readonly<Record<string, readonly SheetRow[]>> = {
@@ -82,19 +105,50 @@ function uniqueBindings(bindings: readonly Binding[]): Binding[] {
   return out;
 }
 
+function addAlso(
+  rows: SheetRow[],
+  also: (typeof SHEET_ALSO)[string] | undefined,
+  registry: Registry,
+  all: readonly Binding[],
+  sheetContexts: ReadonlySet<ContextName>,
+): void {
+  if (!also) return;
+  const extra: SheetRow[] = also.ids.flatMap(id => {
+    const bound = all.filter(b => b.commandId === id && sheetContexts.has(b.context));
+    if (bound.length === 0) return [];
+    const label = registry.get(id)?.spec.label ?? id;
+    return [{ id, label, keys: formatAlternatives(uniqueBindings(bound)), kind: 'key' as const }];
+  });
+  const at = rows.findIndex(r => r.id === also.after);
+  rows.splice(at < 0 ? 0 : at + 1, 0, ...extra);
+}
+
 export function buildSheet(registry: Registry): SheetSection[] {
   const ids = [...registry.list().map(c => c.id), ...registry.controls().map(c => c.id)];
   const all = registry.bindings();
+  const sheetContexts = new Set(SHEET_SECTIONS.flatMap(section => section.contexts));
+  // A command bound in several contexts (Done is → on Home and E in a list) is one row in the first section that
+  // has it, with every key it answers to there, so "→ or E" reads the same as in Settings → Keyboard.
+  const listed = new Set<string>();
   return SHEET_SECTIONS.map(section => {
     const rows: SheetRow[] = [];
     for (const id of ids) {
-      const bound = uniqueBindings(
-        all.filter(b => b.commandId === id && section.contexts.includes(b.context)),
-      );
-      if (bound.length === 0) continue;
+      if (listed.has(id)) continue;
+      const here = all.filter(b => b.commandId === id && section.contexts.includes(b.context));
+      if (here.length === 0) continue;
+      const everywhere = all.filter(b => b.commandId === id && sheetContexts.has(b.context));
       const label = registry.get(id)?.spec.label ?? id;
-      rows.push({ id, label, keys: formatAlternatives(bound), kind: 'key' });
+      listed.add(id);
+      const note = SHEET_NOTES[id];
+      rows.push({
+        id,
+        label,
+        keys: formatAlternatives(uniqueBindings(everywhere)),
+        kind: 'key',
+        ...(note ? { note } : {}),
+      });
     }
+    addAlso(rows, SHEET_ALSO[section.id], registry, all, sheetContexts);
     rows.push(...(SHEET_POINTER_ROWS[section.id] ?? []));
     return { id: section.id, title: section.title, column: section.column, rows };
   });

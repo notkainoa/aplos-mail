@@ -409,7 +409,7 @@ test('AskDock empty view: placeholder, three suggestions, recent chats with time
   clean(markup);
 });
 
-test('AskDock: input is never disabled; working shows Stop; queued follow-ups are editable cards', () => {
+test('AskDock: with a provider the input stays enabled while working; working shows Stop; queued follow-ups are editable cards', () => {
   const markup = html(
     dock({
       working: true,
@@ -436,13 +436,15 @@ test('AskDock: input is never disabled; working shows Stop; queued follow-ups ar
   clean(markup);
 });
 
-test('AskDock: no provider is one plain line and a link, never an alert', () => {
+test('AskDock: no provider is one sentence and one button in the body, a disabled field that says why, never an alert', () => {
   const markup = html(dock({ providerReady: false, empty }));
-  assert.match(text(markup), /Ask needs a provider\. Choose one in Settings\./);
-  assert.match(markup, /<button[^>]*class="ui-ask-dock__link"[^>]*>Open Settings → AI/);
-  assert.doesNotMatch(markup, /role="alert"|stamp/);
-  assert.doesNotMatch(markup, /ui-ask-dock__empty/);
-  assert.doesNotMatch(markup, /disabled/);
+  assert.match(markup, /Ask needs an AI provider key[\s\S]*placeholder="Add an AI key above/);
+  assert.equal(markup.match(/>Add an AI key</g)?.length, 1, 'one button, no second link');
+  assert.doesNotMatch(markup, /Open Settings/);
+  assert.doesNotMatch(markup, /role="alert"|stamp|ui-ask-dock__empty/);
+  assert.match(markup, /<textarea[^>]*disabled/, 'the field waits for a key');
+  assert.match(markup, /<button[^>]*(disabled[^>]*aria-label="Ask"|aria-label="Ask"[^>]*disabled)/);
+  assert.doesNotMatch(html(dock({ empty })), /<button[^>]*disabled/, 'with a provider Ask is live');
 });
 
 test('AskDock: dictation shows the meter and the Listening line; Today hides the field', () => {
@@ -535,7 +537,7 @@ test('Palette first open: context line, Suggested and Go to, digits 1 to 3, keyc
   assert.match(markup, /id="cmd-done"[^>]*aria-selected="false"/);
   assert.match(markup, /<kbd[^>]*>R<\/kbd>/);
   assert.match(markup, /<kbd[^>]*>E<\/kbd>/);
-  assert.match(markup, /<kbd[^>]*>⌃1<\/kbd>/);
+  assert.match(markup, /<kbd[^>]*><span class="ui-key-mod">⌃<\/span>1<\/kbd>/);
   assert.match(markup, /placeholder="Type a command"/);
   assert.doesNotMatch(markup, /ui-palette__confirm/);
   clean(markup);
@@ -597,7 +599,7 @@ test('Palette destructive confirm defaults to Cancel: Return cancels, ⇧Return 
   assert.match(text(markup), /Delete forever\?/);
   assert.ok(markup.indexOf('Cancel') < markup.indexOf('Delete forever</span>'), 'Cancel row first');
   assert.match(markup, /data-primary="true"[^>]*><span>Cancel<\/span><kbd[^>]*>↩<\/kbd>/);
-  assert.match(markup, /data-tone="danger"[^>]*>.*<span>Delete forever<\/span><kbd[^>]*>⇧↩<\/kbd>/);
+  assert.match(markup, /data-tone="danger".*Delete forever<\/span><kbd[^>]*><span[^>]*>⇧/);
   assert.match(markup, /readOnly|readonly/);
   assert.doesNotMatch(markup, /role="listbox"/);
   assert.doesNotMatch(markup, /For: /);

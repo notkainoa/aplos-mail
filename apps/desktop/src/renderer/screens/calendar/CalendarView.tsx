@@ -42,10 +42,22 @@ import type {
 import { EDITING_COPY } from './accountCalendarState';
 import { FailedHolds } from './FailedHolds';
 import { stackDomMatch } from './keys';
+import { openRoute } from '../../shell';
 
 /** The one pane-header tool on Calendar (DESIGN 7.1): New event, N. Ask and the calendar button are the shell's. */
 export const CALENDAR_PANE_TOOLS: PaneTools = [
   { commandId: 'calendar.newEvent', icon: 'plus', label: 'New event' },
+];
+
+/** The same tool while no calendar can take an event: off, and its tooltip says why (the editor is never a dead end). */
+export const CALENDAR_PANE_TOOLS_READ_ONLY: PaneTools = [
+  {
+    commandId: 'calendar.newEvent',
+    icon: 'plus',
+    label: 'New event',
+    detail: 'None of your calendars can take new events',
+    disabled: true,
+  },
 ];
 
 const VIEWS: readonly PuckItem[] = [
@@ -332,7 +344,7 @@ function Grid(props: {
       emptyAction={
         // The empty panel replaces the grid's own empty line on day and week, so the message sits in the
         // visible window instead of the clipped track and is announced once.
-        vm.emptyAction && vm.empty === null
+        vm.emptyAction && vm.canCreate && vm.empty === null
           ? {
               label: 'New event',
               commandId: 'calendar.newEvent',
@@ -450,9 +462,11 @@ function EditingNote({
  */
 function EmptyPanel({
   empty,
+  canCreate,
   dispatch,
 }: {
   empty: EmptyView;
+  canCreate: boolean;
   dispatch: (action: CalendarAction) => void;
 }) {
   return (
@@ -466,13 +480,15 @@ function EmptyPanel({
             {empty.next}
           </Text>
         </div>
-        <Button
-          variant="filled"
-          label="New event"
-          commandId="calendar.newEvent"
-          keyHint="always"
-          onPress={() => dispatch({ type: 'newEvent' })}
-        />
+        {canCreate ? (
+          <Button
+            variant="filled"
+            label="New event"
+            commandId="calendar.newEvent"
+            keyHint="always"
+            onPress={() => dispatch({ type: 'newEvent' })}
+          />
+        ) : null}
       </div>
     </div>
   );
@@ -518,16 +534,24 @@ export function CalendarView({ vm, dispatch, announce, focus }: CalendarViewProp
               aria-label="Event details"
               tabIndex={-1}
             >
-              <EventDetail {...detailProps} presentation="rail" />
+              <EventDetail
+                {...detailProps}
+                presentation="rail"
+                onClose={() => dispatch({ type: 'close' })}
+              />
               {vm.editing ? <EditingNote editing={vm.editing} dispatch={dispatch} /> : null}
             </aside>
           ) : null}
-          {vm.empty ? <EmptyPanel empty={vm.empty} dispatch={dispatch} /> : null}
+          {vm.empty ? (
+            <EmptyPanel empty={vm.empty} canCreate={vm.canCreate} dispatch={dispatch} />
+          ) : null}
         </div>
       ) : (
         <div className="cal-screen__body">
           {grid}
-          {vm.empty ? <EmptyPanel empty={vm.empty} dispatch={dispatch} /> : null}
+          {vm.empty ? (
+            <EmptyPanel empty={vm.empty} canCreate={vm.canCreate} dispatch={dispatch} />
+          ) : null}
         </div>
       )}
 
@@ -545,6 +569,8 @@ export function CalendarView({ vm, dispatch, announce, focus }: CalendarViewProp
 }
 
 const TITLE_FIELD_ID = 'cal-editor-title';
+/** Said once, in the dialog, when every calendar is read-only (the demo's are): no silent disabled Save. */
+const NOTHING_WRITABLE = 'None of your calendars can take new events here.';
 
 /** The editor: title, day, start and end, calendar; Save and Cancel; Delete only on a stored event (DESIGN 7.8 Fixes). */
 function EventEditor({
@@ -563,6 +589,8 @@ function EventEditor({
   const calendarRef = useRef<HTMLButtonElement | null>(null);
   const titleProblem = draft.error === 'Give the event a title.' ? draft.error : undefined;
   const otherProblem = draft.error && !titleProblem ? draft.error : undefined;
+  // No calendar here can take a new event (a demo or read-only account): say so, not a silent disabled Save.
+  const nothingWritable = !editor.calendarFixed && editor.calendars.length === 0;
   // Editing off for this calendar's account: the note at the top says so and Save waits (no refusal after the form).
   const locked = editor.editing !== null;
   const save = () => {
@@ -599,8 +627,10 @@ function EventEditor({
             label="Save"
             keys="Return"
             keyHint="always"
-            disabled={locked}
-            disabledReason={locked ? EDITING_COPY.notice : undefined}
+            disabled={locked || nothingWritable || draft.title.trim() === ''}
+            disabledReason={
+              locked ? EDITING_COPY.notice : nothingWritable ? NOTHING_WRITABLE : undefined
+            }
             onPress={save}
           />
         </div>
@@ -666,34 +696,53 @@ function EventEditor({
               </span>
             </>
           )}
-          <Text variant="label" as="span">
-            Calendar
-          </Text>
-          <span className="cal-editor__controls">
-            {editor.calendarFixed ? (
-              <Button
-                variant="text"
-                label={editor.calendar?.name ?? 'No calendar'}
-                disabled
-                disabledReason="An event stays on the calendar it was made on."
-                onPress={() => undefined}
-              />
-            ) : (
-              <Button
-                ref={calendarRef}
-                variant="text"
-                label={editor.calendar?.name ?? 'Choose a calendar'}
-                trailingIcon="chevron-down"
-                popup={{
-                  kind: 'menu',
-                  expanded: picker === 'calendar',
-                  controls: 'cal-editor-calendar',
-                }}
-                onPress={() => setPicker('calendar')}
-              />
-            )}
-          </span>
+          {nothingWritable ? null : (
+            <>
+              <Text variant="label" as="span">
+                Calendar
+              </Text>
+              <span className="cal-editor__controls">
+                {editor.calendarFixed ? (
+                  <Button
+                    variant="text"
+                    label={editor.calendar?.name ?? 'No calendar'}
+                    disabled
+                    disabledReason="An event stays on the calendar it was made on."
+                    onPress={() => undefined}
+                  />
+                ) : (
+                  <Button
+                    ref={calendarRef}
+                    variant="text"
+                    label={editor.calendar?.name ?? 'Choose a calendar'}
+                    trailingIcon="chevron-down"
+                    popup={{
+                      kind: 'menu',
+                      expanded: picker === 'calendar',
+                      controls: 'cal-editor-calendar',
+                    }}
+                    onPress={() => setPicker('calendar')}
+                  />
+                )}
+              </span>
+            </>
+          )}
         </div>
+        {nothingWritable ? (
+          <div role="status" className="cal-editor__problem">
+            <Text variant="small" as="span" tone="ink-2">
+              {NOTHING_WRITABLE}
+            </Text>
+            <Button
+              variant="text"
+              label="Open Settings"
+              onPress={() => {
+                dispatch({ type: 'editorCancel' });
+                openRoute('settings/calendar');
+              }}
+            />
+          </div>
+        ) : null}
         {otherProblem ? (
           <div role="alert" className="cal-editor__problem">
             <Text variant="small" as="span" tone="ink-2">

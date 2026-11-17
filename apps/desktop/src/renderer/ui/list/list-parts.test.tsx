@@ -236,6 +236,7 @@ describe('CommitChip and CommitEdge', () => {
 
 describe('Chip', () => {
   test('due formats and provenance; overdue uses the tint with a clock', () => {
+    // As before UI council 2 (owner review of #548): the short chip says the day, with the clock.
     assert.match(text(render(<Chip kind="due" due={TOMORROW} format="short" />)), /^Tomorrow$/);
     assert.match(
       text(render(<Chip kind="due" due={TOMORROW} format="sentence" />)),
@@ -562,4 +563,11 @@ describe('duplicate action focus', () => {
 test('no banned phrase, glyph or exclamation mark rendered anywhere in the list parts', () => {
   assert.ok(collected.length > 40);
   for (const markup of collected) assert.deepEqual(bannedIn(markup), [], markup.slice(0, 160));
+});
+
+test('the Low sheet\'s "Hold" sits apart from "Mark all N done": its own hairline divider and air (owner review of #548)', () => {
+  const css = readFileSync(new URL('./list.css', import.meta.url), 'utf8');
+  const word = css.match(/\.ui-list-key-word \{[^}]*\}/)?.[0] ?? '';
+  assert.match(word, /padding-left: var\(--space-2\)/);
+  assert.match(word, /box-shadow: inset var\(--hairline\) 0 0/);
 });

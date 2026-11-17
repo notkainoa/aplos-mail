@@ -252,6 +252,18 @@ describe('AI: key source, Remove, providers', () => {
     assert.equal(rows[0].defaultAddress, 'http://localhost:11434/v1');
   });
 
+  test('a local server is Ready only after a probe saw it running, never while unprobed', () => {
+    const base = providers().map(p => (p.id === 'ollama' ? { ...p, status: 'ready' } : p));
+    const status = (running: boolean | undefined) =>
+      localRows(
+        base.map(p => (p.id === 'ollama' ? { ...p, running } : p)),
+        baseSettings(),
+      )[0].status?.kind;
+    assert.equal(status(true), 'ready');
+    assert.equal(status(false), 'notRunning');
+    assert.equal(status(undefined), 'notTested');
+  });
+
   test('a live test result replaces the engine status', () => {
     const rows = hostedRows(providers(), {
       openai: { kind: 'testing' },
@@ -596,4 +608,58 @@ test('modelNames: the catalogue name for an id, nothing for an id that is its ow
   ]);
   assert.deepEqual({ ...names }, { 'openai/gpt-oss-120b': 'GPT-OSS 120B' });
   assert.deepEqual({ ...modelNames(undefined) }, {});
+});
+
+describe('one setup notice per blocking provider', () => {
+  test('five features on a provider with no key make one neutral line with Add key', () => {
+    const settings = baseSettings();
+    const mixed = providers().map(p =>
+      p.id === 'groq' ? { ...p, status: 'missingKey', keySource: 'none' } : p,
+    );
+    const notices = aiNotices(settings, mixed);
+    assert.equal(notices.length, 1);
+    assert.equal(notices[0]?.addKeyFor, 'groq');
+    assert.match(
+      notices[0]!.text,
+      /^Ask, Summaries, Drafts, Plans and Voice use Groq, which needs a key\.$/,
+    );
+    assert.deepEqual(notices[0]?.features, ['ask', 'summaries', 'drafts', 'plans', 'voice']);
+  });
+
+  test('a stopped local server says it is not running and never asks for a key', () => {
+    const base = baseSettings();
+    const settings = {
+      ...base,
+      ai: {
+        ...base.ai,
+        features: { ...base.ai.features, ask: { provider: 'ollama' as const, model: 'llama3.2' } },
+      },
+    };
+    const stopped = providers().map(p =>
+      p.id === 'ollama' ? { ...p, status: 'unreachable', running: false } : p,
+    );
+    const notices = aiNotices(settings, stopped);
+    assert.equal(notices.length, 1);
+    assert.equal(notices[0]?.addKeyFor, undefined, 'no Add a key for a stopped server');
+    assert.match(notices[0]!.text, /^Ask uses Ollama, which is not running\.$/);
+    assert.ok(!notices.some(n => /needs a key/.test(n.text)));
+  });
+
+  test('a provider without speech-to-text gets its own line for Voice, not a key prompt', () => {
+    const base = baseSettings();
+    const settings = {
+      ...base,
+      ai: {
+        ...base.ai,
+        features: {
+          ...base.ai.features,
+          voice: { provider: 'openrouter' as const, model: 'whisper' },
+        },
+      },
+    };
+    const notices = aiNotices(settings, providers());
+    assert.equal(notices.length, 1);
+    assert.equal(notices[0]?.addKeyFor, undefined);
+    assert.match(notices[0]!.text, /^Voice uses OpenRouter, which cannot turn speech into text\.$/);
+  });
 });

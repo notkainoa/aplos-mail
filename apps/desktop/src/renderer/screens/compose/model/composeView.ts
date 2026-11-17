@@ -6,7 +6,7 @@ import type { BlockedSend, DraftStateKind } from '../../../ui/props';
 import { draftStateOf } from './autosave';
 import type { ComposeState, ComposeSuggestion } from './composeState';
 import type { ComposeFields } from './fields';
-import { invalidIds } from './recipients';
+import { blockedSend, invalidIds } from './recipients';
 import { phaseOf, sendView, type SendPhase, type SendView } from './sendState';
 
 export interface ComposeView {
@@ -23,6 +23,8 @@ export interface ComposeView {
   readonly conditions: { readonly suggestion: boolean; readonly emptyBody: boolean };
   /** Recipients the field outlines. */
   readonly invalid: readonly string[];
+  /** At least one recipient and every address plausible: Send is live. */
+  readonly canSend: boolean;
 }
 
 export function composeView(
@@ -43,6 +45,7 @@ export function composeView(
     send: sendView(phase, formatTime),
     conditions: { suggestion: state.suggestion !== null, emptyBody: state.fields.body === '' },
     invalid: invalidIds([...to, ...cc, ...bcc]),
+    canSend: blockedSend(state.fields, state.context.mode) === null,
   };
 }
 

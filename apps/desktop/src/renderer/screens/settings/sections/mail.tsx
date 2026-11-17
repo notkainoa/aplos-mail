@@ -1,7 +1,7 @@
 /** Settings → Mail: undo send, Follow up, remote images, the image allow-list and how long message text is kept (DESIGN 7.10). */
 import { Button } from '../../../ui/buttons-keys';
 import { Puck } from '../../../ui/surfaces';
-import { Group, InlineLabel, Row, Select } from '../parts';
+import { Anchor, Group, InlineLabel, Row, Select } from '../parts';
 import {
   FOLLOW_UP_OPTIONS,
   IMAGE_ITEMS,
@@ -56,7 +56,7 @@ export function Mail({ data, actions }: SectionProps) {
         <Row
           section="mail"
           anchor="followUp"
-          description="Sent mail with no reply after this long goes under Follow up."
+          description="Sent mail with no reply after this long shows under Follow up on Home."
           control={
             <Select
               label="Follow up"
@@ -89,11 +89,11 @@ export function Mail({ data, actions }: SectionProps) {
           }
         />
         {mail.imageAllowList.length === 0 ? (
-          <Row
-            section="mail"
-            anchor="imageAllowList"
-            description="No senders yet. Load images from a sender in the reader to add it here."
-          />
+          <Anchor section="mail" anchor="imageAllowList">
+            <p className="settings-note">
+              No senders yet. Load images from a sender in the reader to add it here.
+            </p>
+          </Anchor>
         ) : (
           mail.imageAllowList.map(sender => (
             <Row

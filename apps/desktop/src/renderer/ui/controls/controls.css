@@ -251,7 +251,8 @@
 .ui-text-field-box:focus-within {
   outline: var(--focus-width) solid var(--accent);
   outline-offset: var(--focus-gap);
-  box-shadow: inset 0 0 0 1px var(--accent);
+  box-shadow: none; /* one ring: the outline, not the outline around a second edge */
+  background: transparent; /* and one signal: the ring says focus, so the well's fill steps aside (it read heavy at night) */
 }
 .ui-text-field[data-state='invalid'] .ui-text-field-box {
   box-shadow: inset 0 0 0 1px var(--stamp-ink);
@@ -298,7 +299,7 @@
   height: min(calc(100vh - var(--space-6) * 2), calc(var(--space-10) * 11));
   overflow: hidden;
   border-radius: var(--radius-xl);
-  background: var(--paper);
+  background: var(--float);
   color: var(--ink-2);
   box-shadow: var(--elev-dialog);
   animation: ui-shortcut-settle var(--dur-settle-in) var(--ease-out) both;
@@ -340,9 +341,27 @@
   flex: 1;
   min-height: 0;
   overflow: auto;
-  padding: var(--space-2) var(--space-8) var(--space-7);
-  scrollbar-width: thin;
-  scrollbar-color: var(--line-strong) transparent;
+  /* 24 px under the last row, and the list stops 16 px above the dialog's edge on a hairline: a row cut there reads as
+     scrolled, not as broken (DESIGN allows no fade gradient). */
+  margin-bottom: var(--space-4);
+  padding: var(--space-2) var(--space-8) var(--space-6);
+  box-shadow: inset 0 calc(-1 * var(--hairline)) 0 var(--line);
+}
+/* A thin bar that stays drawn (macOS hides an overlay bar until the list moves, and the sheet is longer than it first shows):
+   the visible cue that more waits below, since DESIGN allows no fade. */
+.ui-shortcut-sheet-body::-webkit-scrollbar {
+  width: var(--space-2);
+}
+.ui-shortcut-sheet-body::-webkit-scrollbar-track {
+  background: transparent;
+}
+.ui-shortcut-sheet-body::-webkit-scrollbar-thumb {
+  border-radius: var(--radius-xs);
+  background: var(--line-strong);
+}
+/* While more waits below the fold the edge is a firmer hairline: the scroll's end cue (DESIGN allows no fade). */
+.ui-shortcut-sheet-body[data-more='below'] {
+  box-shadow: inset 0 calc(-1 * var(--hairline)) 0 var(--line-strong);
 }
 .ui-shortcut-sheet-body:focus-visible {
   outline: none;
@@ -350,11 +369,18 @@
 .ui-shortcut-sheet-cols {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
-  column-gap: var(--space-8);
+  /* 32 px between columns, so the widest row ("Send a queued follow-up now · while queued") stays on one line and every
+     column keeps the 28 px grid the first view is trimmed to. */
+  column-gap: var(--space-7);
   align-items: start;
 }
 .ui-shortcut-group + .ui-shortcut-group {
-  margin-top: var(--space-6);
+  /* A whole row (28 px), so every column's rows sit on one 28 px grid and the first view can end between rows. */
+  margin-top: var(--control-sm);
+}
+.ui-shortcut-group + .ui-shortcut-group .ui-shortcut-group-label {
+  /* A hairline on the heading's top edge (the 28 px gap is above it), so the groups read as groups. */
+  box-shadow: 0 calc(-1 * var(--hairline)) 0 var(--line);
 }
 .ui-shortcut-group-label {
   margin: 0;
@@ -375,7 +401,7 @@
   display: grid;
   grid-template-columns: minmax(0, 1fr) auto;
   align-items: center;
-  column-gap: var(--space-3);
+  column-gap: var(--space-2);
   min-height: var(--control-sm);
   font: var(--type-ui);
   letter-spacing: var(--track-ui);
@@ -383,6 +409,11 @@
 .ui-shortcut-label {
   min-width: 0;
   overflow-wrap: anywhere;
+}
+.ui-shortcut-note {
+  color: var(--dim);
+  font: var(--type-small);
+  letter-spacing: var(--track-small);
 }
 .ui-shortcut-keys {
   display: inline-flex;

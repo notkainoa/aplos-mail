@@ -7,8 +7,8 @@
  */
 import { undoStack, type DataApi, type ThreadAction, type ThreadRow } from '../../data';
 import type { PushedToast } from '../../shell';
-import { UNDO_ACTION, afterAccepted, undoHandler } from '../undoOperation';
-import { failurePhrase, senderOf } from '../home/homeRows';
+import { UNDO_ACTION, afterAccepted, undated, undoHandler } from '../undoOperation';
+import { failurePhrase, namedToast, senderOf, suggestedLabel } from '../home/homeRows';
 import type { MovableLane } from '../home/homeModel';
 import { LANE_LABEL } from './readerLane';
 import { suggestionFor } from './readerRows';
@@ -83,6 +83,8 @@ export interface ReaderActions {
   undo(): void;
   /** Space: the filled button's action. */
   suggest(): void;
+  /** The palette's name for Space on this thread: "Reply to Jordan Park", "Mark done". */
+  suggestedLabel(): string | undefined;
   reply(): void;
   replyAll(): void;
   /** Hold R: the reply opens listening. */
@@ -192,21 +194,21 @@ export function createReaderActions(deps: ReaderDeps): ReaderActions {
       leaveList(
         row,
         { type: 'done' },
-        { kind: 'done', message: deps.undoLabel('mail.done', 'Done') },
+        { kind: 'done', message: namedToast(deps.undoLabel('mail.done', 'Done'), row) },
       );
   }
 
   function later(): void {
     const row = current();
     if (!row) return;
-    const message = deps.undoLabel('mail.later', 'Moved to Later');
+    const message = namedToast(undated(deps.undoLabel('mail.later', 'Moved to Later')), row);
     leaveList(row, { type: 'later' }, { kind: 'later', message });
   }
 
   function trash(): void {
     const row = current();
     if (!row) return;
-    const message = deps.undoLabel('mail.trash', 'Moved to Trash');
+    const message = namedToast(deps.undoLabel('mail.trash', 'Moved to Trash'), row);
     leaveList(row, { type: 'trash' }, { kind: 'trash', message });
   }
 
@@ -303,6 +305,10 @@ export function createReaderActions(deps: ReaderDeps): ReaderActions {
       if (suggestion.verb === FOLLOW_UP_VERB) return replyWith(NUDGE);
       if (suggestion.verb === 'Reply' || suggestion.icon === 'reply') return replyWith(PLAIN_REPLY);
       deps.suggested(row.id, suggestion);
+    },
+    suggestedLabel: () => {
+      const row = current();
+      return row ? suggestedLabel(suggestionFor(row), senderOf(row)) : undefined;
     },
     reply: () => replyWith(PLAIN_REPLY),
     replyAll: () => replyWith({ ...PLAIN_REPLY, replyAll: true }),

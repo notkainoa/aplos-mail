@@ -222,7 +222,7 @@ export function withCurrent(
 
 /** The storage row's description: what is kept and what never goes, without restating the pickers' values. */
 export const RETENTION_LINE =
-  'Keeps full message text on this Mac; opened, starred and unread mail is always kept.';
+  'Keeps full message text on this Mac; opened, bookmarked and unread mail is always kept.';
 
 /* ───────────────────────── Accounts ───────────────────────── */
 
@@ -579,7 +579,8 @@ export function testResultStatus(result: {
     : { kind: 'unreachable' };
 }
 
-const byId = (providers: readonly AiProvider[], id: string) => providers.find(p => p.id === id);
+export const byId = (providers: readonly AiProvider[], id: string) =>
+  providers.find(p => p.id === id);
 
 export function hostedRows(
   providers: readonly AiProvider[],
@@ -601,6 +602,13 @@ export function hostedRows(
   });
 }
 
+/** A local server is Ready only after a probe saw it running; stopped says "Not running", unprobed "Not tested". */
+function localStatus(p: Pick<AiProvider, 'status' | 'lastTest' | 'running'>): ProviderStatus {
+  if (p.running === false) return { kind: 'notRunning' };
+  if (p.running === undefined) return { kind: 'notTested' };
+  return providerStatus(p);
+}
+
 export function localRows(
   providers: readonly AiProvider[],
   settings: Pick<Settings, 'ai'>,
@@ -610,8 +618,7 @@ export function localRows(
   return LOCAL_ORDER.flatMap(id => {
     const p = byId(providers, id);
     if (!p) return [];
-    const status: ProviderStatus =
-      testing[id] ?? (p.running === false ? { kind: 'notRunning' } : providerStatus(p));
+    const status: ProviderStatus = testing[id] ?? localStatus(p);
     return [
       {
         provider: id,
@@ -799,43 +806,6 @@ export function backgroundLine(settings: Pick<Settings, 'ai'>): string {
 export const CONSENT_SENT =
   'The sender, subject and text of each new email, so it can write a one-line summary. Attachments are not sent.';
 
-export interface AiNotice {
-  readonly id: string;
-  readonly text: string;
-}
-
-/** The one quiet line when nothing can answer, and a line per feature whose provider cannot (DESIGN 9 rule 7). */
-export function aiNotices(
-  settings: Pick<Settings, 'ai'>,
-  providers: readonly AiProvider[],
-): readonly AiNotice[] {
-  const anyReady = providers.some(p => p.status === 'ready' && p.running !== false);
-  if (!anyReady) {
-    return [
-      {
-        id: 'noProvider',
-        text: 'No AI provider is set up. Mail shows its subjects and nothing is sent. Add a key below to turn on summaries, drafts and Ask.',
-      },
-    ];
-  }
-  const out: AiNotice[] = [];
-  for (const feature of AI_FEATURES) {
-    const choice = settings.ai.features[feature];
-    const p = byId(providers, choice.provider);
-    if (!p || usableFor(p, feature)) continue;
-    const name = providerName(choice.provider);
-    const label = featureLabel(feature);
-    out.push({
-      id: `feature-${feature}`,
-      text:
-        feature !== 'voice' && p.trainsOnInputs
-          ? `${name} may learn from what it’s sent, so Aplos doesn’t send it your mail. Pick another provider for ${label}.`
-          : `${label} uses ${name}, which isn’t ready. Add a key or pick another provider.`,
-    });
-  }
-  return out;
-}
-
 /** Hosted providers that hold a key may be marked as on a paid plan (Gemini's free tier trains on inputs). */
 export function paidSwitch(
   providers: readonly AiProvider[],
@@ -931,6 +901,7 @@ export function listenerLine(listener: ListenerInfo | undefined): string {
     : 'Off. Nothing on this Mac can connect.';
 }
 
+export * from './settings.notices.model';
 export * from './settings.queue.model';
 export * from './settings.tools.model';
 

@@ -433,7 +433,8 @@ export function saveEditor(
     editor: draft,
   });
   if (gate) return gate;
-  if (change.type === 'create') return createSave(next, ctx, draft, change);
+  if (change.type === 'create')
+    return createSave({ ...next, lastCalendarId: draft.calendarId }, ctx, draft, change);
   return updateSave(next, ctx, draft, original, change, scoped, zone);
 }
 

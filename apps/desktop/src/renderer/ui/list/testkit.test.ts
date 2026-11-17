@@ -22,6 +22,7 @@ export function html(element: ReactElement): string {
 /** Visible-ish text: tags stripped, entities decoded, whitespace collapsed. */
 export function text(markup: string): string {
   return markup
+    .replace(/<span class="ui-key-mod">([^<]*)<\/span>/g, '$1') // a modifier mark is part of its keycap's word
     .replace(/<[^>]*>/g, ' ')
     .replace(/&amp;/g, '&')
     .replace(/&lt;/g, '<')

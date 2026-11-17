@@ -9,10 +9,14 @@ import type { SyncAccount, SyncStatus, TagColor } from '../ui/props';
 
 const TAG_COLORS: readonly TagColor[] = ['sky', 'hill', 'stamp', 'dusk', 'sand', 'ember'];
 
-/** The account mark: the stored colour tag when it is one of DESIGN 4.2's six, else sky. */
-export function accountColor(account: Pick<Account, 'colorTag'>): TagColor {
+/**
+ * The account mark: the stored colour tag when it is one of DESIGN 4.2's six; else the colour Settings → Accounts gives
+ * the account at that position (so the menu and Settings agree), or sky when the position is not known.
+ */
+export function accountColor(account: Pick<Account, 'colorTag'>, index?: number): TagColor {
   const tag = account.colorTag as TagColor | undefined;
-  return tag && TAG_COLORS.includes(tag) ? tag : 'sky';
+  if (tag && TAG_COLORS.includes(tag)) return tag;
+  return index === undefined ? 'sky' : (TAG_COLORS[index % TAG_COLORS.length] ?? 'sky');
 }
 
 /** An account as the status slot names it. */

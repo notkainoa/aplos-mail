@@ -23,9 +23,24 @@ export function sheetProps(sections: readonly SheetSection[]): SheetProps {
         commandId: row.id,
         label: row.label,
         alternatives: parseKeyText(row.keys),
+        ...(row.note ? { note: row.note } : {}),
       })),
     });
     columns[section.column].push(section.id);
   }
   return { groups, columns };
+}
+
+/**
+ * The tallest height at most `room` whose bottom edge cuts no row in any column: a row half drawn at the foot of the
+ * list reads as broken, so the first view ends between rows. Edges are measured from the body's top at scroll 0.
+ */
+export function wholeRowsHeight(
+  edges: readonly { top: number; bottom: number }[],
+  room: number,
+): number {
+  const fits = edges.filter(edge => edge.bottom <= room);
+  const cutAt = (y: number) => edges.every(edge => !(edge.top < y - 0.5 && edge.bottom > y + 0.5));
+  const candidates = fits.map(edge => edge.bottom).sort((a, b) => b - a);
+  return candidates.find(cutAt) ?? room;
 }

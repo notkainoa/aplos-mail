@@ -1,6 +1,6 @@
 /** Settings → General: appearance, keys and gestures, the window, and the tools allowed on this Mac (DESIGN 7.10). */
 import { useEffect, useRef } from 'react';
-import { Button, Kbd } from '../../../ui/buttons-keys';
+import { Button } from '../../../ui/buttons-keys';
 import { Switch } from '../../../ui/controls';
 import { Puck } from '../../../ui/surfaces';
 import { Group, NotAvailable, Row, rowId, Select } from '../parts';
@@ -60,19 +60,6 @@ export function General({ data, actions }: SectionProps) {
       <Group id="set-general-keys" label="Keys and gestures">
         <Row
           section="general"
-          anchor="keyHints"
-          description="Keep every shortcut visible next to its button."
-          control={id => (
-            <Switch
-              label="Show all key hints"
-              labelledBy={id}
-              checked={ui.keyHints === 'always'}
-              onChange={on => void actions.setUi({ keyHints: on ? 'always' : 'tooltip' })}
-            />
-          )}
-        />
-        <Row
-          section="general"
           anchor="swipeDirection"
           description="Which way Done goes on Home and one by one."
           control={
@@ -90,11 +77,7 @@ export function General({ data, actions }: SectionProps) {
         <Row
           section="general"
           anchor="sidebarMinimised"
-          description={
-            <>
-              Hide the sidebar until you press <Kbd chord="[" />.
-            </>
-          }
+          description="Hide the sidebar. Press [ to bring it back."
           control={id => (
             <Switch
               label="Minimized sidebar"

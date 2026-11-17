@@ -36,7 +36,10 @@ export function commandsForOneByOne(
     'list.up': run(() => controls.step(-1)),
     'mail.done': run(() => actions.done()),
     'mail.later': run(() => actions.later()),
-    'mail.suggested': run(() => actions.suggested()),
+    'mail.suggested': {
+      run: () => actions.suggested(),
+      labelFor: () => actions.suggestedLabel(),
+    },
     'mail.open': run(controls.open),
     'mail.reply': run(() => actions.reply()),
     'mail.replyAll': run(() => actions.reply(REPLY_ALL)),

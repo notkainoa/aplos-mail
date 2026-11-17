@@ -28,6 +28,13 @@ function dayOffset(d: Date): number {
   return Math.round((startOfDay(d) - startOfDay(new Date(clock()))) / DAY_MS);
 }
 
+/** Both moments fall on the same local calendar day. */
+export function sameDay(a: IsoDateTime, b: IsoDateTime): boolean {
+  const first = parse(a);
+  const second = parse(b);
+  return first !== null && second !== null && startOfDay(first) === startOfDay(second);
+}
+
 /** A future day later this week (through Sunday), where a bare weekday cannot be misread. */
 function laterThisWeek(off: number): boolean {
   const daysToSunday = (7 - new Date(clock()).getDay()) % 7;
@@ -72,13 +79,16 @@ function weekdayLong(d: Date): string {
   return d.toLocaleDateString(LOCALE, { weekday: 'long' });
 }
 
-/** The list date column: "10:00 AM" today, "Yesterday", "Tuesday" earlier this week, then "Oct 23", "Oct 23, 2025". */
-export function formatListDate(iso: IsoDateTime): string {
+/**
+ * The list date column: "10:00 AM" today, "Yesterday", "Tuesday" earlier this week, then "Oct 23", "Oct 23, 2025". Under
+ * a "Yesterday" group header (`inDayGroup`) the word would repeat the header, so the row shows its clock.
+ */
+export function formatListDate(iso: IsoDateTime, inDayGroup = false): string {
   const d = parse(iso);
   if (!d) return '';
   const off = dayOffset(d);
   if (off === 0) return formatTime(d);
-  if (off === -1) return 'Yesterday';
+  if (off === -1) return inDayGroup ? formatTime(d) : 'Yesterday';
   if (off === 1) return 'Tomorrow';
   if (earlierThisWeek(off)) return weekdayLong(d);
   return monthDay(d);
@@ -126,6 +136,19 @@ export function formatLaterUntil(iso: IsoDateTime): string {
   return isMidnight(d) ? day : `${day}, ${formatTime(d)}`;
 }
 
+/**
+ * The Later chip's short return, so the subject keeps its room: "today 5 PM", "tomorrow 9 AM", "Thu 9 AM" for the next
+ * week; a past day or a farther one keeps its date, "Tue, Oct 27". The full date rides in the chip's tooltip.
+ */
+export function formatLaterUntilCompact(iso: IsoDateTime): string {
+  const d = parse(iso);
+  if (!d) return '';
+  const off = dayOffset(d);
+  if (off < 0 || off > 6) return formatLaterUntil(iso);
+  const day = off === 0 ? 'today' : off === 1 ? 'tomorrow' : weekdayShort(d);
+  return isMidnight(d) ? day : `${day} ${formatTime(d).replace(/:00(?=\s)/, '')}`;
+}
+
 /** The reader's sender-line time: "10:00 AM" today, otherwise day plus time. */
 export function formatReaderTime(iso: IsoDateTime): string {
   const d = parse(iso);
@@ -138,8 +161,8 @@ export function formatReaderTime(iso: IsoDateTime): string {
 }
 
 /**
- * A message header time: "Just now", "Today, 10:00 AM", "Oct 23, 4:12 PM". Before today it is always the date, never
- * a weekday or "Yesterday", so one thread never mixes "Oct 21" with "Friday".
+ * A message header time: "Just now", "Today, 10:00 AM", "Yesterday, 4:12 PM", then the long form with its weekday,
+ * "Fri, Nov 13, 10:42 PM". Always the date and the clock, so one thread never mixes "Oct 21" with "Friday".
  */
 export function formatMessageTime(iso: IsoDateTime): string {
   const d = parse(iso);
@@ -148,7 +171,8 @@ export function formatMessageTime(iso: IsoDateTime): string {
   if (age >= 0 && age < 60_000) return 'Just now';
   const off = dayOffset(d);
   if (off === 0) return `Today, ${formatTime(d)}`;
-  return `${monthDay(d)}, ${formatTime(d)}`;
+  if (off === -1) return `Yesterday, ${formatTime(d)}`;
+  return `${weekdayShort(d)}, ${monthDay(d)}, ${formatTime(d)}`;
 }
 
 /** Full date for `title` and screen readers: "Thursday, October 29, 2026 at 10:00 AM". */
@@ -167,10 +191,11 @@ export function formatFull(iso: IsoDateTime): string {
   );
 }
 
-/** Attachment size, decimal units like Finder: "1 byte", "820 bytes", "312 KB", "4.2 MB", "1.1 GB". */
+/** Attachment size, decimal units like Finder, with the short unit: "129 B", "4.2 KB", "312 KB", "4.2 MB", "1.1 GB". */
 export function formatBytes(bytes: number): string {
   if (!Number.isFinite(bytes) || bytes < 0) return '';
-  if (bytes < 1000) return bytes === 1 ? '1 byte' : `${Math.round(bytes)} bytes`;
+  if (bytes < 1000) return `${Math.round(bytes)} B`;
+  if (bytes < 10_000) return `${(bytes / 1000).toFixed(1)} KB`;
   if (bytes < 1_000_000) return `${Math.round(bytes / 1000)} KB`;
   if (bytes < 1_000_000_000) return `${(bytes / 1_000_000).toFixed(1)} MB`;
   return `${(bytes / 1_000_000_000).toFixed(1)} GB`;

@@ -119,13 +119,21 @@ export function TimeGrid(props: CalendarGridProps) {
   const suppressClick = useRef(false);
   const [drag, setDrag] = useState<DragState | null>(null);
 
-  // Opens at 8 AM, or at now when today is shown (or at `scrollToHour`); runs on mount and when the view changes,
+  // Opens at 8 AM or ninety minutes before now, whichever shows the first event, never above 7 AM (or at `scrollToHour`); runs on mount and when the view changes,
   // so paging between weeks keeps the reader's place. A grid mounted without layout (a hidden tab or dock, a pane
   // laid out after mount; the first render in tests) has no height yet: the scroll waits, once, for the first
   // layout instead of being lost. The deferred scroll uses the latest open hour (read through the ref), not the
   // hour from mount.
   const opensAt = useRef(0);
-  opensAt.current = openHour({ today: days.includes(today), nowHours, override: scrollToHour });
+  const firstEvent = Math.min(...perDay.flatMap(d => d.timed.map(t => t.at)));
+  opensAt.current = openHour({
+    today: days.includes(today),
+    nowHours,
+    override: scrollToHour,
+    firstEvent: Number.isFinite(firstEvent) ? firstEvent : undefined,
+  });
+  // Events arrive after the grid mounts: the grid opens again once, when the first timed event shows up.
+  const hasTimed = Number.isFinite(firstEvent);
   useLayoutEffect(() => {
     const scroller = scrollRef.current;
     const track = trackRefs.current[0];
@@ -148,7 +156,7 @@ export function TimeGrid(props: CalendarGridProps) {
       observer.disconnect();
       cancelAnimationFrame(frame);
     };
-  }, [view]);
+  }, [view, hasTimed]);
 
   useEffect(() => {
     const track = trackRefs.current[0];
@@ -416,6 +424,7 @@ export function TimeGrid(props: CalendarGridProps) {
                         key={item.event.id}
                         className="ui-calendar-grid__slot"
                         data-beside={item.beside ? 'true' : undefined}
+                        data-pair={item.lanes === 2 && !item.beside ? 'true' : undefined}
                         data-dragging={dragging ? 'true' : undefined}
                         style={slotStyle(item.at, item.end, item.lane, item.lanes)}
                         onPointerDown={e => {

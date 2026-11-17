@@ -36,6 +36,7 @@ import {
   tagFor,
   visibleCalendarIds,
   writableCalendars,
+  canCreateEvent,
 } from './entries';
 import {
   gridLabel,
@@ -127,6 +128,8 @@ export interface CalendarViewModel {
   readonly editing: { accountId: string } | null;
   /** DESIGN 7.14: "Nothing scheduled" with New event · N, on an empty day. */
   readonly emptyAction: boolean;
+  /** False once the calendars are known and none can take a new event (the demo's are all read-only). */
+  readonly canCreate: boolean;
   /** The calm panel an empty day or week draws in the visible window; null while anything shows. */
   readonly empty: EmptyView | null;
   /**
@@ -291,6 +294,7 @@ export function viewModel(state: CalendarState, ctx: CalendarContext): CalendarV
         : null,
     editor: state.editor ? editorView(state.editor, ctx) : null,
     emptyAction: ctx.calendarsReady && (shown === 'day' || shown === 'agenda'),
+    canCreate: canCreateEvent(ctx),
     empty: emptyView(shown, state, ctx, period, entries, dayCount),
     failedHolds: { items: ctx.failedHolds, open: state.holdsReview },
   };

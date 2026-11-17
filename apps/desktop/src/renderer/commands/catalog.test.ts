@@ -172,6 +172,22 @@ test('every bound command and control appears in the sheet with all its keys', (
   }
 });
 
+test('a command is listed once with the same keys, except Done and Later, which Lists repeats near its top', () => {
+  const sections = buildSheet(wiredRegistry());
+  const rows = sections.flatMap(s => s.rows.map(r => `${r.id}|${r.keys}`));
+  const repeated = rows.filter((row, i) => rows.indexOf(row) !== i).map(row => row.split('|')[0]);
+  assert.deepEqual(repeated.sort(), ['mail.done', 'mail.later']);
+  const lists = sections.find(s => s.id === 'lists')!.rows.map(r => `${r.id}|${r.keys}`);
+  assert.ok(lists.includes('mail.done|→ or E'), 'Done sits in Lists with both keys');
+  assert.ok(lists.includes('mail.later|← or L'), 'Later sits in Lists with both keys');
+  assert.ok(lists.indexOf('mail.done|→ or E') < 6, 'near the top of Lists');
+});
+
+test('a key several commands share carries a short qualifier', () => {
+  const rows = buildSheet(wiredRegistry()).flatMap(s => s.rows);
+  assert.equal(rows.find(r => r.id === 'ask.sendNow')?.note, 'while queued');
+});
+
 test('the sheet includes ⌃5, ⌃7, ⌃8, ⌘K and ⌘/ (baseline defect 5)', () => {
   const keys = buildSheet(wiredRegistry()).flatMap(s => s.rows.map(r => r.keys));
   for (const wanted of ['⌃5', '⌃7', '⌃8', '⌘K', '⌘/']) assert.ok(keys.includes(wanted), wanted);

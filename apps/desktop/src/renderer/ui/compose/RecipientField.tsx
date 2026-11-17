@@ -1,7 +1,7 @@
 import type { KeyboardEvent } from 'react';
 import type { Recipient, RecipientFieldProps } from '../props';
 import { Icon } from './icons';
-import { Btn } from './parts';
+import { Btn, Kbd } from './parts';
 import { recipientKey } from './recipientKeys';
 
 /** The To field's placeholder while it holds no one (owner review 2026-11-03); Cc and Bcc stay bare. */
@@ -137,6 +137,38 @@ export function RecipientField(props: RecipientFieldProps) {
             if (query.trim()) onCommit(query);
           }}
         />
+        <ul
+          id={listboxId}
+          className="ui-recipient-field__list"
+          role="listbox"
+          aria-label={`${label} suggestions`}
+          hidden={!open}
+          onMouseDown={event => event.preventDefault()}
+        >
+          {suggestions.map(person => (
+            <li
+              key={person.id}
+              id={`${listboxId}-${person.id}`}
+              className="ui-recipient-field__option"
+              role="option"
+              aria-selected={person.id === activeSuggestionId}
+              data-active={person.id === activeSuggestionId ? 'true' : undefined}
+              onClick={() => onPickSuggestion?.(person.id)}
+            >
+              <span className="ui-recipient-field__option-name" dir="auto">
+                {shownName(person)}
+              </span>
+              {shownName(person) !== person.address ? (
+                <span className="ui-recipient-field__option-address">{person.address}</span>
+              ) : null}
+              {person.id === activeSuggestionId ? (
+                <span className="ui-recipient-field__option-enter" aria-hidden="true">
+                  <Kbd>↩</Kbd>
+                </span>
+              ) : null}
+            </li>
+          ))}
+        </ul>
       </div>
       {ccButton ? (
         // Cc and a quiet Bcc side by side: either opens both rows, so neither hides behind the other.
@@ -157,33 +189,6 @@ export function RecipientField(props: RecipientFieldProps) {
           />
         </span>
       ) : null}
-      <ul
-        id={listboxId}
-        className="ui-recipient-field__list"
-        role="listbox"
-        aria-label={`${label} suggestions`}
-        hidden={!open}
-        onMouseDown={event => event.preventDefault()}
-      >
-        {suggestions.map(person => (
-          <li
-            key={person.id}
-            id={`${listboxId}-${person.id}`}
-            className="ui-recipient-field__option"
-            role="option"
-            aria-selected={person.id === activeSuggestionId}
-            data-active={person.id === activeSuggestionId ? 'true' : undefined}
-            onClick={() => onPickSuggestion?.(person.id)}
-          >
-            <span className="ui-recipient-field__option-name" dir="auto">
-              {shownName(person)}
-            </span>
-            {shownName(person) !== person.address ? (
-              <span className="ui-recipient-field__option-address">{person.address}</span>
-            ) : null}
-          </li>
-        ))}
-      </ul>
     </div>
   );
 }

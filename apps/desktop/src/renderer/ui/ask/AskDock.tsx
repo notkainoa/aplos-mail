@@ -132,8 +132,8 @@ function useResize(size: number, onWidthChange: (width: number) => void) {
 }
 
 const TABS = [
-  { id: 'ask', label: 'Ask' },
-  { id: 'today', label: 'Today' },
+  { id: 'ask', label: 'Ask', hint: 'Ask about your mail and calendar' },
+  { id: 'today', label: 'Today', hint: "Today's events and the mail that needs you" },
 ] as const;
 
 /** The Ask | Today segmented control and the close button. */
@@ -164,6 +164,7 @@ function DockHead({
             role="tab"
             id={`${baseId}-tab-${item.id}`}
             className="ui-ask-dock__tab"
+            title={item.hint}
             aria-selected={tab === item.id}
             aria-controls={tab === item.id ? `${baseId}-panel` : undefined}
             tabIndex={tab === item.id ? 0 : -1}
@@ -222,14 +223,30 @@ function QueuedCard({
   );
 }
 
+/**
+ * With no provider the body says what Ask does and offers the one button that fixes it. The button never takes focus on
+ * its own (a ring on it read as stuck); the field and the send arrow are visibly off.
+ */
+function SetupLine({ onOpenSettings }: { onOpenSettings: () => void }) {
+  return (
+    <div className="ui-ask-dock__setup">
+      <p className="ui-ask-dock__setup-text">
+        Ask needs an AI provider key to answer questions about your mail and calendar.
+      </p>
+      <Btn variant="text" label="Add an AI key" onPress={() => onOpenSettings()} />
+    </div>
+  );
+}
+
 /** The queued cards and the field with its Stop and Ask buttons. */
 function DockFoot(props: AskDockProps & { activeOption: string | undefined; emptyId: string }) {
   const { value, onChange, onSubmit, working, onStop, queued, dictation, fieldRef } = props;
+  const { providerReady } = props;
   const sendNowKeys = describeKeys('ask.sendNow');
   function onFieldKey(event: KeyboardEvent<HTMLTextAreaElement>) {
     if (event.nativeEvent.isComposing || event.key !== 'Enter' || event.shiftKey) return;
     event.preventDefault();
-    onSubmit(event.metaKey ? 'searchAll' : 'ask');
+    if (providerReady) onSubmit(event.metaKey ? 'searchAll' : 'ask');
   }
   return (
     <footer className="ui-ask-dock__foot">
@@ -254,7 +271,10 @@ function DockFoot(props: AskDockProps & { activeOption: string | undefined; empt
             rows={1}
             dir="auto"
             aria-label="Ask"
-            placeholder="Ask about your mail or calendar"
+            placeholder={
+              providerReady ? 'Ask about your mail or calendar' : 'Add an AI key above to ask'
+            }
+            disabled={!providerReady}
             data-dictation="body"
             aria-controls={props.activeOption ? props.emptyId : undefined}
             aria-activedescendant={props.activeOption}
@@ -277,6 +297,7 @@ function DockFoot(props: AskDockProps & { activeOption: string | undefined; empt
               icon="arrow-up"
               label="Ask"
               commandId="ask.submit"
+              disabled={!providerReady}
               onPress={() => onSubmit('ask')}
             />
           </span>
@@ -295,7 +316,7 @@ function DockFoot(props: AskDockProps & { activeOption: string | undefined; empt
  * Esc (stop, then clear, then close) and ↑/↓ over suggestions belong to the registry's ask context.
  */
 export function AskDock(props: AskDockProps) {
-  const { tab, onTabChange, onClose, width, onWidthChange, providerReady, onOpenSettings } = props;
+  const { tab, onTabChange, onClose, width, onWidthChange, providerReady } = props;
   const { conversation, empty, today } = props;
   const baseId = useId();
   const size = clampWidth(width);
@@ -334,16 +355,11 @@ export function AskDock(props: AskDockProps) {
         aria-labelledby={`${baseId}-tab-${tab}`}
       >
         {tab === 'today' ? today : null}
-        {tab === 'ask' && !providerReady ? (
-          <div className="ui-ask-dock__noprovider">
-            <p>Ask needs a provider. Choose one in Settings.</p>
-            <button type="button" className="ui-ask-dock__link" onClick={onOpenSettings}>
-              Open Settings → AI
-            </button>
-          </div>
-        ) : null}
         {tab === 'ask' && providerReady && conversation ? conversation : null}
         {showEmpty && empty ? <EmptyView empty={empty} listId={emptyId} /> : null}
+        {tab === 'ask' && !providerReady ? (
+          <SetupLine onOpenSettings={props.onOpenSettings} />
+        ) : null}
       </div>
       {tab === 'ask' ? <DockFoot {...props} activeOption={activeOption} emptyId={emptyId} /> : null}
     </aside>

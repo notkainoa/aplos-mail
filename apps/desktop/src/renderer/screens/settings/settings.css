@@ -21,6 +21,12 @@
   width: var(--settings-nav);
 }
 
+/* The nav's icons sit on the label's optical centre: a 24 px icon box centred on a text line reads a pixel high, so
+   each is nudged down by 1 px (a 2 px margin, which --space-half allows for exactly this). */
+.settings-nav .ui-puck[data-kind='selection'] .ui-puck__item .ui-part-icon {
+  margin-top: var(--space-half);
+}
+
 .settings-content {
   flex: 0 1 var(--settings-content);
   min-width: 0;
@@ -101,6 +107,33 @@
   display: flex;
   flex-direction: column;
   gap: var(--space-3);
+}
+
+/* A setup notice (Settings → AI): one calm line on --raised, never red, with its one quiet action. */
+.settings-notice {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3);
+  margin-bottom: var(--space-3);
+  padding: var(--space-2) var(--space-3);
+  border-radius: var(--radius-md);
+  background-color: var(--raised);
+}
+
+/* The notice's action is the same small outlined button every Settings row action wears. */
+.settings-notice .ui-button[data-variant='text'] {
+  --btn-h: var(--control-sm);
+  box-shadow: inset 0 0 0 var(--hairline) var(--line-strong);
+}
+
+/* An empty list says so in one quiet line under its setting, not as a row of its own. */
+.settings-note {
+  margin: 0;
+  padding: var(--space-1) var(--space-3) var(--space-3);
+  color: var(--dim);
+  font: var(--type-small);
+  letter-spacing: var(--track-small);
 }
 
 /* The queue inspector's way back. */
@@ -184,5 +217,9 @@
 .settings-group .ui-section-header {
   height: auto;
   min-height: var(--control-sm);
-  padding-block: var(--space-1);
+  /* Settings rows start 12 px in, so the section heading does too (lists use 24). */
+  padding: var(--space-1) var(--space-3);
+  /* A heading is a level above the 13 px row titles under it: the title role (15/22, 600). */
+  font: var(--type-title);
+  letter-spacing: var(--track-title);
 }

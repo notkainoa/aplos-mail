@@ -15,7 +15,7 @@ beforeEach(() => resetToasts());
 const plain = (id: string): PushedToast => ({ id, kind: 'info', message: id, undoable: false });
 const undo = (id: string): PushedToast => ({
   id,
-  kind: 'done',
+  kind: 'bookmark',
   message: id,
   undoable: true,
   actions: [{ id: 'undo', label: 'Undo', commandId: 'app.undo' }],
@@ -48,6 +48,18 @@ test('with three undo toasts open, a plain newcomer still shows, and is the firs
   assert.deepEqual(ids(), ['u1', 'u2', 'u3', 'p1']);
   pushToast(undo('u4'));
   assert.deepEqual(ids(), ['u1', 'u2', 'u3', 'u4']);
+});
+
+const triage = (id: string, kind: 'done' | 'later' | 'trash' = 'done'): PushedToast => ({
+  ...undo(id),
+  kind,
+});
+
+test('Done, Later and Trash toasts stack, one per operation, oldest first (owner review of #548)', () => {
+  pushToast(triage('a'));
+  pushToast(triage('b', 'later'));
+  pushToast(triage('c', 'trash'));
+  assert.deepEqual(ids(), ['a', 'b', 'c']);
 });
 
 test('an action with the undo command makes a toast undo even if undoable is false', () => {

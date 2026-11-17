@@ -6,6 +6,7 @@
 import type { Account, HomeSectionView, HomeView, ThreadId, ThreadRow } from '../../data';
 import type { CommandAction, Density, ListboxBinding, SectionHeaderProps } from '../../ui/props';
 import { FocusLetter, FocusSlot, ListBox, ListGroup, ListRow, LowBand } from '../../ui/list';
+import { useKeyPressed } from './useKeyPressed';
 import { LOW_KEY, showsLowBand, type HomeLayout, type SectionKey } from './homeModel';
 import {
   dateOf,
@@ -211,7 +212,7 @@ function Section(props: HomeListProps & { name: 'update' | 'follow' }) {
   );
 }
 
-function Band(props: HomeListProps) {
+function Band(props: HomeListProps & { cursorShown: boolean }) {
   const { low } = props.view;
   if (!showsLowBand(props.layout)) return null;
   return (
@@ -220,7 +221,7 @@ function Band(props: HomeListProps) {
       senders={low.names}
       moreSenders={low.moreSenders}
       count={low.count}
-      cursor={props.cursorKey === LOW_KEY}
+      cursor={props.cursorKey === LOW_KEY && props.cursorShown}
       density={props.density}
       commandId="mail.open"
       onOpen={props.handlers.openLow}
@@ -228,8 +229,30 @@ function Band(props: HomeListProps) {
   );
 }
 
+/** Every thread has left Do now, Important updates and Follow up; only the Low band may remain. */
+export function isCleared(layout: HomeLayout): boolean {
+  const rows = [layout.do, layout.fromLater, layout.update, layout.follow];
+  return rows.every(ids => ids.length === 0) && showsLowBand(layout);
+}
+
+/**
+ * The cleared state: one small muted line exactly where the "Do now" label sits, and nothing else (owner review of
+ * #548, 2026-11-17). It takes the section label's own box, so it lands on the label's place in every density.
+ */
+function Cleared() {
+  return (
+    <div className="aplos-home-cleared" role="group" aria-labelledby="home-do">
+      <p id="home-do" className="ui-section-header aplos-home-cleared__line">
+        Nothing to do right now
+      </p>
+    </div>
+  );
+}
+
 /** The Home listbox. */
 export function HomeList(props: HomeListProps) {
+  const cleared = isCleared(props.layout);
+  const keyed = useKeyPressed(cleared);
   const binding: ListboxBinding = {
     id: LIST_ID,
     label: 'Home',
@@ -237,9 +260,9 @@ export function HomeList(props: HomeListProps) {
   };
   return (
     <ListBox binding={binding} multiselectable={props.picked.size > 0}>
-      <DoNow {...props} />
+      {cleared ? <Cleared /> : <DoNow {...props} />}
       <Section {...props} name="update" />
-      <Band {...props} />
+      <Band {...props} cursorShown={!cleared || keyed} />
       <Section {...props} name="follow" />
     </ListBox>
   );

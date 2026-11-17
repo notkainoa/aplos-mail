@@ -74,6 +74,22 @@
 .ui-status-slot__text {
   overflow-wrap: anywhere;
 }
+/* The demo note is one line and one control: it opens Settings → Accounts, where the demo mail is removed. */
+.ui-status-slot__link {
+  padding: 0;
+  border: 0;
+  background: none;
+  color: inherit;
+  font: inherit;
+  letter-spacing: inherit;
+  text-align: left;
+  white-space: nowrap;
+}
+@media (hover: hover) {
+  .ui-status-slot__link:hover {
+    color: var(--ink);
+  }
+}
 /* The action is a quiet text button in the accent (a link-like control), not a second red mark beside the red icon. */
 .ui-status-slot__action .ui-part-button,
 .ui-status-slot__action .ui-part-button .ui-part-icon {

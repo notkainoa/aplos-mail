@@ -1,5 +1,7 @@
 import type { State, Submission, SubmissionAction } from '@aplos/contract';
 import { isAbsent } from '../runtime/engine';
+import { parseStored, withDefaults } from '../runtime/settings';
+import type { StorePort } from '../ports';
 import type { EngineServices, LaneModule } from '../runtime/services';
 import type { CommitExtension } from '../store/port';
 import { STOP_GRACE_MS } from '../clock/loop';
@@ -250,6 +252,18 @@ export const lane = 'eng-time';
 /** The lane's writers for its own tables (seam 2); the host passes every module's list to `openStore`. */
 export const extensions: readonly CommitExtension[] = [outboxExtension];
 
+/**
+ * The owner's mail settings as stored, read at each send: the outbox takes `undoSendSeconds` from them, so a change
+ * applies to the next Send and the countdown matches Settings → Mail (whose default is the runtime's, not this module's
+ * bare fallback).
+ */
+export const storedMailSettings = (store: StorePort) =>
+  withDefaults(
+    parseStored(
+      store.read(q => q.get<{ data: string }>('SELECT data FROM settings WHERE id = 1'))?.data,
+    ),
+  ).mail;
+
 /** Builds the outbox once the core services exist; runs once, in the root's fixed order, after the clock module. */
 export function createModule(services: EngineServices): LaneModule {
   const outbox = createOutboxModule({
@@ -259,6 +273,7 @@ export function createModule(services: EngineServices): LaneModule {
     deadlines: services.deadlines,
     log: services.log,
     randomBytes: services.randomBytes,
+    settings: () => storedMailSettings(services.store),
     drafts: services.drafts,
     frames: services.frames,
     // A draft's own attachments, whoever made them (`Draft/set` checked the owner); a missing blob is left out.

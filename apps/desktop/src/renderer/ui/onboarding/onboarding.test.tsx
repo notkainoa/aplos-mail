@@ -90,7 +90,9 @@ test('OnboardingStep welcome: a centred display line, one sentence, one filled b
     /data-size="lg"[^>]*>.*?Add an account.*?<kbd class="ui-onb-kbd" data-key-hint="always">↩<\/kbd>/,
   );
   assert.match(out, /Setup continues in the background\./);
-  assert.match(out, />Step 1 of 4</);
+  assert.match(out, /aria-label="Step 1 of 4"/);
+  assert.equal((out.match(/class="ui-onboarding-step__mark"/g) ?? []).length, 4);
+  assert.doesNotMatch(out, />Step 1 of 4</, 'four marks, not the words');
   assert.doesNotMatch(out, /<svg/);
   assertCleanCopy(out);
 });
@@ -116,8 +118,9 @@ test('OnboardingStep: "Try demo mail" with its tooltip, the footer step words an
     out,
     /<p class="ui-onboarding-step__sr" role="status">Connected\. Looking for your mail\.<\/p>/,
   );
-  assert.match(out, /<span class="ui-onboarding-step__where">Step 3 of 4<\/span>/);
-  assert.doesNotMatch(out, /ui-onboarding-step__dashes/, 'the words say it; no dashes beside them');
+  assert.match(out, /aria-label="Step 3 of 4"/);
+  assert.equal((out.match(/data-state="done"/g) ?? []).length, 2, 'two steps behind you');
+  assert.equal((out.match(/class="ui-onboarding-step__mark" data-state="on"/g) ?? []).length, 1);
   // The footer Esc is a hint: present in the markup, hidden until "Show all key hints".
   assert.match(out, /<kbd class="ui-onb-kbd" data-key-hint="hint">Esc<\/kbd>/);
   const none = html(<OnboardingStep {...step({ phaseStatus: undefined })} />);

@@ -208,6 +208,9 @@ test('review2: the default calendar is solo, else the saved default, then the fi
   // Everything hidden: null, so the editor asks for a calendar instead of writing blind.
   const allHidden = demoWorld.calendars.map(c => ({ ...c, shown: false }));
   assert.equal(defaultCalendarId(allHidden, 'work'), null);
+  // No saved default: the calendar the last new event went to comes next, then the primary.
+  assert.equal(defaultCalendarId(demoWorld.calendars, undefined, null, 'personal'), 'personal');
+  assert.equal(defaultCalendarId(hiddenDefault, undefined, null, 'work'), 'personal');
 });
 
 test('review2: saving an edit whose event left the window writes nothing and says so', () => {
@@ -368,6 +371,17 @@ test('N picks the next free wall-clock half hour, including on a DST day (review
   assert.equal(draft.start, '10:00');
 });
 
+test('N late in the evening starts tomorrow at 9:00, not at 10:30 PM tonight', () => {
+  const late = new Date(2026, 10, 16, 22, 4).getTime();
+  const draft = newDraft('2026-11-16', late, [], 'work');
+  assert.equal(draft.date, '2026-11-17');
+  assert.equal(draft.endDate, '2026-11-17');
+  assert.equal(draft.start, '09:00');
+  assert.equal(draft.end, '10:00');
+  const afternoon = new Date(2026, 10, 16, 15, 10).getTime();
+  assert.equal(newDraft('2026-11-16', afternoon, [], 'work').date, '2026-11-16');
+});
+
 test('eventData maps contract times to grid entries: utc, all-day date, invite flags', () => {
   const cal = { id: 'work', name: 'Work', color: 'hill' as const };
   const q4 = eventData(ctxFor().events.get('q4')!, cal);
@@ -444,6 +458,17 @@ test('review2: a bare grid with every calendar hidden says so, not "A clear week
     viewModel(day, ctxAt(day, [], allHidden)).empty?.sentence,
     'All your calendars are hidden',
   );
+});
+
+test('with every calendar read-only, New event and a grid slot open nothing and the view says so', () => {
+  const state = S({ view: 'day', anchor: '2026-11-01' });
+  const readOnly = demoWorld.calendars.map(c => ({ ...c, readOnly: true }));
+  const ctx = ctxAt(state, demoWorld.events, readOnly);
+  assert.equal(viewModel(state, ctx).canCreate, false);
+  assert.equal(update(state, { type: 'newEvent' }, ctx).state.editor, null);
+  const range = { start: '2026-11-01T09:00', end: '2026-11-01T10:00' };
+  assert.equal(update(state, { type: 'createRange', ...range }, ctx).state.editor, null);
+  assert.equal(viewModel(state, ctxAt(state)).canCreate, true);
 });
 
 test('New event from the panel opens the editor', () => {

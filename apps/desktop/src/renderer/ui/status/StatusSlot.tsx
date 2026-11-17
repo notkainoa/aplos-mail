@@ -133,7 +133,7 @@ export function statusCopy(status: SyncStatus, now: Date = new Date()): StatusCo
         attention: true,
       };
     case 'demo':
-      return { text: 'Demo mail. Remove it in Settings.', icon: 'mail', attention: false };
+      return { text: 'Demo mail · Remove in Settings', icon: 'mail', attention: false };
   }
 }
 
@@ -209,7 +209,17 @@ export function StatusSlot({
             ) : (
               <p className="ui-status-slot__text" aria-live={ticking ? 'off' : undefined}>
                 {/* One marker: the icon. The account is named for screen readers and in the tooltip, not by a second dot. */}
-                {copy.text}
+                {status.kind === 'demo' ? (
+                  <button
+                    type="button"
+                    className="ui-status-slot__link"
+                    onClick={() => onAction('openAccounts', account)}
+                  >
+                    {copy.text}
+                  </button>
+                ) : (
+                  copy.text
+                )}
                 {named ? <SrOnly>{` For ${named.address}.`}</SrOnly> : null}
               </p>
             )}

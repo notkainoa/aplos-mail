@@ -23,6 +23,7 @@ import { Composer } from '../../ui/compose';
 import { useCardStyle, type CardStyle } from '../cardStyle';
 import { headerMenu, headerMoreButton } from './composeHeader';
 import { composeFromDraft, freshCompose, type ComposeState } from './model/composeState';
+import { EMPTY_FIELDS, recipientOf } from './model/fields';
 import { forwardSeed } from './model/forwardSeed';
 import { ownAddresses, replySeed } from './model/replySeed';
 import { undoSendCommands } from './runtime/composeCommands';
@@ -46,6 +47,13 @@ export interface ComposeScreenProps {
   };
   /** A forward of this thread's latest message: the page opens once the message and its text have loaded. */
   readonly forward?: { readonly threadId: string };
+  /** A new message opened with To, Subject and Body already filled (a mailto unsubscribe), from this account. */
+  readonly prefill?: {
+    readonly accountId: string;
+    readonly to: readonly string[];
+    readonly subject: string;
+    readonly body: string;
+  };
   /** The page has gone (Esc, discarded, sent): the shell goes back. */
   readonly onClose?: () => void;
   readonly dictationSource?: DictationSource | null;
@@ -85,8 +93,20 @@ function startingState(
     const seed = known.message ? replySeed(known.message, me, replyAll) : null;
     return seed ? freshCompose(seed.context, seed.fields) : null;
   }
+  if (props.prefill) return prefilledCompose(props.prefill);
   const accountId = known.scope ?? known.accounts[0]?.id;
   return accountId ? freshCompose({ accountId, mode: 'new' }) : null;
+}
+
+/** A new message opened with a prefill's fields, from its account (nothing is saved or sent yet). */
+export function prefilledCompose(
+  prefill: NonNullable<ComposeScreenProps['prefill']>,
+): ComposeState {
+  const to = prefill.to.map(address => recipientOf({ address }));
+  return freshCompose(
+    { accountId: prefill.accountId, mode: 'new' },
+    { ...EMPTY_FIELDS, to, subject: prefill.subject, body: prefill.body },
+  );
 }
 
 const NO_COMMANDS: CommandHandlerTable = {};

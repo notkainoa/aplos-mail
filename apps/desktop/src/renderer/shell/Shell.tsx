@@ -37,6 +37,7 @@ import { focusRegion, type RegionRoot } from './regions';
 import { KeysProviders, useRunCommand } from './KeysProviders';
 import { MinimisedNav } from './MinimisedNav';
 import { SheetHost } from './SheetHost';
+import { ShortcutsHost } from './ShortcutsHost';
 import { Sidebar } from './Sidebar';
 import { StatusHost } from './StatusHost';
 import { ToastHost } from './ToastHost';
@@ -306,14 +307,14 @@ export function ChromeNotch() {
 }
 
 /**
- * The notch's size in px: it spans the lights, the toggle and the corner curves. NOTCH_W matches CSS --notch-w; NOTCH_H is
+ * The notch's size in px: it spans the lights, the toggle, New message and the corner curves. NOTCH_W matches CSS --notch-w; NOTCH_H is
  * --shell-pad + --pane-head (the notch's bottom meets the header's hairline). The path's 10 and 12 are the step and
  * pane corner radii (12 = --radius-lg).
  */
-export const NOTCH_W = 129;
+export const NOTCH_W = 157;
 export const NOTCH_H = 56;
-const NOTCH_EDGE = 'M129 8A10 10 0 0 0 119 18V32A12 12 0 0 1 107 44H20A12 12 0 0 0 8 56';
-const NOTCH_FILL = `M0 0H129V8${NOTCH_EDGE.slice('M129 8'.length)}H0Z`;
+const NOTCH_EDGE = 'M157 8A10 10 0 0 0 147 18V32A12 12 0 0 1 135 44H20A12 12 0 0 0 8 56';
+const NOTCH_FILL = `M0 0H157V8${NOTCH_EDGE.slice('M157 8'.length)}H0Z`;
 
 /** The shell's frame drawn from plain props: kept apart from the data hooks so the harness can draw any state. */
 export function ShellLayout(props: ShellLayoutProps) {
@@ -331,14 +332,24 @@ export function ShellLayout(props: ShellLayoutProps) {
       {collapsed ? (
         <div className="aplos-shell__strip" data-region="sidebar">
           <ChromeNotch />
-          <Button
-            variant="icon"
-            size="sm"
-            icon="sidebar"
-            label="Show or hide the sidebar"
-            commandId="app.sidebar"
-            onPress={props.onToggleSidebar}
-          />
+          <div className="aplos-shell__strip-tools">
+            <Button
+              variant="icon"
+              size="sm"
+              icon="sidebar"
+              label="Show or hide the sidebar"
+              commandId="app.sidebar"
+              onPress={props.onToggleSidebar}
+            />
+            <Button
+              variant="icon"
+              size="sm"
+              icon="compose"
+              label="New message"
+              commandId="mail.compose"
+              onPress={props.onCompose}
+            />
+          </div>
         </div>
       ) : minimised ? (
         <MinimisedNav screen={screen} counts={counts} onNavigate={onNavigate} />
@@ -531,6 +542,7 @@ function ShellFrame({ renderScreen, renderDock }: ShellProps) {
         overlay={
           <>
             <SheetHost />
+            <ShortcutsHost />
             <PaletteHost open={paletteOpen} onClose={closePalette} />
           </>
         }

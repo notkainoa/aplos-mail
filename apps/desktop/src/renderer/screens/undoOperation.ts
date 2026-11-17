@@ -12,6 +12,14 @@ import { api, type ActResult } from '../data';
  */
 export const UNDO_ACTION = { id: 'undo', label: 'Undo', keysFrom: 'app.undo' } as const;
 
+/**
+ * A Later toast says what the move left unset: the L key puts a thread back without a date, and the toast offers
+ * "Set a date" beside it. It goes before the sender's name, which is the part a narrow toast may cut. A dated move says "Later until …" instead (see `reschedule`).
+ */
+export function undated(message: string): string {
+  return `${message} · no date`;
+}
+
 /** Runs `after` once the undo's receipt is accepted; a rejected undo is the data layer's to report and runs nothing. */
 export function afterAccepted(result: ActResult, after?: () => void): void {
   result.receipt.then(

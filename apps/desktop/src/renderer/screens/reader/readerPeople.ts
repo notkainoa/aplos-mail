@@ -130,12 +130,13 @@ function people(label: string, list: readonly Address[], me: ReadonlySet<string>
     : [{ kind: 'people', label, people: unique(list.map(a => personOf(a, me))) }];
 }
 
-/** "Nov 10, 9:10 AM"; the year joins it for a message from another year. */
+/** "Tue, Nov 10, 9:10 AM", the one long format outside list rows; the year joins it for another year. */
 export function detailDate(ms: number, now: number = Date.now()): string {
   const date = new Date(ms);
   const sameYear = date.getFullYear() === new Date(now).getFullYear();
   return date
     .toLocaleString('en-US', {
+      weekday: 'short',
       month: 'short',
       day: 'numeric',
       ...(sameYear ? {} : { year: 'numeric' }),

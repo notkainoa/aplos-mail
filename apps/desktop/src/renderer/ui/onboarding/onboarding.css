@@ -84,7 +84,8 @@
 }
 
 .ui-onb-button[data-variant='filled']:disabled {
-  background: var(--sunken);
+  /* the primary, faded: the same by day and at night (a --sunken well read as an enabled black slab in dark) */
+  background: color-mix(in srgb, var(--accent) 30%, transparent);
   box-shadow: none;
 }
 
@@ -97,8 +98,9 @@
   height: var(--kbd);
   padding: 0 var(--space-1);
   border-radius: var(--radius-xs);
-  background: var(--sunken);
-  color: var(--dim);
+  background: var(--keycap);
+  box-shadow: inset 0 0 0 var(--hairline) var(--line);
+  color: var(--keycap-ink);
   font: var(--type-caption);
   letter-spacing: var(--track-caption);
 }
@@ -331,24 +333,36 @@
   display: flex;
   flex: none;
   align-items: center;
-  gap: var(--space-2);
+  gap: var(--space-1);
   margin-right: var(--space-2);
 }
 
-/* The footer is one quiet size: a text button there (Back) reads at the same `small` size as "Step N of 4". */
+/* The footer is one quiet size: a text button there (Back) reads at the `small` size, like the note beside the marks. */
 .ui-onboarding-step__foot .ui-onb-button[data-variant='text'] {
   font: var(--type-small);
   font-weight: 500;
   letter-spacing: var(--track-small);
 }
 
-/* The words say where you are. */
-.ui-onboarding-step__where {
-  font: var(--type-small);
-  font-variant-numeric: var(--num-small);
-  letter-spacing: var(--track-small);
-  color: var(--dim);
-  white-space: nowrap;
+/* A text button that ends the footer (Skip setup) ends where "Try demo mail" ends above it: one 24 px right margin for the words,
+   so the button's own 12 px padding hangs into the footer's inset. */
+.ui-onboarding-step__buttons > .ui-onb-button[data-variant='text']:last-child {
+  margin-right: calc(-1 * var(--space-3));
+}
+
+/* Four marks, one per step: the one you are on in ink, the ones behind you in --dim. */
+.ui-onboarding-step__mark {
+  display: block;
+  width: var(--space-4);
+  height: var(--space-half);
+  border-radius: var(--hairline);
+  background: var(--line-strong);
+}
+.ui-onboarding-step__mark[data-state='on'] {
+  background: var(--ink);
+}
+.ui-onboarding-step__mark[data-state='done'] {
+  background: var(--dim);
 }
 
 .ui-onboarding-step__sr {

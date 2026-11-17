@@ -27,10 +27,26 @@ import type { SectionProps } from './types';
 
 const WEEK_DAYS = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
 
-/** The account's calendar count when there is no access line to show (demo and non-Google accounts), else undefined. */
-function ownCalendars(data: SectionProps['data'], accountId: string): string | undefined {
-  const count = data.calendars?.filter(c => c.accountId === accountId).length ?? 0;
-  return count > 0 ? calendarCountLine(count) : undefined;
+/** Which calendars of the account nothing can be added to, in words: the demo's say why; others name themselves. */
+function viewOnlyNote(
+  mine: readonly { name: string; readOnly?: boolean }[],
+  demo: boolean,
+): string {
+  if (demo) return 'Demo calendars are view-only';
+  const names = mine.filter(c => c.readOnly).map(c => c.name);
+  if (names.length === 0) return '';
+  return names.length === mine.length ? 'All view-only' : `${names.join(', ')} view-only`;
+}
+
+/** The account's calendar count when there is no access line to show (demo and non-Google accounts), else undefined; view-only calendars are named after it. */
+function ownCalendars(
+  data: SectionProps['data'],
+  account: { id: string; demo?: boolean },
+): string | undefined {
+  const mine = data.calendars?.filter(c => c.accountId === account.id) ?? [];
+  if (mine.length === 0) return undefined;
+  const note = viewOnlyNote(mine, account.demo === true);
+  return note ? `${calendarCountLine(mine.length)} · ${note}` : calendarCountLine(mine.length);
 }
 
 export function Calendar({ data, actions, host }: SectionProps) {
@@ -67,7 +83,7 @@ export function Calendar({ data, actions, host }: SectionProps) {
               ? `${access?.line ?? ''} · ${
                   editing === 'on' ? CALENDAR_EDITING_COPY.on : CALENDAR_EDITING_COPY.off
                 }`
-              : (access?.line ?? ownCalendars(data, a.id));
+              : (access?.line ?? ownCalendars(data, a));
           const attention =
             refused || access?.kind === 'not-allowed' || access?.kind === 'needs-signin';
           const action = refused

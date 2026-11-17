@@ -29,9 +29,12 @@ export function EmptyLine({
         {detail ? <p className="ui-empty-line__detail">{detail}</p> : null}
       </div>
       {action ? (
-        <div className="ui-empty-line__actions">
+        <div
+          className="ui-empty-line__actions"
+          data-quiet={action.emphasis === 'quiet' ? 'true' : undefined}
+        >
           <Action
-            variant={action.emphasis}
+            variant={action.emphasis === 'filled' ? 'filled' : 'text'}
             size="md"
             label={action.label}
             icon={action.icon}

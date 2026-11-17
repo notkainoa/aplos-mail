@@ -320,8 +320,11 @@ export function Palette(props: PaletteProps) {
                               {!empty && item.group ? (
                                 <span className="ui-palette__group">{item.group}</span>
                               ) : null}
-                              {keycapsFor(item.commandId).map(cap => (
-                                <Kbd key={cap}>{cap}</Kbd>
+                              {keycapsFor(item.commandId).map((cap, index) => (
+                                <Fragment key={cap}>
+                                  {index > 0 ? <span className="ui-palette__or">or</span> : null}
+                                  <Kbd>{cap}</Kbd>
+                                </Fragment>
                               ))}
                             </span>
                           </div>

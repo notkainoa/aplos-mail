@@ -17,6 +17,11 @@ export interface RescheduleDeps {
   hold(ids: readonly string[]): void;
 }
 
+/** "Tomorrow, 8:00 AM" reads as "until tomorrow, 8:00 AM" inside a sentence. */
+function inSentence(label: string): string {
+  return label.replace(/^(Today|Tomorrow)\b/, word => word.toLowerCase());
+}
+
 /** Moves one thread to `until` (absent: Someday) and says where, e.g. "Moved to Tomorrow, 8:00 AM". */
 export function reschedule(
   deps: RescheduleDeps,
@@ -29,7 +34,7 @@ export function reschedule(
   deps.push({
     id: opId,
     kind: 'later',
-    message: `Moved to ${label}`,
+    message: until === undefined ? `Moved to ${label}` : `Later until ${inSentence(label)}`,
     undoable: true,
     actions: [UNDO_ACTION],
     onAction: undoHandler(opId),

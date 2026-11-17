@@ -24,6 +24,7 @@ const HANDLERS = {
   onSelectRow: noop,
   onOpenRow: noop,
   onRowAction: noop,
+  onClear: noop,
 };
 
 const answered = (field: string, localIds: string[]): SearchState => ({

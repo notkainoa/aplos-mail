@@ -252,7 +252,7 @@ test('ProviderTable hosted: key source and status in words, Default tag, never a
   assert.match(out, /No key yet · reads ANTHROPIC_API_KEY/);
   assert.match(out, /Works · 0\.4 s/);
   assert.match(out, /Testing…/);
-  assert.match(out, /Needs a key/);
+  assert.doesNotMatch(out, /Needs a key/, 'one status per row: No key yet says it');
   assert.match(out, /Key refused/);
   assert.match(out, />Ready</);
   assert.match(out, /Not reachable/);
@@ -289,13 +289,13 @@ test('ProviderTable hosted: Remove is disabled for an environment key, with the 
   );
 });
 
-test('ProviderTable hosted: no key offers "Add key"; a refused key adds a plain line with Replace key', () => {
+test('ProviderTable hosted: no key offers "Add a key"; a refused key adds a plain line with Replace key', () => {
   const out = html(<ProviderTable {...hosted()} />);
   const claude = out.slice(
     out.indexOf('data-provider="anthropic"'),
     out.indexOf('data-provider="openrouter"'),
   );
-  assert.match(claude, />Add key</);
+  assert.match(claude, />Add a key</);
   assert.doesNotMatch(claude, />Test</);
   assert.match(
     out,
@@ -367,9 +367,9 @@ test('ProviderTable local: address field with the default as placeholder, runnin
   assert.match(out, /placeholder="http:\/\/localhost:1234"/);
   assert.match(out, /placeholder="https:\/\/your-server\.example\/v1"/);
   assert.match(out, /On this Mac · running · no key needed/);
-  assert.match(out, /On this Mac · not running · no key needed/);
+  assert.match(out, /On this Mac · no key needed/);
   assert.match(out, /Any OpenAI-compatible server · key optional/);
-  assert.match(out, />Add key</);
+  assert.match(out, />Add a key</);
   assert.match(out, /Works · 0\.1 s/);
   assert.match(out, /spellcheck="false"/i);
   assertCleanCopy(out);
@@ -533,11 +533,11 @@ test('KeyRecorder idle: label, a button that names the shortcut, keycaps, no Res
   const out = html(<KeyRecorder {...recorder({ chords: ['j', 'ArrowDown'] })} />);
   assert.match(out, /data-state="idle"/);
   assert.match(out, />Done</);
-  assert.match(out, /aria-label="Change the shortcut for Done\. Now J or ↓"/);
+  assert.match(out, /aria-label="Change the shortcut for Done\. Now ↓ or J"/);
   assert.match(out, /title="Click to change"/);
   assert.match(
     out,
-    /<kbd class="ui-key-recorder__kbd">J<\/kbd><span class="ui-key-recorder__or">or<\/span><kbd class="ui-key-recorder__kbd">↓<\/kbd>/,
+    /<kbd class="ui-key-recorder__kbd">↓<\/kbd><span class="ui-key-recorder__or">or<\/span><kbd class="ui-key-recorder__kbd">J<\/kbd>/,
   );
   assert.doesNotMatch(out, />Reset</);
   assert.doesNotMatch(out, /conflict/);
@@ -557,7 +557,7 @@ test('KeyRecorder idle: a changed shortcut offers Reset; a clash at rest is mark
   assert.match(out, /aria-label="Reset Done to its default"[^>]*>Reset</);
   assert.match(out, /Same keys as Toggle the Ask dock/);
   assert.match(out, /<svg[^>]*class="[^"]*ui-set-icon/);
-  assert.match(out, /<kbd class="ui-key-recorder__kbd">⌘J<\/kbd>/);
+  assert.match(out, /<kbd class="ui-key-recorder__kbd"><span class="ui-key-mod">⌘<\/span>J<\/kbd>/);
   const none = html(<KeyRecorder {...recorder({ chords: [] })} />);
   assert.match(none, /Now not set/);
   assert.match(none, />None</);

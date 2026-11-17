@@ -47,13 +47,68 @@
   color: var(--dim);
 }
 
+/* A forward: a short note area, one blank line (24 px at 26 px a line is the read rhythm; --space-4 reads as one), then
+   the original behind a left hairline in --dim, the reader's own quote style, without any ">". */
+.aplos-compose-body {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+  min-height: inherit;
+}
+.aplos-compose-body .aplos-compose-editor {
+  min-height: var(--space-7);
+}
+.aplos-compose-quote {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  padding-left: var(--space-4);
+  box-shadow: inset var(--hairline) 0 0 var(--line-strong);
+  color: var(--dim);
+}
+/* The standard header lines, as one small caption above the original's own text. */
+.aplos-compose-quote__caption {
+  margin: 0;
+  color: var(--dim);
+  font: var(--type-small);
+  letter-spacing: var(--track-small);
+}
+.aplos-compose-quote__text {
+  display: grid;
+}
+.aplos-compose-quote .aplos-compose-editor__mirror,
+.aplos-compose-quote .aplos-compose-editor__input {
+  grid-area: 1 / 1;
+  min-height: 0;
+}
+.aplos-compose-quote .aplos-compose-editor__input {
+  color: var(--dim);
+  caret-color: var(--ink);
+}
+
+/* The sent card's "to" line: the recipients line's type and height, with no button (nothing to open). */
+.aplos-recipients[data-static='true'] {
+  height: var(--control-xs);
+  padding: 0 var(--space-2);
+  color: var(--dim);
+  font: var(--type-small);
+  letter-spacing: var(--track-small);
+}
+/* The body starts in the name's column, as a received message's does (`--plain-indent` is the mark's width and gap). */
 .aplos-compose-sent__body {
   margin: 0;
+  padding-left: var(--plain-indent, 0px);
   color: var(--ink);
   font: var(--type-read);
   letter-spacing: var(--track-read);
   white-space: pre-wrap;
   overflow-wrap: anywhere;
+}
+
+/* The inline reply's text starts in the same column as the message cards' bodies above it (the sender mark's width and
+   its gap), so a reply does not jump 32 px sideways when it is sent and becomes a card of its own. */
+.aplos-reader:not([data-cards='off']) .ui-inline-reply__editor {
+  padding-left: calc(var(--control-xs) + var(--space-2));
 }
 
 /* The compose page fills the pane, so its hairline and Send sit at the pane's bottom (DESIGN 7.6; mockups/compose.html)
@@ -85,10 +140,26 @@
 .aplos-compose:not([data-cards='off']) .ui-composer__to {
   padding-top: var(--space-3);
 }
-.aplos-compose:not([data-cards='off']) .ui-composer__subject {
-  width: calc(100% - 2 * var(--space-6));
+.aplos-compose:not([data-cards='off']) .ui-composer__subject-row {
+  /* From, To and Subject share one label column and one value edge: the label, then the value, on the hairline's row. */
+  display: flex;
+  align-items: baseline;
+  gap: var(--space-2);
   margin-top: 0;
   padding-block: var(--space-3);
+}
+.aplos-compose:not([data-cards='off']) .ui-composer__subject-label {
+  display: block;
+}
+.aplos-compose:not([data-cards='off']) .ui-composer__subject::placeholder {
+  /* The label says "Subject"; the empty field shows nothing beside it. */
+  color: transparent;
+}
+.aplos-compose:not([data-cards='off']) .ui-composer__subject {
+  flex: 1;
+  width: auto;
+  margin-top: 0;
+  padding-block: 0;
 }
 .aplos-compose:not([data-cards='off']) .ui-composer__editor {
   /* About 40 % of the pane's height, at least 200 px and at most 384, so the card reaches down the pane instead of
@@ -100,10 +171,17 @@
   margin-block: var(--space-6);
 }
 .aplos-compose[data-cards='a'] .ui-composer__to:not(:focus-within),
-.aplos-compose[data-cards='a'] .ui-composer__subject:not(:focus-visible) {
+.aplos-compose[data-cards='a']
+  .ui-composer__subject-row:not(:has(.ui-composer__subject:focus-visible)) {
   box-shadow: 0 var(--hairline) 0 var(--line);
 }
-.aplos-compose[data-cards='a'] .ui-composer__subject {
+.aplos-compose[data-cards='a'] .ui-composer__subject-row:has(.ui-composer__subject:focus-visible) {
+  box-shadow: 0 var(--hairline) 0 var(--accent);
+}
+.aplos-compose[data-cards='a'] .ui-composer__subject:focus-visible {
+  box-shadow: none;
+}
+.aplos-compose[data-cards='a'] .ui-composer__subject-row {
   margin-top: var(--space-1);
 }
 /* The footer is the card's last row: full card width, so its hairline runs edge to edge, with Send and the icons on the
@@ -154,6 +232,29 @@
 .ui-inline-reply .ui-recipient-field__label {
   min-width: var(--space-8);
 }
+/* In a card the inline reply's From and To values start on the body's column (the sender mark's width and its gap past the
+   card's text edge), the column the reply text below them uses: label 32 px wide, no gap. */
+.aplos-reader:not([data-cards='off']) .ui-inline-reply .ui-recipient-field {
+  gap: 0;
+}
+.aplos-reader:not([data-cards='off']) .ui-inline-reply .ui-recipient-field__label {
+  min-width: calc(var(--control-xs) + var(--space-2));
+  /* "From" at 13 px is 31 px wide and would touch the value: the labels read one step smaller. */
+  font: var(--type-small);
+  letter-spacing: var(--track-small);
+  line-height: var(--space-6);
+}
+.aplos-reader:not([data-cards='off']) .ui-inline-reply .aplos-from .ui-recipient-field__label {
+  line-height: inherit;
+}
+/* The smaller label would ride 2 px above the chips' line: the To label drops by the same 2 px. */
+.aplos-reader:not([data-cards='off'])
+  .ui-inline-reply
+  .ui-recipient-field:not(.aplos-from)
+  .ui-recipient-field__label {
+  margin-top: var(--space-half);
+}
+
 .aplos-from > .ui-button {
   margin-left: calc(-1 * var(--space-3));
 }

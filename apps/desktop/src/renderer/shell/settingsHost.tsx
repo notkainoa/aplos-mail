@@ -19,6 +19,7 @@ import { parseSettingRoute, type SettingRoute } from '../commands';
 import { undoStack, type LocalUndo, type UndoHandle } from '../data';
 import { WINDOW_COPY } from '../onboarding/copy';
 import { showWelcome, welcomeFailureLine, type WelcomeResult } from '../onboarding/showWelcome';
+import { openShortcuts } from './store-shortcuts';
 import { SettingsContainer } from '../screens/settings/SettingsContainer';
 import type { SettingsHost } from '../screens/settings/ports';
 import {
@@ -115,6 +116,7 @@ export function createSettingsHost(deps: SettingsHostDeps = SHELL_DEPS): Setting
     renderAddAccount: (onClose): ReactNode => (
       <HandOff open={() => deps.openAddAccount()} onClose={onClose} />
     ),
+    openShortcuts,
     showWelcome() {
       void deps.showWelcome().then(result => {
         if (welcomeFailureLine(result)) toast(WINDOW_COPY.setupWindowFailed);

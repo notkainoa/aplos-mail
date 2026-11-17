@@ -7,7 +7,7 @@ import { api, toIsoDateTime, useAccounts, useNow, useStatus, type StatusSlotStat
 import type { StatusAction, SyncAccount } from '../ui/props';
 import { StatusSlot } from '../ui/status';
 import { DIAGNOSTICS_FAILED_COPY, RECONNECT_FAILED_COPY } from './failure-copy';
-import { navigate, openSheet, pushToast } from './index';
+import { navigate, openRoute, openSheet, pushToast } from './index';
 import { reconnectMode, syncAccount, toSyncStatus } from './status-map';
 
 const DIAGNOSTICS_TOAST_ID = 'diagnostics-copied';
@@ -46,6 +46,7 @@ export function runStatusAction(action: StatusAction, state: StatusSlotState): v
   else if (action === 'retry') retryNow(state);
   else if (action === 'copyDiagnostics') copyDiagnostics();
   else if (action === 'viewDetails') navigate('settings');
+  else if (action === 'openAccounts') openRoute('settings/accounts');
 }
 
 /** Props for `StatusView`. */

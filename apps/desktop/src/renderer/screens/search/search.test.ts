@@ -34,6 +34,7 @@ import {
   remoteStarted,
   removeToken,
   resultRow,
+  beyondSubject,
   snippetAround,
   snippetFit,
   withoutGreeting,
@@ -332,6 +333,7 @@ test('the page renders the announce sentence in a hidden live region', () => {
         onChange: () => undefined,
         onRemoveToken: () => undefined,
         onSubmit: () => undefined,
+        onClear: () => undefined,
         onRetryResults: () => undefined,
         onLeaveToList: () => undefined,
         onSelectRow: () => undefined,
@@ -453,19 +455,33 @@ test('free terms bold in subjects and snippets; quoted phrases stay whole', () =
 test('a snippet whose match sits far in starts a few words before it, one leading ellipsis', () => {
   const text =
     'The printer queue was cleared overnight, and the invoice reminder went out before nine';
-  assert.equal(
-    snippetAround(text, ['invoice']),
-    '…overnight, and the invoice reminder went out before nine',
-  );
+  assert.equal(snippetAround(text, ['invoice']), '…and the invoice reminder went out before nine');
   assert.equal(snippetAround(text, ['printer']), text, 'a match near the start is left alone');
   assert.equal(snippetAround(text, ['nothing']), text, 'no match, no cut');
+  // No space inside the lead: the cut falls at the start of the word the match sits in, never inside a word.
+  const long = 'one two three four five six seven aaaaaaaaaaaaaaaaaaaaaaaaaaainvoicedue';
+  assert.equal(snippetAround(long, ['invoice']), '…aaaaaaaaaaaaaaaaaaaaaaaaaaainvoicedue');
+});
+
+test('a snippet that starts by repeating the subject shows what follows it, or nothing', () => {
+  const subject = 'Saturday in the community garden';
+  assert.equal(
+    beyondSubject('Saturday in the community garden this week needs hands.', subject),
+    'this week needs hands.',
+  );
+  assert.equal(beyondSubject('Saturday in the community garden', subject), undefined);
+  assert.equal(
+    beyondSubject('Bring gloves for the garden.', subject),
+    'Bring gloves for the garden.',
+  );
+  assert.equal(beyondSubject('anything', ''), 'anything', 'no subject, nothing to repeat');
 });
 
 test('a snippet is cut after a whole word, keeps its match, and short text is left alone', () => {
   const text = '…can close out the project. The two layout directions are ready';
-  assert.equal(snippetFit(text, ['project']), '…can close out the project…');
+  assert.equal(snippetFit(text, ['project'], 25), '…can close out the project…');
   assert.equal(
-    snippetFit('Our project review is Friday at ten', ['project']),
+    snippetFit('Our project review is Friday at ten', ['project'], 25),
     'Our project review is…',
   );
   assert.equal(snippetFit('A short line', ['line']), 'A short line');

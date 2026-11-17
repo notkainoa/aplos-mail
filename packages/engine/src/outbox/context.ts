@@ -22,7 +22,7 @@ export interface OutboxDeps {
   deadlines: DeadlineRegistry;
   log: Logger;
   blobs?: BlobSource;
-  /** The owner's mail settings; `undoSendSeconds` defaults to 10. */
+  /** The owner's mail settings; without it `undoSendSeconds` is 10 (the running engine passes the stored one, default 8). */
   settings?: () => { undoSendSeconds?: number };
   /** Randomness for ids, Message-IDs and boundaries; Web Crypto by default. */
   randomBytes?: (n: number) => Uint8Array;

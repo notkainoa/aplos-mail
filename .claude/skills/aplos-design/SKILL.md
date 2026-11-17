@@ -55,9 +55,14 @@ Use `var(--token)` in CSS and the imports from `ui/generated/motion.ts` in TS. N
 |---|---|
 | `--shell` | The window background. The sidebar sits on it, transparent. |
 | `--canvas` | The one white pane: lists, the reader, compose, settings |
-| `--paper` | Cards on the pane: focus letter, inline reply, proposal card, dialogs, menus, toasts. Lighter than the pane in dark. |
-| `--raised` | Quiet fills: the low-importance band, chips, attachments, the undo-send line |
-| `--sunken` | Keycaps, segmented tracks, fields |
+| `--paper` | Cards on the pane: focus letter, inline reply, proposal card. Lighter than the pane in dark (`#242528` over the pane's `#191a1c`, a step you can see). |
+| `--float` | Floating surfaces: dialogs, menus, popovers, tooltips, toasts, the palette, the selected segment. White like `--paper` by day; at night one clear step lighter than a card or the pane (council 2, round 2: they melted into the card under them). |
+| `--raised` | Quiet fills: the low-importance band, chips, attachments, the undo-send line. In dark (`#2b2c30`) one step above `--paper`. |
+| `--sunken` | Segmented tracks, fields |
+| `--keycap` | A keycap's plate: sunken by day, one step lighter than its surface at night, always with a 1 px `--line` edge |
+| `--keycap-ink` | A keycap's letter: `--dim` by day, `--ink-2` at night (passes 4.5:1 on the plate) |
+| `--dim-on-float` | Metadata on a floating surface (`--float` or lighter) and on a hovered or cursor row there: `--dim` by day, `--ink-2` at night. A rule in `surfaces.css` re-points `--dim` at it inside every floating surface, so components keep writing `var(--dim)`. |
+| `--dim-inactive` | Disabled text on a floating surface: keeps the dim step (exempt from 4.5:1) |
 | `--ink` | Primary text, unread senders |
 | `--ink-2` | Read senders, subjects, unread summaries, secondary text |
 | `--dim` | Metadata, timestamps, counts, placeholders, read summaries, disabled text |
@@ -94,7 +99,7 @@ Rules:
 
 | Role | Size / line | Face | Use |
 |---|---|---|---|
-| `caption` | 11/16 | SF 500 | Keycaps, chips, calendar hours. The floor: nothing is smaller. |
+| `caption` | 11.5/16 | SF 500 | Keycaps, chips, calendar hours. The floor: nothing is smaller. |
 | `small` | 12/18 | SF 400/500, tabular (`--num-small`) | Metadata, timestamps, counts, sub-labels. Always `--dim`. |
 | `ui` | 13/20 | SF 400/500; 600 for section labels | Sidebar, menus, controls, buttons |
 | `base` | 14/22 | SF 400; 600 unread senders | List rows, settings rows, fields |
@@ -123,13 +128,13 @@ Rules:
   - Sidebar 232, transparent on the shell.
   - Pane inset 8 (`--shell-pad`), radius 12.
   - Pane header 48.
-  - List column `min(720px, 100% − 2 gutters)` (`--list-w`). Sender column 152 (148 on Home).
+  - List column `min(720px, 100% − 2 gutters)` (`--list-w`). Sender column 136 in lists, 148 on Home (`--sender-w-home`). The due chip (clock + "Tomorrow" / "Thu" / "Nov 4") sits inline before the subject; there is no chip column (owner review of #548, 2026-11-17). Home keeps its earlier edges: 16 px lead column, labels 12 px in, the focus card 20 px from the right.
   - Reader column 640 (`--reader-w`). The email sits in one card (subject top line, hairline, header row, body, attachments) by owner request 2026-11-10 (DESIGN §16); the summary stays big above it.
   - Composer page 640.
   - Ask dock 360 (320 under a 1180 px window, resizable 300–440).
   - Palette 600 wide, 16vh from the top, results at most 420.
   - Settings 180 nav + 600 content.
-  - Toast up to 440.
+  - Toast 440, growing to fit its words up to 560 (`--toast-grow-max`).
   - Minimum window 900 × 600.
 
 ### Radius: six steps, no others
@@ -147,9 +152,9 @@ Rules:
 
 | Token | Use |
 |---|---|
-| `--elev-pane` | The pane, the dock |
+| `--elev-pane` | The pane, the dock, the reader's message cards (day ring is `--line-strong`) |
 | `--elev-card` | Focus letter, inline reply, proposal cards |
-| `--elev-float` | Menus, popovers, tooltips, toasts, the palette (opaque `--paper`) |
+| `--elev-float` | Menus, popovers, tooltips, toasts, the palette (opaque `--float`) |
 | `--elev-dialog` | Dialogs and confirmations, with `--scrim` behind |
 | `--elev-lift` | A dragged row or letter |
 | `--elev-puck` | A segmented control's thumb |
@@ -319,7 +324,8 @@ pushToast({
 ```
 
 - The wording follows the op queue: "Archiving…" while pending, then "Done · Undo Z". With a destination it reads "Moved to Later · Set a date D · Undo Z". Offline it reads "Saved here · will sync".
-- An Undo toast is never silently replaced. A second move adds a second toast; the stack holds three, oldest first out. Never filter out an earlier toast.
+- An Undo toast is never silently replaced. A second move adds a second toast; the stack holds three, oldest first out. Never filter out an earlier toast. Triage toasts name the sender ("Done · Jordan Park"), and Z undoes the newest first.
+- The stack is a deck (owner review of #548, 2026-11-17): newest in front, older ones peeking behind, smaller; hover or focus fans it into the full list and holds every clock (`ToastStackHeld`); each toast leaves on its own timer. The fan uses the `close` motion, so reduced motion only switches states. It is the one owner exception to "hover never moves anything" (it moves only the toasts). The one-slot triage toast was rejected.
 - No toast for navigation, successful saves or sync ticks. Sends use the `UndoTray` at the message, not a toast, unless no thread is visible.
 
 ## 5. Home, AI, voice
@@ -339,6 +345,7 @@ How Home behaves:
 - **Sorting rule:** respond → Do now; only need to see it → Important updates; don't need to see it → Low importance. It is decided by the conversation, never the sender.
 - The focus letter is a fixed-height `--elev-card` (it fits its content when no summary is coming). It holds the meta line, the serif summary (two lines at most on Home; while it is being written, a quiet two-line placeholder with "Summarizing…") and the action row: the filled suggestion with its Space keycap, then Later and Done as text buttons, then ⋯. There is no subject.
 - Empty sections don't render, except while held.
+- Cleared Home (only the Low band left): one small `--dim` line "Nothing to do right now" in the Do now label's place, then the band (owner review of #548, 2026-11-17).
 - The sidebar count is Do now plus Important updates.
 - Rows always show the subject (a written summary follows it, muted); with no AI the focus letter shows the subject at `summary` size in SF, and there is no error.
 

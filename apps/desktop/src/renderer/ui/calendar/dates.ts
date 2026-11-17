@@ -198,12 +198,28 @@ export const DAY_HOURS = 24;
 /** The hour the grid opens at when nothing else says (DESIGN 7.8: 8 AM to 8 PM fits the pane at 56 px an hour). */
 export const OPEN_HOUR = 8;
 
+/** The earliest hour the grid opens at: the first hours of the night are never what you came for. */
+export const OPEN_FLOOR = 7;
+/** How far above now the grid opens when today is shown: ninety minutes of lead-in above the line. */
+export const NOW_LEAD = 1.5;
+/** A half hour of air above the first event, so its title is never against the edge. */
+export const EVENT_LEAD = 0.5;
+
 /**
- * The hour at the top of the grid when it opens: `override` if the screen gives one, else now (an hour of lead-in
- * above the line) when today is among the days shown, else 8 AM. Clamped to the day.
+ * The hour at the top of the grid when it opens: `override` if the screen gives one; else the earlier of
+ * now minus ninety minutes (today shown) or 8 AM, and the first timed event of the days shown, so the day's first
+ * event is in view. Never above 7 AM, and clamped to the day.
  */
-export function openHour(opts: { today: boolean; nowHours: number; override?: number }): number {
-  const raw = opts.override ?? (opts.today ? opts.nowHours - 1 : OPEN_HOUR);
+export function openHour(opts: {
+  today: boolean;
+  nowHours: number;
+  override?: number;
+  firstEvent?: number;
+}): number {
+  const base = opts.today ? opts.nowHours - NOW_LEAD : OPEN_HOUR;
+  const toward =
+    opts.firstEvent === undefined ? base : Math.min(base, opts.firstEvent - EVENT_LEAD);
+  const raw = opts.override ?? Math.max(OPEN_FLOOR, toward);
   return Math.min(DAY_HOURS, Math.max(0, Number.isFinite(raw) ? raw : OPEN_HOUR));
 }
 

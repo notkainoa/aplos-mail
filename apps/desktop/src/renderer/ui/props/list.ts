@@ -63,6 +63,8 @@ export interface ListRowProps {
   due?: DueInfo;
   /** 'later' layout only: when it comes back; replaces the date column with a 'laterUntil' Chip (DESIGN §7.3). */
   laterUntil?: LaterUntil;
+  /** The row sits under a date group header ("Today", "Yesterday"): a day the header names shows the time, not the word again. */
+  dayGrouped?: boolean;
   /** For 'done' layout: when it was finished, drawn as the date in the stamp column. */
   doneAt?: IsoDateTime;
   /** For 'done' layout: `doneAt` is the last message's date, not a finish time (the tooltip must not claim one). */
@@ -309,7 +311,7 @@ export type ChipProps =
       format: 'short' | 'withTime' | 'sentence';
     }
   | {
-      /** When a Later item comes back, with a clock: "Yesterday", "Tue, Oct 27", "Today, 5:00 PM", "Someday" (later.html). */
+      /** When a Later item comes back, with a clock: "Back yesterday", "Back Tue, Oct 27", "Back today, 5:00 PM", "Back someday" (later.html). */
       kind: 'laterUntil';
       /** The Later date. */
       until: LaterUntil;
@@ -355,8 +357,8 @@ export interface EmptyLineProps {
   icon?: IconName;
   /** A second dim line, e.g. "Next: Design review at 2:00 PM" or the status slot's reason. */
   detail?: string;
-  /** The action, e.g. "Undo last" Z, "Search all mail on Google" Return, "New event" N, "Add an account" with `plus`. */
-  action?: CommandAction & { emphasis: 'filled' | 'text' };
+  /** The action, e.g. "Undo last" Z, "Search all mail on Google" Return, "New event" N, "Add an account" with `plus`. 'quiet' is a text button in the muted ink (--dim), for a way out under a no-match or empty line ("Clear search", "Write a message"; owner review of #548, 2026-11-17). */
+  action?: CommandAction & { emphasis: 'filled' | 'text' | 'quiet' };
   /** Second action for No accounts only ("Try demo mail"). */
   secondaryAction?: CommandAction;
 }

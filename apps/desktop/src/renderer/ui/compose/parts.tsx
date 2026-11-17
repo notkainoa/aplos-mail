@@ -5,7 +5,7 @@
  */
 import type { MouseEvent, ReactNode, Ref } from 'react';
 import type { CommandId, IconName, LiteralKey } from '../props';
-import { displayChord } from '../buttons-keys/keyHints';
+import { ChordText } from '../buttons-keys/keyHints';
 import { Tooltip } from '../buttons-keys/Tooltip';
 import { Icon } from './icons';
 import { keycapsFor } from './keycaps';
@@ -14,7 +14,7 @@ import { keycapsFor } from './keycaps';
 export function Kbd({ children }: { children: ReactNode }) {
   return (
     <kbd className="ui-compose-kbd">
-      {typeof children === 'string' ? displayChord(children) : children}
+      {typeof children === 'string' ? <ChordText chord={children} /> : children}
     </kbd>
   );
 }

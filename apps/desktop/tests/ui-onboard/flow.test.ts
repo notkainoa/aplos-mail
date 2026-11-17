@@ -118,7 +118,7 @@ describe('steps and keys', () => {
   });
 
   test('keys-onb-return-each-step: Welcome and permissions name their filled main action (F12)', () => {
-    assert.deepEqual(flowView(initialFlow()).focus, { kind: 'button', label: 'Add an account' });
+    assert.deepEqual(flowView(initialFlow()).focus, { kind: 'button', label: 'Add account' });
     assert.deepEqual(flowView(at('permissions')).focus, { kind: 'button', label: 'Finish setup' });
   });
 });

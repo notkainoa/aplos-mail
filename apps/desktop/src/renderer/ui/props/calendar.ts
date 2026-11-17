@@ -69,6 +69,8 @@ export interface CalendarInfo {
   color: TagColor;
   /** Shown on the grid. */
   visible: boolean;
+  /** Nothing can be added to it from here (the demo calendars): the list says "View only". */
+  readOnly?: boolean;
 }
 
 /** A small month in the sidebar on Calendar; out-of-month days `--dim`; today a filled accent badge (DESIGN §6 MiniMonth, §7.8). Mockups: calendar-*.html (shell.js miniMonth). Plain: ui-foundation; refines: ui-calendar. */

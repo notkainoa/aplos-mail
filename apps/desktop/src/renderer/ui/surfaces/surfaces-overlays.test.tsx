@@ -131,7 +131,7 @@ describe('Confirm', () => {
     );
     assert.match(
       html,
-      /data-tone="danger"><span class="ui-confirm__row-label">Delete forever<\/span>.*?<kbd class="ui-part-kbd">⇧↩<\/kbd>/,
+      /data-tone="danger"><span class="ui-confirm__row-label">Delete forever<\/span>.*?<kbd class="ui-part-kbd"><span class="ui-key-mod">⇧<\/span>↩<\/kbd>/,
     );
     assert.match(html, /data-destructive="true"/);
     assertIdRefs(html);
@@ -355,7 +355,10 @@ describe('Toast', () => {
       />,
     );
     // Not a live region of its own: the stack's persistent region announces it (a region born with text is often silent).
-    assert.match(html, /^<div class="ui-toast" data-kind="later" data-state="shown">/);
+    assert.match(
+      html,
+      /^<div class="ui-toast" data-kind="later" data-state="shown" data-actions="">/,
+    );
     assert.ok(!html.includes('role="status"'));
     assert.match(html, /data-tone="dusk"><svg[^>]*data-icon="clock"/);
     assert.match(textOf(html), /Moved to Later Set a date D Undo Z/);
@@ -536,6 +539,41 @@ describe('ToastStack', () => {
     );
     const html = render(<ToastStack toasts={many} onAction={noop} onDismiss={noop} />);
     assert.equal(count(html, 'class="ui-toast"'), 6);
+  });
+
+  it('draws a deck: the newest card in front (depth 0), older ones behind it, folded until hover or focus', () => {
+    const html = render(
+      <ToastStack
+        toasts={[
+          t('a', { kind: 'done', message: 'Done · Jordan Park', undoable: true }),
+          t('b', { kind: 'later', message: 'Moved to Later · Maya Chen', undoable: true }),
+          t('c', { kind: 'trash', message: 'Moved to Trash · Theo Kim', undoable: true }),
+        ]}
+        onAction={noop}
+        onDismiss={noop}
+      />,
+    );
+    const depths = [...html.matchAll(/class="ui-toast-card" data-depth="(\d)"/g)].map(m => m[1]);
+    assert.deepEqual(
+      depths,
+      ['2', '1', '0'],
+      'oldest first in the DOM, the newest is the front card',
+    );
+    assert.ok(!html.includes('data-expanded'), 'folded until the pointer or focus arrives');
+    assert.equal(
+      count(html, 'class="ui-toast"'),
+      3,
+      'every toast keeps its own card (no one-slot triage)',
+    );
+    const css = readFileSync(new URL('./surfaces.css', import.meta.url), 'utf8');
+    const card = css.match(/\.ui-toast-card \{[^}]*\}/)?.[0] ?? '';
+    assert.match(
+      card,
+      /transition:[\s\S]*transform var\(--dur-close\)/,
+      'the fan rides the named close motion',
+    );
+    assert.match(card, /scale\(/);
+    assert.match(css, /\.ui-toast-stack\[data-expanded\] \.ui-toast-card \{\s*transform: none;/);
   });
 
   it('renders a polite stack and the undo-send notice inside it, counted in the three', () => {

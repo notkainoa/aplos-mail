@@ -507,6 +507,20 @@ test('controls CSS: unbreakable no-match query wraps, press scale follows the pr
   assert.doesNotMatch(css, /\.ui-switch\[data-state="off"\]:hover/);
 });
 
+test('the switch is the original pill: round track, round --paper thumb in both themes (owner review of #548)', () => {
+  const css = readFileSync(new URL('./controls.css', import.meta.url), 'utf8');
+  const track = css.match(/\.ui-switch \{[^}]*\}/)?.[0] ?? '';
+  assert.match(track, /border-radius: var\(--radius-pill\)/);
+  const thumb = css.match(/\.ui-switch-thumb \{[^}]*\}/)?.[0] ?? '';
+  assert.match(thumb, /border-radius: var\(--radius-pill\)/);
+  assert.match(thumb, /background: var\(--paper\)/);
+  assert.doesNotMatch(
+    css,
+    /\.ui-switch[^{]*\.ui-switch-thumb \{[^}]*background/,
+    'no theme repaints the thumb',
+  );
+});
+
 test('ShortcutSheet: a worst-case no-match query is echoed inside the empty line', () => {
   const query = 'x'.repeat(200);
   const markup = html(

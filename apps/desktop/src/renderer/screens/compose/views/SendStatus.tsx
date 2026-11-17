@@ -11,8 +11,10 @@ import { ErrorLine } from '../../../ui/list';
 import type { ErrorLineAction, UndoTrayAction } from '../../../ui/props';
 import { ThreadMessage } from '../../../ui/reader';
 import type { ComposeFields } from '../model/fields';
-import { safeDisplayName } from '../model/recipients';
 import type { SendAction, SendView } from '../model/sendState';
+import { SentMark, SentRecipients, toLabelOf } from './SentHead';
+
+export { toLabelOf };
 
 function subscribeMotion(listener: () => void): () => void {
   if (typeof window === 'undefined' || !window.matchMedia) return () => undefined;
@@ -29,12 +31,6 @@ function reducedNow(): boolean {
 /** Reduced motion: the tray's drain becomes a static text countdown. */
 export function useReducedMotion(): boolean {
   return useSyncExternalStore(subscribeMotion, reducedNow, () => false);
-}
-
-/** "to Jordan Lee, mina@example.com"; a name that contains "@" gives way to the real address. */
-export function toLabelOf(fields: ComposeFields): string {
-  const names = [...fields.to, ...fields.cc].map(safeDisplayName);
-  return names.length > 0 ? `to ${names.join(', ')}` : 'No recipient';
 }
 
 const ERROR_TO_SEND: Partial<Record<ErrorLineAction, SendAction>> = {
@@ -84,6 +80,8 @@ export function SendStatus({
       id={id}
       from="You"
       toLabel={toLabelOf(fields)}
+      leading={<SentMark />}
+      recipients={<SentRecipients fields={fields} />}
       date={toIsoDateTime(at)}
       cursor={false}
       body={<p className="aplos-compose-sent__body">{fields.body}</p>}

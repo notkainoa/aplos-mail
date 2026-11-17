@@ -66,7 +66,7 @@ export type SyncStatus =
       kind: 'error';
     }
   | {
-      /** "Demo mail. Remove it in Settings." */
+      /** "Demo mail · Remove in Settings", one line that opens Settings → Accounts. */
       kind: 'demo';
     };
 
@@ -79,7 +79,8 @@ export interface SyncAccount {
 }
 
 /** Verbs the status slot offers; Reconnect opens the ReconnectSheet. */
-export type StatusAction = 'reconnect' | 'retry' | 'copyDiagnostics' | 'viewDetails';
+export type StatusAction =
+  'reconnect' | 'retry' | 'copyDiagnostics' | 'viewDetails' | 'openAccounts';
 
 /**
  * The sidebar footer's sync state, the only place sync status lives in the main window; two short lines of about 28

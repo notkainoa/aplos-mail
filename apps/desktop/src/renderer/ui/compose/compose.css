@@ -49,8 +49,9 @@
   height: var(--kbd);
   padding: 0 var(--space-1);
   border-radius: var(--radius-xs);
-  background: var(--sunken);
-  color: var(--dim);
+  background: var(--keycap);
+  box-shadow: inset 0 0 0 var(--hairline) var(--line);
+  color: var(--keycap-ink);
   font: var(--type-caption);
   letter-spacing: var(--track-caption);
 }
@@ -136,8 +137,16 @@
   color: var(--faint);
 }
 .ui-compose-btn[data-variant='filled']:disabled {
-  background: var(--sunken);
+  background: color-mix(
+    in srgb,
+    var(--accent) 30%,
+    transparent
+  ); /* the primary, faded, the same by day and at night */
   box-shadow: none;
+}
+.ui-compose-btn[data-variant='filled']:disabled .ui-compose-kbd {
+  /* the faded primary: the hint reads as a disabled keycap, like the list, onboarding and calendar buttons */
+  color: var(--dim);
 }
 .ui-compose-btn:focus-visible,
 .ui-suggestion__act:focus-visible,
@@ -353,6 +362,7 @@
   align-self: center;
 }
 .ui-recipient-field__people {
+  /* Not the list's anchor: the suggestions hang from the whole field (label included), so their left edge sits on it. */
   display: flex;
   flex: 1;
   flex-wrap: wrap;
@@ -430,15 +440,18 @@
 }
 .ui-recipient-field__list {
   position: absolute;
-  top: 100%;
+  /* 4 px under the field's underline, its left edge on the field's (council 2, round 5: opened over the Subject row,
+     starting at the typed text, it cut "Subject" in half), at least the field's width, opaque --float. */
+  top: calc(100% + var(--space-1));
   left: 0;
   z-index: var(--z-menu);
-  width: max(var(--menu-min), 60%);
-  max-width: 100%;
+  box-sizing: border-box;
+  width: max(var(--menu-min), 100%);
+  max-width: none;
   margin: 0;
   padding: var(--space-1);
   list-style: none;
-  background: var(--paper);
+  background: var(--float);
   border-radius: var(--radius-lg);
   box-shadow: var(--elev-float);
 }
@@ -467,13 +480,18 @@
   text-overflow: ellipsis;
   white-space: nowrap;
 }
+.ui-recipient-field__option-enter {
+  display: inline-flex;
+  align-self: center;
+  margin-left: auto;
+  color: var(--dim);
+}
 .ui-recipient-field__option-address {
   flex: none;
   max-width: 100%;
   overflow: hidden;
-  color: var(--dim);
+  color: var(--ink-2);
   font: var(--type-small);
-  font-family: var(--font-mono);
   text-overflow: ellipsis;
   white-space: nowrap;
 }
@@ -624,8 +642,23 @@
   position: relative;
   z-index: var(--z-sticky);
 }
-.ui-composer__to .ui-recipient-field__label {
-  min-width: var(--space-8);
+.ui-composer__to .ui-recipient-field__label,
+.ui-composer__subject-label {
+  /* One label column for From, To and Subject, wide enough for "Subject" at the base size, so the values share one edge. */
+  min-width: calc(var(--space-9) + var(--space-2));
+}
+/* The Subject row: in the card it is a labelled row like From and To; in the plain layout the label is not drawn and the
+   row adds no box. */
+.ui-composer__subject-row {
+  display: contents;
+}
+.ui-composer__subject-label {
+  display: none;
+  flex: none;
+  color: var(--dim);
+  font: var(--type-base);
+  letter-spacing: var(--track-base);
+  line-height: var(--space-6);
 }
 /* The subject is a calm single line, not a heading (owner review 2026-10-31): `title` size at 500, no box. Focus shows
    as a hairline in the accent along the field's full width (owner review 2026-11-03: the 2 px underline was loud),

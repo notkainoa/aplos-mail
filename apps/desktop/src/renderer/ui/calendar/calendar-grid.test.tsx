@@ -55,6 +55,20 @@ test('CalendarGrid week: plans show "From mail", three overlaps show the first l
   assert.doesNotMatch(two, /\+\d/);
 });
 
+test('CalendarGrid week: an overlapped tile of 90 minutes or more is tall, so it keeps its time line', () => {
+  const out = html(
+    <CalendarGrid
+      {...gridProps({
+        events: [
+          ev('a', 'Long one', '2026-10-27T10:00:00', '2026-10-27T12:00:00'),
+          ev('b', 'Short one', '2026-10-27T10:30:00', '2026-10-27T11:30:00'),
+        ],
+      })}
+    />,
+  );
+  assert.equal((out.match(/data-tall="true"/g) ?? []).length, 1);
+});
+
 /** Elements the ↑ ↓ walk can land on in a render: those with a walk time and an id. */
 function walkables(markup: string): string[] {
   return [...markup.matchAll(/<[^>]*data-walk-at="[^"]*"[^>]*>/g)].map(
@@ -194,7 +208,7 @@ test('CalendarGrid: an early entry sits on the full-day scale; all-day entries g
   assert.match(out, /Offsite, all day, Work/);
 });
 
-test('CalendarGrid month: six weeks, "N more" past three, never a lonely "1 more"', () => {
+test('CalendarGrid month: only the weeks of the month, "N more" past three, never a lonely "1 more"', () => {
   const crowded = ['a', 'b', 'c', 'd'].map((id, i) =>
     ev(
       id,
@@ -209,7 +223,7 @@ test('CalendarGrid month: six weeks, "N more" past three, never a lonely "1 more
       {...gridProps({ view: 'month', start: '2026-10-01', events: crowded, label: 'October 2026' })}
     />,
   );
-  assert.equal((out.match(/role="gridcell"/g) ?? []).length, 42);
+  assert.equal((out.match(/role="gridcell"/g) ?? []).length, 35, 'five weeks hold October 2026');
   assert.match(out, /2 more/);
   assert.match(out, /aria-label="2 more events on Thursday, October 29, 2026"/);
   const calm = html(

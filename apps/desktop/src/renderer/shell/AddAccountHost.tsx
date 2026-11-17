@@ -27,7 +27,7 @@ import { Dialog } from '../ui/surfaces';
 import { FOCUS_IDS, addAccountFocusId, createAddAccountController } from './add-account-controller';
 import { closeSheet, pushToast, useRegisterCommands } from './index';
 
-const TITLE = 'Add an account';
+const TITLE = 'Add account';
 const LEDE =
   'Type your address and Aplos finds the right sign-in. Aplos reads your mail on this Mac.';
 const WAITING = 'Waiting for Google in your browser…';

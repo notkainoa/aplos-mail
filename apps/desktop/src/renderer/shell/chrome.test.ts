@@ -20,7 +20,8 @@ import {
   type ChromeStorage,
 } from './chrome';
 import { placeRoute, placeScreen } from './nav';
-import { placeHandlers } from './ShellRegistry';
+import { DEFAULT_HANDLERS, placeHandlers } from './ShellRegistry';
+import { closeShortcuts, getShortcutsOpenForTest } from './store-shortcuts';
 import { getRoute, getScreen, setScreen } from './store-route';
 import { shellCommands } from './Shell';
 import { context } from '../commands/testing';
@@ -168,7 +169,7 @@ test('the Help place opens Settings at its help section: screen settings, route 
   assert.equal(placeRoute('home'), null);
 });
 
-test('the Help row command (app.shortcuts, ?) deep-links settings/help through the place handlers', () => {
+test('the Help place handler deep-links settings/help (the shell’s own app.shortcuts, ?, opens the sheet instead)', () => {
   setScreen('home');
   const handlers = placeHandlers();
   handlers['app.shortcuts']!.run(context(['global']));
@@ -177,4 +178,13 @@ test('the Help row command (app.shortcuts, ?) deep-links settings/help through t
   assert.equal(getRoute()?.section, 'help');
   setScreen('home'); // drops the pending route
   assert.equal(getRoute(), null);
+});
+
+test('? opens the shortcut sheet, and the sidebar Help row still goes to Help & about', () => {
+  closeShortcuts();
+  assert.equal(getShortcutsOpenForTest(), false);
+  DEFAULT_HANDLERS['app.shortcuts']!.run(context(['global']));
+  assert.equal(getShortcutsOpenForTest(), true);
+  closeShortcuts();
+  assert.equal(placeRoute('help'), 'settings/help');
 });

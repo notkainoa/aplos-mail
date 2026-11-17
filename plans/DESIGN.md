@@ -142,9 +142,14 @@ All tokens live in one source file, `apps/desktop/src/renderer/ui/tokens.json`, 
 |---|---|---|---|
 | `--shell` | `#f5f5f6` | `#121314` | The window background. The sidebar sits on it, transparent. |
 | `--canvas` | `#ffffff` | `#191a1c` | The pane that lists, the reader, compose and settings sit on |
-| `--paper` | `#ffffff` | `#1f2023` | Cards on the pane: the focus letter, the inline reply, proposal cards, dialogs, menus, toasts. In dark it is *lighter* than the pane (the Redakt lesson) [V: `redakt/inbox-desktop-dark.png`]. |
-| `--raised` | `#f6f6f7` | `#212225` | Quiet fills: the low-importance band, chips, attachments, the undo-send line |
-| `--sunken` | `#efeff1` | `#0e0f10` | Keycaps, segmented tracks, fields |
+| `--paper` | `#ffffff` | `#242528` | Cards on the pane: the focus letter, the inline reply, proposal cards. In dark it is *lighter* than the pane (the Redakt lesson) [V: `redakt/inbox-desktop-dark.png`], a perceptible step (`#242528` over `#191a1c`, council 2 round 3: the focus card, the reader card and the inline reply were melting into the pane). |
+| `--float` | `#ffffff` | ink 8 % over `--paper` (opaque) | Floating surfaces: dialogs, menus, popovers, tooltips, toasts, the palette, the selected segment. White by day; at night one clear step lighter than a card, so a floating surface never melts into what is under it (UI council 2, round 2). |
+| `--raised` | `#f6f6f7` | `#2b2c30` | Quiet fills: the low-importance band, chips, attachments, the undo-send line. At night one step above `--paper`, so a chip on a card still shows. |
+| `--sunken` | `#efeff1` | `#0e0f10` | Segmented tracks, fields |
+| `--keycap` | `#efeff1` | ink 8 % over `--paper` | A keycap's plate. By day the sunken step; at night one step lighter than whatever it sits on (the near-black slab was the heaviest mark on the card and the bar, council 2 round 4). Always with a 1 px `--line` edge, so it survives a highlighted row in both themes. |
+| `--keycap-ink` | `--dim` | `--ink-2` | A keycap's letter. At night the secondary ink, so the letter is not much quieter than its label (council 2 round 7); 4.5:1 or better on the plate in both themes. |
+| `--dim-on-float` | `--dim` | `--ink-2` | Metadata on a floating surface (`--float` or lighter: menus, popovers, dialogs, the palette, sheets, toasts) and on a hovered or cursor row there. Raw `--dim` is 4.5, 3.9 and 3.6:1 on `--float`, hover over it and the cursor row over it at night, so inside those surfaces `--dim` is re-pointed at this token (one rule in `surfaces.css`) and every dim line follows; by day it is `--dim`, unchanged. Council 2, 2026-11-17. |
+| `--dim-inactive` | `--dim` | `--dim` | Disabled text on a floating surface: keeps the dim step, so a disabled control stays quieter than an enabled one (exempt from the 4.5:1 minimum; WCAG 1.4.3). |
 | `--ink` | `#1d1e21` | `#ececed` | Primary text, unread senders |
 | `--ink-2` | `#46484d` | `#c4c5c9` | Read senders, subjects, unread summaries, secondary text |
 | `--dim` | `#63666c` | `#9a9da4` | Metadata, timestamps, counts, placeholders, read summaries, disabled text |
@@ -163,26 +168,29 @@ All tokens live in one source file, `apps/desktop/src/renderer/ui/tokens.json`, 
 | `--fill-ink` | `#ffffff` | `#08111a` | Text on hill, dusk and stamp fills |
 | `--hover` / `--press` | ink at 4 % / 8 % | ink at 5 % / 10 % | Hover and press fills |
 | `--puck` | ink at 6 % | ink at 8 % | Sidebar selection, the keyboard cursor, segmented thumbs |
-| `--today-tint` | accent at 4 % | accent at 10 % | The calendar's today column |
+| `--today-tint` | accent at 4 % | accent at 6 % | The calendar's today column |
 | `--scrim` | ink at 18 % | `#000` at 50 % | Behind dialogs and the palette |
 | `--shadow-ink` | `#1d1e21` | `#000000` | The base colour for every shadow |
 | `--sheen` | none | white at 4 % | The 1 px top sheen on dark panes and cards |
 
-**Computed contrast, WCAG 2.x** [V: `/tmp/paper-design/c.py`]. Translucent tokens are composited over the surface named.
+**Computed contrast, WCAG 2.x** [V: `/tmp/paper-design/c.py`; the `--float` rows were added 2026-11-17 and computed by `apps/desktop/scripts/design/check-contrast.mjs`]. Translucent tokens are composited over the surface named. `--float` at night is `#343538` computed (a browser rounds it to `#353639`, which is why axe reads 4.44 where the script reads 4.52); hover over it is `#3d3e41` and the keyboard cursor row (`--puck`) over it is `#434446`.
 
 | Pair | Light | Dark |
 |---|---|---|
-| ink on pane / shell / paper / raised / sunken | 16.67 / 15.30 / 16.67 / 15.43 / 14.51 | 14.75 / 15.76 / 13.80 / 13.47 / 16.25 |
-| ink-2 on pane / shell / raised | 9.15 / 8.40 / 8.47 | 10.10 / 10.79 / 9.22 |
-| dim on pane / shell / paper / raised / sunken | **5.76** / 5.28 / 5.76 / 5.33 / **5.01** | 6.41 / 6.85 / 6.00 / **5.86** / 7.07 |
+| ink on pane / shell / paper / raised / sunken | 16.67 / 15.30 / 16.67 / 15.43 / 14.51 | 14.75 / 15.76 / 12.98 / 11.81 / 16.25 |
+| ink-2 on pane / shell / raised | 9.15 / 8.40 / 8.47 | 10.10 / 10.79 / 8.09 |
+| dim on pane / shell / paper / raised / sunken | **5.76** / 5.28 / 5.76 / 5.33 / **5.01** | 6.41 / 6.85 / 5.64 / **5.14** / 7.07 |
+| dim on --float / on hover over --float / on the cursor row (puck) over --float | 5.76 / 5.33 / 5.12 | **4.52** (axe 4.44) / **3.93** / **3.61** (axe 3.59) |
+| ink-2 on --float / on hover over --float / on the cursor row (puck) over --float | 9.15 / 8.47 / 8.14 | 7.12 / 6.19 / 5.68 |
+| `--dim-on-float` (dim by day, ink-2 at night) on --float / hover / cursor row over --float | 5.76 / 5.33 / 5.12 | 7.12 / 6.19 / 5.68 |
 | dim on a bulk-picked row (accent-wash) | 5.07 | 5.19 |
 | dim on the keyboard cursor (puck over pane) / a sidebar count (puck over shell) | 5.12 / 4.71 | 5.23 / 5.70 |
-| dim on hover / on today-tint | 5.33 / 5.41 | 5.68 / 5.40 |
+| dim on hover / on today-tint | 5.33 / 5.41 | 5.68 / 5.80 |
 | faint on pane, non-text only (3:1 needed) | 3.12 | 3.61 |
 | accent text on pane / shell | 7.84 / 7.19 | 7.61 / 8.13 |
 | accent-ink on the accent fill | **7.84** (today 3.73) | 8.30 |
 | fill-ink on hill / dusk / stamp | 6.13 / 7.31 / 5.52 | 8.21 / 7.88 / 7.47 |
-| fill-ink on a 70 % fill over paper (dark swipe underlay) | n/a (light fills are solid) | hill 4.85, dusk 4.70, accent 4.91 |
+| fill-ink on a 70 % fill over paper (dark swipe underlay) | n/a (light fills are solid) | hill 4.95, dusk 4.80, accent 5.01 |
 | stamp-ink on stamp-tint | 6.63 | 6.48 |
 | control-edge on pane / paper (3:1 needed) | 3.07 / 3.07 | 3.41 / 3.19 |
 | line-strong field ring at rest (decision 20) | 1.33 | 1.38 |
@@ -232,7 +240,7 @@ Six pairs, assigned by a stable hash of the name, with a manual override in Sett
 
 | Token | Size / line | Face and weight | Tracking | Used for |
 |---|---|---|---|---|
-| `caption` | 11 / 16 | SF 500 | +0.04 px | Keycaps, chips, calendar hours. This is the floor; today's 7–10.5 px sizes are removed. |
+| `caption` | 11.5 / 16 | SF 500 | +0.04 px | Keycaps, chips, calendar hours. This is the floor; today's 7–10.5 px sizes are removed. |
 | `small` | 12 / 18 | SF 400 / 500, tabular | 0 | Metadata, timestamps, counts, sub-labels such as "Back from Later". Always `--dim`. |
 | `ui` | 13 / 20 | SF 400 / 500; 600 for section labels | −0.04 px | Sidebar, menus, controls, buttons; section labels at 600 in `--ink` |
 | `base` | 14 / 22 | SF 400 (600 for unread senders) | −0.1 px | List rows, settings rows, fields |
@@ -279,7 +287,7 @@ Six pairs, assigned by a stable hash of the name, with a manual override in Sett
 | Pane | Inset 8 px (`--shell-pad`) on top, right and bottom; radius 12; `--elev-pane` |
 | Pane header | 48 px. Back or close plus a crumb on the left; at most three icon tools, then Ask and the calendar button, on the right. A hairline appears only after content scrolls under it. |
 | Page controls row (`PageHead`) | Only on pages with page-level controls, which sit on the right: Later's Later \| Bookmarks switch, the search field, the calendar's date label with Today, previous/next and D \| W \| M |
-| List column | `min(720px, 100% − 2 gutters)` (`--list-w`), centred in the pane. Sender column 152 px (148 on Home). |
+| List column | `min(720px, 100% − 2 gutters)` (`--list-w`), centred in the pane. Sender column 136 px in the lists, 148 px on Home. A due chip sits inline before the subject (the clock and the short day: "Tomorrow", "Thu", "Nov 4"); no list reserves a chip column. Home keeps the row layout and edges it had before UI council 2 (a 16 px lead column, labels 12 px in, the focus card's 20 px right inset); its keyboard cursor holds the rows below still. Owner review of #548, 2026-11-17: the one-grid chip slot and the "Due …" calendar chip were rejected. |
 | Reader | One 640 px column (`--reader-w`), no card |
 | One-by-one card | A centred reading column: `min(100% − 2 × clamp(16 px, 3 %, 24 px), --card-w)` — `--card-w` is 680 px. Shrinks with the pane, keeps a 16–24 px side margin, never wider; a rich email's frame uses the full card width and only a plain body is held to `--measure-read` (§16 amendment 2026-11-11). |
 | Composer | A 640 px page in the pane (`--composer-w`) |
@@ -287,7 +295,7 @@ Six pairs, assigned by a stable hash of the name, with a manual override in Sett
 | Ask dock | A 360 px second pane, 8 px from the main pane (320 px when the window is under 1180 px), resizable 300–440, remembered |
 | Palette | 600 px wide, 16 vh from the top, results at most 420 px tall |
 | Settings | 180 px nav + 600 px content |
-| Toast | up to 440 px |
+| Toast | 440 px, growing to fit its words up to 560 px |
 | Minimum window | 900 × 600 |
 | Onboarding window | 640 × 600, minimum 640 × 520 |
 
@@ -311,16 +319,16 @@ Light comes from hairline rings and soft shadows. There is no glass.
 | Name | Light | Dark | Used for |
 |---|---|---|---|
 | shell | no shadow | no shadow | The window background and the sidebar |
-| `--elev-pane` | `--line` ring + `0 1px 2px` shadow-ink 3 % | ring + inset `0 1px 0` `--sheen` | The pane, the Ask dock |
-| `--elev-card` | `--line-strong` ring + `0 1px 2px` 4 % + `0 6px 20px` 5 % | ring + sheen + `0 8px 24px` black 30 % | The focus letter, the inline reply card, proposal cards |
-| `--elev-float` | `--line-strong` ring + `0 4px 12px` 6 % + `0 16px 40px` 10 %, on opaque `--paper` | ring + sheen + black 30 % / 40 % | Menus, popovers, tooltips, toasts, the palette |
+| `--elev-pane` | `--line-strong` ring + `0 1px 2px` shadow-ink 5 % | ring + inset `0 1px 0` `--sheen` | The pane, the Ask dock, the reader's message cards |
+| `--elev-card` | `--line-strong` ring + `0 1px 2px` 6 % + `0 6px 20px` 8 % | ring + sheen + `0 8px 24px` black 30 % | The focus letter, the inline reply card, proposal cards |
+| `--elev-float` | `--line-strong` ring + `0 4px 12px` 6 % + `0 16px 40px` 10 %, on opaque `--float` | ring + sheen + black 30 % / 40 % | Menus, popovers, tooltips, toasts, the palette |
 | `--elev-dialog` | `--line-strong` ring + `0 8px 24px` 8 % + `0 32px 72px` 14 %, `--scrim` behind | ring + sheen + black 40 % / 50 % | Dialogs and confirmations |
 | `--elev-lift` | `--elev-card` + `0 12px 32px` 10 % | + black 45 % | A dragged row or letter |
 | `--elev-puck` | `--line-strong` ring + `0 1px 2px` 6 % | ring + sheen | The thumb of a segmented control |
 
 **Material rules**
 
-- **No glass.** No surface uses `backdrop-filter` or translucency. Every floating surface is opaque `--paper`, so Reduce Transparency changes nothing.
+- **No glass.** No surface uses `backdrop-filter` or translucency. Every floating surface is opaque `--float`, so Reduce Transparency changes nothing.
 - **Press feel** (from Carried): the filled button has a 1 px inset highlight at the top (white 16 %) and a 1 px inset shade at the bottom (shadow-ink 14 %, dark black 22 %). On `:active` they swap, and the button scales 0.97 (icon buttons 0.94).
 - **No paper or desk texture** (Appendix B). Depth comes from light, not noise.
 - **Three button idioms only:** **filled**, **text** and **icon**. Today's glass pills are removed [V: baseline §6.8].
@@ -464,9 +472,9 @@ Every screen is built from these components in `src/renderer/ui/`. Screens never
 | `PageHead` | New | The row for page-level controls, right-aligned. It never holds a title or subtitle (§7). |
 | `NavHead` | New | A quiet sidebar group label ("Mail", "Calendars"), `small` `--dim` |
 | `Button` | Rework | Three variants: `filled`, `text`, `icon`. Radius 8, heights 28 / 32 / 40, press inset. Glass and pill variants are deleted. |
-| `Kbd` (keycap) | Rework | 18 px, radius 4, `caption`, `--sunken`. Shown in tooltips, as badges while ⌘ is held, with "Show all key hints", and always on main actions (Space in the mail window, Return in onboarding and dialogs, ⌘↩ on Send). Never revealed by hover. |
+| `Kbd` (keycap) | Rework | 18 px, radius 4, `caption`, `--keycap` with a 1 px `--line` edge. Shown in tooltips, as badges while ⌘ is held, with "Show all key hints", and always on main actions (Space in the mail window, Return in onboarding and dialogs, ⌘↩ on Send). Never revealed by hover. |
 | `Tooltip` | Keep | Label + keycaps from the registry, `reveal`, `--elev-float`. This is where key hints live. |
-| `Menu`, `Popover` | Rework | Opaque `--paper`, `--elev-float`, radius 12, 32 px items, at least 220 px wide. Number keys 1–9 pick in short menus. The double-blink on the chosen item is removed. |
+| `Menu`, `Popover` | Rework | Opaque `--float`, `--elev-float`, radius 12, 32 px items, at least 220 px wide. Number keys 1–9 pick in short menus. The double-blink on the chosen item is removed. A menu opens below its trigger from the trigger's start edge, for icon triggers (⋯) too, and lines up with the end edge only when the window has no room (owner review of #548, 2026-11-17: the end-edge anchoring for icon triggers was rejected). |
 | `Dialog` / `Confirm` | Rework | `--elev-dialog`, `settle`. Confirmations are two key rows; destructive ones default to Cancel (§7.9). |
 | `Puck` (segmented / selection) | New | One shared indicator per group, moved by `slide`. Used by the sidebar, D/W/M, Ask/Today, Settings nav and Later \| Bookmarks. Replaces the tab indicator that animates width and height (baseline §4). |
 | `ListRow` | Rework | Fixed height per density. Sender, subject with the muted summary after it when one exists, due chip, date; unread is weight alone (no dot) and no account dot (owner decision 2026-11-13). No avatar. Hosts the cursor layer, bulk-pick wash, swipe underlay and hover actions that overlay the date column. Option: a fixed stamp column ("Done 9:41 AM") with the hover action to its left. |
@@ -495,7 +503,7 @@ Every screen is built from these components in `src/renderer/ui/`. Screens never
 | `SettingRow`, `ProviderTable`, `KeyRecorder` | New / Rework | §7.10 |
 | `EmptyLine` | New | One plain sentence + at most one action. Replaces icon-in-circle `emptyFor` (`App.tsx:24-25, 490`). |
 | `ErrorLine` / `FatalScreen` | New | §7.15 |
-| `Switch`, `Checkbox`, `TextField`, `Spinner` | Keep | Re-tokenised. Spinner appears only after 150 ms. Switch 30 × 18 with the `--spring-thumb`. |
+| `Switch`, `Checkbox`, `TextField`, `Spinner` | Keep | Re-tokenised. Spinner appears only after 150 ms. Switch 30 × 18 with the `--spring-thumb`: a round (pill) track and a round `--paper` thumb in both themes. Owner review of #548, 2026-11-17: the square track and the light night thumb tried in UI council 2 were rejected; the original switch stays everywhere. |
 | `ShortcutSheet` | Rework | Generated from the command registry; three columns at a fixed height that scrolls when needed; alternatives joined with "or" |
 | `CommandRegistry` | New | One source of every action: id, label, icon, keys, context, undo, confirm. It feeds keys, the palette, menus, tooltips, the sheet and toast keycaps. |
 
@@ -521,6 +529,7 @@ Every screen is built from these components in `src/renderer/ui/`. Screens never
   - Rows are 28 px with no gaps between them, and groups are 20 px apart. Selection uses the `slide` puck, and counts use `count`.
   - Counts: Home shows Do now plus Important updates; Later shows items whose date has arrived; Drafts shows the number of drafts. Counts hide during first sync.
   - There are no "Needs reply" or "Awaiting reply" places. Reply work lives on Home.
+- **Collapsed sidebar** (macOS, windowed): the pane rises to the top edge and a notch wraps the window buttons, the sidebar toggle and New message. The two buttons sit 4 px after the last window button (x 79 for buttons ending at 75), with no other blank space before them (owner review of #548, 2026-11-17).
 - **Minimised mode** (your setting) is a ☰ button top-left that opens a menu with the same items and puck. Navigation never moves into the pane header.
 - **Pane header (48 px).**
   - Left: on deeper views, back or close plus a quiet crumb, for example "Home 1 of 9". In the reader, once the summary has scrolled out of view, the crumb shows the subject instead.
@@ -543,7 +552,7 @@ Every screen is built from these components in `src/renderer/ui/`. Screens never
 | `misconfigured` | "Google sign-in isn't set up in this build." | Copy diagnostics |
 | `offline` | "Offline · 2 changes waiting" | none |
 | `error` | "Sync hit a problem." | View details |
-| demo account | "Demo mail. Remove it in Settings." | none |
+| demo account | "Demo mail · Remove in Settings" | The line itself opens Settings → Accounts |
 
 - **The reconnect sheet** (roadmap N3). Google's Testing mode makes Gmail ask for sign-in every 7 days. Reconnect now, Reconnect and the Settings account row all open one small sheet (`--elev-dialog`) that opens Google in the browser with the address filled in (`login_hint`). It shows "Waiting for Google in your browser…" with Cancel, then closes with a "Reconnected" toast. Nothing resyncs, and local changes are kept.
 
@@ -629,7 +638,7 @@ The Back from Later block uses the same order, below the new items. Rows in Do n
 
 - Rows follow §4.1's read and unread rules. Hover shows Later and Done icon buttons over the date column.
 - **Low-importance band.** It keeps its own `--raised` background (your rule). It reads as one line: the label "Low importance", up to three sender names in `--dim` with "and N more", and the count as a plain number on the right. There is no count badge on the left; badge-plus-comma-list is Avec's layout (`App.tsx:510` `.low-line`; Avec `seg/t0174.2.png`) [V].
-  - Return opens the Low-importance sheet. It is grouped by sender, with a hover preview, per-sender Unsubscribe once List-Unsubscribe lands, a tap of **→** marks the highlighted row done like every list, and **holding →** (about 600 ms; the "Mark all N done" button fills while held) marks everything done (owner, 2026-11-15) [Carried graft].
+  - Return opens the Low-importance sheet. It is grouped by sender, with a hover preview, per-sender Unsubscribe once List-Unsubscribe lands, a tap of **→** marks the highlighted row done like every list, and **holding →** (about 600 ms; the "Mark all N done" button fills while held) marks everything done (owner, 2026-11-15) [Carried graft]. On the button, "Hold" and its → keycap sit apart from "Mark all N done" behind a hairline divider and 8 px of air, so "Hold" never reads as part of the sentence (owner review of #548, 2026-11-17).
 - **"Go one by one"** (S) is a quiet `--dim` text button on the Do now label. It opens each item in turn in the reader.
 - **New mail** during activity waits under `hold`, then `arrive`s. Meanwhile a quiet "2 new" appears next to the Do now label.
 - **Next-step toasts:** after Later, "Set a date · D". After Done on a Follow up item or a thread waiting on someone, "Remind me if no reply · R".
@@ -637,6 +646,7 @@ The Back from Later block uses the same order, below the new items. Rows in Do n
   - Loading (local): never a skeleton; the cached list paints.
   - First sync: §7.12. While an account is backfilling or paused, an empty Home shows "Your first mail is on its way." with the status slot's reason, never inbox zero.
   - Empty: the inbox-zero block (§7.14).
+  - Cleared (Do now, Important updates and Follow up are empty, only the Low band is left): one small `--dim` line, "Nothing to do right now", exactly where the Do now label sits, then the band; no headline and no second line (owner review of #548, 2026-11-17).
   - No AI provider: rows show the subject alone (no summary after it), the focus letter shows the subject at `summary` size in SF (not serif), lanes come from the heuristics alone, and there is no error.
   - Offline: the status slot only.
   - Narrow (under 700 px of pane): the action row drops its labels, keeping the Space verb.
@@ -664,7 +674,7 @@ The Back from Later block uses the same order, below the new items. Rows in Do n
 - **Hover actions** overlay the date column and never reflow the row.
 - **Bulk select:** X, ⇧X, ⌘A. The pane header shows "3 selected · Done · Later · Trash · More · Esc". Bulk-picked rows take `--accent-wash`. Destructive bulk actions use a two-row confirm and give an 8 s undo.
 - **Per-mailbox details:** Drafts shows the edited time. Sent shows the recipients. Trash and Spam have Restore as their only quick action.
-- **Empty:** one line in the pane ("No drafts.", "Nothing sent yet.", "Trash is empty.", "Spam is empty."). This fixes the inconsistency where only Spam kept its header [V: baseline §6.6].
+- **Empty:** one line in the pane ("No drafts.", "Nothing sent yet.", "Trash is empty.", "Spam is empty."). Drafts adds one quiet text action under its line, "Write a message" (C), in `--dim`; the line itself is `--ink` (owner review of #548, 2026-11-17). This fixes the inconsistency where only Spam kept its header [V: baseline §6.6].
 - **Done** is the place for mail you finished.
   - Rows show a fixed stamp column: a quiet check named "Done" and the date as every other list writes it (time today, Yesterday, a weekday, then Oct 23), not "Done 9:41 AM" (2026-11-12 owner pass, #503; the real engine has no `done_at` yet, so the date is the last message date until it does). Rows group under the same date labels as All mail, and Drafts and Sent get date groups too. The only hover action is an icon-only "Move to Home" (H), placed to the left of the stamp so it never covers it.
   - E and L do nothing on done rows.
@@ -770,7 +780,7 @@ One 640 px column, top to bottom, with no card and nothing beside it (superseded
   - Events under 30 minutes are one line, title only.
   - Three or more overlapping events show the first lane plus a "+N" stack that opens the stack. Lanes are never under 44 px.
   - Plans found in mail use a dashed 1 px outline and a "From mail" label until confirmed.
-- **Fixes** [V: baseline §6.9 #6–8]: day titles get the comma ("Sunday, October 25, 2026"); Delete appears only on persisted events; hour labels use `caption` (11 px).
+- **Fixes** [V: baseline §6.9 #6–8]: day titles get the comma ("Sunday, October 25, 2026"); Delete appears only on persisted events; hour labels use `caption` (11.5 px).
 - **RSVP** starts with nothing chosen, and "Send reply" stays disabled until you choose. Y/M/N answer only while an unanswered invite is open; otherwise M means Month.
 - **Motion.** D/W/M ride a `Puck` with transforms only. The existing FLIP, period slide and pinch zoom are kept (`calendarMotion.ts`) [V]. Drag to create, move or resize uses `lift` and `snap`.
 - **Keys** are unchanged (§8).
@@ -784,8 +794,8 @@ One 640 px column, top to bottom, with no card and nothing beside it (superseded
   - The field sits in the `PageHead` row at `heading` size, with a 2 px accent underline while focused.
   - Recognised operators (`from:`, `to:`, `subject:`, `has:attachment`, `before:`, `after:`, `in:`, including `in:done`) become removable pill tokens under the field.
   - Local results appear as you type, as ordinary rows; the Lists keymap applies. "Search all mail on Google · Return" sits under them. Remote Gmail search runs **only on Return**, to protect quota (`protocols/proto-google.md`).
-  - **No match:** "No mail matches 'dentist'." plus "Search all mail on Google · Return".
-- **⌘K is the only overlay.** It is opaque `--paper` with `--elev-float`, 600 px wide, centred on the window, with a light scrim, and it `settle`s. Typing `>` in Search switches to it.
+  - **No match:** "No mail matches 'dentist'." plus "Search all mail on Google · Return". Without the Google offer the one action is "Clear search", a quiet text button in `--dim`. The line keeps the earlier no-match layout (the magnifier above one sentence, no hint) with the sentence in `--ink` (owner review of #548, 2026-11-17).
+- **⌘K is the only overlay.** It is opaque `--float` with `--elev-float`, 600 px wide, centred on the window, with a light scrim, and it `settle`s. Typing `>` in Search switches to it.
   - The first line is a **context line** naming the target ("For: Drew Bell · October illustrations"), so commands know what they act on.
   - On first open it shows Suggested and Go to; everything else appears as you type, in Actions, Go to, Ask and Settings, each command with its keycap from the registry. Nested pages use breadcrumbs.
   - 1–9 run the Nth result, only while the field is empty.
@@ -875,7 +885,8 @@ This is the screen shown after setup, before the inbox (the last step of the onb
 
 *Mockup: `toasts.html` (stack, pending, remind, offline).*
 
-- **Stack.** Toasts stack bottom-centre of the *main pane*, never under the dock, up to three. They are opaque `--paper` with `--elev-float`, radius 12, `ui` text, up to 440 px wide. Hover or focus pauses them. Plain toasts last 4 s; Undo toasts last 8 s, then fade over 400 ms.
+- **Stack.** Toasts stack bottom-centre of the *main pane*, never under the dock, up to three. They are opaque `--float` with `--elev-float`, radius 12, `ui` text, 440 px wide and growing to fit their words up to 560 px (a sender's name is never cut while it fits). Hover or focus pauses them. Plain toasts last 4 s; Undo toasts last 8 s, then fade over 400 ms.
+- **Deck** (owner review of #548, 2026-11-17). The stack is a deck: the newest toast in front at the bottom, the older ones peeking 12 px above it each, a little smaller (5 % a step), at most two peeking; their words show only when the deck opens. Pointer over the deck or keyboard focus inside it fans it out into the full list (the `close` motion; under reduced motion it switches between the folded and open states with no animation) and holds every toast's clock while it is open. Each toast otherwise leaves on its own timer, measured from when it appeared, one by one; the cards behind close up as it goes. The fan is the one place hover moves something: an owner exception to §3 principle 11 and §5 rule 17, and it moves only the toasts (transform and opacity), never the pane under them.
 - **Wording follows the op queue:**
   - Pending: "Archiving…"
   - Confirmed: "Done · Undo Z"
@@ -884,7 +895,7 @@ This is the screen shown after setup, before the inbox (the last step of the onb
   - Offline: "Saved here · will sync"
 - **Rules.**
   - One operation, one notice.
-  - An Undo toast is never silently replaced; new toasts stack.
+  - An Undo toast is never silently replaced; new toasts stack, Done, Later and Trash included (the one-slot triage toast tried in UI council 2 was rejected in the owner review of #548, 2026-11-17). Triage toasts name the sender ("Done · Jordan Park"), and Z undoes the newest operation first, then the one before.
   - Toasts never appear for navigation, successful saves or sync ticks.
   - They are announced politely and never steal focus.
 - **First launch** shows one toast, once: "Hold ⌘ to see keys." It makes up for key hints living in tooltips.
@@ -905,8 +916,8 @@ Each is one plain sentence plus at most one action. There is no icon in a circle
 | Later | "Nothing set aside for later." | none |
 | Bookmarks | "No bookmarks. Press B on any email." | none |
 | Done | "Nothing done yet." | none |
-| Drafts / Sent / Trash / Spam | "No drafts." / "Nothing sent yet." / "Trash is empty." / "Spam is empty." | none |
-| Search | "No mail matches 'dentist'." | Search all mail on Google · Return |
+| Drafts / Sent / Trash / Spam | "No drafts." / "Nothing sent yet." / "Trash is empty." / "Spam is empty." | Drafts: a quiet Write a message · C; the others none |
+| Search | "No mail matches 'dentist'." | Search all mail on Google · Return; without the offer, a quiet Clear search |
 | Ask | Suggestions + recent chats | n/a |
 | Calendar day | "Nothing scheduled." | New event · N |
 | Low importance | "No low-importance mail." | Back to Home |
@@ -1218,6 +1229,8 @@ The change list for those revisions is `mockups/DESIGN-CHANGES.md`. It is histor
 **2026-11-11 amendment (owner's second sketch, df6a1482; DECISIONS.md "the one-by-one card follows the owner's second sketch").** The owner's later sketch overrides the section 16 paragraph above on five points, for the reader card and the one-by-one card only: (1) the summary headline and the due chip are off the card, and the subject is not on it (the `data-cards='off'` column keeps the summary head); (2) the sender mark is a rounded square, not a circle (the recipient circles after "To" stay circles); (3) the header order is bell, Importance, then ⋯; (4) no cursor rail: ↑/↓ gives the card a quiet accent edge; (5) a plain email is drawn on the card in the app's own colours in both themes, so 7.5's "HTML mail on light paper in both themes (rich mail only: a plain email is drawn on the card in the app's own colours, §16 amendment 2026-11-11)" now holds only for rich mail (plainness comes only from the sanitiser's marker, never from a colour the mail chooses). Go one by one also shows the card at full width with no Reply stub. Where the sketch and an earlier decision conflict, follow the sketch.
 
 **2026-11-12 amendment (owner's hands-on pass; integrator-ui, delegated by ui-foundation).** The recipient monogram circles after "To" are gone: the owner found the one-letter circles carried no meaning, so the header line is the recipients in words — "to me", "to Mina Cho, Kim and 3 more" — as one button that opens the details popover (shipped in #498; a narrow header may clip the names but never the "and N more" tail, #505). The sender mark keeps the 2026-11-11 rounded square, still a monogram until photos exist. Everything else in the two paragraphs above holds.
+
+**2026-11-17 amendment (owner review of #548).** The recipients details popover (From, Date, To) is styled like every other popover and menu: the Popover's `--float` surface, radius 12, ring and elevation and its 16 px padding with no second inset inside it; rows 8 px apart on a `--line` hairline; labels in the menu label's role (`small` 500, `--dim`), names and the date in `ui`, addresses in `small` `--dim`.
 
 **2026-11-11 amendment (owner's round-3 feedback; DECISIONS.md "the one-by-one card is a reading column at most 680 px wide").** The one-by-one card no longer fills the pane: it is a centred reading column `min(100% − 2 × clamp(16 px, 3 %, 24 px), --card-w)` — new token `--card-w` = 680 px (§4.4) — that shrinks with the window, keeps a 16–24 px side margin and never grows wider, so a wide window leaves margins, not long lines. The header, its hairline and the pinned bar are the column's own. A plain body keeps `--measure-read` (64 ch) inside the card; a rich email's paper frame uses the card's full width (images already scale to it), so only plain bodies are capped at the measure. This supersedes "Go one by one also shows the card at full width" in the amendment above; the no-Reply-stub part stands.
 

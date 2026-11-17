@@ -40,6 +40,16 @@ describe('ListRow', () => {
     assert.match(m, /data-unread="true" data-cursor="true"/);
     assert.match(m, /Unread\./);
     assert.match(m, /data-kind="due"[^>]*>.*Tomorrow/);
+    assert.match(
+      m,
+      /data-kind="due"[^>]*><svg[^>]*data-icon="clock"/,
+      'the due chip wears its clock, as before',
+    );
+    assert.doesNotMatch(
+      m,
+      /ui-list-row__due/,
+      'the chip sits inline before the subject: no chip slot',
+    );
     assert.doesNotMatch(m, /ui-list-row__account|ui-list-row__dot|--swatch/, 'no dots on a row');
     assert.match(m, /title="alex@fernworks.studio"/, 'account always in the row tooltip');
   });
@@ -106,12 +116,70 @@ describe('ListRow', () => {
       />,
     );
     assert.match(m, /data-kind="laterUntil" data-overdue="true"/);
-    assert.match(m, /Tue, Oct 27/);
+    assert.match(m, /Back Tue, Oct 27/);
     assert.doesNotMatch(m, /ui-list-row__date/);
     const someday = render(
       <ListRow {...row({ layout: 'later', laterUntil: { kind: 'someday' } })} />,
     );
-    assert.match(someday, /Someday/);
+    assert.match(someday, /Back someday/);
+  });
+
+  test('later layout: a return on the deadline day is not said twice', () => {
+    const same = render(
+      <ListRow
+        {...row({
+          layout: 'later',
+          due: { at: '2026-10-29T23:59:00-07:00', overdue: false, source: 'user' },
+          laterUntil: { kind: 'at', at: '2026-10-29T23:59:00-07:00', overdue: false },
+        })}
+      />,
+    );
+    assert.match(same, /data-kind="due"/);
+    assert.doesNotMatch(same, /data-kind="laterUntil"/);
+    const other = render(
+      <ListRow
+        {...row({
+          layout: 'later',
+          due: { at: '2026-10-29T23:59:00-07:00', overdue: false, source: 'user' },
+          laterUntil: { kind: 'at', at: '2026-10-31T09:00:00-07:00', overdue: false },
+        })}
+      />,
+    );
+    assert.match(other, /data-kind="laterUntil"/);
+    assert.match(
+      text(other),
+      /Back (Sat 9 AM|Oct 31|Sat, Oct 31|\w+, Oct 31)/,
+      'beside a due chip it says Back',
+    );
+    const alone = render(
+      <ListRow
+        {...row({
+          layout: 'later',
+          laterUntil: { kind: 'at', at: '2026-10-31T09:00:00-07:00', overdue: false },
+        })}
+      />,
+    );
+    assert.match(
+      text(alone),
+      /Back /,
+      'a return time always says Back, with or without a due chip',
+    );
+  });
+
+  test('later layout: a rejected row has no due chip, so its return time stays', () => {
+    const m = render(
+      <ListRow
+        {...row({
+          layout: 'later',
+          due: { at: '2026-10-29T23:59:00-07:00', overdue: false, source: 'user' },
+          laterUntil: { kind: 'at', at: '2026-10-29T23:59:00-07:00', overdue: false },
+          rejected: { op: 'move to Later', onRetry: noop },
+        })}
+      />,
+    );
+    assert.match(m, /data-state="rejected"/);
+    assert.doesNotMatch(m, /data-kind="due"/);
+    assert.match(m, /data-kind="laterUntil"/);
   });
 
   test('rejected write: back in place with "Couldn’t move to Later." and Retry', () => {
@@ -372,11 +440,11 @@ describe('FocusSlot and FocusLetter', () => {
     assert.doesNotMatch(render(<FocusLetter {...letter()} />), /data-picked/);
   });
 
-  test('demoted: the suggestion becomes a text button without its keycap', () => {
+  test('demoted: the suggestion becomes a text button and the card keeps its keys’ room (the sheet hides them)', () => {
     const m = render(<FocusLetter {...letter({ demoted: true })} />);
     assert.match(m, /data-demoted="true"/);
     assert.doesNotMatch(m, /data-variant="filled"/);
-    assert.doesNotMatch(m, />Space<\/kbd>/);
+    assert.match(m, />Space<\/kbd>/, 'the cap stays in the markup so nothing slides; CSS hides it');
   });
 
   test('pending shows the placeholder, absent the subject alone; narrow drops labels but keeps the verb', () => {

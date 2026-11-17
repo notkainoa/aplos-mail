@@ -344,9 +344,25 @@ function pageSection(
   return items.length > 0 ? [{ id: 'page', label: page.title, items }] : [];
 }
 
+/** The plain command a named suggestion already is: "Reply to Jordan Park" is Reply, "Mark done" is Done. */
+const NAMED_TWINS: readonly (readonly [string, RegExp])[] = [
+  ['mail.reply', /^Reply to /],
+  ['mail.done', /^Mark done$/],
+];
+
+/** Suggested rows without a command that "Run the suggested action" already names (one action, one row). */
+export function suggestedEntries(entries: readonly PaletteEntry[]): readonly PaletteEntry[] {
+  const named = entries.find(e => e.id === 'mail.suggested')?.label ?? '';
+  const twinIds = NAMED_TWINS.filter(([, name]) => name.test(named)).map(([id]) => id);
+  const twinIcon = entries.find(e => e.id === twinIds[0])?.icon;
+  return entries
+    .filter(e => e.suggested && !twinIds.includes(e.id))
+    .map(e => (e.id === 'mail.suggested' && twinIcon ? { ...e, icon: twinIcon } : e));
+}
+
 function firstOpenSections(input: PaletteInput, targets: Map<string, RunTarget>): PaletteSection[] {
   // At most nine rows: 1–9 must reach every row, so Suggested is capped before Go to fills what is left.
-  const suggested = input.entries.filter(e => e.suggested).slice(0, 9);
+  const suggested = suggestedEntries(input.entries).slice(0, 9);
   const room = Math.max(0, 9 - suggested.length);
   const places = input.entries
     .filter(e => e.group === 'Go to' && FIRST_OPEN_PLACES.includes(e.id) && !e.suggested)

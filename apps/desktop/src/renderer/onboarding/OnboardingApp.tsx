@@ -432,6 +432,7 @@ export function OnboardingApp(props: OnboardingAppProps) {
           chrome={chrome}
           onAddAccount={nextFrom('welcome')}
           onSkip={() => dispatchFlow({ type: 'skip' })}
+          hasAccounts={accounts.length > 0}
         />
       ) : view.step === 'accounts' ? (
         <AccountsStep

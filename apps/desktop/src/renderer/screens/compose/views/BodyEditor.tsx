@@ -7,6 +7,13 @@
  * (`data-dictation="body"`, read by the shell's key listener); To and Subject type spaces.
  */
 import type { Ref } from 'react';
+import {
+  forwardCaption,
+  joinForward,
+  joinQuote,
+  splitForward,
+  splitQuote,
+} from '../model/forwardSeed';
 
 export interface BodyEditorProps {
   readonly value: string;
@@ -23,8 +30,60 @@ export interface BodyEditorProps {
 
 /** The empty text's placeholder (owner review 2026-11-03); an offered draft takes its place. */
 const BODY_PLACEHOLDER = 'Write something…';
+/** A forward's note area: the original is already below it. */
+const NOTE_PLACEHOLDER = 'Add a note…';
 
-export function BodyEditor({
+/**
+ * The forwarded original: a quiet region in the reader's quote style, still editable like any text. The standard header
+ * lines (what is sent) show as one small caption above the text, "Forwarded from Jordan Park · Mon, Nov 16 at 8:29 PM".
+ */
+function QuoteEditor({
+  value,
+  onChange,
+}: {
+  readonly value: string;
+  readonly onChange: (value: string) => void;
+}) {
+  const { header, text } = splitQuote(value);
+  return (
+    <div className="aplos-compose-quote">
+      <p className="aplos-compose-quote__caption">{forwardCaption(header)}</p>
+      <div className="aplos-compose-quote__text">
+        <div className="aplos-compose-editor__mirror" aria-hidden="true">
+          {text}
+          <span className="aplos-compose-editor__end"> </span>
+        </div>
+        <textarea
+          className="aplos-compose-editor__input"
+          aria-label="Forwarded message"
+          dir="auto"
+          spellCheck
+          value={text}
+          onChange={event => onChange(joinQuote(header, event.target.value))}
+        />
+      </div>
+    </div>
+  );
+}
+
+/** The note area, then (on a forward) the quoted original under one blank line; the stored body stays one text. */
+export function BodyEditor(props: BodyEditorProps) {
+  const { note, quote } = splitForward(props.value);
+  if (quote === '') return <NoteEditor {...props} />;
+  return (
+    <div className="aplos-compose-body">
+      <NoteEditor
+        {...props}
+        value={note}
+        placeholder={NOTE_PLACEHOLDER}
+        onChange={next => props.onChange(joinForward(next, quote))}
+      />
+      <QuoteEditor value={quote} onChange={next => props.onChange(joinForward(note, next))} />
+    </div>
+  );
+}
+
+function NoteEditor({
   value,
   onChange,
   suggestion,
@@ -32,7 +91,8 @@ export function BodyEditor({
   describedBy,
   autoFocus,
   editorRef,
-}: BodyEditorProps) {
+  placeholder = BODY_PLACEHOLDER,
+}: BodyEditorProps & { readonly placeholder?: string }) {
   return (
     <div className="aplos-compose-editor" data-suggesting={suggestion ? 'true' : undefined}>
       <div className="aplos-compose-editor__mirror" aria-hidden="true">
@@ -49,7 +109,7 @@ export function BodyEditor({
         aria-describedby={describedBy}
         dir="auto"
         spellCheck
-        placeholder={suggestion ? undefined : BODY_PLACEHOLDER}
+        placeholder={suggestion ? undefined : placeholder}
         autoFocus={autoFocus}
         value={value}
         onChange={event => onChange(event.target.value)}

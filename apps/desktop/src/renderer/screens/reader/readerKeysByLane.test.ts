@@ -43,7 +43,12 @@ for (const lane of ['do', 'update', 'follow'] as const) {
         assert.ok(resolution, `${k} resolves`);
         return registry.run(resolution.commandId, context).status;
       };
-      const toasted = (kind: string) => getToasts().filter(t => t.kind === kind).length;
+      // A verb adds its own toast to the stack (the ids it shows change).
+      const toasted = (kind: string) =>
+        getToasts()
+          .filter(t => t.kind === kind)
+          .map(t => t.id)
+          .join();
       const undo = async () => {
         assert.equal(press('z'), 'ran');
         await world.flush();
@@ -57,13 +62,13 @@ for (const lane of ['do', 'update', 'follow'] as const) {
       for (const k of ['ArrowRight', 'e']) {
         const before = toasted('done');
         assert.equal(press(k), 'ran', k);
-        assert.equal(toasted('done'), before + 1, `${k} is Done`);
+        assert.notEqual(toasted('done'), before, `${k} is Done`);
         await undo();
       }
       for (const k of ['ArrowLeft', 'l']) {
         const before = toasted('later');
         assert.equal(press(k), 'ran', k);
-        assert.equal(toasted('later'), before + 1, `${k} is Later`);
+        assert.notEqual(toasted('later'), before, `${k} is Later`);
         await undo();
       }
 

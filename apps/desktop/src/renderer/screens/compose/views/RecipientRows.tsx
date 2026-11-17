@@ -12,7 +12,7 @@ import type { ComposeFields } from '../model/fields';
 import { initialActive, suggestKey, toSuggestions, type SuggestFn } from '../model/suggestions';
 import { contactSuggest, useRecipientSuggest } from '../runtime/useRecipientSuggest';
 
-type Row = 'to' | 'cc' | 'bcc';
+export type Row = 'to' | 'cc' | 'bcc';
 
 const LABEL = { to: 'To', cc: 'Cc', bcc: 'Bcc' } as const;
 
@@ -26,8 +26,12 @@ export interface RecipientRowsProps {
   readonly onShowCc: () => void;
   readonly invalid: readonly string[];
   readonly autoFocus?: boolean;
+  /** The send block on the To row (a new object each press): the To field takes focus so the line has its place. */
+  readonly blockedTo?: object | undefined;
   /** Each row hands over its "commit what is typed", for the composer's send. */
   readonly registerTyped?: (commit: () => void) => () => void;
+  /** Each row reports the text typed in it (empty once it is a chip), so Send can count a valid typed address. */
+  readonly onTyped?: (row: Row, text: string) => void;
   /** Asks for suggestions; the running app uses `Contact/suggest`, a test passes its own. */
   readonly suggest?: SuggestFn;
 }
@@ -41,8 +45,14 @@ function OneRow(props: {
   readonly invalid: readonly string[];
   readonly ccButton?: { onSelect: () => void; commandId: string };
   readonly autoFocus?: boolean;
+  readonly blockedTo?: object | undefined;
   readonly registerTyped?: (commit: () => void) => () => void;
+  readonly onTyped?: (row: Row, text: string) => void;
 }) {
+  const box = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    if (props.blockedTo) box.current?.querySelector('input')?.focus();
+  }, [props.blockedTo]);
   const [query, setQuery] = useState('');
   const [arrowed, setArrowed] = useState<string | undefined>(undefined);
   const [closedFor, setClosedFor] = useState<string | null>(null);
@@ -66,7 +76,11 @@ function OneRow(props: {
   // The newest query and rows, read when a send asks for the typed text (not the render it was registered in).
   const latest = useRef({ query, recipients: props.recipients, onChange: props.onChange, reset });
   latest.current = { query, recipients: props.recipients, onChange: props.onChange, reset };
-  const { registerTyped } = props;
+  const { registerTyped, onTyped, row } = props;
+  useEffect(() => {
+    onTyped?.(row, query);
+  }, [onTyped, row, query]);
+  useEffect(() => () => onTyped?.(row, ''), [onTyped, row]);
   useEffect(
     () =>
       registerTyped?.(() => {
@@ -100,7 +114,7 @@ function OneRow(props: {
     }
   };
   return (
-    <div className="compose-suggest" onKeyDownCapture={onKeyDownCapture}>
+    <div ref={box} className="compose-suggest" onKeyDownCapture={onKeyDownCapture}>
       <RecipientField
         label={LABEL[props.row]}
         recipients={props.recipients}
@@ -137,7 +151,9 @@ export function RecipientRows({
   onShowCc,
   invalid,
   autoFocus,
+  blockedTo,
   registerTyped,
+  onTyped,
   suggest = contactSuggest,
 }: RecipientRowsProps) {
   const ccButton = showCc ? undefined : { onSelect: onShowCc, commandId: 'compose.ccBcc' };
@@ -152,7 +168,9 @@ export function RecipientRows({
         invalid={invalid}
         ccButton={ccButton}
         autoFocus={autoFocus}
+        blockedTo={blockedTo}
         registerTyped={registerTyped}
+        onTyped={onTyped}
       />
       {showCc ? (
         <>
@@ -164,6 +182,7 @@ export function RecipientRows({
             onChange={cc => onChange({ cc })}
             invalid={invalid}
             registerTyped={registerTyped}
+            onTyped={onTyped}
           />
           <OneRow
             row="bcc"
@@ -173,6 +192,7 @@ export function RecipientRows({
             onChange={bcc => onChange({ bcc })}
             invalid={invalid}
             registerTyped={registerTyped}
+            onTyped={onTyped}
           />
         </>
       ) : null}

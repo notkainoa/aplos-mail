@@ -36,8 +36,24 @@ test('dates: titles carry the comma, ranges share AM or PM, durations read plain
 
 test('dates: the grid opens at 8 AM, or an hour before now when today is shown, or where the screen says', () => {
   assert.equal(openHour({ today: false, nowHours: 15 }), 8);
-  assert.equal(openHour({ today: true, nowHours: 15.5 }), 14.5);
-  assert.equal(openHour({ today: true, nowHours: 0.25 }), 0);
+  assert.equal(openHour({ today: true, nowHours: 15.5 }), 14);
+  assert.equal(openHour({ today: true, nowHours: 0.25 }), 7, 'never above 7 AM');
+  assert.equal(
+    openHour({ today: true, nowHours: 13, firstEvent: 9 }),
+    8.5,
+    'the first event is in view',
+  );
+  assert.equal(
+    openHour({ today: false, nowHours: 13, firstEvent: 14 }),
+    8,
+    'a late first event keeps 8 AM',
+  );
+  assert.equal(
+    openHour({ today: true, nowHours: 15, firstEvent: 6 }),
+    7,
+    'the floor wins over an early event',
+  );
+  assert.equal(openHour({ today: true, nowHours: 15, override: 3 }), 3, 'the screen can say');
   assert.equal(openHour({ today: true, nowHours: 15, override: 6 }), 6);
   assert.equal(openHour({ today: false, nowHours: 15, override: 99 }), 24);
 });
@@ -161,7 +177,7 @@ test('EventBlock: title and time, calendar colour as a custom property, label fo
   assertCleanCopy(out);
 });
 
-test('EventBlock: under 30 minutes is one line with the title only; selected and unanswered are marked', () => {
+test('EventBlock: 30 minutes or less is one line, the title alone in a column and with its time in a wide one; selected and unanswered are marked', () => {
   const tiny = html(
     <EventBlock
       kind="event"
@@ -173,7 +189,23 @@ test('EventBlock: under 30 minutes is one line with the title only; selected and
     />,
   );
   assert.match(tiny, /data-density="tiny"/);
-  assert.doesNotMatch(tiny, /ui-event-block__time/);
+  assert.doesNotMatch(tiny, /ui-event-block__time">[^<]*–/, 'no full range in a narrow column');
+  assert.match(
+    tiny,
+    /data-compact="true">· \d{1,2}:\d{2} [AP]M</,
+    'the start time follows the title: "Weekly sync · 9:00 AM"',
+  );
+  const wideTiny = html(
+    <EventBlock
+      kind="event"
+      event={DEMO[2]}
+      placement={{ ...place, wide: true }}
+      selected={false}
+      onSelect={noop}
+      onOpen={noop}
+    />,
+  );
+  assert.match(wideTiny, /ui-event-block__time/);
   assert.match(tiny, /aria-pressed="true"/);
   assert.match(tiny, /data-selected="true"/);
   const invite = html(
@@ -287,7 +319,7 @@ test('EventBlock worst case: 300-character title, unbreakable 80-character name,
 
 /* ---------------------------------- MiniMonth ---------------------------------- */
 
-test('MiniMonth: six weeks, out-of-month days dim, today filled, the range marked, one tab stop', () => {
+test('MiniMonth: only the weeks of the month, out-of-month days dim, today filled, the range marked, one tab stop', () => {
   const out = html(
     <MiniMonth
       month="2026-10"
@@ -299,8 +331,10 @@ test('MiniMonth: six weeks, out-of-month days dim, today filled, the range marke
     />,
   );
   assert.match(out, />October 2026</);
-  assert.equal((out.match(/class="ui-mini-month__day"/g) ?? []).length, 42);
-  assert.equal((out.match(/data-out="true"/g) ?? []).length, 11); // 4 days of September, 7 of November
+  // October 2026 spans five Sunday-first weeks: no row of November, its room kept as one empty spare row.
+  assert.equal((out.match(/class="ui-mini-month__day"/g) ?? []).length, 35);
+  assert.equal((out.match(/data-out="true"/g) ?? []).length, 4); // the 4 days of September
+  assert.equal((out.match(/<tr aria-hidden="true">/g) ?? []).length, 1);
   assert.match(
     out,
     /data-today="true"[^>]*aria-label="Thursday, October 29, 2026"[^>]*aria-current="date"/,

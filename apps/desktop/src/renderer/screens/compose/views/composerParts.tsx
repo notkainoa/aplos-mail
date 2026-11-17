@@ -3,7 +3,7 @@
  * rows, the body editor with its dim suggestion, the suggestion hint, the draft line and Send. Both own the filled
  * button only while open; neither renders at all when closed.
  */
-import { useRef, type ReactNode, type RefObject } from 'react';
+import { useCallback, useRef, useState, type ReactNode, type RefObject } from 'react';
 import { getNow, useAccounts } from '../../../data';
 import type {
   ComposeCommands,
@@ -13,11 +13,12 @@ import type {
   SuggestionProps,
 } from '../../../ui/props';
 import type { ComposeFields } from '../model/fields';
+import { blockedSend, NO_TYPED, withTyped, type TypedText } from '../model/recipients';
 import type { ComposerControls } from '../runtime/useComposerControls';
 import type { ComposeBinding } from '../runtime/useComposeSession';
 import { BodyEditor } from './BodyEditor';
 import { FromRow } from './FromRow';
-import { RecipientRows } from './RecipientRows';
+import { RecipientRows, type Row } from './RecipientRows';
 
 /** Registry ids for the footer (DESIGN 8 Compose): ⌘↩, ⌘⇧A, ⌘/, ⌘⇧C. */
 export const COMPOSE_COMMANDS: ComposeCommands = {
@@ -37,6 +38,7 @@ export interface SharedComposerProps {
   readonly blocked: BlockedSend | undefined;
   readonly commands: ComposeCommands;
   readonly onSend: () => void;
+  readonly sendDisabled: boolean;
   /** Attachments are a later slice's: the button is there and does nothing yet (REQUEST in the lane report). */
   readonly onAttach: () => void;
   readonly editorRef: RefObject<HTMLTextAreaElement | null>;
@@ -63,6 +65,12 @@ export function useSharedComposerProps(
   const { session, state, view } = binding;
   const accounts = useAccounts();
   const editorRef = useRef<HTMLTextAreaElement | null>(null);
+  const [typed, setTyped] = useState<TypedText>(NO_TYPED);
+  const onTyped = useCallback(
+    (row: Row, text: string) =>
+      setTyped(now => (now[row] === text ? now : { ...now, [row]: text })),
+    [],
+  );
   const edit = (patch: Partial<ComposeFields>) =>
     session.dispatch({ type: 'edit', patch, now: getNow() });
   const suggestion = view.suggestion;
@@ -84,7 +92,9 @@ export function useSharedComposerProps(
           onShowCc={() => controls.setShowCc(true)}
           invalid={view.invalid}
           autoFocus={options.focusTo}
+          blockedTo={view.blocked?.field === 'to' ? view.blocked : undefined}
           registerTyped={controls.registerTyped}
+          onTyped={onTyped}
         />
       </>
     ),
@@ -111,6 +121,8 @@ export function useSharedComposerProps(
     blocked: view.blocked,
     commands: COMPOSE_COMMANDS,
     onSend: () => controls.send(),
+    // A valid address typed but not yet a chip counts: Send (like ⌘↩) commits it first.
+    sendDisabled: blockedSend(withTyped(state.fields, typed), state.context.mode) !== null,
     onAttach: () => undefined,
     editorRef,
   };

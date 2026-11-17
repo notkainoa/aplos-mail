@@ -278,9 +278,9 @@ test('Show welcome says so in words when the setup window could not open, and st
   assert.match(failed.toasts[0]?.message ?? '', /couldn.t open the setup window/);
 });
 
-test('the shortcut sheet and live region have no shell home yet, so the host leaves them out', () => {
+test('Show shortcuts opens the shell’s shortcut sheet; the live region has no shell home yet', () => {
   const { host } = recorded();
-  assert.equal(host.openShortcuts, undefined);
+  assert.equal(typeof host.openShortcuts, 'function');
   assert.equal(host.announce, undefined);
 });
 

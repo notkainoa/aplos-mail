@@ -143,3 +143,20 @@ table {
     --track-boost: var(--track-boost-lowres);
   }
 }
+
+/* A keycap's modifier marks (ChordText): at keycap size the system face draws ⌃ as a bare caret and ⌥ as a tilde, so
+   they take a touch more size and weight, sit on the keycap's centre line, and keep a hair of air before the next
+   mark, which keeps ⌘⇧↩ from smearing. */
+.ui-key-mod {
+  display: inline-block;
+  font: var(--type-ui);
+  font-family:
+    system-ui,
+    -apple-system,
+    BlinkMacSystemFont,
+    sans-serif;
+  font-weight: 600;
+  line-height: inherit;
+  vertical-align: middle;
+  margin-inline-end: var(--space-half);
+}

@@ -30,7 +30,10 @@ export function commandsForHome(actions: HomeActions, extra: HomeExtras): Comman
     'mail.trash': run(() => actions.trash()),
     'mail.bookmark': run(() => actions.bookmark()),
     'mail.why': run(extra.why),
-    'mail.suggested': run(() => actions.suggested()),
+    'mail.suggested': {
+      run: () => actions.suggested(),
+      labelFor: () => actions.suggestedLabel(),
+    },
     'mail.reply': run(() => actions.reply()),
     'mail.replyAll': run(() => actions.reply(REPLY_ALL)),
     'mail.dictateReply': run(() => actions.reply(DICTATE)),

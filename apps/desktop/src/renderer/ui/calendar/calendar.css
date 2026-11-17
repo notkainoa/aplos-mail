@@ -83,7 +83,9 @@
 }
 
 .ui-cal-button[data-variant='filled']:disabled {
-  background: var(--sunken);
+  /* The primary, faded: the accent at 30 % reads as "not yet" on a light and a dark dialog alike (a --sunken well was
+     a pale chip by day and a black one at night). */
+  background: color-mix(in srgb, var(--accent) 30%, transparent);
   color: var(--dim);
   box-shadow: none;
 }
@@ -114,8 +116,9 @@
   height: var(--kbd);
   padding: 0 var(--space-1);
   border-radius: var(--radius-xs);
-  background: var(--sunken);
-  color: var(--dim);
+  background: var(--keycap);
+  box-shadow: inset 0 0 0 var(--hairline) var(--line);
+  color: var(--keycap-ink);
   font: var(--type-caption);
   letter-spacing: var(--track-caption);
 }
@@ -128,7 +131,7 @@
 }
 
 .ui-cal-button[data-variant='filled']:disabled .ui-cal-kbd {
-  background: var(--raised);
+  background: color-mix(in srgb, var(--accent) 18%, transparent);
   color: var(--dim);
 }
 
@@ -285,6 +288,21 @@
   padding: 0 var(--space-2);
   font: var(--type-small);
   font-weight: 500;
+  color: var(--dim);
+}
+
+.ui-calendar-list__note {
+  padding: 0 var(--space-2) var(--space-1);
+  font: var(--type-small);
+  letter-spacing: var(--track-small);
+  color: var(--dim);
+}
+
+.ui-calendar-list__tag {
+  margin-left: auto;
+  flex: none;
+  font: var(--type-small);
+  letter-spacing: var(--track-small);
   color: var(--dim);
 }
 
@@ -548,6 +566,11 @@
 .ui-calendar-grid__col[data-today='true'] {
   background-color: var(--today-tint);
 }
+/* One day is one column: tinting all of it says nothing, so the day view keeps only the date's accent badge. */
+.ui-calendar-grid[data-view='day']
+  :is(.ui-calendar-grid__col, .ui-calendar-grid__dh)[data-today='true'] {
+  background: none;
+}
 
 /* The track is the hour grid: its top is the first hour line, so pointer position maps straight to time. */
 .ui-calendar-grid__track {
@@ -574,6 +597,13 @@
   height: max(var(--space-5), calc(var(--hour) * var(--d) - var(--ev-gap) * 2));
   left: calc(100% * var(--lane, 0) / var(--lanes, 1) + var(--ev-gap));
   width: calc(100% / var(--lanes, 1) - var(--ev-gap) * 2);
+}
+
+/* Two overlapping tiles in a week's narrow column split 60/40, so the later one keeps about 60 px and the first reads in
+   about 90, instead of two 70 px tiles that both cut their titles. A day column has room for an even split. */
+.ui-calendar-grid[data-view='week'] .ui-calendar-grid__slot[data-pair='true'] {
+  left: calc(60% * var(--lane, 0) + var(--ev-gap));
+  width: calc(60% - 20% * var(--lane, 0) - var(--ev-gap) * 2);
 }
 
 /* Folded cluster: the kept lanes share the width left of the "+N" stack (--lanes counts only them). */
@@ -680,6 +710,13 @@
 .ui-event-block[data-kind='event'] {
   background: var(--ev-fill);
   box-shadow: inset var(--select-bar) 0 0 var(--cal); /* the 2 px leading rule */
+  /* A tile cut off by the top of the grid keeps its title in sight: `clip` (unlike `hidden`) makes no scroll box, so
+     the title sticks to the scroller's top edge while the rest of the tile scrolls away under it. */
+  overflow: clip;
+}
+.ui-event-block[data-kind='event'] .ui-event-block__title {
+  position: sticky;
+  top: 0;
 }
 
 .ui-event-block__title,
@@ -718,7 +755,22 @@
   padding-bottom: 0;
 }
 
-.ui-event-block[data-density='one'] .ui-event-block__time {
+/* The compact start time shows only when the tile is wide enough to keep the whole title beside it. */
+.ui-event-block[data-compact-time='true'] {
+  container-type: inline-size;
+}
+.ui-event-block__time[data-compact='true'] {
+  margin-left: calc(
+    -1 * var(--space-1)
+  ); /* "Weekly sync · 9:00 AM": the dot sits close to the title, not a gap away */
+}
+@container (max-width: 7.5rem) {
+  .ui-event-block__time[data-compact='true'] {
+    display: none;
+  }
+}
+.ui-event-block[data-density='one'] .ui-event-block__time,
+.ui-event-block[data-density='tiny'] .ui-event-block__time {
   flex: none;
 }
 
@@ -738,8 +790,9 @@
   overflow-wrap: anywhere;
 }
 
-/* Crowded lanes (overlapping entries share the column): the time line goes, so the name gets the whole tile and
-   stays readable instead of cutting at five characters. */
+/* Crowded lanes (overlapping entries share the column): the title takes one line, cut with an ellipsis, and the start
+   time sits on the second (council 2, round 5: a wrapped name over two lines read as clutter). A tile of 90 minutes or
+   more has lines to spare, so it keeps its whole time range and the title takes the lines left. */
 :is(
   .ui-event-block[data-crowded='true'],
   .ui-calendar-grid__slot[data-beside='true'] .ui-event-block
@@ -751,15 +804,23 @@
 :is(
     .ui-event-block[data-crowded='true'],
     .ui-calendar-grid__slot[data-beside='true'] .ui-event-block
-  )[data-density='full']
+  )[data-density='full']:not([data-tall='true'])
   .ui-event-block__title {
-  -webkit-line-clamp: var(--title-lines-solo);
+  -webkit-line-clamp: 1;
 }
-
+/* Round 7: a name too long for one line of a crowded tile wraps to two and the time line steps aside (the whole range is in the
+   tooltip and the detail), so the name is never cut to "Design…" with a free second line under it. */
 :is(
     .ui-event-block[data-crowded='true'],
     .ui-calendar-grid__slot[data-beside='true'] .ui-event-block
-  )[data-density='full']
+  )[data-density='full'][data-long-title='true']:not([data-tall='true'])
+  .ui-event-block__title {
+  -webkit-line-clamp: 2;
+}
+:is(
+    .ui-event-block[data-crowded='true'],
+    .ui-calendar-grid__slot[data-beside='true'] .ui-event-block
+  )[data-density='full'][data-long-title='true']:not([data-tall='true'])
   .ui-event-block__time {
   display: none;
 }
@@ -890,7 +951,7 @@
   overflow-y: auto;
   padding-bottom: var(--space-6);
   display: grid;
-  grid-template-rows: max-content repeat(6, minmax(var(--month-row), 1fr));
+  grid-template-rows: max-content repeat(var(--month-weeks, 6), minmax(var(--month-row), 1fr));
   position: relative;
 }
 
@@ -1431,7 +1492,7 @@
   width: calc(var(--menu-min) + var(--space-9));
   padding: var(--space-1);
   border-radius: var(--radius-lg);
-  background: var(--paper);
+  background: var(--float);
   box-shadow: var(--elev-float);
   color: var(--ink);
   font: var(--type-ui);
@@ -1507,8 +1568,9 @@
   padding: 0 var(--space-1);
   margin-left: var(--space-1);
   border-radius: var(--radius-xs);
-  background: var(--sunken);
-  color: var(--dim);
+  background: var(--keycap);
+  box-shadow: inset 0 0 0 var(--hairline) var(--line);
+  color: var(--keycap-ink);
   font: var(--type-caption);
   letter-spacing: var(--track-caption);
 }

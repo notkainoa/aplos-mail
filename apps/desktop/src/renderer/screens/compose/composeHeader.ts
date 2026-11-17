@@ -7,6 +7,8 @@
 import type { PaneHeaderPart } from '../../shell';
 
 export const COMPOSE_CRUMB = 'New message';
+/** A forward's crumb: the page says what it is. */
+export const FORWARD_CRUMB = 'Forward';
 
 /** What the page is, for the header: a forward says "Forward", a reopened draft "Draft", anything else "New message". */
 export function composeCrumb(page: {
@@ -15,7 +17,7 @@ export function composeCrumb(page: {
   readonly draft?: { readonly mode: string } | null;
   readonly draftId?: string;
 }): string {
-  if (page.forward || page.draft?.mode === 'forward') return 'Forward';
+  if (page.forward || page.draft?.mode === 'forward') return FORWARD_CRUMB;
   if (!page.draftId) return COMPOSE_CRUMB;
   return page.draft?.mode === 'reply' || page.draft?.mode === 'replyAll' ? COMPOSE_CRUMB : 'Draft';
 }
@@ -54,8 +56,10 @@ export function composeHeader(input: {
   readonly close: () => void;
   /** The subject once typed: "Reply to Studio Kettle" style crumbs are the reader's; the page keeps "New message". */
   readonly saved: boolean;
-  /** The crumb's words (`composeCrumb`); "New message" when absent. */
+  /** The crumb's words (`composeCrumb`); when absent, "Forward" for a forward and "New message" otherwise. */
   readonly crumb?: string;
+  /** The page is a forward: without a `crumb`, the crumb says "Forward". */
+  readonly forward?: boolean;
 }): PaneHeaderPart {
   return {
     lead: {
@@ -64,7 +68,7 @@ export function composeHeader(input: {
       commandId: 'compose.close',
       onPress: input.close,
     },
-    crumb: { label: input.crumb ?? COMPOSE_CRUMB },
+    crumb: { label: input.crumb ?? (input.forward ? FORWARD_CRUMB : COMPOSE_CRUMB) },
     tools: [
       {
         commandId: COMPOSE_MORE.commandId,

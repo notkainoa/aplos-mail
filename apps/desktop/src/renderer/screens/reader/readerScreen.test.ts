@@ -318,8 +318,10 @@ test('Later and Trash leave the same way with their own words', async () => {
     actions.trash();
     assert.equal(state.open, ids[2]);
     const messages = getToasts().map(t => t.message);
-    assert.ok(messages.includes('Moved to Later'));
-    assert.ok(messages.includes('Moved to Trash'));
+    // The toasts stack, one per move, and each names the thread it moved.
+    assert.equal(messages.length, 2);
+    assert.match(messages[0]!, /^Moved to Later · \S/);
+    assert.match(messages[1]!, /^Moved to Trash · \S/);
     await world.flush();
   } finally {
     world.connection.close();
@@ -493,9 +495,12 @@ test('E, J, E before the next letter lands: each E acts on the letter on paper, 
     assert.equal(controller.snapshot().letter, ids[1], 'the next thread is on paper at once');
     actions.step('next');
     actions.done();
-    const doneToasts = () => getToasts().filter(t => t.kind === 'done').length;
-    assert.equal(doneToasts(), 2, 'the second E took the thread on paper');
-    assert.ok(state.gone.has(ids[0]!) && state.gone.has(ids[1]!));
+    const doneToasts = getToasts().filter(t => t.kind === 'done');
+    assert.equal(doneToasts.length, 2, 'each E has its own toast in the stack');
+    assert.ok(
+      state.gone.has(ids[0]!) && state.gone.has(ids[1]!),
+      'the second E took the thread on paper',
+    );
     assert.ok(!state.gone.has(ids[2]!), 'the thread J walked to is untouched');
     await world.flush();
   } finally {

@@ -4,7 +4,7 @@ import { periodOf, stepAnchor } from './period';
 import { editingOff } from '../accountCalendarState';
 import { draftFromEvent, draftFromRange, newDraft, patchDraft } from './editor';
 import { lockedMessage } from './rsvp';
-import { planIdOf, walk } from './entries';
+import { canCreateEvent, planIdOf, walk } from './entries';
 import {
   detailEntry,
   entryById,
@@ -179,6 +179,7 @@ function onNewEvent(
   _action: ActionOf<'newEvent'>,
   ctx: CalendarContext,
 ): Transition {
+  if (!canCreateEvent(ctx)) return unhandled(state);
   // Today when it is in view (the next free half hour), else the anchor day at 9 AM.
   const shown = shownView(state);
   const today = toIsoDate(ctx.now);
@@ -359,10 +360,12 @@ const HANDLERS: { readonly [T in CalendarAction['type']]: Handler<T> } = {
   scopeCancel: s => cancelScope(s),
   newEvent: onNewEvent,
   createRange: (s, a, ctx) =>
-    done({
-      ...closed(s),
-      editor: draftFromRange({ start: a.start, end: a.end }, ctx.defaultCalendarId),
-    }),
+    canCreateEvent(ctx)
+      ? done({
+          ...closed(s),
+          editor: draftFromRange({ start: a.start, end: a.end }, ctx.defaultCalendarId),
+        })
+      : unhandled(s),
   edit: onEdit,
   editor: onEditorPatch,
   editorSave: (s, _a, ctx) => saveEditor(s, ctx),

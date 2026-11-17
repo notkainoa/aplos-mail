@@ -41,3 +41,13 @@ test('on the Help section the sidebar marks Help alone', () => {
   setSettingsSection('help');
   assert.deepEqual(currentRows('settings'), ['Help']);
 });
+
+test('while the reader is open the place it came from stays the one marked', async () => {
+  const { originPlace } = await import('./nav');
+  const thread = { label: 'thread' } as const;
+  assert.equal(originPlace(thread, 'later'), 'later');
+  assert.equal(originPlace(thread, { label: 'one by one' }), 'home');
+  assert.equal(originPlace(thread, { label: 'Search' }), 'search');
+  assert.equal(originPlace(thread, null), null);
+  assert.equal(originPlace('home', 'later'), null);
+});

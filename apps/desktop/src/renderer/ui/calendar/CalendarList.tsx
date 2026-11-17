@@ -11,11 +11,14 @@ import { CalIcon } from './icons';
  */
 export function CalendarList({ calendars, onToggle, onSolo }: CalendarListProps) {
   const headId = useId();
+  const allReadOnly = calendars.length > 0 && calendars.every(c => c.readOnly);
+  const someReadOnly = !allReadOnly && calendars.some(c => c.readOnly);
   return (
     <div className="ui-calendar-list" role="group" aria-labelledby={headId}>
       <div className="ui-calendar-list__head" id={headId}>
         Calendars
       </div>
+      {allReadOnly ? <div className="ui-calendar-list__note">View only</div> : null}
       <ul className="ui-calendar-list__items">
         {calendars.map(calendar => (
           <li key={calendar.id}>
@@ -35,6 +38,9 @@ export function CalendarList({ calendars, onToggle, onSolo }: CalendarListProps)
               <span className="ui-calendar-list__name" dir="auto">
                 {calendar.name}
               </span>
+              {someReadOnly && calendar.readOnly ? (
+                <span className="ui-calendar-list__tag">View only</span>
+              ) : null}
             </button>
           </li>
         ))}

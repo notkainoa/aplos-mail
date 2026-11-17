@@ -26,6 +26,7 @@ import {
 } from '../../data';
 import {
   openSheet,
+  pushToast,
   setToastUndoRefusal,
   useCommandTarget,
   usePaneHeaderPart,
@@ -52,6 +53,7 @@ import {
   newerFrame,
   overlayDrop,
   overlayWith,
+  canCreateEvent,
   periodOf,
   plansSpec,
   reached,
@@ -70,7 +72,12 @@ import {
   type Overlay,
   type ShownOverride,
 } from './calendar.model';
-import { CalendarView, CALENDAR_PANE_TOOLS, type FocusRequest } from './CalendarView';
+import {
+  CalendarView,
+  CALENDAR_PANE_TOOLS,
+  CALENDAR_PANE_TOOLS_READ_ONLY,
+  type FocusRequest,
+} from './CalendarView';
 import { useOpenPlanTarget } from './useOpenPlanTarget';
 import { useFailedHolds } from './FailedHolds';
 import {
@@ -209,6 +216,19 @@ function useInviteAnswerKeys(dispatch: (action: CalendarAction) => boolean) {
   }, [dispatch]);
 }
 
+/** N, a click or a drag on a grid that has nowhere to put an event says why, once and without a dialog. */
+const VIEW_ONLY_TOAST_ID = 'calendar-view-only';
+function sayViewOnly(action: CalendarAction, ctx: CalendarContext): void {
+  if (action.type !== 'newEvent' && action.type !== 'createRange') return;
+  if (canCreateEvent(ctx)) return;
+  pushToast({
+    id: VIEW_ONLY_TOAST_ID,
+    kind: 'locked',
+    message: 'These calendars are view-only',
+    undoable: false,
+  });
+}
+
 function CalendarBody({ accountId, announce }: CalendarScreenProps) {
   const now = useNow({ granularity: 'minute' });
   const settings = useSettings();
@@ -279,7 +299,12 @@ function CalendarBody({ accountId, announce }: CalendarScreenProps) {
       plansWindow.ids.map(id => plansWindow.rows.get(id)).filter((p): p is Plan => p !== undefined),
     [plansWindow.ids, plansWindow.rows],
   );
-  const defaultId = defaultCalendarId(calendars, settings?.calendar.defaultCalendarId, state.solo);
+  const defaultId = defaultCalendarId(
+    calendars,
+    settings?.calendar.defaultCalendarId,
+    state.solo,
+    state.lastCalendarId,
+  );
   const entries = useMemo(
     () =>
       entriesFor({
@@ -430,6 +455,7 @@ function CalendarBody({ accountId, announce }: CalendarScreenProps) {
         setState(t.state);
       }
       t.effects.forEach(run);
+      if (!t.handled) sayViewOnly(action, ctxRef.current);
       return t.handled;
     },
     [run],
@@ -481,7 +507,11 @@ function CalendarBody({ accountId, announce }: CalendarScreenProps) {
 
   useShellKeyLayer({ conditions: { invite: inviteOpen(state, ctx) } });
   useCommandTarget(commandTarget(state, ctx));
-  const headerPart = useMemo(() => ({ tools: CALENDAR_PANE_TOOLS }), []);
+  const canCreate = canCreateEvent({ calendars, calendarsReady: ctx.calendarsReady });
+  const headerPart = useMemo(
+    () => ({ tools: canCreate ? CALENDAR_PANE_TOOLS : CALENDAR_PANE_TOOLS_READ_ONLY }),
+    [canCreate],
+  );
   usePaneHeaderPart(headerPart);
 
   // The sidebar's busy marks read the whole loaded events window on the visible calendars, not the drawn

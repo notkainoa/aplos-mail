@@ -103,11 +103,13 @@ export function ComposeFooter(props: {
   onRetrySave: () => void;
   dictation?: DictationState;
   onSend: () => void;
+  sendDisabled?: boolean;
   trailing: readonly FooterAction[];
   /** The quiet "Esc closes" line, in the inline reply and the compose page alike: Esc closes and keeps the draft. */
   closeHint?: boolean;
 }) {
   const { commands, draftState, onRetrySave, dictation, onSend, trailing, closeHint } = props;
+  const { sendDisabled } = props;
   return (
     <div className="ui-compose-footer">
       <Btn
@@ -117,6 +119,7 @@ export function ComposeFooter(props: {
         label="Send"
         commandId={commands.send}
         keyHint="always"
+        disabled={sendDisabled}
         onPress={onSend}
       />
       {dictation ? (

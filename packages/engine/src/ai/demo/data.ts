@@ -21,13 +21,13 @@ export const DEMO_ACCOUNTS: readonly DemoAccountSpec[] = [
   {
     id: 'demo-work',
     address: 'alex@studio.example',
-    colorTag: 'sage',
+    colorTag: 'sky',
     label: { remoteId: 'label-projects', name: 'Projects' },
   },
   {
     id: 'demo-personal',
     address: 'alex@home.example',
-    colorTag: 'clay',
+    colorTag: 'sand',
     label: { remoteId: 'label-friends', name: 'Friends and family' },
   },
 ];
@@ -420,11 +420,28 @@ function due(now: number, days: number): Pick<WorkflowFields, 'dueDate' | 'dueSo
   };
 }
 
+/**
+ * When a demo Later item comes back: the day `hours` after `now` lands on, at 9:00 AM local (5:00 PM when 9:00 AM has
+ * already passed that day, else 9:00 AM the next day), so nothing "comes back at 2:49 AM" because the demo loaded then.
+ */
+export function returnTime(now: number, hours: number): number {
+  const at = new Date(now + hours * HOUR);
+  at.setHours(9, 0, 0, 0);
+  if (at.getTime() <= now + HOUR) at.setHours(17);
+  if (at.getTime() <= now + HOUR) {
+    at.setDate(at.getDate() + 1);
+    at.setHours(9);
+  }
+  return at.getTime();
+}
+
 function workflowFor(row: Row, now: number): Partial<WorkflowFields> {
   return {
     ...(row.status !== undefined ? { status: row.status } : {}),
-    ...(row.laterInHours !== undefined ? { laterUntil: now + row.laterInHours * HOUR } : {}),
-    ...(row.reminderInHours !== undefined ? { reminderAt: now + row.reminderInHours * HOUR } : {}),
+    ...(row.laterInHours !== undefined ? { laterUntil: returnTime(now, row.laterInHours) } : {}),
+    ...(row.reminderInHours !== undefined
+      ? { reminderAt: returnTime(now, row.reminderInHours) }
+      : {}),
     ...(row.todo !== undefined ? { todo: row.todo } : {}),
     ...(row.replyStatus !== undefined ? { replyStatus: row.replyStatus } : {}),
     ...(row.bookmarked !== undefined ? { bookmarked: row.bookmarked } : {}),

@@ -433,7 +433,7 @@ describe('states, copy and design rules', () => {
     assert.match(render('mail'), /8 seconds/);
     assert.match(
       render('mail'),
-      /Keeps full message text on this Mac; opened, starred and unread mail is always kept\./,
+      /Keeps full message text on this Mac; opened, bookmarked and unread mail is always kept\./,
     );
     assert.match(render('calendar'), /Calendar not allowed yet/);
     assert.match(render('calendar'), /Allow calendar access/);
@@ -449,12 +449,23 @@ describe('states, copy and design rules', () => {
   test('switches are role="switch" with a name from their row', () => {
     const general = render('general');
     assert.match(general, /role="switch"/);
-    assert.match(general, /aria-labelledby="set-general-keyHints"/);
+    assert.match(general, /aria-labelledby="set-general-sidebarMinimised"/);
+    assert.doesNotMatch(
+      general,
+      /Show all key hints/,
+      'the key hints switch lives in Keyboard only',
+    );
+    assert.match(render('keyboard-default'), /aria-labelledby="set-keyboard-keyHints"/);
   });
 
   test('Help: version line, queue inspector rows, diagnostics preview, welcome', () => {
     assert.match(render('help'), /Version 0\.3\.0 \(build dev\) · macOS/);
     assert.match(render('help'), />Replay</);
+    assert.match(render('help'), /Replay onboarding/);
+    assert.match(
+      render('help'),
+      /Go through the onboarding again\. Your mail and settings stay as they are\./,
+    );
     const q = render('queue-inspector');
     assert.match(q, /Archive 3 threads/);
     assert.match(q, />Retry</);

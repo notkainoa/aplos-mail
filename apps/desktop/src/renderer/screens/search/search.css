@@ -2,6 +2,8 @@
 .search-screen {
   width: min(var(--list-w), calc(100% - 2 * var(--gutter)));
   margin-inline: auto;
+  /* Room under the last result, so it clears the window's edge like every other list's. */
+  padding-bottom: var(--space-10);
 }
 .search-screen__column {
   display: flex;
@@ -9,6 +11,22 @@
 }
 .search-screen__remote {
   margin-top: var(--space-3);
+}
+
+/* One left edge for the whole page, Home's: the field's icon, "Narrow with", the section label and the rows' text all start
+   24 px in (the underline still runs the column's full width). */
+.search-screen .ui-search-field__title,
+.search-screen .ui-search-field__meta {
+  padding-left: var(--space-6);
+}
+/* and the scope label ends on the rows' date column (their 12 px right inset) */
+.search-screen .ui-search-field__meta {
+  padding-right: var(--space-3);
+}
+
+/* The section label keeps the page's one 24 px left edge, as Home's labels do (the header's own default). */
+.search-screen .ui-section-header {
+  padding-left: var(--space-6);
 }
 
 /* No results: the line centres in what is left of the pane under the field (owner review 2026-11-05), the same
@@ -45,12 +63,28 @@
 }
 
 /* Search rows show the subject as the row's first cell and the muted snippet (or summary) beside it in --dim, so the two cells
-   read as two things; each cell ellipsises only its own end. The subject keeps the list's weight (400 read, 500 unread)
-   and the snippet always keeps room for about 25 characters, cut on a word by the model. */
+   read as two things; each cell ellipsises only its own end. The subject keeps the list's weight (400 read, 500 unread).
+   What is left of the line is shared so the reason a row matched always stays on screen: the
+   snippet starts a few words before the match (search.model: 14 characters, so lead, match and the cell's "…" fit the floor) and keeps a floor of 10 rem, and the subject gives way
+   first. */
 .search-screen .ui-list-row__primary[data-has-secondary='true'] {
-  max-width: 58%;
+  flex: 0 1 auto;
+  min-width: 8rem;
+  max-width: none;
   color: var(--ink-2);
 }
 .search-screen .ui-list-row__secondary {
-  flex: 1 0 min(13rem, 45%);
+  flex: 1 1 0;
+  min-width: 10rem;
+}
+
+/* The header's scope label ends on the rows' date column (the row's 12 px inset), and the operators read at the UI size. */
+.search-screen .ui-search-field__meta > .ui-compose-btn {
+  margin-right: 0;
+}
+.search-screen .ui-search-field__meta,
+.search-screen .ui-search-field__hint > .ui-compose-btn {
+  font: var(--type-ui);
+  font-variant-numeric: var(--num-small);
+  letter-spacing: var(--track-ui);
 }

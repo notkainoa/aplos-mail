@@ -286,8 +286,9 @@ test('a Done row with no finish time shows the date of its last message, not the
   setFormatClock(() => new Date(2026, 9, 29, 10, 0).getTime());
   const html = text(renderToStaticMarkup(createElement(ListRow, props)));
   setFormatClock(null);
-  assert.match(html, /Yesterday/);
-  assert.doesNotMatch(html, /Done/);
+  // Done lists sit under day headers, so Yesterday's row shows its clock instead of repeating the header.
+  assert.match(html, /2:07 PM/);
+  assert.doesNotMatch(html, /Yesterday|Done/);
 });
 
 test('an empty list is one plain sentence centred in the pane, and first sync is never called empty', () => {

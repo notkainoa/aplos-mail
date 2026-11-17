@@ -6,7 +6,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import type { Message } from '../../../data';
-import { forwardDate, forwardSeed, forwardSubject } from './forwardSeed';
+import { forwardDate, forwardSeed, forwardSubject, joinForward, splitForward } from './forwardSeed';
 
 const message = {
   id: 'acct:m1',
@@ -26,11 +26,16 @@ test('the subject gains one Fwd:, whatever the case of an existing prefix', () =
   assert.equal(forwardSubject('Re: Launch plan'), 'Fwd: Re: Launch plan');
 });
 
-test('a forward starts with nobody in To, a blank line to write on, and the quoted original', () => {
+test('a forward starts with nobody in To, an empty note, and the quoted original', () => {
   const { context, fields } = forwardSeed(message, 'Here is the plan.\nSee you Monday.\n');
   assert.deepEqual([fields.to, fields.cc, fields.bcc], [[], [], []]);
   assert.equal(fields.subject, 'Fwd: Launch plan');
-  assert.ok(fields.body.startsWith('\n\n---------- Forwarded message ----------\n'));
+  assert.ok(fields.body.startsWith('---------- Forwarded message ----------\n'));
+  assert.deepEqual(
+    splitForward(fields.body).note,
+    '',
+    'the note is empty, so its placeholder shows',
+  );
   assert.match(fields.body, /\nFrom: Drew Bell <drew@example\.com>\n/);
   assert.match(fields.body, /\nSubject: Launch plan\n/);
   assert.match(fields.body, /\nTo: me@example\.com\n/);
@@ -39,6 +44,18 @@ test('a forward starts with nobody in To, a blank line to write on, and the quot
   assert.equal(context.mode, 'forward');
   assert.equal(context.replyToMessageId, 'acct:m1');
   assert.equal(context.threadId, undefined, 'a forward is not part of the original thread');
+});
+
+test('the note and the quote split and join without losing a keystroke', () => {
+  const { fields } = forwardSeed(message, 'Hello.');
+  const { note, quote } = splitForward(fields.body);
+  assert.equal(joinForward(note, quote), fields.body);
+  for (const typed of ['x', 'x\n', '\n', 'two\n\nlines\n\n']) {
+    assert.deepEqual(splitForward(joinForward(typed, quote)), { note: typed, quote });
+  }
+  assert.deepEqual(splitForward('no mark here\n\n'), { note: 'no mark here\n\n', quote: '' });
+  // A draft saved before the note area existed opened on two blank lines.
+  assert.equal(splitForward(`\n\n${quote}`).note, '');
 });
 
 test('the forwarded Date line is in the owner’s zone, not UTC', () => {

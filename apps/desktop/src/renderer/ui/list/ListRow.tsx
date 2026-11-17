@@ -9,7 +9,7 @@ import type { CommitKind, IconName, ListRowProps } from '../props';
 import { Chip } from './Chip';
 import { ErrorLine } from './ErrorLine';
 import { Action } from './internal/Action';
-import { formatFull, formatListDate } from './internal/format';
+import { formatFull, formatListDate, sameDay } from './internal/format';
 import { Icon } from './internal/Icon';
 import { useKeycapFor, useTooltipText } from './internal/keys';
 
@@ -45,9 +45,11 @@ type RowProps = ListRowProps;
 function DoneStamp({
   doneAt,
   estimated,
+  dayGrouped,
 }: {
   doneAt: RowProps['doneAt'];
   estimated: RowProps['doneEstimated'];
+  dayGrouped: RowProps['dayGrouped'];
 }) {
   // Only a reported finish time may say "Done"; the fallback date is the last message's.
   const title = doneAt
@@ -60,7 +62,7 @@ function DoneStamp({
       <span role="img" aria-label="Done" className="ui-list-row__stamp-mark">
         <Icon name="check" size="sm" />
       </span>
-      {doneAt ? <time dateTime={doneAt}>{formatListDate(doneAt)}</time> : null}
+      {doneAt ? <time dateTime={doneAt}>{formatListDate(doneAt, dayGrouped)}</time> : null}
     </span>
   );
 }
@@ -72,12 +74,24 @@ function DateColumn({
   doneAt,
   doneEstimated,
   laterUntil,
-}: Pick<RowProps, 'layout' | 'date' | 'doneAt' | 'doneEstimated' | 'laterUntil'>) {
-  if (layout === 'done') return <DoneStamp doneAt={doneAt} estimated={doneEstimated} />;
-  if (layout === 'later' && laterUntil) return <Chip kind="laterUntil" until={laterUntil} />;
+  dayGrouped,
+  hideReturn,
+}: Pick<RowProps, 'layout' | 'date' | 'doneAt' | 'doneEstimated' | 'laterUntil' | 'dayGrouped'> & {
+  /** The row's due chip already says the day it comes back. */
+  hideReturn?: boolean;
+}) {
+  if (layout === 'done')
+    return <DoneStamp doneAt={doneAt} estimated={doneEstimated} dayGrouped={dayGrouped} />;
+  if (layout === 'later' && hideReturn) return null;
+  if (layout === 'later' && laterUntil)
+    return (
+      <span className="ui-list-row__back">
+        <Chip kind="laterUntil" until={laterUntil} />
+      </span>
+    );
   return (
     <time className="ui-list-row__date" dateTime={date} title={formatFull(date)}>
-      {formatListDate(date)}
+      {formatListDate(date, dayGrouped)}
     </time>
   );
 }
@@ -149,7 +163,7 @@ function RowLine({
 }
 
 const MARKS = [
-  { key: 'replied', title: 'Replied', icon: 'reply', word: 'Replied.' },
+  { key: 'replied', title: 'You replied to this email', icon: 'reply', word: 'Replied.' },
   { key: 'bookmarked', title: 'Bookmarked', icon: 'bookmark', word: 'Bookmarked.' },
   { key: 'attachment', title: 'Has attachments', icon: 'paperclip', word: 'Has attachments.' },
 ] as const;
@@ -160,7 +174,7 @@ function RowMarks({ marks }: Pick<RowProps, 'marks'>) {
     <>
       {MARKS.map(({ key, title, icon, word }) =>
         marks?.[key] ? (
-          <span key={key} className="ui-list-row__mark" title={title}>
+          <span key={key} className="ui-list-row__mark" title={title} aria-label={title} role="img">
             <Icon name={icon} size="sm" />
             <span className="ui-list-sr">{word}</span>
           </span>
@@ -214,6 +228,17 @@ function HoverActions({
 }
 
 /** A mail row in any list: Home, Later, All mail, Done, Drafts, Sent, Trash, Spam, search, the Low sheet. */
+/**
+ * One statement per meaning: a deadline chip and a return chip for the same day ("Due today" beside "Today,
+ * 11:59 PM") say it twice, so the deadline stays and the return, which only repeats it, goes.
+ */
+function returnsOnDeadlineOf(props: ListRowProps, laterOverdue: boolean): boolean {
+  // A rejected row shows its error line in place of the due chip, so the return time stays.
+  if (props.layout !== 'later' || laterOverdue || props.rejected) return false;
+  const { due, laterUntil } = props;
+  return due !== undefined && laterUntil?.kind === 'at' && sameDay(due.at, laterUntil.at);
+}
+
 export function ListRow(props: ListRowProps) {
   const { id, layout, density, sender, account, unread, cursor, picked } = props;
   const { picking, hoverActions, swipe, rejected, lifted, onSelect, onOpen, onAction, ref } = props;
@@ -222,6 +247,7 @@ export function ListRow(props: ListRowProps) {
   // would be a second red time ("Yesterday" beside "Today, 8:00 AM").
   const laterOverdue =
     layout === 'later' && props.laterUntil?.kind === 'at' && props.laterUntil.overdue;
+  const returnsOnDeadline = returnsOnDeadlineOf(props, laterOverdue);
 
   // The action count sizes the date column so the hover overlay never spills over the line (DESIGN §5 rule 17).
   const rowStyle =
@@ -281,6 +307,8 @@ export function ListRow(props: ListRowProps) {
           doneAt={props.doneAt}
           doneEstimated={props.doneEstimated}
           laterUntil={props.laterUntil}
+          dayGrouped={props.dayGrouped}
+          hideReturn={returnsOnDeadline}
         />
         {/* Inside the meta cell so the overlay always covers the whole date column: no half glyph or chip. */}
         {hoverActions.length > 0 ? (

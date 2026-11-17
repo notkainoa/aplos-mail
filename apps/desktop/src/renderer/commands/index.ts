@@ -67,7 +67,7 @@ export { focusKindOf, holdKeyOf, snapshotKey } from './keys';
 export type { KeySnapshot } from './keys';
 
 // Keycaps for Kbd, tooltips, the sheet and toasts ("⌘K", "J or ↓", "Hold R").
-export { formatAlternatives, formatBinding, formatChord } from './keys';
+export { arrowsFirst, formatAlternatives, formatBinding, formatChord } from './keys';
 
 // Keymap utilities for Settings → Keyboard and KeyRecorder (DESIGN §7.10, §11.4).
 // parseChord reads a spec string ("meta+k"); chordFromEvent reads a keydown (IME-safe, Caps Lock ignored);

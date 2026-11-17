@@ -138,7 +138,7 @@ describe('the reading CSS for a plain email', () => {
       READING_CSS,
       /@media \(prefers-color-scheme:dark\)\{html\[data-aplos-plain\]\{color-scheme:dark\}/,
     );
-    assert.match(READING_CSS, /html\[data-aplos-plain\] body\{background:#212225;color:#ececed\}/);
+    assert.match(READING_CSS, /html\[data-aplos-plain\] body\{background:#2b2c30;color:#ececed\}/);
   });
 
   it('uses the app’s own token values (a drift here means ui/tokens.json changed)', () => {

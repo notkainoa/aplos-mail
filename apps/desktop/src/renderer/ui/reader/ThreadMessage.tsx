@@ -22,10 +22,22 @@ import { UndoTray } from './UndoTray';
 /** The excerpt's words when a message has no text to show (plain, dim, no exclamation mark). */
 export const NO_PREVIEW = 'No preview';
 
+/** "Thu, " before the date, split off so a crowded header can drop the weekday and keep every other word (the full date is the tooltip). */
+const WEEKDAY_PREFIX = /^([A-Z][a-z]{2}, )(.+)$/;
+
 function TimeText({ date }: { readonly date: string }) {
+  const text = formatMessageTime(date);
+  const parts = WEEKDAY_PREFIX.exec(text);
   return (
     <time className="ui-thread-message__when" dateTime={date} title={formatFull(date)}>
-      {formatMessageTime(date)}
+      {parts ? (
+        <>
+          <span className="ui-thread-message__when-day">{parts[1]}</span>
+          {parts[2]}
+        </>
+      ) : (
+        text
+      )}
     </time>
   );
 }

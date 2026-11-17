@@ -433,9 +433,9 @@ test('TooltipBubble: label, then keycaps from the registry, then the detail line
   assertClean(markup);
 });
 
-test('TooltipBubble: alternatives from the registry read "J or ↓"; hold reads "hold R"', () => {
+test('TooltipBubble: alternatives from the registry read "↓ or J", the arrow first; hold reads "hold R"', () => {
   const next = html(<TooltipBubble label="Next row" caps={parseKeyText(describe('list.down'))} />);
-  assert.match(text(next), /^Next rowJor↓$/);
+  assert.match(text(next), /^Next row↓orJ$/);
   const dictate = html(
     <TooltipBubble
       label="Hold R to dictate a reply"

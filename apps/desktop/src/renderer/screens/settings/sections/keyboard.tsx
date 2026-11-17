@@ -47,9 +47,8 @@ export function Keyboard({ data, view, actions, host }: SectionProps) {
           )}
         />
         <Row
-          section="general"
+          section="keyboard"
           anchor="keyHints"
-          idSuffix="keys"
           description="Keep every shortcut visible next to its button."
           control={id => (
             <Switch
@@ -63,7 +62,7 @@ export function Keyboard({ data, view, actions, host }: SectionProps) {
         <Row
           section="keyboard"
           anchor="holdMs"
-          description="How long to hold R or A before it listens instead of acting."
+          description="How long to hold R (reply) or A (Ask) before dictation starts."
           control={
             <Select
               label="Hold time"
