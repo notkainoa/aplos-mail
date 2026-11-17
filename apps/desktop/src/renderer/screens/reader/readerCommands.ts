@@ -22,7 +22,7 @@ export function commandsForReader(actions: ReaderActions): CommandHandlerTable {
     'mail.bookmark': run(actions.bookmark),
     'mail.toggleRead': run(actions.toggleRead),
     'app.undo': run(actions.undo),
-    'mail.suggested': run(actions.suggest),
+    'mail.suggested': { run: () => actions.suggest(), labelFor: () => actions.suggestedLabel() },
     'mail.reply': run(actions.reply),
     'mail.replyAll': run(actions.replyAll),
     'mail.forward': run(actions.forward),

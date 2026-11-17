@@ -109,6 +109,14 @@ export function senderOf(row: ThreadRow): string {
   return from || cleanName(row.subject) || 'No sender';
 }
 
+/** What the palette's "Run the suggested action" names: "Reply to Jordan Park", "Mark done", "View invoice". */
+export function suggestedLabel(suggestion: SuggestedAction, sender: string): string {
+  if (suggestion.isDone) return 'Mark done';
+  if (suggestion.verb === 'Reply with a nudge') return `Nudge ${sender}`;
+  if (suggestion.verb === 'Reply' || suggestion.icon === 'reply') return `Reply to ${sender}`;
+  return suggestion.verb;
+}
+
 /** Longest sender name a triage toast shows before it is cut with an ellipsis. */
 const TOAST_NAME_MAX = 24;
 

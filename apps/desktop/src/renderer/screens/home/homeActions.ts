@@ -24,7 +24,13 @@ import {
 } from './homeModel';
 import { dropFromPick } from '../lists/bulkActions';
 import { createHomeBulk, type HomeBulkDeps } from './homeBulk';
-import { failurePhrase, namedToast, senderOf } from './homeRows';
+import {
+  failurePhrase,
+  namedToast,
+  senderOf,
+  suggestedLabel as labelOf,
+  suggestionOf,
+} from './homeRows';
 import { UNDO_ACTION, triageSlot, undoHandler } from '../undoOperation';
 
 /** The live state an action reads when its key arrives. */
@@ -121,6 +127,8 @@ export interface HomeActions {
   confirm(): void;
   cancelConfirm(): void;
   suggested(): void;
+  /** The palette's name for Space on the row under the cursor, or undefined when nothing is under it. */
+  suggestedLabel(): string | undefined;
   open(): void;
   clearFromHome(): void;
   /** `.`: the bulk More menu while rows are picked, else the cursor row's ⋯ menu. */
@@ -362,6 +370,12 @@ export function createHomeActions(deps: HomeDeps): HomeActions {
     deps.openThread(target.row.id, target.section === 'follow' ? NUDGE : REPLY);
   }
 
+  function suggestedName(): string | undefined {
+    const target = targetOf(deps.snapshot());
+    if (!target) return undefined;
+    return labelOf(suggestionOf(target.row, target.section), senderOf(target.row));
+  }
+
   function reply(how: ThreadReply = REPLY): void {
     const target = targetOf(deps.snapshot());
     if (target) deps.openThread(target.row.id, how);
@@ -454,6 +468,7 @@ export function createHomeActions(deps: HomeDeps): HomeActions {
     trash,
     bookmark,
     suggested,
+    suggestedLabel: suggestedName,
     reply,
     toggleRead,
     forward,

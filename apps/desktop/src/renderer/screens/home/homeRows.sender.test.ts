@@ -6,7 +6,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import type { ThreadRow } from '../../data';
-import { senderOf } from './homeRows';
+import { senderOf, suggestedLabel } from './homeRows';
 
 const ME = { name: 'Kainoa Newton', address: 'owner@mail.example', me: true };
 const LEAH = { name: 'Leah Okafor', address: 'leah@harbor-table.example' };
@@ -129,5 +129,22 @@ test('someone who wrote to the owner still wins over recipients; no recipients k
   assert.equal(
     senderOf({ ...sentThread([]), recipients: undefined } as unknown as ThreadRow),
     'Kainoa Newton',
+  );
+});
+
+test('the palette names the suggested action: who a reply goes to, or Mark done', () => {
+  const reply = { verb: 'Reply', icon: 'reply', isDone: false } as const;
+  assert.equal(suggestedLabel(reply, 'Jordan Park'), 'Reply to Jordan Park');
+  assert.equal(
+    suggestedLabel({ verb: 'Reply with a nudge', icon: 'reply', isDone: false }, 'Maya Chen'),
+    'Nudge Maya Chen',
+  );
+  assert.equal(
+    suggestedLabel({ verb: 'Done', icon: 'check', isDone: true }, 'Jordan Park'),
+    'Mark done',
+  );
+  assert.equal(
+    suggestedLabel({ verb: 'View invoice', icon: 'link', isDone: false }, 'Parcel Trail'),
+    'View invoice',
   );
 });
