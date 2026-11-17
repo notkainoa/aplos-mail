@@ -22,7 +22,7 @@ import { namedToast } from '../home/homeRows';
 import { stepKey, neighbourKeys } from './listModel';
 import { openKindOf, isThread, type ListRowData, type OpenKind } from './listRows';
 import type { ListKind } from './listKinds';
-import { UNDO_ACTION, triageSlot, undoHandler } from '../undoOperation';
+import { UNDO_ACTION, triageSlot, undated, undoHandler } from '../undoOperation';
 
 /** The live state an action reads when its key arrives. */
 export interface ListSnapshot {
@@ -253,7 +253,7 @@ export function createListActions(deps: ListDeps): ListActions {
   function later(key?: string): void {
     const pick = pickIn(TRIAGE_KINDS, key);
     if (pick) return bulk.later(pick);
-    const message = deps.undoLabel('mail.later', 'Moved to Later');
+    const message = undated(deps.undoLabel('mail.later', 'Moved to Later'));
     onRow(TRIAGE_KINDS, key, { type: 'later' }, { kind: 'later', message });
   }
 

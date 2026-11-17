@@ -12,6 +12,14 @@ import { api, type ActResult } from '../data';
  */
 export const UNDO_ACTION = { id: 'undo', label: 'Undo', keysFrom: 'app.undo' } as const;
 
+/**
+ * A Later toast says what the move left unset: the L key puts a thread back without a date, and the toast offers
+ * "Set a date" beside it. A dated move says "Later until …" instead (see `reschedule`).
+ */
+export function undated(message: string): string {
+  return `${message} · no date`;
+}
+
 const TRIAGE_KINDS: ReadonlySet<string> = new Set(['done', 'later', 'trash']);
 
 /** `{ slot: 'triage' }` for a Done, Later or Trash toast, so a newer one takes its place; nothing for any other kind. */

@@ -59,6 +59,7 @@ import {
   type SearchStep,
 } from './search.model';
 import { SearchPage } from './SearchPage';
+import { undated } from '../undoOperation';
 
 /** Props for `SearchScreen`; absent pieces fall back to the shell's own scope and openers. */
 export interface SearchScreenProps {
@@ -322,7 +323,7 @@ function SearchBody(props: SearchBodyProps): ReactElement {
       'mail.later': {
         run: () => {
           if (live.current.row)
-            act(live.current.row.id, { type: 'later' }, 'later', 'Moved to Later');
+            act(live.current.row.id, { type: 'later' }, 'later', undated('Moved to Later'));
         },
       },
       'mail.trash': {
@@ -409,7 +410,7 @@ function SearchBody(props: SearchBodyProps): ReactElement {
     onRowAction: (threadId: string, commandId: CommandId) => {
       if (commandId === 'mail.done') act(threadId, { type: 'done' }, 'done', 'Done');
       else if (commandId === 'mail.later')
-        act(threadId, { type: 'later' }, 'later', 'Moved to Later');
+        act(threadId, { type: 'later' }, 'later', undated('Moved to Later'));
       else if (commandId === 'mail.trash')
         act(threadId, { type: 'trash' }, 'trash', 'Moved to Trash');
     },

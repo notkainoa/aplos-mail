@@ -119,7 +119,7 @@ test('a drop on Tomorrow moves the thread at once, says where, and Undo puts it 
     reschedule(deps(), id, tomorrow, 'Tomorrow, 8:00 AM');
     assert.equal(untilOf(world, id), tomorrow, 'the overlay applied the date synchronously');
     const toast = getToasts().find(candidate => candidate.kind === 'later');
-    assert.equal(toast?.message, 'Moved to Tomorrow, 8:00 AM');
+    assert.equal(toast?.message, 'Later until tomorrow, 8:00 AM');
     assert.equal(toast?.undoable, true);
     assert.deepEqual(
       toast?.actions?.map(action => action.id),

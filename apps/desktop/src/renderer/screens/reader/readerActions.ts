@@ -7,7 +7,7 @@
  */
 import { undoStack, type DataApi, type ThreadAction, type ThreadRow } from '../../data';
 import type { PushedToast } from '../../shell';
-import { UNDO_ACTION, afterAccepted, triageSlot, undoHandler } from '../undoOperation';
+import { UNDO_ACTION, afterAccepted, triageSlot, undated, undoHandler } from '../undoOperation';
 import { failurePhrase, namedToast, senderOf, suggestedLabel } from '../home/homeRows';
 import type { MovableLane } from '../home/homeModel';
 import { LANE_LABEL } from './readerLane';
@@ -202,7 +202,7 @@ export function createReaderActions(deps: ReaderDeps): ReaderActions {
   function later(): void {
     const row = current();
     if (!row) return;
-    const message = namedToast(deps.undoLabel('mail.later', 'Moved to Later'), row);
+    const message = undated(namedToast(deps.undoLabel('mail.later', 'Moved to Later'), row));
     leaveList(row, { type: 'later' }, { kind: 'later', message });
   }
 

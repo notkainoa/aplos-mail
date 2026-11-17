@@ -31,7 +31,7 @@ import {
   suggestedLabel as labelOf,
   suggestionOf,
 } from './homeRows';
-import { UNDO_ACTION, triageSlot, undoHandler } from '../undoOperation';
+import { UNDO_ACTION, triageSlot, undated, undoHandler } from '../undoOperation';
 
 /** The live state an action reads when its key arrives. */
 export interface HomeSnapshot {
@@ -250,7 +250,7 @@ export function createHomeActions(deps: HomeDeps): HomeActions {
       id: opId,
       kind: 'later',
       ...triageSlot('later'),
-      message: namedToast(deps.undoLabel('mail.later', 'Moved to Later'), target.row),
+      message: undated(namedToast(deps.undoLabel('mail.later', 'Moved to Later'), target.row)),
       undoable: true,
       actions: [{ id: 'setDate', label: 'Set a date' }, UNDO_ACTION],
       onAction: actionId => {
