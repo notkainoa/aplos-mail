@@ -57,7 +57,7 @@ export function onSend(state: ComposeState, event: Event<'send'>): Step {
   if (state.send.kind === 'pending' || state.send.kind === 'tracking' || state.discarding)
     return still(state);
   const notBefore = futureOnly(event.notBefore, event.now);
-  const blocked = blockedSend(state.fields);
+  const blocked = blockedSend(state.fields, state.context.mode);
   if (blocked) return still({ ...state, blocked, open: true });
   const pending: ComposeState = {
     ...state,

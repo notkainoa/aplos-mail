@@ -45,7 +45,7 @@ export function composeView(
     send: sendView(phase, formatTime),
     conditions: { suggestion: state.suggestion !== null, emptyBody: state.fields.body === '' },
     invalid: invalidIds([...to, ...cc, ...bcc]),
-    canSend: blockedSend(state.fields) === null,
+    canSend: blockedSend(state.fields, state.context.mode) === null,
   };
 }
 

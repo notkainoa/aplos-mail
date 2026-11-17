@@ -4,7 +4,7 @@
  * ("Sending to Jordan and Mina in 8 s"). No network lookups; the engine has the last word on `Submission/set`.
  */
 import type { BlockedSend, Recipient } from '../../../ui/props';
-import type { ComposeFields } from './fields';
+import type { ComposeContext, ComposeFields } from './fields';
 
 /** The longest address the contract takes. */
 const MAX_ADDRESS = 320;
@@ -60,14 +60,25 @@ export function invalidIds(recipients: readonly Recipient[]): readonly string[] 
 export const BLOCKED_COPY = {
   noRecipient: 'Add a recipient.',
   badAddress: (address: string) => `Check the address ${address}. It doesn’t look complete.`,
+  emptyReply: 'Write something first.',
 } as const;
 
-/** Why this draft cannot be sent yet, as one sentence on one field; null when it can. */
-export function blockedSend(fields: ComposeFields): BlockedSend | null {
+/**
+ * Why this draft cannot be sent yet, as one sentence on one field; null when it can. A reply (`mode` 'reply' or
+ * 'replyAll') also needs words: an empty one is a slip. A forward is exempt (the quoted original is its content) and so
+ * is a new message.
+ */
+export function blockedSend(
+  fields: ComposeFields,
+  mode?: ComposeContext['mode'],
+): BlockedSend | null {
   const all = [...fields.to, ...fields.cc, ...fields.bcc];
   if (all.length === 0) return { field: 'to', message: BLOCKED_COPY.noRecipient };
   const bad = all.find(r => !isValidAddress(r.address));
   if (bad) return { field: 'to', message: BLOCKED_COPY.badAddress(bad.address) };
+  const reply = mode === 'reply' || mode === 'replyAll';
+  if (reply && fields.body.trim() === '')
+    return { field: 'body', message: BLOCKED_COPY.emptyReply };
   return null;
 }
 

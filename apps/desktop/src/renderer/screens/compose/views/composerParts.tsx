@@ -122,7 +122,7 @@ export function useSharedComposerProps(
     commands: COMPOSE_COMMANDS,
     onSend: () => controls.send(),
     // A valid address typed but not yet a chip counts: Send (like ⌘↩) commits it first.
-    sendDisabled: blockedSend(withTyped(state.fields, typed)) !== null,
+    sendDisabled: blockedSend(withTyped(state.fields, typed), state.context.mode) !== null,
     onAttach: () => undefined,
     editorRef,
   };

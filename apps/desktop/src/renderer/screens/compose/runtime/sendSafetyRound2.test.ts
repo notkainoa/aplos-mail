@@ -179,7 +179,11 @@ test('another window’s send locks the draft: this window says so and sends not
   const id = mine.getState().save.draftId!;
   // The other window sends the draft as it stands.
   const theirs = open(kit, {
-    initial: { ...reply(kit), save: { ...FRESH_SAVE, draftId: id, revision: 1, rowRev: 1 } },
+    initial: {
+      ...reply(kit),
+      fields: { ...reply(kit).fields, body: 'Hello' },
+      save: { ...FRESH_SAVE, draftId: id, revision: 1, rowRev: 1 },
+    },
   });
   theirs.dispatch({ type: 'observeDraft', draft: kit.draft(id)! });
   press(kit, theirs);

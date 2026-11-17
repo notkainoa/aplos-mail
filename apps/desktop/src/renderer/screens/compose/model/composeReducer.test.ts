@@ -150,10 +150,16 @@ test('Send closes the composer at once, saves unsaved edits first, then sends th
   assert.equal(submit?.type === 'submit' && submit.opId, sendOpId('d1', 2, 2, 0));
 });
 
-test('an untouched reply is created on Send; a blocked send outlines To and explains', () => {
-  const pressed = run(fresh(), { type: 'send', now: T0, undoSeconds: 8 });
+test('an untouched reply waits for words; a blocked send outlines To and explains', () => {
+  const untouched = run(fresh(), { type: 'send', now: T0, undoSeconds: 8 });
+  assert.deepEqual(untouched.state.blocked, { field: 'body', message: 'Write something first.' });
+  assert.deepEqual(untouched.effects, [], 'an empty reply is not created or sent');
+  const written = run(
+    { ...fresh(), fields: { ...fresh().fields, body: 'Thanks.' } },
+    { type: 'send', now: T0, undoSeconds: 8 },
+  );
   assert.deepEqual(
-    pressed.effects.map(e => e.type),
+    written.effects.map(e => e.type),
     ['save'],
   );
   const none = freshCompose(CONTEXT);

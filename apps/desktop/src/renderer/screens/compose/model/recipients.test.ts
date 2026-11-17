@@ -75,3 +75,22 @@ test('Send counts a valid typed address that is not yet a chip, and still waits 
   assert.equal(blockedSend(withTyped(fieldsOf([chip]), NO_TYPED)), null);
   assert.equal(blockedSend(withTyped(empty, { to: '', cc: 'maya@garden.example', bcc: '' })), null);
 });
+
+test('an inline reply with no words cannot be sent; a forward and a new message are exempt', () => {
+  const chip = parseRecipient('jordan@example.com')!;
+  const bare = fieldsOf([chip]);
+  assert.deepEqual(blockedSend(bare, 'reply'), {
+    field: 'body',
+    message: 'Write something first.',
+  });
+  assert.equal(blockedSend(bare, 'replyAll')?.field, 'body');
+  assert.equal(blockedSend({ ...bare, body: '   \n' }, 'reply')?.field, 'body');
+  assert.equal(blockedSend({ ...bare, body: 'Thanks.' }, 'reply'), null);
+  assert.equal(blockedSend(bare, 'forward'), null, 'the quote is the content of a forward');
+  assert.equal(blockedSend(bare, 'new'), null);
+  assert.equal(
+    blockedSend(fieldsOf([]), 'reply')?.field,
+    'to',
+    'a missing recipient is said first',
+  );
+});
