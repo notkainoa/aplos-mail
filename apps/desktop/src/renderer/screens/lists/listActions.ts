@@ -59,6 +59,8 @@ export interface ListDeps {
   hold: { extend(ids?: readonly string[]): void };
   /** `.` with rows picked: opens the bulk bar's More menu. Absent: there is no bar to open. */
   openMore?(): void;
+  /** Opens the compose page on a forward of this thread's latest message. */
+  forward?(id: string): void;
   /** The caller's `onOpen`; `listIds` are the threads the list shows, in order, so the reader's J and K walk them. */
   open(id: string, kind: OpenKind, listIds?: readonly string[]): void;
   confirmation(): Confirmation | null;
@@ -98,6 +100,8 @@ export interface ListActions {
   bookmark(): void;
   /** Trash (#) in mail lists; delete forever in Trash and Spam; discard in Drafts. The last two ask first. */
   trash(): void;
+  /** F: forwards the cursor row's thread (one row at a time: with rows picked it does nothing). */
+  forward(): void;
   /** Restore in Trash, Not spam in Spam. */
   restore(key?: string): void;
   /** Move to Home (H) in the Done place. */
@@ -309,6 +313,12 @@ export function createListActions(deps: ListDeps): ListActions {
     if (target) deps.open(target.row.id, openKindOf(target.row), threadIdsOf(deps.snapshot()));
   }
 
+  function forward(): void {
+    if (bulk.picks()) return;
+    const target = targetAt(deps);
+    if (target && isThread(target.row)) deps.forward?.(target.row.id);
+  }
+
   function more(): void {
     if (bulk.picks()) deps.openMore?.();
   }
@@ -322,6 +332,7 @@ export function createListActions(deps: ListDeps): ListActions {
     later,
     bookmark,
     trash,
+    forward,
     restore,
     moveToHome,
     confirm,

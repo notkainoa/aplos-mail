@@ -105,6 +105,7 @@ function inertDeps(): HomeDeps {
     oneByOne: nothing,
     openMore: nothing,
     undoLabel: (_id, fallback) => fallback,
+    forward: () => undefined,
   };
 }
 
@@ -143,6 +144,7 @@ function walkerOver(world: World) {
     oneByOne: () => undefined,
     openMore: () => undefined,
     undoLabel: (_id, fallback) => fallback,
+    forward: () => undefined,
   };
   const actions = createHomeActions(deps);
   const settleNow = () => {

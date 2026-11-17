@@ -16,6 +16,9 @@ const kept = new Map<string, { readonly session: ComposeSession; readonly stop: 
 export function recoveryKey(state: Pick<ComposeState, 'save' | 'context'>): string {
   if (state.save.draftId) return `draft:${state.save.draftId}`;
   if (state.context.threadId) return `reply:${state.context.threadId}`;
+  // A forward has no thread of its own: it must not share (and so release) a new message's kept text.
+  if (state.context.mode === 'forward' && state.context.replyToMessageId)
+    return `forward:${state.context.replyToMessageId}`;
   return `new:${state.context.accountId}`;
 }
 

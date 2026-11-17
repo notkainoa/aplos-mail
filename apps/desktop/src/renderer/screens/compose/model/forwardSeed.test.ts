@@ -1,0 +1,42 @@
+/**
+ * A forward's starting fields: "Fwd:" once, To empty, the original quoted under a plain header, and the forward kept
+ * out of the original's thread.
+ * Run: cd apps/desktop && npx tsx --test src/renderer/screens/compose/model/forwardSeed.test.ts
+ */
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import type { Message } from '../../../data';
+import { forwardSeed, forwardSubject } from './forwardSeed';
+
+const message = {
+  id: 'acct:m1',
+  threadId: 'acct:t1',
+  accountId: 'acct',
+  subject: 'Launch plan',
+  from: { address: 'drew@example.com', name: 'Drew Bell' },
+  to: [{ address: 'me@example.com' }],
+  cc: [],
+  date: Date.UTC(2026, 9, 26, 15, 30),
+} as unknown as Message;
+
+test('the subject gains one Fwd:, whatever the case of an existing prefix', () => {
+  assert.equal(forwardSubject('Launch plan'), 'Fwd: Launch plan');
+  assert.equal(forwardSubject('Fwd: Launch plan'), 'Fwd: Launch plan');
+  assert.equal(forwardSubject('  FW: Launch plan '), 'FW: Launch plan');
+  assert.equal(forwardSubject('Re: Launch plan'), 'Fwd: Re: Launch plan');
+});
+
+test('a forward starts with nobody in To, a blank line to write on, and the quoted original', () => {
+  const { context, fields } = forwardSeed(message, 'Here is the plan.\nSee you Monday.\n');
+  assert.deepEqual([fields.to, fields.cc, fields.bcc], [[], [], []]);
+  assert.equal(fields.subject, 'Fwd: Launch plan');
+  assert.ok(fields.body.startsWith('\n\n---------- Forwarded message ----------\n'));
+  assert.match(fields.body, /\nFrom: Drew Bell <drew@example\.com>\n/);
+  assert.match(fields.body, /\nSubject: Launch plan\n/);
+  assert.match(fields.body, /\nTo: me@example\.com\n/);
+  assert.ok(!fields.body.includes('\nCc:'), 'an empty line is left out');
+  assert.ok(fields.body.endsWith('\n\nHere is the plan.\nSee you Monday.'));
+  assert.equal(context.mode, 'forward');
+  assert.equal(context.replyToMessageId, 'acct:m1');
+  assert.equal(context.threadId, undefined, 'a forward is not part of the original thread');
+});

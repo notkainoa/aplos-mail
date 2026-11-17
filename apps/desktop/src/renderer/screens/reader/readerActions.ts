@@ -44,6 +44,8 @@ export interface ReaderDeps {
   dismiss(id: string): void;
   /** The confirmed toast text of a command, read from the registry. */
   undoLabel(commandId: string, fallback: string): string;
+  /** Opens the compose page on a forward of this thread's latest message. */
+  forward(id: string): void;
   /** Opens the inline reply under the thread (R, ⇧R, hold R, a Reply suggestion). */
   reply(id: string, request?: ReplyRequest): void;
   /** Any suggestion that is not a reply or Done ("View invoice", "Add to calendar"): a later slice's, the screen forwards it. */
@@ -67,8 +69,10 @@ export interface ReaderActions {
   later(): void;
   trash(): void;
   bookmark(): void;
-  /** U: marks the thread read or unread; the reader stays on it. */
+  /** U: marks an unread thread read (the reader stays on it); a read thread is marked unread and the reader returns to its list, like Gmail. */
   toggleRead(): void;
+  /** F: forwards the thread on paper. */
+  forward(): void;
   /** The Importance menu: moves the thread to a lane (the same absolute move as Home's ⌥↑ / ⌥↓); the reader stays on it. */
   lane(to: MovableLane): void;
   /** Z: undoes the newest change; a Done, Later or Trash of this reading brings its thread back, however it is undone. */
@@ -222,6 +226,13 @@ export function createReaderActions(deps: ReaderDeps): ReaderActions {
       { type: unread ? 'read' : 'unread' },
       { kind: 'info', message: unread ? 'Marked read' : 'Marked unread' },
     );
+    // A thread marked unread goes back to its list: reading it again would only mark it read.
+    if (!unread) deps.leave();
+  }
+
+  function forward(): void {
+    const row = current();
+    if (row) deps.forward(row.id);
   }
 
   /** "Always do this for X": the same move, as a sender rule. A refusal says so instead of going unheard. */
@@ -265,6 +276,7 @@ export function createReaderActions(deps: ReaderDeps): ReaderActions {
     trash,
     bookmark,
     toggleRead,
+    forward,
     lane,
     undo: () => {
       const outcome = undoStack.undoLast();
