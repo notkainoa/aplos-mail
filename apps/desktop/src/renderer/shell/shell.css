@@ -191,7 +191,7 @@
   display: flex;
   flex: 0 1 auto;
   flex-direction: column;
-  gap: var(--space-5);
+  gap: var(--space-4);
   min-height: var(--control-md);
   /* A 4 px inset on every side, taken back with the negative margin, so keyboard focus rings are not clipped by the
      scroll container (the controls inside span the full width and the first and last rows touch its edges). */

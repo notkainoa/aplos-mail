@@ -31,7 +31,18 @@ export interface CalendarAccountsProps {
   readonly onAction: (accountId: string, mode: 'reconnect' | 'grant') => void;
 }
 
+/**
+ * True when no account has anything to say about its calendar (demo and non-Google accounts claim nothing): the block
+ * would only repeat the names and colours the account menu already lists, so the sidebar leaves it out rather than
+ * run a heading into the footer with nothing under it.
+ */
+export function onlyRepeatsAccountMenu(model: CalendarAccountsModel): boolean {
+  if (model.lines.length === 0) return false;
+  return model.lines.every(line => !line.state?.line && !line.state?.action);
+}
+
 export function CalendarAccounts({ model, onAction }: CalendarAccountsProps) {
+  if (onlyRepeatsAccountMenu(model)) return null;
   return (
     <div className="cal-accounts">
       <div className="cal-accounts__head">Accounts</div>

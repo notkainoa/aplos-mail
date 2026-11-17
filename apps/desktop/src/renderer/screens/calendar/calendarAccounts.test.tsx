@@ -94,7 +94,7 @@ describe('the accounts block under the Calendars list', () => {
     assert.doesNotMatch(html, /No accounts yet/);
   });
 
-  test('demo and non-Google accounts show the address with no claim', () => {
+  test('demo and non-Google accounts claim nothing, so the block leaves out a list the account menu already holds', () => {
     const html = render(
       accountLinesOf(
         [
@@ -110,8 +110,8 @@ describe('the accounts block under the Calendars list', () => {
         [],
       ),
     );
-    assert.match(html, /demo@example\.com/);
-    assert.doesNotMatch(html, /Calendar on/);
+    assert.equal(html, '');
+    assert.doesNotMatch(html, /Accounts/);
     assert.doesNotMatch(html, /not allowed/);
   });
 
