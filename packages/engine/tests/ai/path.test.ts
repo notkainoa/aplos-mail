@@ -469,16 +469,17 @@ test('Ask/run: the picked account scopes retrieval, and sources name their accou
       }),
     ],
   });
-  // All accounts: both accounts' mail can be a source, labeled in first-appearance order — never
-  // by the owner's own address, which stays out of the provider's prompt.
+  // All accounts: both accounts' mail can be a source, labelled by the fixed account order —
+  // acct-2 'Account 2', acct-1 'Account 1' — never by the owner's own address, which stays out of
+  // the provider's prompt.
   const all = await w.call('Ask/run', { question: 'invoice' });
   await settle(w, all.runId);
   const promptAll = lastPrompt(t);
   assert.match(
     promptAll,
-    /\[1\] Account: Account 1\nFrom: Sender x1\nSubject: Invoice paid already/,
+    /\[1\] Account: Account 2\nFrom: Sender x1\nSubject: Invoice paid already/,
   );
-  assert.match(promptAll, /\[2\] Account: Account 2\nFrom: Sender m1\nSubject: Invoice due Friday/);
+  assert.match(promptAll, /\[2\] Account: Account 1\nFrom: Sender m1\nSubject: Invoice due Friday/);
   assert.doesNotMatch(promptAll, /@mail\.example/);
   // Account B picked: only B's mail is quoted — A's subject never reaches the provider, and a
   // one-account run carries no Account: line at all.

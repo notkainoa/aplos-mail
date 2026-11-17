@@ -36,6 +36,8 @@ interface Source {
   threadId: string;
   subject: string;
   fromName?: string;
+  /** Raw sender address, kept for the owner check; a sender that is the owner shows a label instead. */
+  fromAddr?: string;
   /** The account's row id; the prompt names it by a neutral label, never the owner's address. */
   accountId: string;
   date?: number;
@@ -63,18 +65,96 @@ const MAX_SOURCES = 8;
 const MAX_SOURCE_CHARS = 2_500;
 
 /**
- * Quoted mail can fake the source block's own structure: a body line starting `[2]`, `Account:` or `---`
- * would pass for a new source or a boundary. Any such line gets a visible prefix so the structure keys can
- * only come from the engine.
+ * Quoted mail can fake the source block's own structure: a body line that is or starts `[2]`,
+ * `Account:` or a `---` rule would pass for a new source or a boundary. Any such line gets a visible
+ * prefix so the structure keys can only come from the engine.
  */
-const FAKE_STRUCTURE = /^\s*(?:\[\s*\d|account:|from:|subject:|-{3,})/i;
+const FAKE_STRUCTURE = /^\s*(?:\[\s*\d|(?:account|from|subject|sources)\s*:|(?:[-_*=—–]\s*){3,}$)/i;
 
-function quoteText(text: string): string {
+/**
+ * Body text folded into the shape `FAKE_STRUCTURE` is checked against: NFKC so full-width `［２］`
+ * and `Ａｃｃｏｕｎｔ：` land on their ASCII twins, numeric entities (`&#91;`, `&#x5b;`) decoded,
+ * zero-width characters dropped, and every line-break flavour (\r, \r\n, U+2028, U+2029, U+0085,
+ * \v, \f) made a real \n so a fake cannot hide behind an exotic break.
+ */
+function normalizeMailText(text: string): string {
   return text
-    .replace(/\r\n?/g, '\n')
+    .normalize('NFKC')
+    .replace(/&#(x?[0-9a-f]+);/gi, (raw, digits: string) => {
+      const hex = /^x/i.test(digits);
+      const n = Number.parseInt(hex ? digits.slice(1) : digits, hex ? 16 : 10);
+      return n >= 0 && n <= 0x10ffff ? String.fromCodePoint(n) : raw;
+    })
+    .replace(/[\u200b-\u200d\u2060\ufeff]/g, '')
+    .replace(/\r\n|[\r\u0085\u2028\u2029\v\f]/g, '\n');
+}
+
+/** Owner addresses inside body text (a quoted-reply header, a signature) get the neutral label too. */
+function maskOwners(text: string, byAddress: Map<string, string>): string {
+  let out = text;
+  for (const [addr, label] of byAddress) {
+    const re = new RegExp(
+      `(?<![\\w.+-])${addr.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}(?![\\w.+-])`,
+      'gi',
+    );
+    out = out.replace(re, label);
+  }
+  return out;
+}
+
+function quoteText(text: string, owners: Map<string, string>): string {
+  return maskOwners(normalizeMailText(text), owners)
     .split('\n')
     .map(l => (FAKE_STRUCTURE.test(l) ? `> ${l}` : l))
     .join('\n');
+}
+
+/** A display name becomes label text only cleaned: controls out, single spaces, capped at 60. */
+function cleanLabel(name: string | null): string {
+  return (name ?? '')
+    .replace(/\p{Cc}/gu, ' ')
+    .replace(/\s+/g, ' ')
+    .trim()
+    .slice(0, 60);
+}
+
+type AccountRow = {
+  id: string;
+  address: string;
+  display_name: string | null;
+};
+
+/**
+ * Every account gets a label in a fixed order (the caller passes rows sorted by created_at, id), so
+ * 'Account 2' means the same mailbox in every run and turn, including the history the model sees. A
+ * display name is used only when usable: non-empty, not itself an address or an 'Account N' fallback,
+ * and not shared — ignoring case and whitespace — with any other account, counted over ALL accounts
+ * so a kept-out twin cannot smuggle in a second meaning for the name.
+ */
+function accountLabels(accounts: readonly AccountRow[]): {
+  labels: Map<string, string>;
+  byAddress: Map<string, string>;
+} {
+  const counts = new Map<string, number>();
+  for (const a of accounts) {
+    const key = cleanLabel(a.display_name).toLowerCase();
+    if (key) counts.set(key, (counts.get(key) ?? 0) + 1);
+  }
+  const labels = new Map<string, string>();
+  const byAddress = new Map<string, string>();
+  accounts.forEach((a, i) => {
+    const shown = cleanLabel(a.display_name);
+    const label =
+      shown &&
+      !shown.includes('@') &&
+      !/^account \d+$/i.test(shown) &&
+      counts.get(shown.toLowerCase()) === 1
+        ? shown
+        : `Account ${i + 1}`;
+    labels.set(a.id, label);
+    byAddress.set(a.address.toLowerCase(), label);
+  });
+  return { labels, byAddress };
 }
 
 /** Sources for a run: the thread being read first, then FTS hits for the question, allowed accounts only. */
@@ -112,6 +192,7 @@ function findSources(
       threadId: `${m.account_id}:${m.remote_thread}`,
       subject: (m.subject ?? '').replace(/\s+/g, ' ').slice(0, 500),
       fromName: (m.from_name ?? m.from_addr ?? undefined)?.replace(/\s+/g, ' ').slice(0, 200),
+      fromAddr: (m.from_addr ?? undefined)?.replace(/\s+/g, ' ').slice(0, 200),
       accountId: m.account_id,
       date: m.internal_date,
       text,
@@ -384,22 +465,35 @@ async function askRun(
     const { allowed, excluded } = allowedAccounts(services, args.scope?.accountIds);
     if (!allowed.length) {
       // A picked account that keeps its mail out of AI is not "no account allows AI": while other
-      // accounts would answer, the fix is that account's toggle or picking All accounts.
-      const othersAllow = services.store.read(
-        q => q.get('SELECT 1 AS one FROM accounts WHERE ai_allowed = 1 LIMIT 1') !== undefined,
-      );
-      throw new ContractError({
-        type: 'forbidden',
-        message:
-          args.scope?.accountIds?.length && othersAllow
-            ? "This account isn't allowed to use AI. Turn on 'Use this account's mail for AI' in Settings → AI, or pick All accounts."
-            : "No account allows AI to read its mail. Turn on 'Use this account's mail for AI' in Settings → AI.",
-        reasonCode: 'ai.accountExcluded',
-      });
+      // accounts would answer, the fix is that account's toggle or picking All accounts. An asked-for
+      // id that is not an account at all (one removed since) keeps the generic wording, as does an
+      // empty scope — that is "no scope", not a pick.
+      const picked =
+        args.scope?.accountIds !== undefined && args.scope.accountIds.length > 0
+          ? args.scope.accountIds
+          : undefined;
+      const { othersAllow, pickedKnown } = services.store.read(q => ({
+        othersAllow:
+          q.get('SELECT 1 AS one FROM accounts WHERE ai_allowed = 1 LIMIT 1') !== undefined,
+        pickedKnown: picked
+          ? (q.get<{ n: number }>(
+              `SELECT COUNT(*) AS n FROM accounts WHERE id IN (${picked.map(() => '?').join(',')})`,
+              ...picked,
+            )?.n ?? 0)
+          : 0,
+      }));
+      let message =
+        "No account allows AI to read its mail. Turn on 'Use this account's mail for AI' in Settings → AI.";
+      if (othersAllow && picked && pickedKnown > 0)
+        message =
+          picked.length > 1
+            ? "These accounts aren't allowed to use AI. Turn on 'Use this account's mail for AI' in Settings → AI, or pick All accounts."
+            : "This account isn't allowed to use AI. Turn on 'Use this account's mail for AI' in Settings → AI, or pick All accounts.";
+      throw new ContractError({ type: 'forbidden', message, reasonCode: 'ai.accountExcluded' });
     }
     emit({ kind: 'step', step: steps.emit('search', 'Searching your mail', 'running') });
     // searchAllMail widens retrieval beyond the default inbox-facing sources.
-    const { sources, names } = services.store.read(q => ({
+    const { sources, accounts } = services.store.read(q => ({
       sources: findSources(
         q,
         args.question,
@@ -407,31 +501,26 @@ async function askRun(
         args.context?.threadId,
         args.context?.selectedIds,
       ),
-      names: new Map(
-        q
-          .all<{ id: string; display_name: string | null }>(
-            `SELECT id, display_name FROM accounts WHERE id IN (${allowed.map(() => '?').join(',')})`,
-            ...allowed,
-          )
-          .map(r => [r.id, r.display_name] as const),
+      accounts: q.all<AccountRow>(
+        'SELECT id, address, display_name FROM accounts ORDER BY created_at, id',
       ),
     }));
     emit({
       kind: 'step',
       step: steps.emit('search', 'Searching your mail', 'done', sources.length),
     });
-    // The owner's address never reaches the provider: a source names its account by the display name
-    // when that is not itself an address, else by a per-run number in first-appearance order.
-    const labels = new Map<string, string>();
-    for (const s of sources) {
-      if (labels.has(s.accountId)) continue;
-      const shown = names.get(s.accountId)?.replace(/\s+/g, ' ').trim();
-      labels.set(s.accountId, shown && !shown.includes('@') ? shown : `Account ${labels.size + 1}`);
-    }
+    // Account headers never name the owner's address: each account is labelled in a fixed order so
+    // 'Account 2' means the same mailbox in every run and turn, and a From: or quoted-reply header
+    // that is the owner themself shows the label, not the address. The Account: line is still omitted
+    // when every source in the run is from one account.
+    const { labels, byAddress } = accountLabels(accounts);
+    const multi = new Set(sources.map(s => s.accountId)).size > 1;
     const quoted = sources
       .map(
         s =>
-          `[${s.n}]${labels.size > 1 ? ` Account: ${labels.get(s.accountId)}` : ''}\nFrom: ${s.fromName ?? 'unknown'}\nSubject: ${s.subject}\n\n${quoteText(s.text)}`,
+          `[${s.n}]${multi ? ` Account: ${labels.get(s.accountId)!}` : ''}\nFrom: ${
+            (s.fromAddr && byAddress.get(s.fromAddr.toLowerCase())) ?? s.fromName ?? 'unknown'
+          }\nSubject: ${s.subject}\n\n${quoteText(s.text, byAddress)}`,
       )
       .join('\n\n---\n\n');
     const history = args.conversationId
