@@ -52,6 +52,10 @@ export function SectionHeader({
             icon={action.icon}
             tooltip={tip(action.label, action.commandId, action.keys)}
             hintKey={actionKey}
+            // A pointer duplicate when a key or a registry command (⌘K) does the same: a real button here would sit in a
+            // group inside the listbox, which may own only options (axe aria-required-children). Otherwise (a screen's
+            // own action, such as Unsubscribe) it stays reachable.
+            duplicate={inListbox && (actionKey !== '' || action.commandId !== undefined)}
             onPress={anchor => {
               action.onSelect();
               // A pointer press must not leave the listbox's keys (Space, Enter) on this button.
