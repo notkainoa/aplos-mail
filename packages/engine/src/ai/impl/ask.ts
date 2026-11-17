@@ -11,7 +11,14 @@ import { ftsPhrases } from '../../views/search';
 import type { AiChatMessage } from '../host';
 import { accountAllowed, allowedAccounts, interactiveModel } from './gate';
 import { callMessage, meteredChat } from './runtime';
-import { isRecencyQuestion, newestFirst, newestMessages, wantsNewest } from './ask-recency';
+import { stripMarkers } from './ask-markers';
+import {
+  isoDate,
+  isRecencyQuestion,
+  newestFirst,
+  newestMessages,
+  wantsNewest,
+} from './ask-recency';
 import './ai-writes';
 
 /**
@@ -73,7 +80,7 @@ const MAX_SOURCE_CHARS = 2_500;
  * never leaves `quoteText`: a caught line is sent with its original text behind `> `.
  */
 const FAKE_STRUCTURE =
-  /^\s*(?:\p{Ps}\s*\d|(?:account|from|subject|sources)\s*[:∶：]|(?:[-_*=—–─━]\s*){3,})/iu;
+  /^\s*(?:\p{Ps}\s*\d|(?:account|from|subject|date|now|sources)\s*[:∶：]|(?:[-_*=—–─━]\s*){3,})/iu;
 
 /** The entities a fake can hide a bracket or colon behind: `&#91;`, `&#x5b;`, `&lt;` and friends. */
 const HTML_ENTITY = /&(amp|lt|gt|quot|#(?:x[0-9a-f]+|\d+));/gi;
@@ -413,24 +420,6 @@ function draftCtx(
   return `\n\nThe draft being written:\n${parts.join('\n')}${body ? `\n${body}` : ''}`;
 }
 
-/** Strip `[n]` markers the model wrote; each becomes a chip at its character offset in the shown text (FR-30). */
-function stripMarkers(text: string): {
-  text: string;
-  cites: { at: number; n: number }[];
-} {
-  const cites: { at: number; n: number }[] = [];
-  let out = '';
-  let last = 0;
-  for (const m of text.matchAll(/\[(\d{1,3}(?:[ ,]+\d{1,3})*)\]/g)) {
-    const at = m.index ?? 0;
-    out += text.slice(last, at);
-    for (const n of m[1].match(/\d+/g) ?? []) cites.push({ at: out.length, n: Number(n) });
-    last = at + m[0].length;
-  }
-  out += text.slice(last);
-  return { text: out.trim(), cites };
-}
-
 function conversationOf(q: StoreReader, id: string): Conversation | undefined {
   if (!/^[A-Za-z0-9_-]{1,200}$/.test(id)) return undefined;
   const rows = q.all<{ pos: number; data: string }>(
@@ -609,7 +598,8 @@ async function askRun(
           ((s.fromAddr && byAddress.get(s.fromAddr.toLowerCase())) ??
             (s.fromName && maskOwners(s.fromName, byAddress).slice(0, 200))) ||
           'unknown';
-        const date = s.date !== undefined ? `\nDate: ${new Date(s.date).toISOString()}` : '';
+        const iso = isoDate(s.date);
+        const date = iso ? `\nDate: ${iso}` : '';
         return `[${s.n}]${multi ? ` Account: ${labels.get(s.accountId)!}` : ''}\nFrom: ${from}\nSubject: ${maskOwners(s.subject, byAddress).slice(0, 500)}${date}\n\n${quoteText(s.text, byAddress)}`;
       })
       .join('\n\n---\n\n');
