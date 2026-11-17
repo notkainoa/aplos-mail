@@ -45,7 +45,7 @@ import {
 import { acquireLock, nodeLockPorts, type HeldLock } from '../host/lock';
 import { watchPowerResume } from '../host/power';
 import { createLoopMonitor, nodeDelayHistogram, startCrashReporting } from '../host/crash';
-import { createPause } from '../host/menu-bar';
+import { createPause, type SyncFacts } from '../host/menu-bar';
 import { LOG_FILE, logDir } from '../host/logsink';
 import {
   isTest,
@@ -93,6 +93,19 @@ const timers = {
   cancel: (handle: unknown) => clearInterval(handle as NodeJS.Timeout),
 };
 const processState = createProcessState();
+/**
+ * The tray's cached facts on the real engine path, refilled by `pollMenuSync`. Main holds no mailbox copy there,
+ * so the menu's `sync` callback can only read this cache; a down or slow engine keeps the last answer.
+ */
+let menuSync: SyncFacts | undefined;
+function pollMenuSync() {
+  void realEngine
+    .sync()
+    .then(facts => {
+      menuSync = facts ?? menuSync;
+    })
+    .catch(() => {});
+}
 const loopMonitor = createLoopMonitor({
   histogram: nodeDelayHistogram(),
   timers,
@@ -235,9 +248,18 @@ function startResident() {
   });
   loopMonitor.start();
   if (isTest) return;
+  if (realPath) {
+    // `latestState` is a legacy-engine snapshot and never fills on this path; the menu would sit on "Starting…"
+    // for the whole session without this poll (the menu itself calls back every 2 s against the cache).
+    pollMenuSync();
+    timers.every(pollMenuSync, 2000).unref();
+  }
   startMenuBar({
     pause,
-    sync: () => latestState?.sync,
+    sync: () =>
+      realPath
+        ? menuSync
+        : latestState?.sync && { ...latestState.sync, accounts: latestState.accounts.length },
     open: () => {
       app.focus({ steal: true });
       void focusMain();
