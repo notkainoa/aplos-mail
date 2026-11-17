@@ -101,6 +101,8 @@ export interface ShortcutEntry {
   label: string;
   /** Alternatives, joined with "or". */
   alternatives: readonly ShortcutChord[];
+  /** A short qualifier when several commands share the key ("while a follow-up is queued"). */
+  note?: string;
 }
 
 /** One context block, e.g. "Global", "Lists". */

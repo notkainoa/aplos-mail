@@ -3,7 +3,7 @@
 // places while the filter narrows them. Esc clears the filter first, then closes; "?" again, the close button
 // and the scrim close too. Handles only its own widget's keys, and never while an IME is composing.
 import { createPortal } from 'react-dom';
-import { useEffect, useId, useRef, type KeyboardEvent, type ReactNode } from 'react';
+import { useEffect, useId, useRef, useState, type KeyboardEvent, type ReactNode } from 'react';
 import { Button } from '../buttons-keys/Button';
 import { KeyCaps } from '../buttons-keys/Kbd';
 import type { ShortcutEntry, ShortcutGroup, ShortcutSheetProps } from '../props';
@@ -36,6 +36,27 @@ function highlight(text: string, needle: string): ReactNode {
   );
 }
 
+/** True while the element's content runs on below the visible part (re-read on scroll and on resize). */
+function useMoreBelow(): [React.RefObject<HTMLDivElement | null>, boolean] {
+  const ref = useRef<HTMLDivElement | null>(null);
+  const [more, setMore] = useState(false);
+  useEffect(() => {
+    const el = ref.current;
+    if (!el) return;
+    const measure = () => setMore(el.scrollTop + el.clientHeight < el.scrollHeight - 1);
+    measure();
+    el.addEventListener('scroll', measure, { passive: true });
+    const observer = typeof ResizeObserver === 'undefined' ? null : new ResizeObserver(measure);
+    observer?.observe(el);
+    if (el.firstElementChild) observer?.observe(el.firstElementChild);
+    return () => {
+      el.removeEventListener('scroll', measure);
+      observer?.disconnect();
+    };
+  });
+  return [ref, more];
+}
+
 export function ShortcutSheet({
   open,
   groups,
@@ -49,6 +70,7 @@ export function ShortcutSheet({
   const filterId = `${uid}-filter`;
   const dialogRef = useRef<HTMLElement | null>(null);
   const opener = useRef<HTMLElement | null>(null);
+  const [bodyRef, more] = useMoreBelow();
 
   // Focus goes back to whatever opened the sheet. It is read during render, before the filter field takes focus.
   if (
@@ -146,7 +168,9 @@ export function ShortcutSheet({
           <Button variant="icon" icon="close" label="Close" keys="Esc" onPress={onClose} />
         </header>
         <div
+          ref={bodyRef}
           className="ui-shortcut-sheet-body"
+          data-more={more ? 'below' : undefined}
           tabIndex={0}
           role="region"
           aria-label="All shortcuts"
@@ -176,6 +200,9 @@ export function ShortcutSheet({
                             <li key={`${entry.commandId}:${index}`} className="ui-shortcut-row">
                               <span className="ui-shortcut-label">
                                 {highlight(entry.label, needle)}
+                                {entry.note ? (
+                                  <span className="ui-shortcut-note"> · {entry.note}</span>
+                                ) : null}
                               </span>
                               <span className="ui-shortcut-keys">
                                 <KeyCaps caps={entry.alternatives} reveal="always" />

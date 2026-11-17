@@ -10,6 +10,8 @@ export interface SheetRow {
   /** "J or ↓", "Hold R", "1–9", "⌥-click". */
   readonly keys: string;
   readonly kind: 'key' | 'pointer';
+  /** A short qualifier for a key that several commands share ("while a follow-up is queued"). */
+  readonly note?: string;
 }
 
 export interface SheetSection {
@@ -56,6 +58,26 @@ export const SHEET_SECTIONS: readonly SectionDef[] = [
   { id: 'calendar', title: 'Calendar', column: 2, contexts: ['calendar'] },
 ];
 
+/** When a key is shared between commands, the context that picks which one runs, said beside the row. */
+export const SHEET_NOTES: Readonly<Record<string, string>> = {
+  'nav.later': 'opens the list',
+  'ask.sendNow': 'while a follow-up is queued',
+  'ask.stop': 'while it answers',
+  'ask.clear': 'with a question typed',
+  'ask.close': 'when it is empty',
+  'ask.declineProposal': 'on a proposal',
+  'compose.dismissSuggestion': 'while one shows',
+  'compose.close': 'otherwise',
+};
+
+/**
+ * Commands a section lists again beside its own, because the owner looks for them there: triage works from a list's
+ * cursor, so Done and Later sit near the top of Lists, after the suggested action.
+ */
+const SHEET_ALSO: Readonly<
+  Record<string, { readonly after: CommandId; readonly ids: CommandId[] }>
+> = { lists: { after: 'mail.suggested', ids: ['mail.done', 'mail.later'] } };
+
 /** Pointer gestures DESIGN §8 lists beside the keys; they have no binding to generate from. */
 export const SHEET_POINTER_ROWS: Readonly<Record<string, readonly SheetRow[]>> = {
   lists: [
@@ -84,6 +106,24 @@ function uniqueBindings(bindings: readonly Binding[]): Binding[] {
   return out;
 }
 
+function addAlso(
+  rows: SheetRow[],
+  also: (typeof SHEET_ALSO)[string] | undefined,
+  registry: Registry,
+  all: readonly Binding[],
+  sheetContexts: ReadonlySet<ContextName>,
+): void {
+  if (!also) return;
+  const extra: SheetRow[] = also.ids.flatMap(id => {
+    const bound = all.filter(b => b.commandId === id && sheetContexts.has(b.context));
+    if (bound.length === 0) return [];
+    const label = registry.get(id)?.spec.label ?? id;
+    return [{ id, label, keys: formatAlternatives(uniqueBindings(bound)), kind: 'key' as const }];
+  });
+  const at = rows.findIndex(r => r.id === also.after);
+  rows.splice(at < 0 ? 0 : at + 1, 0, ...extra);
+}
+
 export function buildSheet(registry: Registry): SheetSection[] {
   const ids = [...registry.list().map(c => c.id), ...registry.controls().map(c => c.id)];
   const all = registry.bindings();
@@ -100,8 +140,16 @@ export function buildSheet(registry: Registry): SheetSection[] {
       const everywhere = all.filter(b => b.commandId === id && sheetContexts.has(b.context));
       const label = registry.get(id)?.spec.label ?? id;
       listed.add(id);
-      rows.push({ id, label, keys: formatAlternatives(uniqueBindings(everywhere)), kind: 'key' });
+      const note = SHEET_NOTES[id];
+      rows.push({
+        id,
+        label,
+        keys: formatAlternatives(uniqueBindings(everywhere)),
+        kind: 'key',
+        ...(note ? { note } : {}),
+      });
     }
+    addAlso(rows, SHEET_ALSO[section.id], registry, all, sheetContexts);
     rows.push(...(SHEET_POINTER_ROWS[section.id] ?? []));
     return { id: section.id, title: section.title, column: section.column, rows };
   });

@@ -23,6 +23,7 @@ export function sheetProps(sections: readonly SheetSection[]): SheetProps {
         commandId: row.id,
         label: row.label,
         alternatives: parseKeyText(row.keys),
+        ...(row.note ? { note: row.note } : {}),
       })),
     });
     columns[section.column].push(section.id);
