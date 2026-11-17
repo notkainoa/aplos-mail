@@ -252,7 +252,7 @@ test('ProviderTable hosted: key source and status in words, Default tag, never a
   assert.match(out, /No key yet · reads ANTHROPIC_API_KEY/);
   assert.match(out, /Works · 0\.4 s/);
   assert.match(out, /Testing…/);
-  assert.match(out, /Needs a key/);
+  assert.doesNotMatch(out, /Needs a key/, 'one status per row: No key yet says it');
   assert.match(out, /Key refused/);
   assert.match(out, />Ready</);
   assert.match(out, /Not reachable/);

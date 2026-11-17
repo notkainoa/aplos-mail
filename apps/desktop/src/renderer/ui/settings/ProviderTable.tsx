@@ -47,6 +47,8 @@ function statusView(status: ProviderStatus): StatusView {
 }
 
 function StatusCell({ status }: { status: ProviderStatus }) {
+  // The row's "No key yet" line already says it, so a missing key adds no second status; the cell keeps its column.
+  if (status.kind === 'needsKey') return <span aria-hidden="true" />;
   const view = statusView(status);
   return (
     <span
