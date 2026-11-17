@@ -170,11 +170,65 @@ test('Ask/run: with no account allowing AI the refusal keeps the all-accounts wo
   const w = await world();
   seedMail(w, false);
   seedSecond(w, false);
-  for (const scope of [undefined, { accountIds: ['acct-2'] }] as const) {
+  for (const scope of [undefined, { accountIds: ['acct-2'] }]) {
     const run = await w.call('Ask/run', { question: 'hi', ...(scope ? { scope } : {}) });
     await settle(w, run.runId);
     const err = errorFrame(w, run.runId);
     assert.equal(err?.problem?.reasonCode, 'ai.accountExcluded');
     assert.match(err?.problem?.message ?? '', /No account allows AI to read its mail/);
   }
+});
+
+test('Ask/run: the context thread leads inside the scoped account, and stays out of another', async () => {
+  const t = stubTransport({});
+  const w = await world(t);
+  seedMail(w);
+  seedSecond(w);
+  // An older thread in the scoped account whose mail also matches the question: the context thread
+  // still leads the source list, ahead of the newer FTS hit.
+  w.store.commit({
+    opId: 'seed-c',
+    origin: 'sync',
+    writes: [
+      msg('m3', 'T-second', -100, {
+        subject: 'Invoice reminder',
+        snippet: 'A reminder about the invoice.',
+      }),
+    ],
+  });
+  const inside = await w.call('Ask/run', {
+    question: 'invoice',
+    scope: { accountIds: ['acct-1'] },
+    context: { threadId: 'acct-1:T-second' },
+  });
+  await settle(w, inside.runId);
+  const promptIn = lastPrompt(t);
+  assert.match(promptIn, /Sources:\n\[1\]\nFrom: Sender m3\nSubject: Invoice reminder/);
+  assert.match(promptIn, /\[2\]\nFrom: Sender m1\nSubject: Invoice due Friday/);
+  // A context thread in another account yields no source at all.
+  const outside = await w.call('Ask/run', {
+    question: 'zebra quokka',
+    scope: { accountIds: ['acct-1'] },
+    context: { threadId: 'acct-2:T-other' },
+  });
+  await settle(w, outside.runId);
+  const promptOut = lastPrompt(t);
+  assert.match(promptOut, /\(no matching mail found\)/);
+  assert.doesNotMatch(promptOut, /Invoice paid already|Sender x1/);
+});
+
+test('Ask/run: selected ids join the sources inside the scoped account and drop outside it', async () => {
+  const t = stubTransport({});
+  const w = await world(t);
+  seedMail(w);
+  seedSecond(w);
+  const run = await w.call('Ask/run', {
+    question: 'zebra quokka',
+    scope: { accountIds: ['acct-1'] },
+    context: { selectedIds: ['acct-1:m1', 'acct-2:x1'] },
+  });
+  await settle(w, run.runId);
+  const prompt = lastPrompt(t);
+  assert.match(prompt, /\[1\]\nFrom: Sender m1\nSubject: Invoice due Friday/);
+  assert.doesNotMatch(prompt, /Invoice paid already|Sender x1/);
 });
