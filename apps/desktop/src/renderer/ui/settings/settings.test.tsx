@@ -367,7 +367,7 @@ test('ProviderTable local: address field with the default as placeholder, runnin
   assert.match(out, /placeholder="http:\/\/localhost:1234"/);
   assert.match(out, /placeholder="https:\/\/your-server\.example\/v1"/);
   assert.match(out, /On this Mac · running · no key needed/);
-  assert.match(out, /On this Mac · not running · no key needed/);
+  assert.match(out, /On this Mac · no key needed/);
   assert.match(out, /Any OpenAI-compatible server · key optional/);
   assert.match(out, />Add key</);
   assert.match(out, /Works · 0\.1 s/);

@@ -252,6 +252,18 @@ describe('AI: key source, Remove, providers', () => {
     assert.equal(rows[0].defaultAddress, 'http://localhost:11434/v1');
   });
 
+  test('a local server is Ready only after a probe saw it running, never while unprobed', () => {
+    const base = providers().map(p => (p.id === 'ollama' ? { ...p, status: 'ready' } : p));
+    const status = (running: boolean | undefined) =>
+      localRows(
+        base.map(p => (p.id === 'ollama' ? { ...p, running } : p)),
+        baseSettings(),
+      )[0].status?.kind;
+    assert.equal(status(true), 'ready');
+    assert.equal(status(false), 'notRunning');
+    assert.equal(status(undefined), 'notTested');
+  });
+
   test('a live test result replaces the engine status', () => {
     const rows = hostedRows(providers(), {
       openai: { kind: 'testing' },

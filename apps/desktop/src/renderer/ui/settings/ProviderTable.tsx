@@ -33,6 +33,8 @@ function statusView(status: ProviderStatus): StatusView {
       return { text: 'Needs a key', tone: 'neutral' };
     case 'notRunning':
       return { text: 'Not running', tone: 'quiet' };
+    case 'notTested':
+      return { text: 'Not tested', tone: 'quiet' };
     case 'testing':
       return { text: 'Testing…', tone: 'busy' };
     case 'works':
@@ -249,9 +251,9 @@ function localDescription(
   const where =
     row.provider === 'custom'
       ? 'Any OpenAI-compatible server'
-      : row.status?.kind === 'notRunning'
-        ? 'On this Mac'
-        : `On this Mac · ${row.running ? 'running' : 'not running'}`;
+      : row.running === true
+        ? 'On this Mac · running'
+        : 'On this Mac';
   const source = row.keySource;
   if (!source || source.kind === 'local')
     return row.provider === 'custom' ? `${where} · key optional` : `${where} · no key needed`;
@@ -280,7 +282,6 @@ export function ProviderTable(props: ProviderTableProps): ReactNode {
               key={row.feature}
               id={id}
               label={copy.label}
-              meta={row.needsKey ? 'Needs a key' : undefined}
               description={copy.description}
               control={
                 <span className="ui-provider-table__pair">

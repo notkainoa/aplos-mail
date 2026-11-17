@@ -602,6 +602,13 @@ export function hostedRows(
   });
 }
 
+/** A local server is Ready only after a probe saw it running; stopped says "Not running", unprobed "Not tested". */
+function localStatus(p: Pick<AiProvider, 'status' | 'lastTest' | 'running'>): ProviderStatus {
+  if (p.running === false) return { kind: 'notRunning' };
+  if (p.running === undefined) return { kind: 'notTested' };
+  return providerStatus(p);
+}
+
 export function localRows(
   providers: readonly AiProvider[],
   settings: Pick<Settings, 'ai'>,
@@ -611,8 +618,7 @@ export function localRows(
   return LOCAL_ORDER.flatMap(id => {
     const p = byId(providers, id);
     if (!p) return [];
-    const status: ProviderStatus =
-      testing[id] ?? (p.running === false ? { kind: 'notRunning' } : providerStatus(p));
+    const status: ProviderStatus = testing[id] ?? localStatus(p);
     return [
       {
         provider: id,

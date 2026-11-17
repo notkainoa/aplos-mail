@@ -18,7 +18,7 @@ export interface AiNotice {
   readonly text: string;
   /** The provider whose key the notice asks for: the notice then offers "Add key" for it. */
   readonly addKeyFor?: string;
-  /** The features the notice speaks for, so each one's row can say "Needs a key". */
+  /** The features the notice speaks for, for a reader of the notice. */
   readonly features?: readonly AiFeature[];
 }
 

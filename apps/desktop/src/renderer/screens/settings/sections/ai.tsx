@@ -95,11 +95,7 @@ export function Ai({ data, view, actions }: SectionProps) {
   }
   const consent = consentView(data.consent, settings);
   const notices = aiNotices(settings, providers);
-  const needKey = new Set(notices.flatMap(n => (n.addKeyFor ? (n.features ?? []) : [])));
-  const features = featureRows(settings, providers, data.models ?? {}).map(row => ({
-    ...row,
-    needsKey: needKey.has(row.feature),
-  }));
+  const features = featureRows(settings, providers, data.models ?? {});
   const hosted = hostedRows(providers, view.testing, devDetails);
   const local = localRows(providers, settings, view.testing, devDetails).map(r => ({
     ...r,

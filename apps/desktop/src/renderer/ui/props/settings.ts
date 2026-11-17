@@ -73,6 +73,8 @@ export type ProviderStatus =
   | { kind: 'needsKey' }
   /** A local server that is not running and has not been tested: a quiet --dim "Not running", never red (red follows a failed Test). */
   | { kind: 'notRunning' }
+  /** A local server nobody has probed yet: a quiet "Not tested", never "Ready" until a probe answers. */
+  | { kind: 'notTested' }
   | { kind: 'testing' }
   | {
       /** "Works · 0.4 s". */
@@ -97,8 +99,6 @@ export type ProviderTableProps =
         provider: ProviderId;
         model: string;
         providerOptions: readonly ProviderId[];
-        /** The row's provider needs a key: a quiet "Needs a key" shows after the feature's name. */
-        needsKey?: boolean;
         modelOptions: readonly string[];
         /** Display names for model ids ("GPT-OSS 120B"), where the provider's catalogue has one; an id without one shows as it is. */
         modelNames?: Readonly<Record<string, string>>;
