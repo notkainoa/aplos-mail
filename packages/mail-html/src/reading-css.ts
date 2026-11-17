@@ -63,7 +63,7 @@ export const PLAIN_LIGHT = {
   accent: '#0b5394',
 } as const;
 export const PLAIN_DARK = {
-  surface: '#212225',
+  surface: '#2b2c30',
   ink: '#ececed',
   dim: '#9a9da4',
   accent: '#88aee0',
