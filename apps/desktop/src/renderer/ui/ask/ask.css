@@ -186,8 +186,6 @@
   margin-left: calc(
     -1 * var(--space-2)
   ); /* the button's own padding, so its word lines up with the sentence */
-}
-.ui-ask-dock__setup > .ui-compose-btn {
   color: var(
     --accent
   ); /* an action that leaves for Settings, so it reads as one, not as more text */
