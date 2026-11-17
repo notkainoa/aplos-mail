@@ -26,6 +26,7 @@ import {
 } from '../../data';
 import {
   openSheet,
+  pushToast,
   setToastUndoRefusal,
   useCommandTarget,
   usePaneHeaderPart,
@@ -213,6 +214,19 @@ function useInviteAnswerKeys(dispatch: (action: CalendarAction) => boolean) {
     window.addEventListener('keydown', onKey, true);
     return () => window.removeEventListener('keydown', onKey, true);
   }, [dispatch]);
+}
+
+/** N, a click or a drag on a grid that has nowhere to put an event says why, once and without a dialog. */
+const VIEW_ONLY_TOAST_ID = 'calendar-view-only';
+function sayViewOnly(action: CalendarAction, ctx: CalendarContext): void {
+  if (action.type !== 'newEvent' && action.type !== 'createRange') return;
+  if (canCreateEvent(ctx)) return;
+  pushToast({
+    id: VIEW_ONLY_TOAST_ID,
+    kind: 'locked',
+    message: 'These calendars are view-only',
+    undoable: false,
+  });
 }
 
 function CalendarBody({ accountId, announce }: CalendarScreenProps) {
@@ -441,6 +455,7 @@ function CalendarBody({ accountId, announce }: CalendarScreenProps) {
         setState(t.state);
       }
       t.effects.forEach(run);
+      if (!t.handled) sayViewOnly(action, ctxRef.current);
       return t.handled;
     },
     [run],

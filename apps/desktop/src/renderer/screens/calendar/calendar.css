@@ -36,7 +36,7 @@
 }
 
 /* The calm panel for an empty day or week (DESIGN 7.14): centred in the visible scroll window on a quiet card
-   (--paper, the --line ring of --elev-pane, --radius-lg), so the message never sits on the hour lines. Pointer
+   (--float with its --elev-float ring, --radius-lg: opaque, so no hour line shows through or touches it). Pointer
    events pass through except on the card, so a click-drag on the grid around it still creates an event. */
 .cal-screen__empty {
   position: absolute;
@@ -57,8 +57,8 @@
   max-width: var(--dock-w);
   padding: var(--space-6);
   border-radius: var(--radius-lg);
-  background: var(--paper);
-  box-shadow: var(--elev-pane);
+  background: var(--float);
+  box-shadow: var(--elev-float);
   text-align: center;
   pointer-events: auto;
 }

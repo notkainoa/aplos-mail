@@ -58,6 +58,9 @@ function blockWords(
  *
  * CalendarGrid places it: a slot element around it carries the top, height and lane; the block fills the slot.
  */
+/** A name this long wraps in a crowded lane (about 12 characters fit a 90 px tile): it takes two lines and the time line steps aside. */
+const LONG_CROWDED_TITLE = 12;
+
 export function EventBlock(props: EventBlockProps) {
   const first = useContext(FirstSegment);
   const activeStack = useContext(ActiveStack);
@@ -111,6 +114,9 @@ export function EventBlock(props: EventBlockProps) {
       data-compact-time={compactStart ? 'true' : undefined}
       data-crowded={placement.lanes > 1 ? 'true' : undefined}
       data-tall={isTall(event, density) ? 'true' : undefined}
+      data-long-title={
+        placement.lanes > 1 && event.title.length > LONG_CROWDED_TITLE ? 'true' : undefined
+      }
       data-unanswered={event.unanswered ? 'true' : undefined}
       data-locked={locked ? 'true' : undefined}
       aria-pressed={selected}

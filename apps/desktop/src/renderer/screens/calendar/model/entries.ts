@@ -57,6 +57,7 @@ export function calendarInfos(calendars: readonly Calendar[], solo: string | nul
     name: c.name,
     color: tagFor(c, calendars),
     visible: visible.has(c.id),
+    ...(c.readOnly ? { readOnly: true } : {}),
   }));
 }
 
