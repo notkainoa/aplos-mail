@@ -5,10 +5,15 @@ import type { LogRecord } from '@aplos/contract/log/events';
 import { createLogger } from '../../src/diag/log';
 import { createEngine, laneExtensions } from '../../src/index';
 import { openStore } from '../../src/store';
-import { AiCallError, type AiChatRequest, type AiTransport } from '../../src/ai/host';
+import {
+  AiCallError,
+  type AiChatRequest,
+  type AiChatTurn,
+  type AiTransport,
+} from '../../src/ai/host';
 import { runJobs } from '../../src/ai/impl/runner';
 import { queueSummary } from '../../src/ai/impl/jobs';
-import { CHAT_TIMEOUT_MS } from '../../src/ai/impl/runtime';
+import { CHAT_TIMEOUT_MS, meteredChat } from '../../src/ai/impl/runtime';
 import { ACCOUNT, accountWrite, folderWrites, msg, tempDb } from '../store/helpers';
 import { manualClock, silentDeadlines } from '../runtime.helpers';
 
@@ -183,4 +188,86 @@ test('a pending placeholder with older text goes stale, not empty, when AI is sw
   const row = await threadSummary(w);
   assert.equal(row.state, 'stale');
   assert.equal(row.text, 'Ada asked about the invoice.');
+});
+
+test('a spent daily cap settles the placeholder while the job waits for tomorrow', async () => {
+  const w = await world(stubTransport({}));
+  seedMail(w);
+  await consentNow(w);
+  await w.call('Settings/set', {
+    opId: 'cap',
+    patch: { ai: { dailyCap: { enabled: true, tokens: 1 } } },
+  });
+  // First call lands (cap opens before it, the spend records after); a re-pend then meets a spent day.
+  await runJobs(w.engine.services, w.clock.now());
+  assert.equal((await threadSummary(w)).state, 'ready');
+  w.engine.services.store.commit({
+    opId: 'reply',
+    origin: 'sync',
+    writes: [msg('m3', 'T-thread', 7)],
+  });
+  queueSummary(w.engine.services, ACCOUNT, 'T-thread');
+  assert.equal((await threadSummary(w)).state, 'pending');
+  await runJobs(w.engine.services, w.clock.now());
+  const row = await threadSummary(w);
+  assert.equal(row.state, 'stale', 'a day-long wait collapses like AI-off, keeping the older text');
+  // The job itself was only deferred — tomorrow's pass still has it queued, not dead.
+  assert.equal(jobsOf(w, 'summary').at(-1)!.state, 'queued');
+});
+
+test('a pending placeholder with no live job behind it settles instead of spinning', async () => {
+  const w = await world(stubTransport({}));
+  seedMail(w);
+  await consentNow(w);
+  // The crash shape: a `pending` row whose job row is gone entirely (dead-lettered, or the enqueue lost).
+  w.engine.services.store.commit({
+    opId: 'orphan',
+    origin: 'system',
+    writes: [
+      {
+        kind: 'summary',
+        accountId: ACCOUNT,
+        remoteThreadId: 'T-thread',
+        inputHash: 'no-such-job',
+        model: 'groq/demo',
+        text: '',
+        state: 'pending',
+      },
+    ],
+  });
+  const orphan = () =>
+    w.engine.services.store.read(
+      q =>
+        q.get<{ state: string }>("SELECT state FROM summaries WHERE input_hash = 'no-such-job'")
+          ?.state,
+    );
+  assert.equal(orphan(), 'pending');
+  await runJobs(w.engine.services, w.clock.now());
+  assert.equal(orphan(), 'failed', 'nothing is coming — the card collapses');
+});
+
+test('the 120 s bound covers background jobs only — a slow interactive answer still lands', async () => {
+  let resolve: ((turn: AiChatTurn) => void) | undefined;
+  const slow = stubTransport({ hang: true });
+  slow.chat = req => {
+    // A local provider answering slowly, honestly: the stream lives until the test lets it finish.
+    return new Promise(res => {
+      resolve = res;
+      req.signal?.addEventListener('abort', () => res({ content: 'aborted', toolCalls: [] }), {
+        once: true,
+      });
+    });
+  };
+  const w = await world(slow);
+  seedMail(w);
+  const turn = meteredChat(
+    w.engine.services,
+    { feature: 'ask', model: { provider: 'groq', model: 'demo' }, lane: 'interactive' },
+    { messages: [{ role: 'user', content: 'hi' }] },
+  );
+  await Promise.resolve();
+  // Well past the bound: an interactive call has no timer armed, so nothing fires.
+  w.clock.advance(CHAT_TIMEOUT_MS * 3);
+  resolve!({ content: 'a slow but honest answer', toolCalls: [] });
+  assert.equal((await turn).content, 'a slow but honest answer');
 });

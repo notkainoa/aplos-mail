@@ -256,12 +256,13 @@ function failSummary(services: EngineServices, row: JobRow): void {
 
 /**
  * AI-off means the card collapses, not "Summarizing…" forever: a `pending` placeholder whose work cannot run —
- * the Summaries gate closed for every account, or the row's own account kept out of AI — flips to `failed` (or
- * `stale` when it carried text), the same settle `failSummary` makes before the job could ever be attempted.
- * Bounded to `summaries` placeholders only; other features have none.
+ * the Summaries gate closed for every account, the day's cap spent, or the row's own account kept out of AI —
+ * flips to `failed` (or `stale` when it carried text), the same settle `failSummary` makes before the job could
+ * ever be attempted. An orphan — no live `summary:` job for its key, e.g. the job went `dead` or was lost —
+ * settles too: the request genuinely failed. Bounded to `summaries` placeholders only; other features have none.
  */
 function closePendingSummaries(services: EngineServices, now: number): void {
-  const gateOff = backgroundGate(services, 'summaries').ok ? 0 : 1;
+  const off = backgroundGate(services, 'summaries').ok && budgetOpen(services) ? 0 : 1;
   const rows = services.store.read(q =>
     q.all<{
       account_id: string;
@@ -274,9 +275,15 @@ function closePendingSummaries(services: EngineServices, now: number): void {
       `SELECT t.account_id, t.remote_id, s.input_hash, s.model, s.text, s.action
        FROM summaries s JOIN threads t ON t.id = s.thread_id
        JOIN accounts a ON a.id = t.account_id
-       WHERE s.state = 'pending' AND (? = 1 OR a.ai_allowed != 1)
-       ORDER BY s.created_at LIMIT 200`,
-      gateOff,
+       WHERE s.state = 'pending' AND (
+         ? = 1 OR a.ai_allowed != 1
+         OR NOT EXISTS (
+           SELECT 1 FROM jobs j
+           WHERE j.key = 'summary:' || t.account_id || ':' || t.remote_id || ':' || s.input_hash
+             AND j.state IN ('queued', 'running', 'failed'))
+       )
+       ORDER BY s.created_at, t.id LIMIT 200`,
+      off,
     ),
   );
   if (!rows.length) return;
@@ -299,9 +306,16 @@ function closePendingSummaries(services: EngineServices, now: number): void {
 /**
  * The release reasons that mean AI is off, not paused: no key, no provider, no AI on this build. The job keeps
  * its queue slot for the owner's fix, but the card's "nothing is coming" is already true — the subset of
- * `RELEASE_CODES` (execute.ts) that is an off state rather than a wait like `dailyLimit`/`gatePaused`.
+ * `RELEASE_CODES` (execute.ts) that is an off state rather than a wait like `gatePaused`. `dailyLimit` is a
+ * wait too — but a day-long one that reads identically to a hang on the card, so the placeholder settles now
+ * and tomorrow's pass re-queues the job anyway.
  */
-const AI_OFF_RELEASE: ReadonlySet<string> = new Set(['missingKey', 'unavailable', 'noProvider']);
+const AI_OFF_RELEASE: ReadonlySet<string> = new Set([
+  'missingKey',
+  'unavailable',
+  'noProvider',
+  'dailyLimit',
+]);
 
 const resetDone = new WeakSet<object>();
 /** The day a `budget_exhausted` event was last logged, per engine — a spent cap warns once, then sleeps till tomorrow. */
@@ -413,7 +427,7 @@ export async function runJobs(services: EngineServices, now: number): Promise<vo
           // A summary job that will not run again clears its `pending` placeholder to `failed` (a Home row
           // collapses); a retryable 'failed' attempt keeps it while the queue retries. So does a release for
           // an AI-off reason — the job stays queued for the owner's fix but nothing is coming now — while a
-          // release for a real wait (daily cap, gate pause) holds the placeholder.
+          // release for a real wait (a closed-but-reopenable gate) holds the placeholder.
           if (
             (row.kind === 'summary' || row.kind === 'classify') &&
             (outcome.state === 'dead' ||
