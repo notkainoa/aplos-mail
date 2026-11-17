@@ -194,7 +194,6 @@ export function SearchPage(props: SearchPageProps) {
                   }
                 : CLEAR_SEARCH(handlers.onClear)
             }
-            secondaryAction={model.noMatchOffer ? CLEAR_SEARCH(handlers.onClear) : undefined}
           />
         ) : null}
         {line?.kind === 'offer' ? (

@@ -25,6 +25,32 @@ const THREAD = {
 
 const LOCAL: LocalResults = { status: 'live', ids: ['t1'], total: 1 };
 
+const HANDLERS = {
+  onChange: () => undefined,
+  onRemoveToken: () => undefined,
+  onSubmit: () => undefined,
+  onClear: () => undefined,
+  onRetryResults: () => undefined,
+  onLeaveToList: () => undefined,
+  onSelectRow: () => undefined,
+  onOpenRow: () => undefined,
+  onRowAction: () => undefined,
+};
+
+function emptyMarkup(local: LocalResults, field: string, offer = true): string {
+  const model = searchPage({ ...initialSearch, field }, local, 1_000);
+  return renderToStaticMarkup(
+    createElement(SearchPage, {
+      model: offer ? model : { ...model, noMatchOffer: false },
+      localRows: [],
+      remoteRows: [],
+      density: 'comfortable',
+      scopeLabel: 'All accounts',
+      handlers: HANDLERS,
+    }),
+  );
+}
+
 function markupFor(field: string): string {
   const model = searchPage({ ...initialSearch, field }, LOCAL, 1_000);
   const row = resultRow(THREAD, toSearchQuery([], field), false);
@@ -60,4 +86,13 @@ test('a typed query labels the rows "In your mail"', () => {
   const markup = markupFor('print');
   assert.ok(markup.includes('In your mail'));
   assert.ok(!markup.includes('Recent mail'));
+});
+
+test('an empty result with the Google offer has that one action; without it, Clear search is the one', () => {
+  const offered = emptyMarkup({ status: 'live', ids: [], total: 0 }, 'dentist');
+  assert.ok(offered.includes('Search all mail on Google'), 'the offer is the action');
+  assert.ok(!offered.includes('Clear search'), 'one action only (DESIGN 7.14)');
+  const bare = emptyMarkup({ status: 'live', ids: [], total: 0 }, 'dentist', false);
+  assert.ok(bare.includes('Clear search'));
+  assert.ok(!bare.includes('Search all mail on Google'));
 });
