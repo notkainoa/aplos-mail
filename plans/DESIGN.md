@@ -145,7 +145,8 @@ All tokens live in one source file, `apps/desktop/src/renderer/ui/tokens.json`, 
 | `--paper` | `#ffffff` | `#242528` | Cards on the pane: the focus letter, the inline reply, proposal cards. In dark it is *lighter* than the pane (the Redakt lesson) [V: `redakt/inbox-desktop-dark.png`], a perceptible step (`#242528` over `#191a1c`, council 2 round 3: the focus card, the reader card and the inline reply were melting into the pane). |
 | `--float` | `#ffffff` | ink 8 % over `--paper` (opaque) | Floating surfaces: dialogs, menus, popovers, tooltips, toasts, the palette, the selected segment. White by day; at night one clear step lighter than a card, so a floating surface never melts into what is under it (UI council 2, round 2). |
 | `--raised` | `#f6f6f7` | `#2b2c30` | Quiet fills: the low-importance band, chips, attachments, the undo-send line. At night one step above `--paper`, so a chip on a card still shows. |
-| `--sunken` | `#efeff1` | `#0e0f10` | Keycaps, segmented tracks, fields |
+| `--sunken` | `#efeff1` | `#0e0f10` | Segmented tracks, fields |
+| `--keycap` | `#efeff1` | ink 8 % over `--paper` | A keycap's plate. By day the sunken step; at night one step lighter than whatever it sits on (the near-black slab was the heaviest mark on the card and the bar, council 2 round 4). Always with a 1 px `--line` edge, so it survives a highlighted row in both themes. |
 | `--ink` | `#1d1e21` | `#ececed` | Primary text, unread senders |
 | `--ink-2` | `#46484d` | `#c4c5c9` | Read senders, subjects, unread summaries, secondary text |
 | `--dim` | `#63666c` | `#9a9da4` | Metadata, timestamps, counts, placeholders, read summaries, disabled text |
@@ -465,7 +466,7 @@ Every screen is built from these components in `src/renderer/ui/`. Screens never
 | `PageHead` | New | The row for page-level controls, right-aligned. It never holds a title or subtitle (§7). |
 | `NavHead` | New | A quiet sidebar group label ("Mail", "Calendars"), `small` `--dim` |
 | `Button` | Rework | Three variants: `filled`, `text`, `icon`. Radius 8, heights 28 / 32 / 40, press inset. Glass and pill variants are deleted. |
-| `Kbd` (keycap) | Rework | 18 px, radius 4, `caption`, `--sunken`. Shown in tooltips, as badges while ⌘ is held, with "Show all key hints", and always on main actions (Space in the mail window, Return in onboarding and dialogs, ⌘↩ on Send). Never revealed by hover. |
+| `Kbd` (keycap) | Rework | 18 px, radius 4, `caption`, `--keycap` with a 1 px `--line` edge. Shown in tooltips, as badges while ⌘ is held, with "Show all key hints", and always on main actions (Space in the mail window, Return in onboarding and dialogs, ⌘↩ on Send). Never revealed by hover. |
 | `Tooltip` | Keep | Label + keycaps from the registry, `reveal`, `--elev-float`. This is where key hints live. |
 | `Menu`, `Popover` | Rework | Opaque `--float`, `--elev-float`, radius 12, 32 px items, at least 220 px wide. Number keys 1–9 pick in short menus. The double-blink on the chosen item is removed. |
 | `Dialog` / `Confirm` | Rework | `--elev-dialog`, `settle`. Confirmations are two key rows; destructive ones default to Cancel (§7.9). |

@@ -128,7 +128,11 @@ function RowLine({
         />
       ) : (
         <>
-          {due ? <Chip kind="due" due={due} format="short" /> : null}
+          {due ? (
+            <span className="ui-list-row__due">
+              <Chip kind="due" due={due} format="short" />
+            </span>
+          ) : null}
           {tag ? <span className="ui-list-row__tag">{tag}</span> : null}
           <span
             className="ui-list-row__primary"

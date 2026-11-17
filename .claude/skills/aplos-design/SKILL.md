@@ -58,7 +58,8 @@ Use `var(--token)` in CSS and the imports from `ui/generated/motion.ts` in TS. N
 | `--paper` | Cards on the pane: focus letter, inline reply, proposal card. Lighter than the pane in dark (`#242528` over the pane's `#191a1c`, a step you can see). |
 | `--float` | Floating surfaces: dialogs, menus, popovers, tooltips, toasts, the palette, the selected segment. White like `--paper` by day; at night one clear step lighter than a card or the pane (council 2, round 2: they melted into the card under them). |
 | `--raised` | Quiet fills: the low-importance band, chips, attachments, the undo-send line. In dark (`#2b2c30`) one step above `--paper`. |
-| `--sunken` | Keycaps, segmented tracks, fields |
+| `--sunken` | Segmented tracks, fields |
+| `--keycap` | A keycap's plate: sunken by day, one step lighter than its surface at night, always with a 1 px `--line` edge |
 | `--ink` | Primary text, unread senders |
 | `--ink-2` | Read senders, subjects, unread summaries, secondary text |
 | `--dim` | Metadata, timestamps, counts, placeholders, read summaries, disabled text |

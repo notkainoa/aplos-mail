@@ -38,7 +38,8 @@
   height: var(--kbd);
   padding: 0 var(--space-1);
   border-radius: var(--radius-xs);
-  background-color: var(--sunken);
+  background-color: var(--keycap);
+  box-shadow: inset 0 0 0 var(--hairline) var(--line);
   color: var(--dim);
   font: var(--type-caption);
   letter-spacing: var(--track-caption);
@@ -208,6 +209,8 @@
   padding: 0 var(--space-2);
   border-radius: var(--radius-sm);
   background-color: var(--raised);
+  /* A hairline edge, so a chip stays a chip on a hovered or cursor row (--puck), whose fill is close to --raised. */
+  box-shadow: inset 0 0 0 var(--hairline) var(--line);
   color: var(--ink-2);
   font: var(--type-small);
   letter-spacing: var(--track-small);
@@ -715,20 +718,26 @@
   white-space: nowrap;
 }
 /* One chip slot per list: once any row carries a due chip, every row's subject starts after the same slot, the chip
-   centred in it, and a row with no chip leaving it empty, so the subject column never goes ragged. The ListBox keeps
-   data-chip-slot once it has shown a chip, so the slot also holds while triage takes the last chip row away. A list
-   that never shows a chip has no slot. The slot fits "Due today" and "Yesterday" whole: a chip is never cut. */
-.ui-list-box:is(:has(.ui-list-row__line > .ui-chip[data-kind='due']), [data-chip-slot]) {
+   hugging its words at the slot's leading edge, and a row with no chip leaving it empty, so the subject column never
+   goes ragged. The ListBox keeps data-chip-slot once it has shown a chip, so the slot also holds while triage takes the
+   last chip row away. A list that never shows a chip has no slot. The slot fits "Due today" and "Yesterday" whole: a
+   chip is never cut. */
+.ui-list-row__due {
+  display: contents;
+}
+.ui-list-box:is(:has(.ui-list-row__line > .ui-list-row__due), [data-chip-slot]) {
   --ui-due-slot: calc(var(--space-10) + var(--space-9));
 }
-.ui-list-box:is(:has(.ui-list-row__line > .ui-chip[data-kind='due']), [data-chip-slot])
+.ui-list-box:is(:has(.ui-list-row__line > .ui-list-row__due), [data-chip-slot])
   .ui-list-row__line
-  > .ui-chip[data-kind='due'] {
-  justify-content: center;
+  > .ui-list-row__due {
+  display: flex;
+  flex: none;
+  justify-content: flex-start;
   width: var(--ui-due-slot);
 }
-.ui-list-box:is(:has(.ui-list-row__line > .ui-chip[data-kind='due']), [data-chip-slot])
-  .ui-list-row__line:not(:has(> .ui-chip[data-kind='due'], > .ui-error-line)) {
+.ui-list-box:is(:has(.ui-list-row__line > .ui-list-row__due), [data-chip-slot])
+  .ui-list-row__line:not(:has(> .ui-list-row__due, > .ui-error-line)) {
   padding-left: calc(var(--ui-due-slot) + var(--space-2));
 }
 .ui-chip[data-kind='due'] .ui-chip__text {

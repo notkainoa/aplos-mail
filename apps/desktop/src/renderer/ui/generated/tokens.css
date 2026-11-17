@@ -12,6 +12,7 @@
   --float: #ffffff;
   --raised: #f6f6f7;
   --sunken: #efeff1;
+  --keycap: #efeff1;
   --ink: #1d1e21;
   --ink-2: #46484d;
   --dim: #63666c;
@@ -356,6 +357,7 @@
   --float: color-mix(in srgb, var(--ink) 8%, var(--paper));
   --raised: #2b2c30;
   --sunken: #0e0f10;
+  --keycap: color-mix(in srgb, var(--ink) 8%, transparent);
   --ink: #ececed;
   --ink-2: #c4c5c9;
   --dim: #9a9da4;
