@@ -85,3 +85,13 @@ export function quotedParts(text: string, ranges: readonly QuotedRange[]): BodyP
   parts.push(part('own', text.slice(at)));
   return parts.filter((p): p is BodyPart => p !== null);
 }
+
+/** Whether any of the body is the sender's own words. A body that is all quote (a forward) has nothing to fold it under. */
+export function hasOwnText(parts: readonly BodyPart[]): boolean {
+  return parts.some(part => part.kind === 'own');
+}
+
+/** Whether quoted history follows words of the sender's own, so it may be folded away behind "Show quoted text". */
+export function foldsQuoted(text: string, ranges: readonly QuotedRange[]): boolean {
+  return hasOwnText(quotedParts(text, ranges)) && ranges.length > 0;
+}

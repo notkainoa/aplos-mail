@@ -100,7 +100,71 @@ type Block = {
   text: string;
   strong?: readonly { start: number; end: number }[];
   cites?: readonly { at: number; n: number }[];
+  /** This block is one list item of a numbered (`number`) or bulleted list. */
+  item?: { ordered: boolean; number?: number };
 };
+
+/** A list line: `1.`, `1)`, `-`, `*` or `•`, then the item's text. */
+const LIST_LINE = /^[ \t]*(?:(\d{1,3})[.)]|[-*\u2022])[ \t]+/;
+
+/** One paragraph or list item of a block: a range of its text. */
+interface Part {
+  start: number;
+  end: number;
+  item?: Block['item'];
+}
+
+function itemOf(number: string | undefined): NonNullable<Block['item']> {
+  return number === undefined ? { ordered: false } : { ordered: true, number: Number(number) };
+}
+
+/** The block's lines grouped into parts: a list line opens an item, a plain line after text continues it. */
+function partsOf(text: string): Part[] {
+  const parts: Part[] = [];
+  let at = 0;
+  for (const line of text.split('\n')) {
+    const mark = LIST_LINE.exec(line);
+    const last = parts[parts.length - 1];
+    const end = at + line.length;
+    if (mark) parts.push({ start: at + mark[0].length, end, item: itemOf(mark[1]) });
+    else if (line.trim() === '') parts.push({ start: end, end });
+    else if (last && last.end > last.start) last.end = end;
+    else parts.push({ start: at, end });
+    at = end + 1;
+  }
+  return parts.filter(part => part.end > part.start);
+}
+
+/** The part a chip belongs to: the last one that starts at or before it (a chip at a break ends the part before). */
+function ownerOf(parts: readonly Part[], at: number): number {
+  let owner = 0;
+  parts.forEach((part, i) => {
+    if (part.start <= at) owner = i;
+  });
+  return owner;
+}
+
+/**
+ * A block as paragraphs and list items (`1.`, `-`), one block per item, with its emphasis and chips moved to the item
+ * they sit in. A block with no list line comes back as it is.
+ */
+export function splitLists(block: Block): Block[] {
+  const parts = partsOf(block.text);
+  if (!parts.some(part => part.item)) return [block];
+  const cites = block.cites ?? [];
+  return parts.map((part, i) => {
+    const length = part.end - part.start;
+    const within = (offset: number) => Math.max(0, Math.min(length, offset - part.start));
+    return {
+      text: block.text.slice(part.start, part.end),
+      strong: (block.strong ?? [])
+        .map(range => ({ start: within(range.start), end: within(range.end) }))
+        .filter(range => range.end > range.start),
+      cites: cites.filter(c => ownerOf(parts, c.at) === i).map(c => ({ at: within(c.at), n: c.n })),
+      ...(part.item ? { item: part.item } : {}),
+    };
+  });
+}
 
 /** Clamps an offset into the text without splitting a surrogate pair. */
 function clampAt(text: string, at: number): number {
@@ -122,7 +186,7 @@ export function toParagraphs(
 ): AnswerParagraph[] {
   let decisiveUsed = false;
   const out: AnswerParagraph[] = [];
-  for (const block of blocks) {
+  for (const block of blocks.flatMap(splitLists)) {
     const text = block.text;
     let strong: { start: number; end: number } | undefined;
     if (!decisiveUsed) {
@@ -144,7 +208,15 @@ export function toParagraphs(
       cuts.add(strong.end);
     }
     const points = [...cuts].sort((a, b) => a - b);
-    const segments: AnswerSegment[] = [];
+    const segments: AnswerSegment[] = block.item
+      ? [
+          {
+            kind: 'item',
+            ordered: block.item.ordered,
+            ...(block.item.number !== undefined ? { number: block.item.number } : {}),
+          },
+        ]
+      : [];
     const seen = new Set<number>();
     for (let i = 0; i < points.length; i += 1) {
       const at = points[i];
@@ -162,7 +234,7 @@ export function toParagraphs(
         bold ? { kind: 'text', text: piece, strong: true } : { kind: 'text', text: piece },
       );
     }
-    if (segments.length > 0) out.push(segments);
+    if (segments.some(s => s.kind !== 'item')) out.push(segments);
   }
   return out;
 }

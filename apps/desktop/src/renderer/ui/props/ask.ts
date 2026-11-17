@@ -92,6 +92,14 @@ export type AnswerSegment =
       kind: 'cite';
       /** 1-based index into the turn's citations. */
       index: number;
+    }
+  | {
+      /** First segment of a list item's paragraph: the paragraph is one `<li>`, and a run of them is one list. */
+      kind: 'item';
+      /** A numbered list (`ol`), else bulleted (`ul`). */
+      ordered: boolean;
+      /** The item's own number when the list is numbered (a list may start at 3). */
+      number?: number;
     };
 
 /** A paragraph of answer prose. */

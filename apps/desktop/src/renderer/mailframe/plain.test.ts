@@ -34,6 +34,20 @@ test('plain: paragraphs, bold, links and lists; rich: styles, colours, images, t
     assert.equal(plainOf(rich), false, rich);
 });
 
+test('a style that only places text keeps a mail plain; one colour beside it does not', () => {
+  const quote =
+    '<div>Hi</div><blockquote style="margin:0 0 0 .8ex;border-left:1px solid rgb(204,204,204);padding-left:1ex">old</blockquote>';
+  assert.equal(plainOf(quote), true);
+  assert.equal(plainOf('<p style="margin:0;color:red">x</p>'), false);
+  assert.equal(
+    plainOf('<p style="margin:0;background:url(https://example.com/a.png)">x</p>'),
+    false,
+  );
+  assert.equal(plainOf('<p style="border-top:1px solid #000">x</p>'), false);
+  // A literal style=" in the text must not hide the real markers that follow it.
+  assert.equal(plainOf('<p>see style="margin:0</p><p><font color="#000000">x</font></p>'), false);
+});
+
 test('a plain email paints the card’s own colours: paper in the light theme, the dark surface in the dark one', () => {
   const light = frameDocument(PLAIN, 'block', undefined, false);
   assert.equal(light.plain, true);

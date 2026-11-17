@@ -50,7 +50,7 @@ function hostCss(mark: string, plain: boolean, dark: boolean): string {
     `pre,.aplos-flat{white-space:pre-wrap}`,
     `a{color:${dark ? d.accent : p.accent}}`,
     `mark[${mark}]{all:unset!important;background:color-mix(in srgb,${p.accent} 18%,${p.canvas})!important;color:inherit!important}`,
-    ...(dark ? [`blockquote{border-left-color:${d.rule};color:${d.dim}}`] : []),
+    ...(dark ? [`blockquote{border-left-color:${d.rule}!important;color:${d.dim}}`] : []),
     MEASURE_CSS,
     '}',
   ].join('');
