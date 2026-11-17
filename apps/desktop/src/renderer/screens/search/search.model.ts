@@ -12,6 +12,7 @@
 import { toIsoDateTime } from '../../data';
 import type { ErrorBody, ProgressFrame, SearchQuery, ThreadRow } from '../../data';
 import type { SearchOperator } from '../../ui/props';
+import { senderOf } from '../home/homeRows';
 import {
   absorbTokens,
   currentSearch,
@@ -502,7 +503,9 @@ export function snippetAround(
   const at = Math.min(...found);
   if (at <= fits) return text;
   const boundary = text.indexOf(' ', at - lead);
-  const start = boundary >= 0 && boundary < at ? boundary + 1 : at - lead;
+  // Whole words at the cut: the nearest space inside the lead, else the start of the word the match sits in.
+  const wordStart = text.lastIndexOf(' ', at - 1) + 1;
+  const start = boundary >= 0 && boundary < at ? boundary + 1 : wordStart;
   return `…${text.slice(start)}`;
 }
 
@@ -572,7 +575,8 @@ export function resultRow(
     | 'hasAttachments'
     | 'workflow'
     | 'accountId'
-  >,
+  > &
+    Partial<Pick<ThreadRow, 'participants' | 'recipients'>>,
   query: SearchQuery,
   remote: boolean,
   account?: { label: string },
@@ -581,7 +585,8 @@ export function resultRow(
   return {
     id: `search-row-${thread.id.replace(/[^A-Za-z0-9_-]/g, '_')}`,
     threadId: thread.id,
-    sender: thread.fromName || '(no sender)',
+    // The same name every other list shows (`senderOf`): a message you sent names who it went to, not you.
+    sender: senderOf(thread),
     // The subject is shown whole (the cell ellipsises its own end); only the snippet is windowed to the match.
     primary: thread.subject || '(no subject)',
     secondary: snippetOf(thread, highlight),

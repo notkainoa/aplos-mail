@@ -91,20 +91,25 @@ export function otherNames(people: ThreadRow['participants'] | undefined): strin
     .filter(name => name !== '');
 }
 
+/** What the one sender rule reads; a search row carries only the thread's names, so the lists are optional. */
+export type SenderFields = Pick<ThreadRow, 'fromName' | 'subject'> &
+  Partial<Pick<ThreadRow, 'participants' | 'recipients'>>;
+
 /**
  * The sender column: the newest sender who is not the owner (the engine's `fromName` is the newest sender, which is the
  * owner whenever they answered last); for a thread the owner wrote entirely, who it went to (`recipients`, the newest
  * message the owner sent), so Follow up names who is being waited on; else the owner's own name, else the subject's
  * first words; never blank.
  */
-export function senderOf(row: ThreadRow): string {
+export function senderOf(row: SenderFields): string {
+  const participants = row.participants ?? [];
   const from = cleanName(row.fromName);
   // `fromName` is always `participants[0]`: it is the owner exactly when that participant is marked `me` (never judged
   // by name, so a colleague who shares the owner's display name is still a sender).
-  if (from && row.participants[0]?.me !== true) return from;
-  const [other] = otherNames(row.participants);
+  if (from && participants[0]?.me !== true) return from;
+  const [other] = otherNames(participants);
   if (other) return other;
-  const waitingOn = otherNames(row.recipients);
+  const waitingOn = otherNames(row.recipients ?? []);
   if (waitingOn.length > 0) return joinNames(waitingOn);
   return from || cleanName(row.subject) || 'No sender';
 }

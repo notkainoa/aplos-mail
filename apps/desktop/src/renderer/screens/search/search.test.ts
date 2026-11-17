@@ -458,6 +458,9 @@ test('a snippet whose match sits far in starts a few words before it, one leadin
   assert.equal(snippetAround(text, ['invoice']), '…and the invoice reminder went out before nine');
   assert.equal(snippetAround(text, ['printer']), text, 'a match near the start is left alone');
   assert.equal(snippetAround(text, ['nothing']), text, 'no match, no cut');
+  // No space inside the lead: the cut falls at the start of the word the match sits in, never inside a word.
+  const long = 'one two three four five six seven aaaaaaaaaaaaaaaaaaaaaaaaaaainvoicedue';
+  assert.equal(snippetAround(long, ['invoice']), '…aaaaaaaaaaaaaaaaaaaaaaaaaaainvoicedue');
 });
 
 test('a snippet that starts by repeating the subject shows what follows it, or nothing', () => {
