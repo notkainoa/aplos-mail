@@ -126,6 +126,7 @@ export function Toast({
       className="ui-toast"
       data-kind={kind}
       data-state={leaving ? 'leaving' : 'shown'}
+      data-actions={actions.length > 0 ? '' : undefined}
       onPointerEnter={() => clock.pause('hover')}
       onPointerLeave={() => clock.resume('hover')}
       onFocus={() => clock.pause('focus')}

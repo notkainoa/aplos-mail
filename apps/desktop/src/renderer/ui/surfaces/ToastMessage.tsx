@@ -19,7 +19,12 @@ export function splitCountdown(message: string): CountdownSplit | null {
 
 export function ToastMessage({ message }: { message: string }) {
   const split = splitCountdown(message);
-  if (!split) return <span className="ui-toast__message">{message}</span>;
+  if (!split)
+    return (
+      <span className="ui-toast__message" title={message}>
+        {message}
+      </span>
+    );
   return (
     <span className="ui-toast__message" data-countdown="">
       <span className="ui-toast__lead" title={split.lead}>

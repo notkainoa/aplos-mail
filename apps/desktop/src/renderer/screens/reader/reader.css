@@ -252,9 +252,9 @@
   padding-block: var(--space-5) var(--space-4);
 }
 
-/* The pinned bar lifts the toasts: they sit above it, centred over it, never over the buttons. */
+/* The pinned bar lifts the toasts: they sit above it, centred over it, never over the buttons, with 16 px between. */
 .ui-pane:has(.aplos-reader .ui-reader-actions) .ui-toast-stack {
-  bottom: calc(var(--space-4) + var(--control-lg) + var(--space-3));
+  bottom: calc(var(--space-4) + var(--control-lg) + var(--space-4));
 }
 
 /* Dark: cards are lifted by --raised (--elev-pane adds the sheen). */

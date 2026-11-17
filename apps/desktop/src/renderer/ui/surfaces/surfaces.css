@@ -1320,6 +1320,14 @@ html[data-real-key] .ui-part-tipwrap:has(> :focus-visible) > .ui-part-tip {
 .ui-toast__message + .ui-toast__action {
   margin-left: var(--space-2);
 }
+/* A toast with buttons keeps its words on one line (the sender gives way with an ellipsis), so "Done · Jordan Park"
+   never wraps beside Remind me and Undo. An error keeps up to two lines: its words are the whole point. */
+.ui-toast[data-actions]:not([data-kind='error']) .ui-toast__message {
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
 .ui-toast__message:last-child {
   padding-right: var(--space-2);
 }

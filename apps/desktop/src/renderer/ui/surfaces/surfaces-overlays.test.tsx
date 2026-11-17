@@ -355,7 +355,10 @@ describe('Toast', () => {
       />,
     );
     // Not a live region of its own: the stack's persistent region announces it (a region born with text is often silent).
-    assert.match(html, /^<div class="ui-toast" data-kind="later" data-state="shown">/);
+    assert.match(
+      html,
+      /^<div class="ui-toast" data-kind="later" data-state="shown" data-actions="">/,
+    );
     assert.ok(!html.includes('role="status"'));
     assert.match(html, /data-tone="dusk"><svg[^>]*data-icon="clock"/);
     assert.match(textOf(html), /Moved to Later Set a date D Undo Z/);

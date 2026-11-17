@@ -320,7 +320,7 @@ test('Done on a Follow up row offers Remind me if no reply, and R sets the remin
       ['remind', 'undo'],
     );
     assert.equal(toast?.actions?.[0]?.commandId, undefined, 'the button acts on its own thread');
-    assert.equal(toast?.actions?.[0]?.keysFrom, 'mail.remindIfNoReply', 'R is drawn, not run');
+    assert.equal(toast?.actions?.[0]?.keysFrom, undefined, 'no R keycap');
     assert.equal(offer(), follow);
     actions.remind();
     assert.equal(offer(), null);
@@ -617,7 +617,7 @@ test('Later offers Set a date for its own thread, and D opens the picker for the
       toast?.actions?.map(a => a.id),
       ['setDate', 'undo'],
     );
-    assert.equal(toast?.actions?.[0]?.keysFrom, 'mail.setDate', 'D is drawn, not run');
+    assert.equal(toast?.actions?.[0]?.keysFrom, undefined, 'no D keycap');
     key.current = second;
     runToastAction(toast!.id, 'setDate');
     assert.deepEqual(
