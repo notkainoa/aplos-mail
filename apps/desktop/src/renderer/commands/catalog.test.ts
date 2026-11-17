@@ -172,6 +172,11 @@ test('every bound command and control appears in the sheet with all its keys', (
   }
 });
 
+test('a command is listed once with the same keys, even when it is bound in two contexts', () => {
+  const rows = buildSheet(wiredRegistry()).flatMap(s => s.rows.map(r => `${r.id}|${r.keys}`));
+  assert.equal(rows.length, new Set(rows).size, 'no row repeats across sections');
+});
+
 test('the sheet includes ⌃5, ⌃7, ⌃8, ⌘K and ⌘/ (baseline defect 5)', () => {
   const keys = buildSheet(wiredRegistry()).flatMap(s => s.rows.map(r => r.keys));
   for (const wanted of ['⌃5', '⌃7', '⌃8', '⌘K', '⌘/']) assert.ok(keys.includes(wanted), wanted);

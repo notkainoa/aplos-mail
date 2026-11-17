@@ -85,6 +85,9 @@ function uniqueBindings(bindings: readonly Binding[]): Binding[] {
 export function buildSheet(registry: Registry): SheetSection[] {
   const ids = [...registry.list().map(c => c.id), ...registry.controls().map(c => c.id)];
   const all = registry.bindings();
+  // A command bound in several contexts (Ask and Dictate to Ask are Global and inside Ask) is listed once, in the
+  // first section that has it, as long as its keys read the same there.
+  const listed = new Set<string>();
   return SHEET_SECTIONS.map(section => {
     const rows: SheetRow[] = [];
     for (const id of ids) {
@@ -93,7 +96,10 @@ export function buildSheet(registry: Registry): SheetSection[] {
       );
       if (bound.length === 0) continue;
       const label = registry.get(id)?.spec.label ?? id;
-      rows.push({ id, label, keys: formatAlternatives(bound), kind: 'key' });
+      const keys = formatAlternatives(bound);
+      if (listed.has(`${id}|${keys}`)) continue;
+      listed.add(`${id}|${keys}`);
+      rows.push({ id, label, keys, kind: 'key' });
     }
     rows.push(...(SHEET_POINTER_ROWS[section.id] ?? []));
     return { id: section.id, title: section.title, column: section.column, rows };
