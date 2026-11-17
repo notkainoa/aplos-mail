@@ -9,7 +9,7 @@ import type { CommitKind, IconName, ListRowProps } from '../props';
 import { Chip } from './Chip';
 import { ErrorLine } from './ErrorLine';
 import { Action } from './internal/Action';
-import { formatFull, formatListDate } from './internal/format';
+import { formatFull, formatListDate, sameDay } from './internal/format';
 import { Icon } from './internal/Icon';
 import { useKeycapFor, useTooltipText } from './internal/keys';
 
@@ -72,8 +72,13 @@ function DateColumn({
   doneAt,
   doneEstimated,
   laterUntil,
-}: Pick<RowProps, 'layout' | 'date' | 'doneAt' | 'doneEstimated' | 'laterUntil'>) {
+  hideReturn,
+}: Pick<RowProps, 'layout' | 'date' | 'doneAt' | 'doneEstimated' | 'laterUntil'> & {
+  /** The row's due chip already says the day it comes back. */
+  hideReturn?: boolean;
+}) {
   if (layout === 'done') return <DoneStamp doneAt={doneAt} estimated={doneEstimated} />;
+  if (layout === 'later' && hideReturn) return null;
   if (layout === 'later' && laterUntil) return <Chip kind="laterUntil" until={laterUntil} />;
   return (
     <time className="ui-list-row__date" dateTime={date} title={formatFull(date)}>
@@ -218,6 +223,15 @@ export function ListRow(props: ListRowProps) {
   const laterOverdue =
     layout === 'later' && props.laterUntil?.kind === 'at' && props.laterUntil.overdue;
 
+  // One statement per meaning: a deadline chip and a return chip for the same day ("Due today" beside "Today,
+  // 11:59 PM") say it twice, so the deadline stays and the return, which only repeats it, goes.
+  const returnsOnDeadline =
+    layout === 'later' &&
+    !laterOverdue &&
+    props.due !== undefined &&
+    props.laterUntil?.kind === 'at' &&
+    sameDay(props.due.at, props.laterUntil.at);
+
   // The action count sizes the date column so the hover overlay never spills over the line (DESIGN §5 rule 17).
   const rowStyle =
     hoverActions.length > 0
@@ -276,6 +290,7 @@ export function ListRow(props: ListRowProps) {
           doneAt={props.doneAt}
           doneEstimated={props.doneEstimated}
           laterUntil={props.laterUntil}
+          hideReturn={returnsOnDeadline}
         />
         {/* Inside the meta cell so the overlay always covers the whole date column: no half glyph or chip. */}
         {hoverActions.length > 0 ? (

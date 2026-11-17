@@ -114,6 +114,30 @@ describe('ListRow', () => {
     assert.match(someday, /Someday/);
   });
 
+  test('later layout: a return on the deadline day is not said twice', () => {
+    const same = render(
+      <ListRow
+        {...row({
+          layout: 'later',
+          due: { at: '2026-10-29T23:59:00-07:00', overdue: false, source: 'user' },
+          laterUntil: { kind: 'at', at: '2026-10-29T23:59:00-07:00', overdue: false },
+        })}
+      />,
+    );
+    assert.match(same, /data-kind="due"/);
+    assert.doesNotMatch(same, /data-kind="laterUntil"/);
+    const other = render(
+      <ListRow
+        {...row({
+          layout: 'later',
+          due: { at: '2026-10-29T23:59:00-07:00', overdue: false, source: 'user' },
+          laterUntil: { kind: 'at', at: '2026-10-31T09:00:00-07:00', overdue: false },
+        })}
+      />,
+    );
+    assert.match(other, /data-kind="laterUntil"/);
+  });
+
   test('rejected write: back in place with "Couldn’t move to Later." and Retry', () => {
     const m = render(<ListRow {...row({ rejected: { op: 'move to Later', onRetry: noop } })} />);
     assert.match(m, /data-state="rejected"/);

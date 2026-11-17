@@ -28,6 +28,13 @@ function dayOffset(d: Date): number {
   return Math.round((startOfDay(d) - startOfDay(new Date(clock()))) / DAY_MS);
 }
 
+/** Both moments fall on the same local calendar day. */
+export function sameDay(a: IsoDateTime, b: IsoDateTime): boolean {
+  const first = parse(a);
+  const second = parse(b);
+  return first !== null && second !== null && startOfDay(first) === startOfDay(second);
+}
+
 /** A future day later this week (through Sunday), where a bare weekday cannot be misread. */
 function laterThisWeek(off: number): boolean {
   const daysToSunday = (7 - new Date(clock()).getDay()) % 7;

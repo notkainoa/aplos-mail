@@ -714,6 +714,21 @@
   text-overflow: ellipsis;
   white-space: nowrap;
 }
+/* One chip slot per list: when any row carries a due chip, every row's subject starts after the same slot, the chip
+   filling it from the left and a row with no chip leaving it empty, so the subject column never goes ragged. A list
+   with no chip at all has no slot. */
+.ui-list-box:has(.ui-list-row__line > .ui-chip[data-kind='due']) {
+  --ui-due-slot: calc(var(--space-10) + var(--space-7));
+}
+.ui-list-box:has(.ui-list-row__line > .ui-chip[data-kind='due'])
+  .ui-list-row__line
+  > .ui-chip[data-kind='due'] {
+  width: var(--ui-due-slot);
+}
+.ui-list-box:has(.ui-list-row__line > .ui-chip[data-kind='due'])
+  .ui-list-row__line:not(:has(> .ui-chip[data-kind='due'], > .ui-error-line)) {
+  padding-left: calc(var(--ui-due-slot) + var(--space-2));
+}
 .ui-list-row__tag {
   flex: none;
   color: var(--dim);
