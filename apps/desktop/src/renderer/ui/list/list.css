@@ -714,21 +714,26 @@
   text-overflow: ellipsis;
   white-space: nowrap;
 }
-/* One chip slot per list: when any row carries a due chip, every row's subject starts after the same slot, the chip
-   centred in it, and a row with no chip leaving it empty, so the subject column never goes ragged. A list
-   with no chip at all has no slot. */
-.ui-list-box:has(.ui-list-row__line > .ui-chip[data-kind='due']) {
-  --ui-due-slot: calc(var(--space-9) + var(--space-8));
+/* One chip slot per list: once any row carries a due chip, every row's subject starts after the same slot, the chip
+   centred in it, and a row with no chip leaving it empty, so the subject column never goes ragged. The ListBox keeps
+   data-chip-slot once it has shown a chip, so the slot also holds while triage takes the last chip row away. A list
+   that never shows a chip has no slot. The slot fits "Due today" and "Yesterday" whole: a chip is never cut. */
+.ui-list-box:is(:has(.ui-list-row__line > .ui-chip[data-kind='due']), [data-chip-slot]) {
+  --ui-due-slot: calc(var(--space-10) + var(--space-9));
 }
-.ui-list-box:has(.ui-list-row__line > .ui-chip[data-kind='due'])
+.ui-list-box:is(:has(.ui-list-row__line > .ui-chip[data-kind='due']), [data-chip-slot])
   .ui-list-row__line
   > .ui-chip[data-kind='due'] {
   justify-content: center;
   width: var(--ui-due-slot);
 }
-.ui-list-box:has(.ui-list-row__line > .ui-chip[data-kind='due'])
+.ui-list-box:is(:has(.ui-list-row__line > .ui-chip[data-kind='due']), [data-chip-slot])
   .ui-list-row__line:not(:has(> .ui-chip[data-kind='due'], > .ui-error-line)) {
   padding-left: calc(var(--ui-due-slot) + var(--space-2));
+}
+.ui-chip[data-kind='due'] .ui-chip__text {
+  overflow: visible;
+  text-overflow: clip;
 }
 .ui-list-row__tag {
   flex: none;
