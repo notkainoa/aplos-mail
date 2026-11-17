@@ -42,11 +42,9 @@ test('a forward starts with nobody in To, a blank line to write on, and the quot
 });
 
 test('the forwarded Date line is in the owner’s zone, not UTC', () => {
-  assert.equal(
-    forwardDate(message.date, 'America/Los_Angeles'),
-    'Mon, Oct 26, 2026 at 8:30 AM PDT',
-  );
-  assert.equal(forwardDate(message.date, 'Pacific/Honolulu'), 'Mon, Oct 26, 2026 at 5:30 AM HST');
+  assert.equal(forwardDate(message.date, 'America/Los_Angeles'), 'Mon, Oct 26, 2026 at 8:30 AM');
+  assert.equal(forwardDate(message.date, 'Pacific/Honolulu'), 'Mon, Oct 26, 2026 at 5:30 AM');
   const { fields } = forwardSeed(message, 'Hi');
-  assert.match(fields.body, /\nDate: \w{3}, \w{3} \d{1,2}, 2026 at \d{1,2}:\d{2} [AP]M .+\n/);
+  assert.match(fields.body, /\nDate: \w{3}, \w{3} \d{1,2}, 2026 at \d{1,2}:\d{2} [AP]M\n/);
+  assert.doesNotMatch(fields.body, /UTC|GMT/);
 });
