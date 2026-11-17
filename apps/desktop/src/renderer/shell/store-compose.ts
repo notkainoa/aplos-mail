@@ -21,6 +21,16 @@ export interface ComposeTarget {
   };
   /** A forward of this thread's latest message: the page seeds "Fwd:" and the quoted original once they load. */
   readonly forward?: { readonly threadId: string };
+  /** A new message opened with these fields (a mailto unsubscribe): From is this account, nothing is sent. */
+  readonly prefill?: ComposePrefill;
+}
+
+/** The fields a new message opens with. */
+export interface ComposePrefill {
+  readonly accountId: string;
+  readonly to: readonly string[];
+  readonly subject: string;
+  readonly body: string;
 }
 
 /** A target plus the screen to go back to; `seq` is new for every open, so each open mounts a fresh page. */
@@ -44,7 +54,7 @@ subscribeScreen(() => {
 /** Shows the compose page. A bare open while the page is already showing keeps the page (and its text) as it is. */
 export function openCompose(target: ComposeTarget = {}): void {
   const open = onComposeScreen();
-  if (open && !target.draftId && !target.replyTo && !target.forward) return;
+  if (open && !target.draftId && !target.replyTo && !target.forward && !target.prefill) return;
   const current = getScreen();
   const from = open ? (requestStore.get()?.from ?? null) : current;
   seq += 1;

@@ -4,24 +4,26 @@
  */
 import { useState } from 'react';
 import { api, type ThreadRow } from '../../data';
-import { pushToast } from '../../shell';
+import { openCompose, pushToast } from '../../shell';
 import { Button } from '../../ui/buttons-keys';
 import { Confirm } from '../../ui/surfaces';
 import { senderOf } from '../home/homeRows';
 import { unsubscribeFailed, unsubscribeNotice, type UnsubscribeNotice } from './unsubscribe';
 
-function say(notice: UnsubscribeNotice, id: string): void {
+function say(notice: UnsubscribeNotice, id: string, row: ThreadRow): void {
   pushToast({ id, kind: 'info', message: notice.message, undoable: false });
   if (notice.open) void api.shell.open({ url: notice.open }).catch(() => undefined);
+  // A mailto never sends from here: the prepared email opens in a new message, from the account that got the mail.
+  if (notice.compose) openCompose({ prefill: { accountId: row.accountId, ...notice.compose } });
 }
 
 async function run(row: ThreadRow): Promise<void> {
   const sender = senderOf(row);
   const id = `unsubscribe-${row.id}`;
   try {
-    say(unsubscribeNotice(await api.unsubscribe.run({ threadId: row.id }), sender), id);
+    say(unsubscribeNotice(await api.unsubscribe.run({ threadId: row.id }), sender), id, row);
   } catch {
-    say(unsubscribeFailed(sender), id);
+    say(unsubscribeFailed(sender), id, row);
   }
 }
 
