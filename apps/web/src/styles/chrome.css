@@ -121,7 +121,7 @@
 /* The name fills the page width; a quiet tone keeps it a signature, not a second headline. */
 .footer-mark {
   margin: 40px 0 0;
-  padding-bottom: 0.12em;
+  padding-bottom: 0.24em;
   color: color-mix(in srgb, var(--ink) 16%, var(--shell));
   font: 600 24.6cqi / 0.9 var(--font-display);
   letter-spacing: -0.05em;
