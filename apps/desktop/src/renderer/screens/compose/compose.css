@@ -144,6 +144,8 @@
   width: calc(100% - 2 * var(--space-6));
   margin-top: 0;
   padding-block: var(--space-3);
+  /* The text starts where From and To values do (the label's 40 px and the 8 px gap), not under the labels. */
+  padding-left: calc(var(--space-8) + var(--space-2));
 }
 .aplos-compose:not([data-cards='off']) .ui-composer__editor {
   /* About 40 % of the pane's height, at least 200 px and at most 384, so the card reaches down the pane instead of
@@ -209,6 +211,29 @@
 .ui-inline-reply .ui-recipient-field__label {
   min-width: var(--space-8);
 }
+/* In a card the inline reply's From and To values start on the body's column (the sender mark's width and its gap past the
+   card's text edge), the column the reply text below them uses: label 32 px wide, no gap. */
+.aplos-reader:not([data-cards='off']) .ui-inline-reply .ui-recipient-field {
+  gap: 0;
+}
+.aplos-reader:not([data-cards='off']) .ui-inline-reply .ui-recipient-field__label {
+  min-width: calc(var(--control-xs) + var(--space-2));
+  /* "From" at 13 px is 31 px wide and would touch the value: the labels read one step smaller. */
+  font: var(--type-small);
+  letter-spacing: var(--track-small);
+  line-height: var(--space-6);
+}
+.aplos-reader:not([data-cards='off']) .ui-inline-reply .aplos-from .ui-recipient-field__label {
+  line-height: inherit;
+}
+/* The smaller label would ride 2 px above the chips' line: the To label drops by the same 2 px. */
+.aplos-reader:not([data-cards='off'])
+  .ui-inline-reply
+  .ui-recipient-field:not(.aplos-from)
+  .ui-recipient-field__label {
+  margin-top: var(--space-half);
+}
+
 .aplos-from > .ui-button {
   margin-left: calc(-1 * var(--space-3));
 }
