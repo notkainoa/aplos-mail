@@ -58,6 +58,20 @@ describe('a plain email', () => {
       assert.match(rootOf(documentOf(html)), new RegExp(PLAIN_ATTRIBUTE), html);
   });
 
+  it('stays plain when the wrapper only sets direction, a class or a colour-free body style', () => {
+    for (const html of [
+      '<html><body dir="ltr"><p>Hello</p></body></html>',
+      '<html><body class="msg" style="margin:0;padding:0"><p>Hello</p></body></html>',
+    ])
+      assert.match(rootOf(documentOf(html)), new RegExp(PLAIN_ATTRIBUTE), html);
+    for (const html of [
+      '<html><body bgcolor="#112233"><p>Hello</p></body></html>',
+      '<html><body text="#ffffff"><p>Hello</p></body></html>',
+      '<html><body dir="ltr" style="margin:0;color:#c00"><p>Hello</p></body></html>',
+    ])
+      assert.doesNotMatch(rootOf(documentOf(html)), new RegExp(PLAIN_ATTRIBUTE), html);
+  });
+
   it('is not plain when one declaration beside the layout ones sets a colour or loads something', () => {
     for (const html of [
       '<p style="margin:0;color:#c00">Hello</p>',
