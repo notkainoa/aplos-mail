@@ -1,7 +1,7 @@
 import type { KeyboardEvent } from 'react';
 import type { Recipient, RecipientFieldProps } from '../props';
 import { Icon } from './icons';
-import { Btn } from './parts';
+import { Btn, Kbd } from './parts';
 import { recipientKey } from './recipientKeys';
 
 /** The To field's placeholder while it holds no one (owner review 2026-11-03); Cc and Bcc stay bare. */
@@ -160,6 +160,11 @@ export function RecipientField(props: RecipientFieldProps) {
               </span>
               {shownName(person) !== person.address ? (
                 <span className="ui-recipient-field__option-address">{person.address}</span>
+              ) : null}
+              {person.id === activeSuggestionId ? (
+                <span className="ui-recipient-field__option-enter" aria-hidden="true">
+                  <Kbd>↩</Kbd>
+                </span>
               ) : null}
             </li>
           ))}

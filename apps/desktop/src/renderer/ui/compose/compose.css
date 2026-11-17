@@ -358,7 +358,7 @@
   align-self: center;
 }
 .ui-recipient-field__people {
-  position: relative;
+  /* Not the list's anchor: the suggestions hang from the whole field (label included), so their left edge sits on it. */
   display: flex;
   flex: 1;
   flex-wrap: wrap;
@@ -436,12 +436,14 @@
 }
 .ui-recipient-field__list {
   position: absolute;
-  top: 100%;
-  /* The list opens under the people column, its left edge on the typed text's (council 2, round 4). */
+  /* 4 px under the field's underline, its left edge on the field's (council 2, round 5: opened over the Subject row,
+     starting at the typed text, it cut "Subject" in half), at least the field's width, opaque --float. */
+  top: calc(100% + var(--space-1));
   left: 0;
   z-index: var(--z-menu);
-  width: max(var(--menu-min), 60%);
-  max-width: 100%;
+  box-sizing: border-box;
+  width: max(var(--menu-min), 100%);
+  max-width: none;
   margin: 0;
   padding: var(--space-1);
   list-style: none;
@@ -473,6 +475,12 @@
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+.ui-recipient-field__option-enter {
+  display: inline-flex;
+  align-self: center;
+  margin-left: auto;
+  color: var(--dim);
 }
 .ui-recipient-field__option-address {
   flex: none;
