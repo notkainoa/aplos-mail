@@ -13,6 +13,8 @@ const rows = [
   { from: 'Rowan Pottery', subject: 'A place opened in the evening class', when: 'Nov 12' },
 ];
 
+const homeRows = ['Maple Library', 'Theo Kim', 'Sam Rivera'];
+
 type Focus = { from: string; time: string; subject: string; summary: string };
 
 const jordan: Focus = {
@@ -75,19 +77,14 @@ export function HomeMock() {
         </span>
         <span className="b-dim">Go one by one</span>
       </div>
-      <FocusCard focus={maya} />
+      <div className="b-home-focus">
+        <FocusCard focus={maya} />
+      </div>
       <ul className="b-rows">
         {rows
-          .filter(row => row.from !== 'Maya Chen')
+          .filter(row => homeRows.includes(row.from))
           .map(row => (
-            <li
-              key={row.from}
-              className={
-                row.from === 'Jordan Park' || row.from === 'Maple Library'
-                  ? undefined
-                  : 'b-row-extra'
-              }
-            >
+            <li key={row.from}>
               <span className="b-row-from">{row.from}</span>
               <span className="b-row-subject">{row.subject}</span>
               <span className="b-dim">{row.when}</span>
@@ -176,7 +173,7 @@ export function CalendarMock() {
   return (
     <figure
       className="b-mock b-cal-mock"
-      aria-label="Calendar for Wednesday to Friday with a design critique and a dentist visit on Thursday, and a proposed event waiting for confirmation on Friday"
+      aria-label="Calendar for Wednesday to Friday with a pottery class on Wednesday, a design critique and a dentist visit on Thursday, and a proposed event waiting for confirmation on Friday"
     >
       <p className="b-mock-head">
         <strong>November 2026</strong>
@@ -187,6 +184,9 @@ export function CalendarMock() {
           <p className="b-day-name">
             Wed <strong>18</strong>
           </p>
+          <span className="b-event b-event-green">
+            Pottery class <span className="b-dim">6 PM</span>
+          </span>
         </div>
         <div className="b-day">
           <p className="b-day-name">

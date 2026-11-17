@@ -36,7 +36,7 @@ function Hero() {
       <Nav />
       <div className="b-hero-body b-wrap">
         <div className="b-hero-logo">
-          <Logo size={112} alt="Aplos Mail" />
+          <Logo size={80} alt="Aplos Mail" />
         </div>
         <h1 data-claim="home-focus">Finish your inbox, one email at a time.</h1>
         <p className="b-hero-sub" data-claim="gmail-google-calendar keyboard-first">
@@ -53,17 +53,23 @@ function Hero() {
   );
 }
 
+function Crop({ name, alt, eager }: { name: 'home' | 'calendar'; alt: string; eager?: boolean }) {
+  return (
+    <div className={`b-frame b-crop b-crop-${name}`}>
+      <AppShot name={name} alt={alt} eager={eager} />
+    </div>
+  );
+}
+
 function HeroShot() {
   return (
     <div className="b-wrap b-hero-shot">
       <HeroCard />
-      <div className="b-frame">
-        <AppShot
-          name="home"
-          eager
-          alt="Aplos Mail's Home: Jordan Park's email in focus with Reply, Later and Done, and five more emails below"
-        />
-      </div>
+      <Crop
+        name="home"
+        eager
+        alt="Aplos Mail's Home: Jordan Park's email in focus with Reply, Later and Done, and five more emails below"
+      />
     </div>
   );
 }
@@ -72,30 +78,38 @@ function Tag({ children }: { children: string }) {
   return <p className="b-tag">{children}</p>;
 }
 
+function featureClass(flip?: boolean, stack?: boolean) {
+  if (stack) return 'b-feature b-wrap is-stack';
+  return flip ? 'b-feature b-wrap is-flip' : 'b-feature b-wrap';
+}
+
+function Line({ children }: { children: string }) {
+  return <span className="b-line">{children}</span>;
+}
+
 function Feature({
   id,
   tag,
   title,
   flip,
+  stack,
   aside,
   children,
 }: {
   id: string;
   tag: string;
-  title: string;
+  title: ReactNode;
   flip?: boolean;
+  stack?: boolean;
   aside: ReactNode;
   children: ReactNode;
 }) {
   return (
-    <section
-      className={flip ? 'b-feature b-wrap is-flip' : 'b-feature b-wrap'}
-      aria-labelledby={id}
-    >
+    <section className={featureClass(flip, stack)} aria-labelledby={id}>
       <div className="b-feature-text">
         <Tag>{tag}</Tag>
         <h2 id={id}>{title}</h2>
-        {children}
+        {stack ? <div className="b-copy">{children}</div> : children}
       </div>
       <div className="b-feature-aside">{aside}</div>
     </section>
@@ -107,7 +121,12 @@ function Home() {
     <Feature
       id="b-home"
       tag="Home"
-      title="One email in focus. The rest can wait."
+      title={
+        <>
+          <Line>One email in focus.</Line>
+          <Line>The rest can wait.</Line>
+        </>
+      }
       aside={<HomeMock />}
     >
       <p data-claim="home-focus">
@@ -126,9 +145,26 @@ function Calendar() {
     <Feature
       id="b-cal"
       tag="Calendar"
-      title="Your mail and calendar, in one app."
-      flip
-      aside={<CalendarMock />}
+      title={
+        <>
+          <Line>Your mail and calendar,</Line>
+          <Line>in one app.</Line>
+        </>
+      }
+      stack
+      aside={
+        <>
+          <div className="b-desk-only">
+            <Crop
+              name="calendar"
+              alt="Aplos Mail's Calendar: a week from Sunday 15 to Saturday 21 November, with a design critique and a dentist visit on Thursday"
+            />
+          </div>
+          <div className="b-narrow-only">
+            <CalendarMock />
+          </div>
+        </>
+      }
     >
       <p data-claim="google-calendar-views">
         Your Google calendars share one day, week and month view.
@@ -146,7 +182,17 @@ function Calendar() {
 
 function Ask() {
   return (
-    <Feature id="b-ask" tag="Ask" title="Ask about your mail or calendar." aside={<AskMock />}>
+    <Feature
+      id="b-ask"
+      tag="Ask"
+      title={
+        <>
+          <Line>Ask about your</Line>
+          <Line>mail or calendar.</Line>
+        </>
+      }
+      aside={<AskMock />}
+    >
       <p data-claim="ask-dictate">Type a question, or hold A and say it.</p>
       <p data-claim="ask-cites">
         Ask reads your mail and calendar, and cites the messages it used.
@@ -163,7 +209,12 @@ function Keyboard() {
     <Feature
       id="b-keys"
       tag="Keyboard"
-      title="Work through mail from the keyboard."
+      title={
+        <>
+          <Line>Work through mail</Line>
+          <Line>from the keyboard.</Line>
+        </>
+      }
       flip
       aside={<KeyGrid />}
     >
@@ -206,11 +257,15 @@ function Privacy() {
       <div className="b-wrap b-privacy-grid">
         <div className="b-privacy-text">
           <Tag>AI and privacy</Tag>
-          <h2 id="b-ai">Pick a provider for each feature.</h2>
+          <h2 id="b-ai">
+            <Line>Pick a provider</Line>
+            <Line>for each feature.</Line>
+          </h2>
           <p data-claim="groq-default">Every AI feature runs on Groq by default.</p>
           <p data-claim="provider-per-feature ai-routers">
-            A feature's text goes only to its provider. OpenRouter and OpenCode Go pass each request
-            on to the company that runs the chosen model.
+            You pick the provider for each feature in Settings. A feature's text goes only to its
+            provider. OpenRouter and OpenCode Go pass each request on to the company that runs the
+            chosen model.
           </p>
         </div>
         <div className="b-privacy-side">
@@ -255,7 +310,6 @@ function Close() {
   return (
     <section className="b-band b-close" aria-labelledby="b-close">
       <div className="b-wrap b-close-body">
-        <Logo size={64} />
         <h2 id="b-close">Start at the top. Finish at Done.</h2>
         <p data-claim="gmail-invited-testers invited-testers-builds">
           Aplos Mail works with Gmail and Google Calendar, available to invited testers.
@@ -281,9 +335,9 @@ export function Page() {
       <main id="b-main">
         <HeroShot />
         <Home />
+        <Keyboard />
         <Calendar />
         <Ask />
-        <Keyboard />
         <Privacy />
       </main>
       <Close />

@@ -5,7 +5,7 @@
 
   --band: #075244;
   --band-ink: #f7fbfb;
-  --band-sub: #cfe3da;
+  --band-sub: #e6f1ee;
   --band-line: rgb(225 238 237 / 18%);
   --band-btn: #f7fbfb;
   --band-btn-hover: #e1eeed;
@@ -43,14 +43,14 @@
   --wrap: 1160px;
   --gutter: 32px;
   --shot-w: min(var(--wrap), calc(100vw - 2 * var(--gutter)));
-  --overlap: calc(var(--shot-w) * 0.3);
+  --overlap: calc(var(--shot-w) * 0.2);
 }
 
 @media (prefers-color-scheme: dark) {
   :root {
     --band: #075244;
     --band-ink: #f7fbfb;
-    --band-sub: #d3e6df;
+    --band-sub: #e6f1ee;
     --band-line: rgb(225 238 237 / 14%);
     --band-btn: #e1eeed;
     --band-btn-hover: #f7fbfb;
@@ -76,7 +76,7 @@
     --app-accent: #88aee0;
     --app-accent-ink: #0d1b2c;
 
-    --shadow-frame: 0 0 0 1px rgb(236 236 237 / 22%), 0 8px 20px -10px rgb(0 0 0 / 50%);
+    --shadow-frame: 0 0 0 1px rgb(236 236 237 / 26%), 0 8px 20px -10px rgb(0 0 0 / 50%);
     --shadow-card:
       0 0 0 1px rgb(236 236 237 / 9%), inset 0 1px 0 rgb(255 255 255 / 4%),
       0 12px 28px -14px rgb(0 0 0 / 60%);
@@ -187,8 +187,10 @@ img {
   letter-spacing: -0.01em;
 }
 
-.b-brand .logo {
+.b-brand .logo,
+.b-hero-logo .logo {
   border-radius: 22.5%;
+  box-shadow: 0 0 0 1px rgb(225 238 237 / 34%);
 }
 
 .b-nav-links {
@@ -251,16 +253,12 @@ img {
   flex-direction: column;
   align-items: center;
   text-align: center;
-  padding-top: 72px;
-  padding-bottom: 88px;
-}
-
-.b-hero-logo .logo {
-  border-radius: 22.5%;
+  padding-top: 36px;
+  padding-bottom: 64px;
 }
 
 .b-hero h1 {
-  margin-top: 36px;
+  margin-top: 28px;
   max-width: 11.5em;
   font-family: var(--serif);
   font-weight: 420;
@@ -289,7 +287,9 @@ img {
 }
 
 .b-hero-note,
-.b-close-note {
+.b-close-note,
+.b-footer p {
+  text-wrap: balance;
   color: var(--band-ink);
   font-size: 15px;
   letter-spacing: 0;
@@ -309,12 +309,40 @@ img {
 }
 
 .b-crop {
-  display: none;
+  position: relative;
 }
 
-.b-frame img {
+.b-crop .app-shot {
+  display: block;
+  width: 128.2%;
+  margin-left: -25.6%;
+}
+
+.b-crop img {
   width: 100%;
   height: auto;
+}
+
+/* The real window, cropped to the main pane: Home keeps the focus card and list. */
+.b-crop-home {
+  aspect-ratio: 967 / 494;
+}
+
+.b-crop-home .app-shot {
+  margin-top: -5.5%;
+}
+
+/* Calendar keeps the week header and the hours that hold events. */
+.b-crop-calendar {
+  aspect-ratio: 967 / 266;
+}
+
+.b-crop-calendar .app-shot {
+  margin-top: -6.29%;
+}
+
+.b-narrow-only {
+  display: none;
 }
 
 @media (prefers-reduced-motion: no-preference) {
@@ -352,10 +380,10 @@ h2 {
 
 .b-feature {
   display: grid;
-  grid-template-columns: minmax(0, 4fr) minmax(0, 8fr);
-  gap: 56px;
+  grid-template-columns: minmax(0, 5fr) minmax(0, 7fr);
+  gap: 64px;
   align-items: center;
-  padding-top: 144px;
+  padding-top: 128px;
 }
 
 .b-feature.is-flip .b-feature-text {
@@ -366,8 +394,30 @@ h2 {
   grid-template-columns: minmax(0, 7fr) minmax(0, 5fr);
 }
 
+.b-feature.is-stack {
+  grid-template-columns: minmax(0, 1fr);
+  gap: 48px;
+  align-items: start;
+}
+
+.b-copy {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 32px;
+  margin-top: 28px;
+}
+
+.b-feature-text .b-copy p,
+.b-feature-text .b-copy p + p {
+  margin: 0;
+}
+
+.b-line {
+  display: block;
+}
+
 .b-feature-text h2 {
-  max-width: 11em;
+  max-width: none;
 }
 
 .b-feature-text h2 + p {
@@ -384,6 +434,7 @@ h2 {
 .b-cal-copy p,
 .b-privacy-text p,
 .b-close-body p {
+  max-width: 36ch;
   color: var(--ink-2);
   text-wrap: pretty;
 }
@@ -395,12 +446,6 @@ h2 {
 
 .b-hero-card {
   display: none;
-}
-
-.b-hero-shot .app-shot img {
-  aspect-ratio: 1240 / 600;
-  object-fit: cover;
-  object-position: top;
 }
 
 .b-small {
@@ -597,7 +642,7 @@ h2 {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: 12px;
-  min-height: 230px;
+  min-height: 200px;
 }
 
 .b-day {
@@ -643,6 +688,11 @@ h2 {
 .b-event-blue {
   border-color: #2f6f9f;
   background: rgb(47 111 159 / 14%);
+}
+
+.b-event-green {
+  border-color: var(--green);
+  background: var(--tag-bg);
 }
 
 .b-event-gold {
@@ -809,7 +859,7 @@ h2 {
 /* AI and privacy */
 
 .b-privacy {
-  margin-top: 144px;
+  margin-top: 128px;
   padding-block: 112px;
   background: var(--shell);
 }
@@ -821,36 +871,33 @@ h2 {
 }
 
 .b-privacy-text h2 {
-  max-width: 12ch;
   margin-bottom: 24px;
 }
 
 .b-providers {
-  display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
-  border-top: 1px solid var(--line-strong);
-}
-
-.b-providers li {
   display: flex;
-  flex-direction: column;
-  gap: 2px;
-  min-height: 72px;
-  padding: 16px 0;
-  border-bottom: 1px solid var(--line);
+  flex-wrap: wrap;
+  gap: 12px 28px;
+  padding-bottom: 32px;
+  border-bottom: 1px solid var(--line-strong);
+  color: var(--ink);
+  font-size: 18px;
   font-weight: 500;
+  letter-spacing: -0.01em;
 }
 
 .b-provider-note {
-  color: var(--link);
-  font-size: 13px;
-  font-weight: 500;
+  margin-left: 8px;
+  color: var(--ink-2);
+  font-size: 14px;
+  font-weight: 400;
+  letter-spacing: 0;
 }
 
 .b-facts {
   display: grid;
   gap: 28px;
-  margin-top: 48px;
+  margin-top: 36px;
 }
 
 .b-facts div {
@@ -861,7 +908,7 @@ h2 {
 
 .b-facts dt {
   color: var(--ink-2);
-  font-size: 15px;
+  font-size: 16px;
   padding-top: 3px;
 }
 
@@ -887,12 +934,8 @@ h2 {
   padding-bottom: 104px;
 }
 
-.b-close-body .logo {
-  border-radius: 22.5%;
-}
-
 .b-close-body h2 {
-  margin-top: 36px;
+  margin-top: 0;
   font-family: var(--serif);
   font-weight: 420;
   letter-spacing: -0.02em;
@@ -920,9 +963,9 @@ h2 {
   display: flex;
   align-items: center;
   gap: 24px;
-  padding-top: 28px;
+  padding-top: 32px;
   padding-bottom: 40px;
-  font-size: 14px;
+  font-size: 15px;
   color: var(--band-ink);
 }
 
@@ -948,6 +991,9 @@ h2 {
 }
 
 .b-footer-links a {
+  display: inline-flex;
+  align-items: center;
+  min-height: 44px;
   transition: color 160ms ease;
 }
 
@@ -970,8 +1016,17 @@ h2 {
     order: 0;
   }
 
-  .b-feature-text h2 {
-    max-width: 16ch;
+  .b-copy {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 14px;
+  }
+
+  .b-desk-only {
+    display: none;
+  }
+
+  .b-narrow-only {
+    display: block;
   }
 }
 
@@ -999,8 +1054,8 @@ h2 {
   }
 
   .b-hero-logo .logo {
-    width: 52px;
-    height: 52px;
+    width: 56px;
+    height: 56px;
   }
 
   .b-hero h1 {
@@ -1016,16 +1071,21 @@ h2 {
     margin-top: 28px;
   }
 
-  .b-hero-cta .b-cta {
-    width: 100%;
-  }
-
   .b-hero-cta {
     align-self: stretch;
   }
 
+  .b-hero-cta .b-cta {
+    width: 100%;
+    max-width: 320px;
+  }
+
   /* On a phone the real window is too small to read: a crisp card bridges the band instead. */
   .b-hero-shot .b-frame {
+    display: none;
+  }
+
+  .b-home-focus {
     display: none;
   }
 
@@ -1041,16 +1101,12 @@ h2 {
     font-size: 22px;
   }
 
-  .b-rows li.b-row-extra {
-    display: none;
-  }
-
   .b-summary-lg {
     font-size: 22px;
   }
 
   .b-feature {
-    padding-top: 112px;
+    padding-top: 96px;
   }
 
   .b-mock {
@@ -1086,12 +1142,13 @@ h2 {
   }
 
   .b-keys-main {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-    gap: 4px 12px;
+    grid-template-columns: auto 1fr;
+    gap: 4px 20px;
   }
 
   .b-keys-main li {
     gap: 10px;
+    white-space: nowrap;
   }
 
   .b-cap {
@@ -1116,17 +1173,14 @@ h2 {
     font-size: 14px;
   }
 
-  .b-providers li:last-child {
-    grid-column: 1 / -1;
-  }
-
   .b-privacy {
-    margin-top: 112px;
+    margin-top: 88px;
     padding-block: 88px;
   }
 
   .b-providers {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 10px 22px;
+    font-size: 17px;
   }
 
   .b-facts div {
@@ -1155,5 +1209,13 @@ h2 {
   .b-footer p {
     order: 3;
     width: 100%;
+  }
+
+  .b-footer-links {
+    gap: 12px;
+  }
+
+  .b-footer-links a {
+    padding-inline: 8px;
   }
 }

@@ -1,7 +1,15 @@
 import type { ReactNode } from 'react';
 import { Logo } from '../../shared/brand';
-import { CalendarCrop, HomeCrop } from './Crop';
-import { AskMock, CalendarDayMock, HomeMock, KeyList, ProviderMock, summaryFocus } from './Mocks';
+import { HomeCrop } from './Crop';
+import {
+  AskMock,
+  CalendarDayMock,
+  CalendarWeekMock,
+  HomeMock,
+  KeyList,
+  ProviderMock,
+  summaryFocus,
+} from './Mocks';
 
 const DOWNLOAD = '../../download/';
 const PRIVACY = '../../privacy/';
@@ -124,7 +132,7 @@ function CalendarPane() {
       aside={
         <figure className="window window-in-pane">
           <CalendarDayMock />
-          <CalendarCrop alt="Aplos Mail's calendar week for November 15 to 21, with Design critique and Dentist on Thursday." />
+          <CalendarWeekMock />
           <figcaption data-claim="mac-only">Calendar in the Mac app.</figcaption>
         </figure>
       }
@@ -176,20 +184,14 @@ function AiPane() {
       flip
       aside={<ProviderMock />}
     >
-      <p data-claim="groq-default provider-per-feature">
-        Every AI feature runs on Groq by default. In Settings you pick a provider for each one.
+      <p className="lead" data-claim="keys-on-mac local-models no-aplos-server">
+        No Aplos server ever sees your mail, calendar or sign&#8209;in details. Your keys stay on
+        your Mac, and Ollama and LM Studio run on it too.
       </p>
-      <p data-claim="keys-on-mac local-models no-aplos-server">
-        Your keys stay on your Mac, and Ollama and LM Studio run on it too. No Aplos server ever
-        sees your mail, calendar or sign&#8209;in details.
-      </p>
-      <p data-claim="provider-per-feature ai-routers">
-        A feature&rsquo;s text goes only to its own provider. OpenRouter and OpenCode Go pass each
-        request on to the company that runs the chosen model.
-      </p>
-      <p data-claim="ai-providers">
-        Choose Groq, OpenAI, Claude, Gemini, OpenRouter, OpenCode Go, Ollama, LM Studio or your own
-        server.
+      <p data-claim="groq-default provider-per-feature ai-providers ai-routers">
+        Every AI feature runs on Groq by default. In Settings you pick a provider for each one:
+        Groq, OpenAI, Claude, Gemini, OpenRouter, OpenCode Go, Ollama, LM Studio or your own server.
+        OpenRouter and OpenCode Go pass each request on to the company that runs the chosen model.
       </p>
     </Pane>
   );
@@ -199,6 +201,9 @@ function Close() {
   return (
     <section className="close" aria-labelledby="close-title">
       <div className="close-copy">
+        <span className="close-chip close-chip-mobile">
+          <Logo size={44} />
+        </span>
         <h2 id="close-title">See it on your Mac.</h2>
         <p data-claim="gmail-invited-testers">
           Aplos Mail works with Gmail and Google Calendar, available to invited testers.
@@ -208,7 +213,7 @@ function Close() {
         </a>
       </div>
       <span className="close-chip">
-        <Logo size={112} />
+        <Logo size={88} />
       </span>
     </section>
   );

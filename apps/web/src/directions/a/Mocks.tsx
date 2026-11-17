@@ -183,7 +183,7 @@ const mainKeys: Key[] = [
 
 const moreKeys: Key[] = [
   { cap: 'B', does: 'Bookmark' },
-  { cap: 'A', does: 'Ask or dictate' },
+  { cap: 'A', does: 'Ask, hold to dictate' },
   { cap: 'C', does: 'Compose' },
   { cap: '?', does: 'All shortcuts' },
 ];
@@ -285,6 +285,59 @@ export function CalendarDayMock() {
           >
             <strong>{event.title}</strong>
             <span>{event.time}</span>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+type WeekEvent = { day: number; start: number; len: number; title: string; tone: string };
+
+const weekDays = ['Sun 15', 'Mon 16', 'Tue 17', 'Wed 18', 'Thu 19', 'Fri 20', 'Sat 21'];
+const weekHours = ['9 AM', '10 AM', '11 AM', '12 PM', '1 PM', '2 PM'];
+
+const weekEvents: WeekEvent[] = [
+  { day: 1, start: 0.5, len: 1, title: 'Standup', tone: 'blue' },
+  { day: 1, start: 3, len: 1, title: 'Lunch with Maya', tone: 'sand' },
+  { day: 2, start: 1, len: 1.5, title: 'Pottery class', tone: 'sand' },
+  { day: 3, start: 0, len: 1, title: 'Library holds', tone: 'blue' },
+  { day: 4, start: 5, len: 1, title: 'Design critique', tone: 'blue' },
+  { day: 5, start: 2, len: 1, title: 'Friday review', tone: 'blue' },
+  { day: 5, start: 4, len: 1, title: 'Cabin planning', tone: 'sand' },
+];
+
+/** A static week view for wide screens: events sit inside their own day column. */
+export function CalendarWeekMock() {
+  return (
+    <div className="mock mock-week" aria-hidden="true">
+      <div className="week-head">
+        <span className="day-title">November 2026</span>
+        <span className="day-sub">November 15 to 21</span>
+      </div>
+      <div className="week-cols">
+        <div className="week-hours">
+          {weekHours.map(hour => (
+            <span key={hour}>{hour}</span>
+          ))}
+        </div>
+        {weekDays.map((name, index) => (
+          <div key={name} className={`week-col ${index === 1 ? 'week-today' : ''}`}>
+            <span className="week-name">{name}</span>
+            {weekHours.map(hour => (
+              <i key={hour} className="week-line" />
+            ))}
+            {weekEvents
+              .filter(event => event.day === index)
+              .map(event => (
+                <div
+                  key={event.title}
+                  className={`week-event day-${event.tone}`}
+                  style={{ top: `${44 + event.start * 44}px`, height: `${event.len * 44 - 3}px` }}
+                >
+                  {event.title}
+                </div>
+              ))}
           </div>
         ))}
       </div>
