@@ -135,9 +135,18 @@
   visibility: hidden;
 }
 .ui-list-key-word {
+  /* "Hold" names the gesture, not part of the label ("Mark all 3 done"): a hairline divider and 8 px of air set it and
+     its keycap apart from the words before it (owner review of #548, 2026-11-17). */
+  margin-left: var(--space-1);
+  padding-left: var(--space-2);
+  box-shadow: inset var(--hairline) 0 0 var(--line-strong);
   color: inherit;
   font: var(--type-caption);
   letter-spacing: var(--track-caption);
+}
+.ui-list-btn[data-variant='filled'] .ui-list-key-word {
+  /* on the accent fill the divider takes the keycap plate's own edge */
+  box-shadow: inset var(--hairline) 0 0 color-mix(in srgb, var(--accent-ink) 32%, transparent);
 }
 .ui-list-btn[data-variant='filled'] .ui-list-kbd {
   /* A hint, not part of the label: a faint plate with a hairline edge on the fill, the label's own colour. */

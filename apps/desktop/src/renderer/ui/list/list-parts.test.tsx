@@ -574,3 +574,10 @@ test('no banned phrase, glyph or exclamation mark rendered anywhere in the list 
   assert.ok(collected.length > 40);
   for (const markup of collected) assert.deepEqual(bannedIn(markup), [], markup.slice(0, 160));
 });
+
+test('the Low sheet\'s "Hold" sits apart from "Mark all N done": its own hairline divider and air (owner review of #548)', () => {
+  const css = readFileSync(new URL('./list.css', import.meta.url), 'utf8');
+  const word = css.match(/\.ui-list-key-word \{[^}]*\}/)?.[0] ?? '';
+  assert.match(word, /padding-left: var\(--space-2\)/);
+  assert.match(word, /box-shadow: inset var\(--hairline\) 0 0/);
+});
