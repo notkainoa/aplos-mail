@@ -519,6 +519,69 @@ test('Ask/run: a kept-out scope and a trains-on-inputs provider refuse honestly'
   assert.equal(err2?.problem?.reasonCode, 'ai.providerTrains');
 });
 
+test('Ask/run: the picked account scopes retrieval, and sources name their account', async () => {
+  const t = stubTransport({});
+  const w = await world(t);
+  seedMail(w);
+  w.store.commit({
+    opId: 'seed-b',
+    origin: 'sync',
+    writes: [
+      {
+        kind: 'account',
+        id: 'acct-2',
+        provider: 'google',
+        address: 'two@mail.example',
+        capabilities: {},
+        status: { state: 'ok' },
+        aiAllowed: true,
+      },
+      {
+        kind: 'folder',
+        accountId: 'acct-2',
+        remoteId: 'INBOX',
+        name: 'Inbox',
+        role: 'inbox',
+        folderKind: 'system',
+      },
+      msg('x1', 'T-other', 7, {
+        accountId: 'acct-2',
+        subject: 'Invoice paid already',
+        snippet: 'The invoice was paid last week.',
+      }),
+    ],
+  });
+  const settle = async (runId: string) => {
+    for (
+      let i = 0;
+      i < 60 &&
+      !w.frames.some(
+        f =>
+          f.frame === 'progress' &&
+          (f as { runId?: string }).runId === runId &&
+          (f as { kind?: string }).kind === 'done',
+      );
+      i++
+    )
+      await new Promise(r => setImmediate(r));
+  };
+  // All accounts: both accounts' mail can be a source, each carrying its address for the answer to name.
+  const all = await w.call('Ask/run', { question: 'invoice' });
+  await settle(all.runId);
+  const promptAll = t.calls.at(-1)!.messages.at(-1)!.content ?? '';
+  assert.match(promptAll, /Account: owner@mail\.example/);
+  assert.match(promptAll, /Account: two@mail\.example/);
+  // Account A picked: only A's mail is quoted — B's subject and address never reach the provider.
+  const scoped = await w.call('Ask/run', {
+    question: 'invoice',
+    scope: { accountIds: ['acct-2'] },
+  });
+  await settle(scoped.runId);
+  const promptScoped = t.calls.at(-1)!.messages.at(-1)!.content ?? '';
+  assert.match(promptScoped, /Account: two@mail\.example/);
+  assert.doesNotMatch(promptScoped, /owner@mail\.example|Invoice due Friday/);
+});
+
 test('Ask/cancel: a live run aborts', async () => {
   let signal: AbortSignal | undefined;
   const hanging = stubTransport({ onChat: req => (signal = req.signal) });

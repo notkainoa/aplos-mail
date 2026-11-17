@@ -23,6 +23,7 @@ import {
   openRoute,
   openThread,
   pushToast,
+  useAccountScope,
   useAppRoute,
   useCurrentTarget,
   useRegisterCommands,
@@ -247,6 +248,9 @@ export function AskDockHost(props: AskDockHostProps) {
   targetRef.current = target;
   const screenRef = useRef(screen);
   screenRef.current = screen;
+  const accountScope = useAccountScope();
+  const accountScopeRef = useRef(accountScope);
+  accountScopeRef.current = accountScope;
 
   /* ── state and effects ── */
 
@@ -291,6 +295,7 @@ export function AskDockHost(props: AskDockHostProps) {
             target: targetRef.current,
             screen: screenRef.current,
             draftAccountId: openDraftAccount(),
+            accountScope: accountScopeRef.current,
           },
           Intl.DateTimeFormat().resolvedOptions().timeZone,
         ),
