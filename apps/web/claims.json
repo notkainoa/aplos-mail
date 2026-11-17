@@ -182,6 +182,51 @@
       "note": "The demos are scripted on original demo data and the screenshots show the 0.2.x app; both are kept until the redesign."
     },
     {
+      "id": "suggested-action-ai-off",
+      "says": "With AI off, the main button is Reply on Do now and Done on Important updates",
+      "pages": ["landing"],
+      "evidence": [
+        {
+          "kind": "design",
+          "ref": "plans/DESIGN.md section 7.2 (the button is lane-specific); apps/desktop/src/renderer/screens/home/homeRows.ts suggestionOf",
+          "maxAgeDays": null
+        },
+        {
+          "kind": "test",
+          "ref": "apps/desktop/src/renderer/screens/home/homeModel.test.ts",
+          "maxAgeDays": null
+        }
+      ],
+      "status": "verified",
+      "verifiedAt": "2026-11-17",
+      "note": "Owner decision 2026-11-13: the focus card's primary button is lane-specific."
+    },
+    {
+      "id": "suggested-action",
+      "says": "Once AI is on, each email gets one suggested next step from a fixed set (reply, open a link or attachment, a calendar plan, pay, unsubscribe, read, done); the focus card's main button names it and Space starts it: a reply opens, Done clears the email, anything else opens the email. Nothing is sent or added to the calendar on its own",
+      "pages": ["landing"],
+      "evidence": [
+        {
+          "kind": "design",
+          "ref": "packages/contract/src/schemas/mail.ts SummaryAction kinds (one preset next step, model output is data, never a tool call); packages/engine/src/ai/impl/execute.ts parseSummary validation; plans/DESIGN.md section 9",
+          "maxAgeDays": null
+        },
+        {
+          "kind": "test",
+          "ref": "apps/desktop/src/renderer/screens/home/homeModel.test.ts",
+          "maxAgeDays": null
+        },
+        {
+          "kind": "test",
+          "ref": "apps/desktop/tests/suggested-action.test.ts",
+          "maxAgeDays": null
+        }
+      ],
+      "status": "verified",
+      "verifiedAt": "2026-11-17",
+      "note": "Wording follows what Space does on Home in the current renderer: link, attachment and calendar steps open the thread, they do not open the link or add the event directly (homeActions.ts suggested()). Do not claim Space opens links or adds events until the reader wires onSuggested."
+    },
+    {
       "id": "several-accounts",
       "says": "Several Google accounts can be connected at once; the screenshots show All accounts and a calendar week with events from two accounts",
       "pages": ["landing"],
