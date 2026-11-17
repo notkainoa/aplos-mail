@@ -8,7 +8,15 @@ import type { ModelRef } from '@aplos/contract';
 import { aiSettings, backgroundGate } from './gate';
 import { budgetOpen, dailyUsage } from './runtime';
 import { executeJob, type JobOutcome } from './execute';
-import { featureOf, nextFollowAt, queueSummary, type JobRow } from './jobs';
+import {
+  featureOf,
+  KINDS_OF,
+  limitStreaks,
+  nextFollowAt,
+  queueSummary,
+  type FeatureName,
+  type JobRow,
+} from './jobs';
 
 /**
  * The `jobs` deadline source's fire (ARCH 8.1): drains due queued jobs in priority order, 1-2 concurrent, behind the
@@ -97,22 +105,19 @@ function pauseDue(services: EngineServices, now: number, until: number): void {
   });
 }
 
-/** A rate-limited feature's due rows wait until `until`; its held "Summarizing…" cards collapse meanwhile. */
-function pauseFeature(services: EngineServices, now: number, feature: string, until: number): void {
-  const due = dueJobs(services, now, Number.MAX_SAFE_INTEGER).filter(
-    r => r.kind !== 'wake' && featureOf(r.kind) === feature,
-  );
-  if (due.length)
-    services.store.commit({
-      opId: `ai-limit-${feature}-${now}-${hexId(services.randomBytes, 'l')}`,
-      origin: 'system',
-      writes: due.map(r => ({
-        kind: 'job' as const,
-        action: 'defer' as const,
-        id: r.id,
-        nextAt: until,
-      })),
-    });
+/** A rate-limited feature's due rows wait until `until` — one bulk defer, one `'*'` mark like `pauseDue`,
+ * not a change row per job; its held "Summarizing…" cards collapse meanwhile. */
+function pauseFeature(
+  services: EngineServices,
+  now: number,
+  feature: FeatureName,
+  until: number,
+): void {
+  services.store.commit({
+    opId: `ai-limit-${feature}-${now}-${hexId(services.randomBytes, 'l')}`,
+    origin: 'system',
+    writes: [{ kind: 'job', action: 'defer', at: now, nextAt: until, kinds: KINDS_OF[feature] }],
+  });
   if (feature === 'summaries') closePendingSummaries(services, now, true);
 }
 
@@ -417,7 +422,9 @@ export async function runJobs(services: EngineServices, now: number): Promise<vo
     }
     let handled = 0;
     /** Per feature, until when the provider asked it to wait. */
-    const limited = new Map<string, number>();
+    const limited = new Map<FeatureName, number>();
+    /** Features whose jobs ran this pass — a clean one resets its rate-limit streak to the floor. */
+    const ran = new Set<FeatureName>();
     // Due 'wake' sentinels run in one batched pass: every wake action is idempotent under the job/summary
     // singleton keys, so there is no claim, and the whole set is deleted in a single commit — a delivery
     // burst must not spend a claim-plus-settle pair per touched thread. Deleting (not settling) is the whole
@@ -466,12 +473,12 @@ export async function runJobs(services: EngineServices, now: number): Promise<vo
           handled++;
           const started = services.clock.now();
           const outcome = await executeJob(services, row);
+          const feature = featureOf(row.kind);
+          ran.add(feature);
           logOutcome(services, row, outcome, started);
           settle(services, row, outcome);
-          if (outcome.code === 'rateLimited') {
-            const feature = featureOf(row.kind);
+          if (outcome.code === 'rateLimited')
             limited.set(feature, Math.max(limited.get(feature) ?? 0, outcome.nextAt ?? now));
-          }
           // The card collapses unless this work is still really going (see `holdsPlaceholder`).
           if ((row.kind === 'summary' || row.kind === 'classify') && !holdsPlaceholder(outcome))
             failSummary(services, row);
@@ -479,8 +486,14 @@ export async function runJobs(services: EngineServices, now: number): Promise<vo
     );
     // The provider said "slow down": every other due row of that feature waits out the same window instead of
     // each spending an attempt on its own 429 — the feature then drains at the provider's pace, Home's priority-0
-    // cards first. Other features keep running; a waiting Summaries settles its held cards now.
-    for (const [feature, until] of limited) pauseFeature(services, now, feature, until);
+    // cards first. Other features keep running; a waiting Summaries settles its held cards now. The streak
+    // makes each consecutive pause longer; a feature that ran clean this pass re-asks at the floor next time.
+    const streaks = limitStreaks(services);
+    for (const feature of ran) if (!limited.has(feature)) streaks.delete(feature);
+    for (const [feature, until] of limited) {
+      streaks.set(feature, (streaks.get(feature) ?? 0) + 1);
+      pauseFeature(services, now, feature, until);
+    }
     if (!handled) return;
     // A round finished; loop while more work is due right now — an ingest sentinel's `summary` job lands here.
     // The yield is a real timer turn, not a microtask: a pass of only sentinels awaits nothing else, and a

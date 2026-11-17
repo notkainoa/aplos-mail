@@ -30,6 +30,8 @@ export interface JobWrite {
   job?: { kind: string; key: string; priority: number; payload: string; nextAt: number };
   /** `claim`/`defer` (the due bound for the bulk form). */
   at?: number;
+  /** `defer` bulk form: scope the moved rows to these job kinds (one feature's pause); absent = whole queue. */
+  kinds?: readonly string[];
   /** `settle`. */
   state?: 'done' | 'failed' | 'dead' | 'skipped';
   /** `settle`: the classified problem, never provider text. */
@@ -121,11 +123,8 @@ let impls: AiWriteImpls | undefined;
 export const registerAiWrites = (i: AiWriteImpls): void => {
   impls = i;
 };
-const aiWrite = (kind: keyof AiWriteImpls, write: never, tx: CommitExtensionTx): void => {
-  const i = impls;
-  if (!i) throw new StoreError('invalid', 'ai write');
-  i[kind](write, tx);
-};
+const aiWrite = (kind: keyof AiWriteImpls, write: never, tx: CommitExtensionTx): void =>
+  (impls ?? bad())[kind](write, tx);
 
 const bad = (): never => {
   throw new StoreError('invalid', 'ai write');
@@ -152,7 +151,7 @@ function jobEnqueue(write: JobWrite, tx: CommitExtensionTx): void {
   ok(
     tx,
     tx.run(
-      "INSERT OR IGNORE INTO jobs(kind, key, priority, payload, state, attempts, next_at) VALUES(?, ?, ?, ?, 'queued', 0, ?)",
+      "INSERT OR IGNORE INTO jobs(kind, key, priority, payload, state, next_at) VALUES(?, ?, ?, ?, 'queued', ?)",
       j!.kind,
       j!.key,
       j!.priority,
@@ -224,15 +223,17 @@ function jobMove(write: JobWrite, id: number, sid: string, tx: CommitExtensionTx
           ),
           sid,
         );
-      // The whole-queue pause: every due row moves so `next()` sleeps until the horizon, marked so a
-      // later `wake` pulls back only rows the pause deferred — provider backoffs keep their schedule.
+      // The pause: every due row moves so `next()` sleeps until the horizon — whole-queue, or one feature's
+      // kinds — marked so a later `wake` pulls back only rows the pause deferred — provider backoffs keep
+      // their schedule.
       if (!Number.isFinite(write.at)) bad();
       return ok(
         tx,
         tx.run(
-          "UPDATE jobs SET next_at = ?, last_error = 'ai.paused' WHERE state IN ('queued','failed') AND next_at <= ?",
+          `UPDATE jobs SET next_at = ?, last_error = 'ai.paused' WHERE state IN ('queued','failed') AND next_at <= ?${write.kinds?.length ? ` AND kind IN(${write.kinds.map(() => '?').join()})` : ''}`,
           write.nextAt!,
           write.at!,
+          ...(write.kinds ?? []),
         ),
         '*',
       );
@@ -258,8 +259,12 @@ function jobMove(write: JobWrite, id: number, sid: string, tx: CommitExtensionTx
 
 function job(write: JobWrite, tx: CommitExtensionTx): void {
   if (write.action === 'enqueue') return jobEnqueue(write, tx);
-  if (write.action === 'wake' || write.action === 'reset') return jobMove(write, 0, '*', tx);
-  if (write.action === 'defer' && write.id === undefined) return jobMove(write, 0, '*', tx);
+  if (
+    write.action === 'wake' ||
+    write.action === 'reset' ||
+    (write.action === 'defer' && write.id === undefined)
+  )
+    return jobMove(write, 0, '*', tx);
   if (!Number.isInteger(write.id)) bad();
   const id = write.id!;
   const sid = String(id);
@@ -290,13 +295,6 @@ function apply(write: { kind: string }, tx: CommitExtensionTx): void {
  * hook's body lives with the other impl writes (`ai/impl/ai-writes`) for the core budget; the `AiJob` mark wakes
  * the `jobs` deadline once the commit lands.
  */
-/** The `wake` job that makes the runner catch existing mail up after an AI settings or `ai_allowed` change. */
-export const aiBackfillWrite = (nextAt: number): JobWrite => ({
-  kind: 'job',
-  action: 'enqueue',
-  job: { kind: 'wake', key: 'ai:backfill', priority: 5, payload: '{}', nextAt },
-});
-
 /**
  * Arms the `ai:backfill` sentinel in its own commit. It cannot ride the caller's commit: a store opened without
  * the eng-ai lane has no `job` writer, and the catch-up must never fail the caller. The runner deletes the row
@@ -308,7 +306,13 @@ export const requestAiCatchUp = (store: StorePort, at: number): void => {
       // The seq keeps the opId fresh: two changes inside one clock tick must each arm the sentinel.
       opId: `ai-catchup-${at}-${store.seq()}`,
       origin: 'system',
-      writes: [aiBackfillWrite(at)],
+      writes: [
+        {
+          kind: 'job',
+          action: 'enqueue',
+          job: { kind: 'wake', key: 'ai:backfill', priority: 5, payload: '{}', nextAt: at },
+        },
+      ],
     });
   } catch {
     /* no eng-ai lane on this store: no jobs table use means nothing to catch up */

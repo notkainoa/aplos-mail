@@ -514,3 +514,114 @@ test('a rate limit pauses only its own feature, and a long Retry-After is capped
   assert.equal(rateLimitWait(Number.NaN), 60_000);
   assert.equal(rateLimitWait(Number.POSITIVE_INFINITY), 60_000);
 });
+
+test("a rate-limit pause moves the feature's due rows in one bulk defer", async () => {
+  // Post-merge follow-up: pausing used to write one AiJob change row per deferred job — about 202 per pass
+  // on the real account, ~290k a day at the floor. The scoped defer moves them in one UPDATE like pauseDue:
+  // one '*' mark, and each moved row is stamped ai.paused like any other pause.
+  const limited = stubTransport({ fail: new AiCallError('rateLimited', 'slow down', 60_000) });
+  const w = await world(limited);
+  seedMail(w);
+  const many = Array.from({ length: 6 }, (_, i) =>
+    msg(`b${i}`, `T-b${i}`, 10 + i, { subject: `Bulk ${i}`, snippet: 'A note.' }),
+  );
+  w.engine.services.store.commit({ opId: 'bulk', origin: 'sync', writes: many });
+  await consentNow(w);
+  queueSummary(w.engine.services, ACCOUNT, 'T-thread');
+  for (let i = 0; i < 6; i++) queueSummary(w.engine.services, ACCOUNT, `T-b${i}`);
+  const seq = w.engine.services.store.seq();
+  await runJobs(w.engine.services, w.clock.now());
+  const marks = w.engine.services.store.read(q =>
+    q.all<{ id: string }>(
+      "SELECT id FROM changes WHERE seq > ? AND type = 'AiJob' AND id = '*'",
+      seq,
+    ),
+  );
+  assert.equal(marks.length, 1, 'one bulk defer, one * mark');
+  const rows = w.engine.services.store.read(q =>
+    q.all<{ last_error: string | null; n: number }>(
+      "SELECT last_error, COUNT(*) n FROM jobs WHERE kind IN ('summary','classify') GROUP BY last_error",
+    ),
+  );
+  // The two rows that ran into the 429 were requeued with their own wait (last_error untouched); the other
+  // five went through the bulk defer.
+  assert.equal(rows.find(r => r.last_error === 'ai.paused')?.n, 5);
+  assert.equal(rows.find(r => r.last_error === null)?.n, 2);
+  const all = w.engine.services.store.read(q =>
+    q.all<{ next_at: number }>("SELECT next_at FROM jobs WHERE kind = 'summary'"),
+  );
+  for (const r of all)
+    assert.ok(r.next_at >= w.clock.now() + 60_000, 'every row waits out the window');
+});
+
+test('a rate limit keeps the attempt budget a job already spent', async () => {
+  // Post-merge follow-up: a job with two earlier failures keeps attempts=2 across a release — the
+  // provider's wait spends nothing — and the next ordinary failure spends attempt 3, not 1.
+  const failing = stubTransport({ fail: new Error('provider exploded') });
+  const w = await world(failing);
+  seedMail(w);
+  await consentNow(w);
+  queueSummary(w.engine.services, ACCOUNT, 'T-thread');
+  const attempts = () =>
+    w.engine.services.store.read(
+      q =>
+        q.get<{ attempts: number }>("SELECT attempts FROM jobs WHERE kind = 'summary'")!.attempts,
+    );
+  await runJobs(w.engine.services, w.clock.now());
+  assert.equal(attempts(), 1);
+  w.clock.advance(RATE_LIMIT_MAX_MS);
+  await runJobs(w.engine.services, w.clock.now());
+  assert.equal(attempts(), 2);
+  w.engine.services.ai.useTransport(
+    stubTransport({ fail: new AiCallError('rateLimited', 'slow down', 60_000) }),
+  );
+  w.clock.advance(RATE_LIMIT_MAX_MS);
+  await runJobs(w.engine.services, w.clock.now());
+  assert.equal(attempts(), 2, 'a rate limit spends no attempt');
+  w.engine.services.ai.useTransport(failing);
+  w.clock.advance(RATE_LIMIT_MAX_MS);
+  await runJobs(w.engine.services, w.clock.now());
+  assert.equal(attempts(), 3, 'earlier failures were never forgiven');
+});
+
+test('repeated rate limits widen the pause, and a clean pass resets it', async () => {
+  // Post-merge follow-up: at the 60 s floor the queue re-asked ~2,880 times a day. Each consecutive pause
+  // multiplies the wait, so a provider that keeps saying 429 is asked less and less often.
+  const limited = stubTransport({ fail: new AiCallError('rateLimited', 'slow down', undefined) });
+  const w = await world(limited);
+  seedMail(w);
+  await consentNow(w);
+  queueSummary(w.engine.services, ACCOUNT, 'T-thread');
+  const nextAt = () =>
+    w.engine.services.store.read(
+      q => q.get<{ next_at: number }>("SELECT next_at FROM jobs WHERE kind = 'summary'")!.next_at,
+    );
+  await runJobs(w.engine.services, w.clock.now());
+  assert.equal(nextAt() - w.clock.now(), 60_000, 'first pause waits out the floor');
+  w.clock.advance(61_000);
+  await runJobs(w.engine.services, w.clock.now());
+  assert.equal(nextAt() - w.clock.now(), 120_000, 'a second consecutive limit doubles the wait');
+  w.clock.advance(121_000);
+  await runJobs(w.engine.services, w.clock.now());
+  assert.equal(nextAt() - w.clock.now(), 180_000, 'and each further limit waits longer');
+  // The window finally opens: the queue drains and the streak resets to the floor.
+  w.engine.services.ai.useTransport(stubTransport({}));
+  w.clock.advance(181_000);
+  await runJobs(w.engine.services, w.clock.now());
+  assert.equal(jobsOf(w, 'summary')[0].state, 'done');
+  w.engine.services.store.commit({
+    opId: 'again',
+    origin: 'sync',
+    writes: [msg('n9', 'T-n9', 20, { subject: 'Later', snippet: 'A note.' })],
+  });
+  queueSummary(w.engine.services, ACCOUNT, 'T-n9');
+  w.engine.services.ai.useTransport(limited);
+  await runJobs(w.engine.services, w.clock.now());
+  const reopened = w.engine.services.store.read(
+    q =>
+      q.get<{ next_at: number }>(
+        "SELECT next_at FROM jobs WHERE kind = 'summary' AND state IN ('queued','failed')",
+      )!.next_at,
+  );
+  assert.equal(reopened - w.clock.now(), 60_000, 'a clean pass resets the streak to the floor');
+});
