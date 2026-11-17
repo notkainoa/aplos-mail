@@ -72,6 +72,16 @@ describe('a plain email', () => {
       assert.doesNotMatch(rootOf(documentOf(html)), new RegExp(PLAIN_ATTRIBUTE), html);
   });
 
+  it('is plain in the shape the engine stores for mail Aplos sent: bare paragraphs, trailing newlines, text before the first tag', () => {
+    for (const html of [
+      '<p>Sounds good, see you at noon.</p>\n\n',
+      '<p>Hi</p>\r\n',
+      // A forward: the header lines are text outside any tag, then empty paragraphs and the forwarded lines.
+      'Jo Park &lt;jo@park.example&gt;\nMon, Nov 16, 2026 at 6:56 PM<p><br></p><p><br></p><p>See you at 6.</p><p><br></p><p>-- Jo</p>\n\n',
+    ])
+      assert.match(rootOf(documentOf(html)), new RegExp(PLAIN_ATTRIBUTE), html);
+  });
+
   it('is not plain when one declaration beside the layout ones sets a colour or loads something', () => {
     for (const html of [
       '<p style="margin:0;color:#c00">Hello</p>',

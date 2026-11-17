@@ -53,21 +53,27 @@ export const FRAME_DARK = {
 /**
  * What the iframe element itself is painted with. A rich email keeps the light paper in its inset ring (a sheet on the dark
  * pane). A plain email is the card itself: the card's surface, no ring or inset, in the name's column (`--plain-indent`),
- * with no border or rounding of its own. `plain` MUST come from a trusted signal (the stand-in frame's own document, or the
+ * with no border or rounding of its own. `reported` is false until the sealed frame's first report (its colour scheme is then
+ * the app's, so a plain letter paints its dark surface and can be recognised as such). `plain` MUST come from a trusted signal (the stand-in frame's own document, or the
  * sealed frame's marker on the root, which only the sanitiser sets); a colour the mail can choose is never one. The dark
  * surface is then read from the colour, because the plain CSS is the only thing that paints it.
  */
 export function sheetOf(
   plain: boolean,
   bg: string,
+  reported = true,
 ): {
   readonly background: string;
-  readonly colorScheme: 'light' | 'dark';
+  readonly colorScheme: 'light' | 'dark' | 'normal';
   readonly padding?: string;
   readonly width?: string;
   readonly marginLeft?: string;
   readonly borderRadius?: string;
 } {
+  // Until the frame has reported, its colour scheme is left to the app: an iframe element's `color-scheme` is the frame's
+  // own `prefers-color-scheme` (real Chromium, not Playwright's override), so `light` here would pin every plain letter
+  // to its light surface and the dark one could never be reported (the white inline reply, 2026-11-17).
+  if (!reported) return { background: FRAME_PAPER.paper, colorScheme: 'normal' };
   if (!plain) return { background: FRAME_PAPER.paper, colorScheme: 'light' };
   const dark = bg.toLowerCase() === FRAME_DARK.surface.toLowerCase();
   return {

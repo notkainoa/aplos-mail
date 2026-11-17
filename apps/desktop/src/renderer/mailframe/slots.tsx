@@ -173,6 +173,8 @@ export function UrlSlot(props: SlotProps<Extract<FrameSource, { kind: 'url' }>>)
   const [bg, setBg] = useState(FRAME_PAPER.paper);
   // The sanitiser's own marker, reported by the frame: the only thing that may flush a letter onto the card.
   const [plain, setPlain] = useState(false);
+  // False until that first report: the frame then follows the app's colour scheme (`sheetOf`).
+  const [reported, setReported] = useState(false);
   const ref = useRef<HTMLIFrameElement>(null);
   const onMeasured = useLatest(props.onMeasured);
   useSealedMailKeys(ref, { shown: !hidden, onKey: props.onKey });
@@ -181,6 +183,7 @@ export function UrlSlot(props: SlotProps<Extract<FrameSource, { kind: 'url' }>>)
     // A new letter starts on the paper: the previous letter's colour must not draw the next one until it reports.
     setBg(FRAME_PAPER.paper);
     setPlain(false);
+    setReported(false);
     const listener = createReportListener({
       frame: () => ref.current,
       token: source.token,
@@ -188,6 +191,7 @@ export function UrlSlot(props: SlotProps<Extract<FrameSource, { kind: 'url' }>>)
       onFirst: report => {
         setBg(report.bg);
         setPlain(report.plain);
+        setReported(true);
         onMeasured.current(source, {
           height: report.height,
           bg: report.bg,
@@ -212,7 +216,7 @@ export function UrlSlot(props: SlotProps<Extract<FrameSource, { kind: 'url' }>>)
       tabIndex={-1}
       src={source.url}
       data-sheet={sheetKind(plain, bg)}
-      style={{ ...FRAME, ...sheetOf(plain, bg), height, ...(hidden ? HIDDEN : null) }}
+      style={{ ...FRAME, ...sheetOf(plain, bg, reported), height, ...(hidden ? HIDDEN : null) }}
     />
   );
 }
