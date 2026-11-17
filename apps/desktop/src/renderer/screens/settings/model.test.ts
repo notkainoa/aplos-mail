@@ -625,4 +625,41 @@ describe('one setup notice per blocking provider', () => {
     );
     assert.deepEqual(notices[0]?.features, ['ask', 'summaries', 'drafts', 'plans', 'voice']);
   });
+
+  test('a stopped local server says it is not running and never asks for a key', () => {
+    const base = baseSettings();
+    const settings = {
+      ...base,
+      ai: {
+        ...base.ai,
+        features: { ...base.ai.features, ask: { provider: 'ollama' as const, model: 'llama3.2' } },
+      },
+    };
+    const stopped = providers().map(p =>
+      p.id === 'ollama' ? { ...p, status: 'unreachable', running: false } : p,
+    );
+    const notices = aiNotices(settings, stopped);
+    assert.equal(notices.length, 1);
+    assert.equal(notices[0]?.addKeyFor, undefined, 'no Add a key for a stopped server');
+    assert.match(notices[0]!.text, /^Ask uses Ollama, which is not running\.$/);
+    assert.ok(!notices.some(n => /needs a key/.test(n.text)));
+  });
+
+  test('a provider without speech-to-text gets its own line for Voice, not a key prompt', () => {
+    const base = baseSettings();
+    const settings = {
+      ...base,
+      ai: {
+        ...base.ai,
+        features: {
+          ...base.ai.features,
+          voice: { provider: 'openrouter' as const, model: 'whisper' },
+        },
+      },
+    };
+    const notices = aiNotices(settings, providers());
+    assert.equal(notices.length, 1);
+    assert.equal(notices[0]?.addKeyFor, undefined);
+    assert.match(notices[0]!.text, /^Voice uses OpenRouter, which cannot turn speech into text\.$/);
+  });
 });

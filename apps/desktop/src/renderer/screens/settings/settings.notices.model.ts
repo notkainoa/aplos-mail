@@ -22,11 +22,24 @@ export interface AiNotice {
   readonly features?: readonly AiFeature[];
 }
 
+/** Why a feature's chosen provider cannot answer: only `key` asks for a key. */
+type Reason = 'key' | 'notRunning' | 'noSpeech' | 'unavailable' | 'learns';
+
 /** One feature whose chosen provider cannot answer, and why. */
 interface Blocked {
   readonly feature: AiFeature;
   readonly provider: string;
-  readonly learns: boolean;
+  readonly reason: Reason;
+}
+
+/** The reason `usableFor` said no, kept so each failure gets its own plain line. */
+function reasonOf(p: AiProvider, feature: AiFeature): Reason {
+  if (feature === 'voice' && !p.sttCapable) return 'noSpeech';
+  if (feature !== 'voice' && p.trainsOnInputs) return 'learns';
+  if (p.running === false || (p.group === 'local' && p.status === 'unreachable')) {
+    return 'notRunning';
+  }
+  return p.status === 'missingKey' || p.status === 'notConfigured' ? 'key' : 'unavailable';
 }
 
 function blockedFeatures(
@@ -38,23 +51,28 @@ function blockedFeatures(
     const choice = settings.ai.features[feature];
     const p = byId(providers, choice.provider);
     if (!p || usableFor(p, feature)) continue;
-    out.push({
-      feature,
-      provider: choice.provider,
-      learns: feature !== 'voice' && p.trainsOnInputs === true,
-    });
+    out.push({ feature, provider: choice.provider, reason: reasonOf(p, feature) });
   }
   return out;
 }
 
-/** "Ask, Summaries and Voice use Groq, which needs a key." One sentence for every feature behind the same provider. */
-function keyNotice(provider: string, group: readonly Blocked[]): AiNotice {
+const REASON_LINE: Readonly<Record<Exclude<Reason, 'learns'>, string>> = {
+  key: 'needs a key.',
+  notRunning: 'is not running.',
+  noSpeech: 'cannot turn speech into text.',
+  unavailable: 'is not answering right now.',
+};
+
+/** "Ask, Summaries and Voice use Groq, which needs a key." One sentence per provider and reason. */
+function reasonNotice(reason: Exclude<Reason, 'learns'>, group: readonly Blocked[]): AiNotice {
+  const provider = group[0]!.provider;
   const labels = group.map(b => featureLabel(b.feature));
   const verb = group.length === 1 ? 'uses' : 'use';
+  const line = REASON_LINE[reason];
   return {
-    id: `key-${provider}`,
-    text: `${joinWords(labels)} ${verb} ${providerName(provider)}, which needs a key.`,
-    addKeyFor: provider,
+    id: `${reason}-${provider}`,
+    text: `${joinWords(labels)} ${verb} ${providerName(provider)}, which ${line}`,
+    ...(reason === 'key' ? { addKeyFor: provider } : {}),
     features: group.map(b => b.feature),
   };
 }
@@ -88,10 +106,13 @@ export function aiNotices(
     ];
   }
   const blocked = blockedFeatures(settings, providers);
-  const needKey = new Map<string, Blocked[]>();
-  for (const item of blocked.filter(b => !b.learns)) {
-    needKey.set(item.provider, [...(needKey.get(item.provider) ?? []), item]);
+  const groups = new Map<string, Blocked[]>();
+  for (const item of blocked.filter(b => b.reason !== 'learns')) {
+    const key = `${item.reason}|${item.provider}`;
+    groups.set(key, [...(groups.get(key) ?? []), item]);
   }
-  const keys = [...needKey].map(([provider, group]) => keyNotice(provider, group));
-  return [...keys, ...blocked.filter(b => b.learns).map(learnsNotice)];
+  const lines = [...groups.values()].map(group =>
+    reasonNotice(group[0]!.reason as Exclude<Reason, 'learns'>, group),
+  );
+  return [...lines, ...blocked.filter(b => b.reason === 'learns').map(learnsNotice)];
 }
