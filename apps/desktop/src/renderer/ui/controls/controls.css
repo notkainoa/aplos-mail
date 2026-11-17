@@ -9,7 +9,7 @@
   height: var(--switch-h);
   padding: 0;
   border: 0;
-  border-radius: var(--radius-xs);
+  border-radius: var(--radius-pill);
   background: var(--line-strong);
   box-shadow: inset 0 0 0 1px var(--control-edge);
   cursor: default;
@@ -43,15 +43,10 @@
   transform: translateX(calc(var(--switch-w) - var(--switch-thumb) - 2 * var(--switch-pad)));
 }
 /* Dark: the off track is the 3:1 control edge as a solid fill, so the whole switch reads against the pane, not only a
-   hairline round a 1.4:1 fill. */
+   hairline round a 1.4:1 fill. The thumb stays --paper, a clear step darker than the track. */
 :root[data-theme='dark'] .ui-switch:not([data-state='on'], :disabled, [aria-disabled='true']) {
   background: var(--control-edge);
   box-shadow: none;
-}
-/* A light thumb in both states, only the track changes (council 2, round 7): a --paper thumb in dark read as a hole in the
-   accent track when on. --ink is the light end of the night scale, clear of the mid off track and the accent track. */
-:root[data-theme='dark'] .ui-switch:not(:disabled, [aria-disabled='true']) .ui-switch-thumb {
-  background: var(--ink);
 }
 .ui-switch:focus-visible {
   outline: var(--focus-width) solid var(--accent);

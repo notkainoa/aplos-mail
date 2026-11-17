@@ -503,7 +503,7 @@ Every screen is built from these components in `src/renderer/ui/`. Screens never
 | `SettingRow`, `ProviderTable`, `KeyRecorder` | New / Rework | §7.10 |
 | `EmptyLine` | New | One plain sentence + at most one action. Replaces icon-in-circle `emptyFor` (`App.tsx:24-25, 490`). |
 | `ErrorLine` / `FatalScreen` | New | §7.15 |
-| `Switch`, `Checkbox`, `TextField`, `Spinner` | Keep | Re-tokenised. Spinner appears only after 150 ms. Switch 30 × 18 with the `--spring-thumb`. |
+| `Switch`, `Checkbox`, `TextField`, `Spinner` | Keep | Re-tokenised. Spinner appears only after 150 ms. Switch 30 × 18 with the `--spring-thumb`: a round (pill) track and a round `--paper` thumb in both themes. Owner review of #548, 2026-11-17: the square track and the light night thumb tried in UI council 2 were rejected; the original switch stays everywhere. |
 | `ShortcutSheet` | Rework | Generated from the command registry; three columns at a fixed height that scrolls when needed; alternatives joined with "or" |
 | `CommandRegistry` | New | One source of every action: id, label, icon, keys, context, undo, confirm. It feeds keys, the palette, menus, tooltips, the sheet and toast keycaps. |
 
