@@ -34,11 +34,23 @@ function Hero() {
       </div>
       <figure className="window" data-reveal data-claim="home-focus several-accounts">
         <div className="window-frame">
+          <TrafficLights />
           <HomeShot alt="Aplos Mail's Home on All accounts: Jordan Park's email in focus with Reply, Later and Done, and the rest of Do now below it." />
         </div>
         <figcaption data-claim="mac-only">Home in the Mac app, on its demo mail.</figcaption>
       </figure>
     </section>
+  );
+}
+
+// The window's close, minimise and zoom buttons. macOS draws them outside the page, so a screenshot of the page lacks them.
+function TrafficLights() {
+  return (
+    <span className="traffic-lights" aria-hidden="true">
+      <i />
+      <i />
+      <i />
+    </span>
   );
 }
 

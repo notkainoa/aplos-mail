@@ -44,6 +44,10 @@
   --mac-select-ink: #ffffff;
   --mac-pointer-fill: #ffffff;
   --mac-pointer-stroke: #111111;
+  --mac-close: #ff5f57;
+  --mac-minimize: #febc2e;
+  --mac-zoom: #28c840;
+  --mac-light-edge: rgb(0 0 0 / 12%);
 
   --elev-card:
     0 0 0 0.75px var(--line-strong),
