@@ -460,6 +460,17 @@ test('review2: a bare grid with every calendar hidden says so, not "A clear week
   );
 });
 
+test('with every calendar read-only, New event and a grid slot open nothing and the view says so', () => {
+  const state = S({ view: 'day', anchor: '2026-11-01' });
+  const readOnly = demoWorld.calendars.map(c => ({ ...c, readOnly: true }));
+  const ctx = ctxAt(state, demoWorld.events, readOnly);
+  assert.equal(viewModel(state, ctx).canCreate, false);
+  assert.equal(update(state, { type: 'newEvent' }, ctx).state.editor, null);
+  const range = { start: '2026-11-01T09:00', end: '2026-11-01T10:00' };
+  assert.equal(update(state, { type: 'createRange', ...range }, ctx).state.editor, null);
+  assert.equal(viewModel(state, ctxAt(state)).canCreate, true);
+});
+
 test('New event from the panel opens the editor', () => {
   const state = S({ view: 'day', anchor: '2026-11-01' });
   const t = update(state, { type: 'newEvent' }, ctxAt(state));

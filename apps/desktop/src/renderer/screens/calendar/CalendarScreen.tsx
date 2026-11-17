@@ -52,6 +52,7 @@ import {
   newerFrame,
   overlayDrop,
   overlayWith,
+  canCreateEvent,
   periodOf,
   plansSpec,
   reached,
@@ -70,7 +71,12 @@ import {
   type Overlay,
   type ShownOverride,
 } from './calendar.model';
-import { CalendarView, CALENDAR_PANE_TOOLS, type FocusRequest } from './CalendarView';
+import {
+  CalendarView,
+  CALENDAR_PANE_TOOLS,
+  CALENDAR_PANE_TOOLS_READ_ONLY,
+  type FocusRequest,
+} from './CalendarView';
 import { useOpenPlanTarget } from './useOpenPlanTarget';
 import { useFailedHolds } from './FailedHolds';
 import {
@@ -486,7 +492,11 @@ function CalendarBody({ accountId, announce }: CalendarScreenProps) {
 
   useShellKeyLayer({ conditions: { invite: inviteOpen(state, ctx) } });
   useCommandTarget(commandTarget(state, ctx));
-  const headerPart = useMemo(() => ({ tools: CALENDAR_PANE_TOOLS }), []);
+  const canCreate = canCreateEvent({ calendars, calendarsReady: ctx.calendarsReady });
+  const headerPart = useMemo(
+    () => ({ tools: canCreate ? CALENDAR_PANE_TOOLS : CALENDAR_PANE_TOOLS_READ_ONLY }),
+    [canCreate],
+  );
   usePaneHeaderPart(headerPart);
 
   // The sidebar's busy marks read the whole loaded events window on the visible calendars, not the drawn

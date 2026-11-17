@@ -65,6 +65,14 @@ export function writableCalendars(calendars: readonly Calendar[]): Calendar[] {
   return calendars.filter(c => !c.readOnly);
 }
 
+/** Whether a new event has anywhere to go: still loading counts as yes, so the tool never flickers off. */
+export function canCreateEvent(ctx: {
+  readonly calendars: readonly Calendar[];
+  readonly calendarsReady: boolean;
+}): boolean {
+  return !ctx.calendarsReady || writableCalendars(ctx.calendars).length > 0;
+}
+
 /**
  * Where N, a drag and a confirmed plan land: the solo calendar; else the saved default, the one the last new event
  * went to, the primary, then the first — each only while it is shown and writable, so a new event never lands on a
