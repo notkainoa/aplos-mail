@@ -46,12 +46,25 @@ function withoutLayoutStyles(html: string): string {
   );
 }
 
+/**
+ * The `<body>` attributes a plain mail may carry: direction, language, a class (author CSS is a marker of its own) and a
+ * colour-free style (`<body dir="ltr">`, `<body style="margin:0">`, as a wrapper writes it). Anything else (`bgcolor`, `text`,
+ * `link`, a coloured style, a background) is the mail's own look.
+ */
+function plainBodyAttributes(attributes: string): boolean {
+  const rest = withoutLayoutStyles(attributes.toLowerCase()).replace(
+    / (?:dir|lang|class)="[^"<>]*"/g,
+    '',
+  );
+  return rest.trim() === '';
+}
+
 /** Whether the sanitised body sets nothing that was written for white paper. */
 export function isPlainBody(body: {
   readonly html: string;
   readonly bodyAttributes: string;
 }): boolean {
-  if (body.bodyAttributes.trim() !== '') return false;
+  if (!plainBodyAttributes(body.bodyAttributes)) return false;
   const html = withoutLayoutStyles(body.html.toLowerCase());
   return !COLOUR_MARKERS.some(marker => html.includes(marker));
 }

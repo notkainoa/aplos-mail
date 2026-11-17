@@ -69,12 +69,17 @@ export function fromName(message: Message, me: ReadonlySet<string>): string {
   return message.from ? nameOf(message.from) : 'No sender';
 }
 
-/** The first name in "Reply to Jordan…": the sender, or whom the owner last wrote to; never empty. */
+/**
+ * The first name in "Reply to Jordan…": the sender, or, when the owner wrote last, the first other person they wrote to.
+ * Empty when there is no one else to name (a note to yourself, a message with no recipient loaded): the stub then reads
+ * "Reply…", never "Reply to sender…".
+ */
 export function replyName(message: Message, me: ReadonlySet<string>): string {
-  const other = message.fromMe
+  const mine = message.fromMe || (message.from !== undefined && isMe(message.from, me));
+  const other = mine
     ? recipientsOf(message).find(a => !isMe(a, me))
     : (message.from ?? recipientsOf(message).find(a => !isMe(a, me)));
-  return other ? firstNameOf(nameOf(other)) : 'sender';
+  return other ? firstNameOf(nameOf(other)) : '';
 }
 
 /** The excerpt a folded card shows: at most this many characters (code points) before it is cut. */

@@ -65,7 +65,11 @@ test('the owner is "You", everyone else their name or address', () => {
 test('"Reply to Jordan…" names the sender, or whom the owner last wrote to', () => {
   assert.equal(replyName(message({ id: 'a', from: jordan, to: [alex] }), ME), 'Jordan');
   assert.equal(replyName(message({ id: 'b', from: alex, fromMe: true, to: [mina] }), ME), 'Mina');
-  assert.equal(replyName(message({ id: 'c' }), ME), 'sender');
+  assert.equal(replyName(message({ id: 'c' }), ME), '');
+  // The owner wrote last to no one else (a note to self, or no recipient loaded): no one to name.
+  assert.equal(replyName(message({ id: 'd', from: alex, fromMe: true, to: [alex] }), ME), '');
+  assert.equal(replyName(message({ id: 'e', from: alex, fromMe: true, to: [] }), ME), '');
+  assert.equal(replyName(message({ id: 'f', from: alex, to: [mina] }), ME), 'Mina');
 });
 
 test('a compact card shows the first sentence or two; only a cut sentence ends in an ellipsis', () => {
