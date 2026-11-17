@@ -68,6 +68,19 @@ test('"Reply to Jordan…" names the sender, or whom the owner last wrote to', (
   assert.equal(replyName(message({ id: 'c' }), ME), 'sender');
 });
 
+test('"Reply to …" says a person\'s first name and a business\'s whole name', () => {
+  const trail = { name: 'Trail Journal', address: 'hello@trail.example' };
+  const library = { name: 'Maple Library', address: 'hello@library.example' };
+  const pottery = { name: 'Rowan Pottery', address: 'classes@pottery.example' };
+  const park = { name: 'Jordan Park', address: 'jordan.park@work.example' };
+  assert.equal(replyName(message({ id: 't', from: trail, to: [alex] }), ME), 'Trail Journal');
+  assert.equal(replyName(message({ id: 'l', from: library, to: [alex] }), ME), 'Maple Library');
+  assert.equal(replyName(message({ id: 'p', from: pottery, to: [alex] }), ME), 'Rowan Pottery');
+  assert.equal(replyName(message({ id: 'j', from: park, to: [alex] }), ME), 'Jordan');
+  const noMatch = { name: 'Dana Whitfield', address: 'dw@work.example' };
+  assert.equal(replyName(message({ id: 'd', from: noMatch, to: [alex] }), ME), 'Dana');
+});
+
 test('a compact card shows the first sentence or two; only a cut sentence ends in an ellipsis', () => {
   const excerpt = (snippet: string) => excerptOf(message({ id: 'x', snippet }));
   assert.equal(excerpt('Hi Alex,'), 'Hi Alex', 'a message that is only a greeting keeps it');

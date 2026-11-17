@@ -119,6 +119,14 @@
   min-width: 0;
   overflow-wrap: anywhere;
 }
+/* A keycap in a sentence sits on the text's baseline, not below it: an inline box as tall as its own line. */
+.ui-setting-row__description-text .ui-kbd {
+  display: inline-block;
+  min-width: var(--kbd);
+  line-height: var(--kbd);
+  vertical-align: baseline;
+  text-align: center;
+}
 
 .ui-setting-row__description[data-tone='attention'],
 .ui-setting-row__description[data-tone='attention'] .ui-set-icon {

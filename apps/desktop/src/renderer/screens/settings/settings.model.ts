@@ -222,7 +222,7 @@ export function withCurrent(
 
 /** The storage row's description: what is kept and what never goes, without restating the pickers' values. */
 export const RETENTION_LINE =
-  'Keeps full message text on this Mac; opened, starred and unread mail is always kept.';
+  'Keeps full message text on this Mac; opened, bookmarked and unread mail is always kept.';
 
 /* ───────────────────────── Accounts ───────────────────────── */
 

@@ -433,7 +433,7 @@ describe('states, copy and design rules', () => {
     assert.match(render('mail'), /8 seconds/);
     assert.match(
       render('mail'),
-      /Keeps full message text on this Mac; opened, starred and unread mail is always kept\./,
+      /Keeps full message text on this Mac; opened, bookmarked and unread mail is always kept\./,
     );
     assert.match(render('calendar'), /Calendar not allowed yet/);
     assert.match(render('calendar'), /Allow calendar access/);

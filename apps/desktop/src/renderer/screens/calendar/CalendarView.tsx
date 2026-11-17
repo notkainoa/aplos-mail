@@ -594,7 +594,14 @@ function EventEditor({
             keys="Esc"
             onPress={() => dispatch({ type: 'editorCancel' })}
           />
-          <Button variant="filled" label="Save" keys="Return" keyHint="always" onPress={save} />
+          <Button
+            variant="filled"
+            label="Save"
+            keys="Return"
+            keyHint="always"
+            disabled={draft.title.trim() === ''}
+            onPress={save}
+          />
         </div>
       }
     >

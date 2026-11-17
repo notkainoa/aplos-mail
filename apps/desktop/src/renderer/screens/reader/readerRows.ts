@@ -69,12 +69,42 @@ export function fromName(message: Message, me: ReadonlySet<string>): string {
   return message.from ? nameOf(message.from) : 'No sender';
 }
 
+/** Words that make a name a business or a publication, not a person: "Trail Journal", "Maple Library". */
+const ORG_WORDS = new Set(
+  'journal library pottery market notes offers team news studio shop books club store digest weekly trail co inc ltd llc hq support service services'.split(
+    ' ',
+  ),
+);
+
+/** Mailbox names a business writes from: "hello@", "updates@", never a person's own. */
+const ROLE_LOCALS = new Set(
+  'hello hi info news team support updates classes billing mail notifications contact noreply no-reply orders help admin newsletter digest offers sales hq accounts'.split(
+    ' ',
+  ),
+);
+
+/** Whether a sender looks like one person (so a reply can say their first name) rather than a business or a list. */
+export function looksLikePerson(address: Address): boolean {
+  const name = address.name?.trim() ?? '';
+  const words = name.split(/\s+/).filter(Boolean);
+  if (words.length < 2 || words.length > 3) return false;
+  const local = address.address.split('@')[0]?.toLowerCase() ?? '';
+  if (words.some(w => local.length > 2 && local.includes(w.toLowerCase()))) return true;
+  if (ROLE_LOCALS.has(local)) return false;
+  return !words.some(w => ORG_WORDS.has(w.toLowerCase()));
+}
+
+/** What "Reply to …" calls someone: a person's first name, a business's whole name. */
+export function replyLabelOf(address: Address): string {
+  return looksLikePerson(address) ? firstNameOf(nameOf(address)) : nameOf(address);
+}
+
 /** The first name in "Reply to Jordan…": the sender, or whom the owner last wrote to; never empty. */
 export function replyName(message: Message, me: ReadonlySet<string>): string {
   const other = message.fromMe
     ? recipientsOf(message).find(a => !isMe(a, me))
     : (message.from ?? recipientsOf(message).find(a => !isMe(a, me)));
-  return other ? firstNameOf(nameOf(other)) : 'sender';
+  return other ? replyLabelOf(other) : 'sender';
 }
 
 /** The excerpt a folded card shows: at most this many characters (code points) before it is cut. */

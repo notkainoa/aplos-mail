@@ -33,12 +33,16 @@ function reasonLine(account: Account): string | undefined {
     ?.text;
 }
 
-function accountEntry(account: Account, onReconnect: AccountMenuProps['onReconnect']): MenuEntry {
+function accountEntry(
+  account: Account,
+  index: number,
+  onReconnect: AccountMenuProps['onReconnect'],
+): MenuEntry {
   return {
     kind: 'item',
     id: account.id,
     label: account.address,
-    swatch: accountColor(account),
+    swatch: accountColor(account, index),
     detail: reasonLine(account),
     inlineAction: needsReconnect(account)
       ? { label: 'Reconnect', tone: 'danger', onSelect: () => onReconnect(account) }
@@ -54,7 +58,7 @@ export function accountEntries(
   return [
     { kind: 'label', label: 'Accounts' },
     { kind: 'item', id: ALL_ID, label: ALL_LABEL, icon: 'users' },
-    ...accounts.map(account => accountEntry(account, onReconnect)),
+    ...accounts.map((account, index) => accountEntry(account, index, onReconnect)),
     { kind: 'separator' },
     { kind: 'item', id: ADD_ID, label: 'Add an account', icon: 'plus' },
   ];

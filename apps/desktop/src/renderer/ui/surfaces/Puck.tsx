@@ -60,7 +60,12 @@ function PuckCell({
         aria-describedby={hasTip ? tipId : undefined}
         tabIndex={focusable ? 0 : -1}
         disabled={item.disabled}
-        onClick={onSelect}
+        onClick={event => {
+          onSelect();
+          // A mouse click on a place leaves nothing focused, so the next key never draws a ring on the row you clicked
+          // (Chromium shows :focus-visible on a focused button once a key is pressed). Return and Space keep focus.
+          if (role === 'navigation' && event.detail > 0) event.currentTarget.blur();
+        }}
         onFocus={onFocus}
         onKeyDown={onKeyDown}
       >
