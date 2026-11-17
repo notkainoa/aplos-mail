@@ -52,7 +52,7 @@
 
 .aplos-list-column .ui-list-row {
   grid-template-columns:
-    var(--space-4) minmax(var(--space-9), var(--ui-sender-w)) minmax(0, 1fr)
+    var(--space-2) minmax(var(--space-9), var(--ui-sender-w)) minmax(0, 1fr)
     var(--ui-date-w);
 }
 .aplos-list-column .ui-list-row__line {

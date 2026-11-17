@@ -82,6 +82,27 @@ function Rows({ list, ids }: { readonly list: MailListState; readonly ids: reado
   return ids.map(id => <Row key={id} list={list} id={id} />);
 }
 
+/**
+ * A list with no date groups: its rows, or under Bookmarks one "Bookmarked" header, so the first row sits where Later's
+ * does and does not jump when the Later | Bookmarks switch is pressed.
+ */
+function Plain({ list }: { readonly list: MailListState }) {
+  const { config } = list;
+  if (config.kind !== 'bookmarks') return <Rows list={list} ids={list.ids} />;
+  return (
+    <ListGroup
+      header={{
+        id: `${config.id}-group-all`,
+        label: 'Bookmarked',
+        variant: 'section',
+        count: list.ids.length,
+      }}
+    >
+      <Rows list={list} ids={list.ids} />
+    </ListGroup>
+  );
+}
+
 function Groups({ list }: { readonly list: MailListState }) {
   const now = useNow({ granularity: 'minute' });
   const { config } = list;
@@ -143,7 +164,7 @@ export function MailListView({ list }: { readonly list: MailListState }) {
   return (
     <div className="aplos-list-column" data-screen={config.kind} {...pointer}>
       <ListBox binding={binding} multiselectable={list.bulk.picking}>
-        {config.dateGroups ? <Groups list={list} /> : <Rows list={list} ids={list.ids} />}
+        {config.dateGroups ? <Groups list={list} /> : <Plain list={list} />}
       </ListBox>
       <CommitTemplates forwardedRef={list.templates} />
       <BulkMenu menu={list.bulkMenu} />

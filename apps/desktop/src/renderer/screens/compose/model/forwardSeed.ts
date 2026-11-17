@@ -76,15 +76,15 @@ function headerValue(header: string, key: string): string {
   return line ? line.slice(key.length + 2) : '';
 }
 
-/** "Mon, Oct 26, 2026 at 8:30 AM PDT" as "Mon, Oct 26 at 8:30 AM": the year and the zone are noise in a caption. */
+/** "Mon, Oct 26, 2026 at 8:30 AM PDT" as "Mon, Oct 26, 8:30 AM", the one long format outside list rows (no year, no zone). */
 function shortWhen(date: string): string {
   const match = /^(\w{3}, \w{3} \d{1,2}), \d{4} at (\d{1,2}:\d{2} [AP]M)(?: [A-Z]{2,5})?$/.exec(
     date,
   );
-  return match ? `${match[1]} at ${match[2]}` : date;
+  return match ? `${match[1]}, ${match[2]}` : date;
 }
 
-/** The small line above a quoted original: "Forwarded from Jordan Park · Mon, Nov 16 at 8:29 PM". */
+/** The small line above a quoted original: "Forwarded from Jordan Park · Mon, Nov 16, 8:29 PM". */
 export function forwardCaption(header: string): string {
   const from = headerValue(header, 'From');
   const name = from.replace(/\s*<[^<>]*>\s*$/, '').trim() || from;

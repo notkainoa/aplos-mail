@@ -234,7 +234,7 @@ Six pairs, assigned by a stable hash of the name, with a manual override in Sett
 
 | Token | Size / line | Face and weight | Tracking | Used for |
 |---|---|---|---|---|
-| `caption` | 11 / 16 | SF 500 | +0.04 px | Keycaps, chips, calendar hours. This is the floor; today's 7–10.5 px sizes are removed. |
+| `caption` | 11.5 / 16 | SF 500 | +0.04 px | Keycaps, chips, calendar hours. This is the floor; today's 7–10.5 px sizes are removed. |
 | `small` | 12 / 18 | SF 400 / 500, tabular | 0 | Metadata, timestamps, counts, sub-labels such as "Back from Later". Always `--dim`. |
 | `ui` | 13 / 20 | SF 400 / 500; 600 for section labels | −0.04 px | Sidebar, menus, controls, buttons; section labels at 600 in `--ink` |
 | `base` | 14 / 22 | SF 400 (600 for unread senders) | −0.1 px | List rows, settings rows, fields |
@@ -281,7 +281,7 @@ Six pairs, assigned by a stable hash of the name, with a manual override in Sett
 | Pane | Inset 8 px (`--shell-pad`) on top, right and bottom; radius 12; `--elev-pane` |
 | Pane header | 48 px. Back or close plus a crumb on the left; at most three icon tools, then Ask and the calendar button, on the right. A hairline appears only after content scrolls under it. |
 | Page controls row (`PageHead`) | Only on pages with page-level controls, which sit on the right: Later's Later \| Bookmarks switch, the search field, the calendar's date label with Today, previous/next and D \| W \| M |
-| List column | `min(720px, 100% − 2 gutters)` (`--list-w`), centred in the pane. Sender column 152 px, then one always-reserved chip slot (128 px), then the subject: the subject starts at one x in every list, Home included. |
+| List column | `min(720px, 100% − 2 gutters)` (`--list-w`), centred in the pane. Sender column 136 px, then one always-reserved chip slot (120 px), then the subject: the subject starts at one x in every list, Home included. |
 | Reader | One 640 px column (`--reader-w`), no card |
 | One-by-one card | A centred reading column: `min(100% − 2 × clamp(16 px, 3 %, 24 px), --card-w)` — `--card-w` is 680 px. Shrinks with the pane, keeps a 16–24 px side margin, never wider; a rich email's frame uses the full card width and only a plain body is held to `--measure-read` (§16 amendment 2026-11-11). |
 | Composer | A 640 px page in the pane (`--composer-w`) |
@@ -772,7 +772,7 @@ One 640 px column, top to bottom, with no card and nothing beside it (superseded
   - Events under 30 minutes are one line, title only.
   - Three or more overlapping events show the first lane plus a "+N" stack that opens the stack. Lanes are never under 44 px.
   - Plans found in mail use a dashed 1 px outline and a "From mail" label until confirmed.
-- **Fixes** [V: baseline §6.9 #6–8]: day titles get the comma ("Sunday, October 25, 2026"); Delete appears only on persisted events; hour labels use `caption` (11 px).
+- **Fixes** [V: baseline §6.9 #6–8]: day titles get the comma ("Sunday, October 25, 2026"); Delete appears only on persisted events; hour labels use `caption` (11.5 px).
 - **RSVP** starts with nothing chosen, and "Send reply" stays disabled until you choose. Y/M/N answer only while an unanswered invite is open; otherwise M means Month.
 - **Motion.** D/W/M ride a `Puck` with transforms only. The existing FLIP, period slide and pinch zoom are kept (`calendarMotion.ts`) [V]. Drag to create, move or resize uses `lift` and `snap`.
 - **Keys** are unchanged (§8).

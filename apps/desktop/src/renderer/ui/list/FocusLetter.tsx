@@ -77,7 +77,7 @@ export function FocusLetter({
         size="md"
         label={suggestion.verb}
         icon={suggestion.icon}
-        keycap={demoted ? undefined : space}
+        keycap={space}
         tooltip={tip(suggestion.verb, commands.suggest)}
         duplicate
         onPress={() => onSuggestion()}
@@ -92,7 +92,7 @@ export function FocusLetter({
       icon="clock"
       labelHidden={narrow}
       tooltip={tip('Later', commands.later)}
-      keycap={demoted ? undefined : later}
+      keycap={later}
       duplicate
       onPress={anchor => onLater(anchor)}
     />
@@ -105,7 +105,7 @@ export function FocusLetter({
       icon="check"
       labelHidden={narrow}
       tooltip={tip('Done', commands.done)}
-      keycap={demoted ? undefined : done}
+      keycap={done}
       duplicate
       onPress={() => onDone()}
     />

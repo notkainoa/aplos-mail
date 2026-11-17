@@ -121,8 +121,8 @@ test('details: From, Date, then To and Cc (the long lists last); Bcc and Reply-t
 
 test('the date reads "Nov 10, 9:10 AM" and takes the year when it is another year', () => {
   const ms = new Date(2026, 10, 10, 9, 10).getTime();
-  assert.equal(detailDate(ms, new Date(2026, 10, 12).getTime()), 'Nov 10, 9:10 AM');
-  assert.equal(detailDate(ms, new Date(2027, 0, 5).getTime()), 'Nov 10, 2026, 9:10 AM');
+  assert.equal(detailDate(ms, new Date(2026, 10, 12).getTime()), 'Tue, Nov 10, 9:10 AM');
+  assert.equal(detailDate(ms, new Date(2027, 0, 5).getTime()), 'Tue, Nov 10, 2026, 9:10 AM');
 });
 
 test('a hundreds-long recipient list never pushes the Date down: it stays among the first rows', () => {

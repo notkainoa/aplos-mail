@@ -2,6 +2,8 @@
 .search-screen {
   width: min(var(--list-w), calc(100% - 2 * var(--gutter)));
   margin-inline: auto;
+  /* Room under the last result, so it clears the window's edge like every other list's. */
+  padding-bottom: var(--space-10);
 }
 .search-screen__column {
   display: flex;
@@ -9,6 +11,13 @@
 }
 .search-screen__remote {
   margin-top: var(--space-3);
+}
+
+/* One left inset for the header: the field's icon, "Narrow with" and the section label all start on the label's 12 px
+   (the underline still runs the column's full width). */
+.search-screen .ui-search-field__title,
+.search-screen .ui-search-field__meta {
+  padding-left: var(--space-3);
 }
 
 /* No results: the line centres in what is left of the pane under the field (owner review 2026-11-05), the same
@@ -38,7 +47,7 @@
   text-align: center;
 }
 .search-screen__column > .ui-empty-line .ui-empty-line__text {
-  color: var(--ink-2);
+  color: var(--ink);
   font: var(--type-base);
   letter-spacing: var(--track-base);
 }

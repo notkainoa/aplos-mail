@@ -160,7 +160,7 @@ test('sizes are emitted in rem (DESIGN 11.6) while hairlines, rings, edges, trac
   assert.equal(remFromPx('16vh'), '16vh');
   const root = rootBlock(generate()['tokens.css']);
   for (const decl of [
-    '--type-caption: 500 0.6875rem/1rem var(--font-sans);',
+    '--type-caption: 500 0.71875rem/1rem var(--font-sans);',
     '--type-summary: var(--w-summary) 1.3125rem/1.9375rem var(--font-serif);',
     '--space-1: 0.25rem;',
     '--space-half: 0.125rem;',

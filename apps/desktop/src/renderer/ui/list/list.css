@@ -129,6 +129,11 @@
 .ui-list-btn[data-variant='filled']:active {
   box-shadow: inset 0 1px 0 var(--press-lo);
 }
+.ui-focus-letter[data-demoted='true'] .ui-list-kbd {
+  /* Under a modal (the Low sheet) the card dims and holds its layout: the keys stay in their places, unseen, so the
+     buttons never slide. */
+  visibility: hidden;
+}
 .ui-list-key-word {
   color: inherit;
   font: var(--type-caption);
@@ -302,6 +307,7 @@
   flex: none;
   color: var(--dim);
   font: var(--type-small);
+  font-variant-numeric: var(--num-small);
   letter-spacing: var(--track-small);
 }
 .ui-chip[data-state='failed'] {
@@ -438,6 +444,10 @@
 .ui-empty-line__detail {
   margin: 0;
   overflow-wrap: anywhere;
+}
+/* The sentence is primary text and the hint under it is secondary, in every place. */
+.ui-empty-line__text {
+  color: var(--ink);
 }
 .ui-empty-line__detail {
   font: var(--type-small);
@@ -660,7 +670,9 @@
   box-sizing: border-box;
   position: relative;
   display: grid;
-  grid-template-columns: var(--space-4) var(--ui-sender-w) minmax(0, 1fr) var(--ui-date-w);
+  /* The lead column is 8 px (it only holds the bulk-pick box, which overhangs it), so a sender starts 24 px in: on the
+     same x as the focus letter's text above it. */
+  grid-template-columns: var(--space-2) var(--ui-sender-w) minmax(0, 1fr) var(--ui-date-w);
   align-items: center;
   column-gap: var(--space-3);
   height: var(--row);
@@ -688,7 +700,8 @@
 .ui-list-row__lead {
   display: flex;
   align-items: center;
-  justify-content: center;
+  justify-content: flex-start;
+  overflow: visible;
 }
 .ui-list-row__pick {
   display: inline-flex;
@@ -814,6 +827,11 @@
   flex: none;
   align-items: center;
   gap: var(--space-1);
+}
+.ui-list-row__stamp-mark {
+  display: inline-flex;
+  /* The check's foot sits on the date's baseline: centred in its box it rides 2 px high. */
+  transform: translateY(var(--space-half));
 }
 .ui-list-row__stamp .ui-list-icon {
   /* Every row in Done is done, so the check is quiet (DESIGN 7.4's "quiet check"), not the green of a fresh completion. */
@@ -1179,7 +1197,8 @@
   min-width: 0;
   height: var(--row);
   margin-top: var(--space-2);
-  padding: 0 var(--space-3) 0 calc(var(--space-4) + var(--space-1) + var(--space-3));
+  /* Its label starts where a row's sender does (4 + the 8 px lead column + the 12 px gap). */
+  padding: 0 var(--space-3) 0 calc(var(--space-1) + var(--space-2) + var(--space-3));
   border-radius: var(--radius-md);
   background-color: var(--raised);
   font: var(--type-base);

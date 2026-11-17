@@ -174,10 +174,11 @@ export function formatFull(iso: IsoDateTime): string {
   );
 }
 
-/** Attachment size, decimal units like Finder: "1 byte", "820 bytes", "312 KB", "4.2 MB", "1.1 GB". */
+/** Attachment size, decimal units like Finder, with the short unit: "129 B", "4.2 KB", "312 KB", "4.2 MB", "1.1 GB". */
 export function formatBytes(bytes: number): string {
   if (!Number.isFinite(bytes) || bytes < 0) return '';
-  if (bytes < 1000) return bytes === 1 ? '1 byte' : `${Math.round(bytes)} bytes`;
+  if (bytes < 1000) return `${Math.round(bytes)} B`;
+  if (bytes < 10_000) return `${(bytes / 1000).toFixed(1)} KB`;
   if (bytes < 1_000_000) return `${Math.round(bytes / 1000)} KB`;
   if (bytes < 1_000_000_000) return `${(bytes / 1_000_000).toFixed(1)} MB`;
   return `${(bytes / 1_000_000_000).toFixed(1)} GB`;

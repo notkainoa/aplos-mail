@@ -419,11 +419,11 @@ describe('FocusSlot and FocusLetter', () => {
     assert.doesNotMatch(render(<FocusLetter {...letter()} />), /data-picked/);
   });
 
-  test('demoted: the suggestion becomes a text button without its keycap', () => {
+  test('demoted: the suggestion becomes a text button and the card keeps its keys’ room (the sheet hides them)', () => {
     const m = render(<FocusLetter {...letter({ demoted: true })} />);
     assert.match(m, /data-demoted="true"/);
     assert.doesNotMatch(m, /data-variant="filled"/);
-    assert.doesNotMatch(m, />Space<\/kbd>/);
+    assert.match(m, />Space<\/kbd>/, 'the cap stays in the markup so nothing slides; CSS hides it');
   });
 
   test('pending shows the placeholder, absent the subject alone; narrow drops labels but keeps the verb', () => {

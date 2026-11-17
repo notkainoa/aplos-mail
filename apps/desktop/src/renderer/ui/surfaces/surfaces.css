@@ -406,6 +406,11 @@ html[data-real-key] .ui-part-tipwrap:has(> :focus-visible) > .ui-part-tip {
   gap: var(--space-2);
   margin-left: auto;
 }
+/* Ask and Today are the window's own pair: 16 px (the 8 px gap and 8 more) of air between them and a screen's local
+   tools (the reader's ↑ ↓ ⋯), so the two groups read as two. */
+.ui-pane__tools > .ui-part-tipwrap:nth-last-child(2) {
+  margin-left: var(--space-2);
+}
 .ui-pane__tools > .ui-part-tipwrap:last-child > .ui-part-tip {
   left: auto;
   right: 0;
