@@ -43,6 +43,7 @@ export function wantsNewest(question: string): boolean {
 }
 
 export interface SourceRow {
+  [k: string]: string | number | null;
   id: number;
   remote_id: string;
   account_id: string;
