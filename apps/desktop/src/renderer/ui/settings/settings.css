@@ -203,6 +203,29 @@
   grid-template-columns: minmax(0, 1fr) auto;
 }
 
+/* A feature row: its name with the two selects on the name's own line, and what the feature does under the name at the
+   row's full width (the description never wraps into a 190 px column beside the selects). */
+.ui-provider-table[data-kind='features'] .ui-setting-row__main {
+  grid-template-rows: auto auto;
+  row-gap: var(--space-half);
+  padding-block: var(--space-2);
+}
+.ui-provider-table[data-kind='features'] .ui-setting-row__text {
+  display: contents;
+}
+.ui-provider-table[data-kind='features'] .ui-setting-row__line {
+  grid-column: 1;
+  grid-row: 1;
+}
+.ui-provider-table[data-kind='features'] .ui-setting-row__control {
+  grid-column: 2;
+  grid-row: 1;
+}
+.ui-provider-table[data-kind='features'] .ui-setting-row__description {
+  grid-column: 1 / -1;
+  grid-row: 2;
+}
+
 /* Provider and model in two fixed columns, so every feature's selects line up, Voice's included. */
 .ui-provider-table__pair {
   display: grid;
