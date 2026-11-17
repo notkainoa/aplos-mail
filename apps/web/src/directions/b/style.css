@@ -48,7 +48,7 @@
 
 @media (prefers-color-scheme: dark) {
   :root {
-    --band: #0a5a49;
+    --band: #075244;
     --band-ink: #f7fbfb;
     --band-sub: #d3e6df;
     --band-line: rgb(225 238 237 / 14%);
@@ -57,15 +57,15 @@
     --band-btn-ink: #07463a;
 
     --page: #121314;
-    --shell: #18191b;
-    --paper: #1f2023;
-    --raised: #242528;
-    --sunken: #26272a;
+    --shell: #1b1c1e;
+    --paper: #232427;
+    --raised: #28292c;
+    --sunken: #2c2d31;
     --ink: #ececed;
     --ink-2: #c4c5c9;
-    --dim: #9a9da4;
-    --line: rgb(236 236 237 / 8%);
-    --line-strong: rgb(236 236 237 / 13%);
+    --dim: #b2b5bb;
+    --line: rgb(236 236 237 / 12%);
+    --line-strong: rgb(236 236 237 / 20%);
 
     --green: #9cc4b3;
     --green-hover: #b1d2c5;
@@ -76,7 +76,7 @@
     --app-accent: #88aee0;
     --app-accent-ink: #0d1b2c;
 
-    --shadow-frame: 0 0 0 1px rgb(236 236 237 / 14%), 0 8px 20px -10px rgb(0 0 0 / 50%);
+    --shadow-frame: 0 0 0 1px rgb(236 236 237 / 22%), 0 8px 20px -10px rgb(0 0 0 / 50%);
     --shadow-card:
       0 0 0 1px rgb(236 236 237 / 9%), inset 0 1px 0 rgb(255 255 255 / 4%),
       0 12px 28px -14px rgb(0 0 0 / 60%);
@@ -227,10 +227,20 @@ img {
   background: var(--band-btn-hover);
 }
 
-.b-cta-sm {
-  min-height: 36px;
-  padding: 0 14px;
-  font-size: 14px;
+.b-nav-get {
+  display: inline-flex;
+  align-items: center;
+  min-height: 44px;
+  color: var(--band-ink);
+  font-weight: 600;
+  text-decoration: underline;
+  text-decoration-color: var(--band-line);
+  text-underline-offset: 5px;
+  transition: text-decoration-color 160ms ease;
+}
+
+.b-nav-get:hover {
+  text-decoration-color: var(--band-ink);
 }
 
 .b-hero {
@@ -248,6 +258,7 @@ img {
 
 .b-hero-logo .logo {
   border-radius: 22.5%;
+  box-shadow: 0 0 0 1px rgb(225 238 237 / 34%);
 }
 
 .b-hero h1 {
@@ -281,8 +292,8 @@ img {
 
 .b-hero-note,
 .b-close-note {
-  color: var(--band-sub);
-  font-size: 14px;
+  color: var(--band-ink);
+  font-size: 15px;
   letter-spacing: 0;
 }
 
@@ -327,7 +338,7 @@ img {
   margin-bottom: 16px;
   color: var(--link);
   font-family: var(--sans);
-  font-size: 13px;
+  font-size: 14px;
   font-weight: 600;
   letter-spacing: 0.01em;
 }
@@ -337,7 +348,7 @@ h2 {
   font-weight: 600;
   font-size: clamp(32px, 3.6vw, 46px);
   line-height: 1.1;
-  letter-spacing: -0.03em;
+  letter-spacing: -0.02em;
   text-wrap: balance;
 }
 
@@ -346,7 +357,7 @@ h2 {
   grid-template-columns: minmax(0, 4fr) minmax(0, 8fr);
   gap: 56px;
   align-items: center;
-  padding-top: 160px;
+  padding-top: 144px;
 }
 
 .b-feature.is-flip .b-feature-text {
@@ -570,14 +581,14 @@ h2 {
 /* Calendar */
 
 .b-calendar {
-  padding-top: 176px;
+  padding-top: 144px;
 }
 
 .b-cal-head {
   display: grid;
-  grid-template-columns: minmax(0, 5fr) minmax(0, 7fr);
-  gap: 80px;
-  align-items: end;
+  grid-template-columns: minmax(0, 4fr) minmax(0, 5fr);
+  gap: 56px;
+  align-items: start;
   margin-bottom: 56px;
 }
 
@@ -587,6 +598,23 @@ h2 {
 
 .b-cal-copy {
   max-width: 36rem;
+}
+
+/* Desktop: show the populated hours only. */
+.b-frame-cal .app-shot img {
+  aspect-ratio: 1240 / 450;
+  object-fit: cover;
+  object-position: top;
+}
+
+.b-cal-mock,
+.b-hours {
+  display: none;
+}
+
+.b-summary-lg {
+  font-size: 26px;
+  line-height: 1.35;
 }
 
 /* Ask */
@@ -731,8 +759,8 @@ h2 {
 /* AI and privacy */
 
 .b-privacy {
-  margin-top: 176px;
-  padding-block: 128px;
+  margin-top: 144px;
+  padding-block: 112px;
   background: var(--shell);
 }
 
@@ -757,6 +785,7 @@ h2 {
   display: flex;
   flex-direction: column;
   gap: 2px;
+  min-height: 72px;
   padding: 16px 0;
   border-bottom: 1px solid var(--line);
   font-weight: 500;
@@ -804,8 +833,8 @@ h2 {
   flex-direction: column;
   align-items: center;
   text-align: center;
-  padding-top: 144px;
-  padding-bottom: 128px;
+  padding-top: 112px;
+  padding-bottom: 104px;
 }
 
 .b-close-body .logo {
@@ -887,7 +916,9 @@ h2 {
     gap: 40px;
   }
 
+  .b-feature.is-flip,
   .b-feature.is-flip .b-feature-text {
+    grid-template-columns: minmax(0, 1fr);
     order: 0;
   }
 
@@ -919,13 +950,9 @@ h2 {
     gap: 18px;
   }
 
-  .b-cta-sm {
-    min-height: 40px;
-  }
-
   .b-hero-body {
     padding-top: 24px;
-    padding-bottom: 40px;
+    padding-bottom: 56px;
   }
 
   .b-hero-logo .logo {
@@ -935,6 +962,7 @@ h2 {
 
   .b-hero h1 {
     margin-top: 24px;
+    font-size: 40px;
   }
 
   .b-hero-sub {
@@ -953,13 +981,70 @@ h2 {
     align-self: stretch;
   }
 
-  /* Pre-cropped images keep the focus card and the calendar events legible. */
-  .b-frame .app-shot {
+  /* On a phone the real window is too small to read: the Home card carries the product. */
+  .b-hero-shot {
     display: none;
   }
 
-  .b-frame .b-crop {
+  .b-hero {
+    padding-bottom: 0;
+  }
+
+  .b-frame-cal {
+    display: none;
+  }
+
+  .b-mock.b-cal-mock {
     display: block;
+    margin-inline: 0;
+  }
+
+  .b-cal-mock .b-hours {
+    display: block;
+  }
+
+  .b-hours li {
+    display: grid;
+    grid-template-columns: 3.5rem minmax(0, 1fr);
+    gap: 12px;
+    min-height: 64px;
+    padding-top: 10px;
+    border-top: 1px solid var(--line-strong);
+    font-size: 15px;
+  }
+
+  .b-events {
+    display: flex;
+    gap: 8px;
+  }
+
+  .b-event {
+    flex: 1;
+    min-height: 52px;
+    padding: 8px 10px;
+    border-radius: 6px;
+    border-left: 3px solid;
+    color: var(--ink);
+    font-size: 15px;
+    font-weight: 500;
+  }
+
+  .b-event-blue {
+    border-color: #2f6f9f;
+    background: rgb(47 111 159 / 14%);
+  }
+
+  .b-event-gold {
+    border-color: #8a6a1f;
+    background: rgb(138 106 31 / 14%);
+  }
+
+  .b-rows li.b-row-extra {
+    display: none;
+  }
+
+  .b-summary-lg {
+    font-size: 22px;
   }
 
   .b-feature {
@@ -1007,7 +1092,16 @@ h2 {
   }
 
   .b-keys-main {
-    gap: 4px 16px;
+    grid-template-columns: minmax(0, 1fr);
+    gap: 4px;
+  }
+
+  .b-keys-main li:first-child .b-cap {
+    min-width: 96px;
+  }
+
+  .b-providers li:last-child {
+    grid-column: 1 / -1;
   }
 
   .b-privacy {

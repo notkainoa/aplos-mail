@@ -1,19 +1,6 @@
 import type { ReactNode } from 'react';
 import { AppShot, Logo } from '../../shared/brand';
-import homeCropDark from './home-mobile.webp';
-import homeCropLight from './home-mobile-light.webp';
-import calCropDark from './calendar-mobile.webp';
-import calCropLight from './calendar-mobile-light.webp';
-import { AskMock, HomeMock, KeyGrid } from './Mocks';
-
-function Crop({ light, dark, alt }: { light: string; dark: string; alt: string }) {
-  return (
-    <picture className="b-crop">
-      <source srcSet={dark} media="(prefers-color-scheme: dark)" />
-      <img src={light} alt={alt} loading="lazy" decoding="async" />
-    </picture>
-  );
-}
+import { AskMock, CalendarMock, HomeMock, KeyGrid } from './Mocks';
 
 const download = '../../download/';
 const privacy = '../../privacy/';
@@ -35,7 +22,7 @@ function Nav() {
       </a>
       <nav className="b-nav-links" aria-label="Site">
         <a href={privacy}>Privacy</a>
-        <a className="b-cta b-cta-sm" href={download}>
+        <a className="b-nav-get" href={download}>
           How to get it
         </a>
       </nav>
@@ -49,7 +36,7 @@ function Hero() {
       <Nav />
       <div className="b-hero-body b-wrap">
         <div className="b-hero-logo">
-          <Logo size={72} alt="Aplos Mail" />
+          <Logo size={88} alt="Aplos Mail" />
         </div>
         <h1 data-claim="home-focus">Finish your inbox, one email at a time.</h1>
         <p className="b-hero-sub" data-claim="gmail-google-calendar keyboard-first">
@@ -75,11 +62,6 @@ function HeroShot() {
           name="home"
           eager
           alt="Aplos Mail's Home: Jordan Park's email in focus with Reply, Later and Done, and five more emails below"
-        />
-        <Crop
-          light={homeCropLight}
-          dark={homeCropDark}
-          alt="Aplos Mail's Home: Jordan Park's email, A quieter home for our project, in focus with Reply, Later and Done"
         />
       </div>
     </div>
@@ -145,7 +127,7 @@ function Calendar() {
       <div className="b-wrap b-cal-head">
         <div>
           <Tag>Calendar</Tag>
-          <h2 id="b-cal">Your week sits next to your mail.</h2>
+          <h2 id="b-cal">Your mail and calendar, in one app.</h2>
         </div>
         <div className="b-cal-copy">
           <p data-claim="google-calendar-views">
@@ -161,17 +143,13 @@ function Calendar() {
         </div>
       </div>
       <div className="b-wrap">
-        <div className="b-frame">
+        <div className="b-frame b-frame-cal">
           <AppShot
             name="calendar"
             alt="Aplos Mail's calendar: a week in November with a design critique and a dentist appointment"
           />
-          <Crop
-            light={calCropLight}
-            dark={calCropDark}
-            alt="Aplos Mail's calendar, Wednesday to Saturday, with a design critique and a dentist appointment on Thursday"
-          />
         </div>
+        <CalendarMock />
       </div>
     </section>
   );
@@ -290,8 +268,7 @@ function Close() {
         <Logo size={64} />
         <h2 id="b-close">Start at the top. Finish at Done.</h2>
         <p data-claim="gmail-invited-testers invited-testers-builds">
-          Gmail and Google Calendar are available to invited testers. There is no public download;
-          builds are shared with testers directly.
+          Aplos Mail works with Gmail and Google Calendar, available to invited testers.
         </p>
         <Cta />
         <p className="b-close-note" data-claim="mac-chips macos-13">

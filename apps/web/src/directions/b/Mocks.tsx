@@ -20,8 +20,9 @@ function FocusCard() {
         <span className="b-focus-time">9:17 PM</span>
       </div>
       <p className="b-focus-subject">A quieter home for our project</p>
-      <p className="b-summary-label">Summary of this email, once AI is on</p>
-      <p className="b-summary">Jordan wants your pick between two layouts by tomorrow.</p>
+      <p className="b-summary b-summary-lg">
+        Jordan wants your pick between two layouts by tomorrow.
+      </p>
       <div className="b-focus-actions">
         <span className="b-reply">
           Reply <Kbd>Space</Kbd>
@@ -42,7 +43,7 @@ export function HomeMock() {
   return (
     <figure
       className="b-mock"
-      aria-label="Home with Jordan Park's email in focus and five more emails under Do now"
+      aria-label="Home with Jordan Park's email in focus and more emails under Do now"
     >
       <div className="b-mock-head">
         <span>
@@ -53,7 +54,12 @@ export function HomeMock() {
       <FocusCard />
       <ul className="b-rows">
         {rows.map(row => (
-          <li key={row.from}>
+          <li
+            key={row.from}
+            className={
+              row.from === 'Maya Chen' || row.from === 'Maple Library' ? undefined : 'b-row-extra'
+            }
+          >
             <span className="b-row-from">{row.from}</span>
             <span className="b-row-subject">{row.subject}</span>
             <span className="b-dim">{row.when}</span>
@@ -134,5 +140,35 @@ export function KeyGrid() {
         ))}
       </ul>
     </div>
+  );
+}
+
+/** Calendar on a phone: the same Thursday as the app's week, at a readable size. */
+export function CalendarMock() {
+  return (
+    <figure
+      className="b-mock b-cal-mock"
+      aria-label="Calendar for Thursday 19 November with a design critique and a dentist visit from 2 PM"
+    >
+      <p className="b-mock-head">
+        <strong>November 2026</strong>
+        <span className="b-dim">Thu 19</span>
+      </p>
+      <ul className="b-hours">
+        <li>
+          <span className="b-dim">2 PM</span>
+          <span className="b-events">
+            <span className="b-event b-event-blue">Design critique</span>
+            <span className="b-event b-event-gold">Dentist</span>
+          </span>
+        </li>
+        <li>
+          <span className="b-dim">3 PM</span>
+        </li>
+        <li>
+          <span className="b-dim">4 PM</span>
+        </li>
+      </ul>
+    </figure>
   );
 }

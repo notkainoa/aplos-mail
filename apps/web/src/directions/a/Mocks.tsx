@@ -2,7 +2,18 @@ import { BubbleIcon, CheckIcon, ClockIcon, MoreIcon, ReplyIcon } from './Icons';
 
 type Row = { sender: string; due?: string; subject: string; when: string };
 
-const rows: Row[] = [
+export const homeRows: Row[] = [
+  { sender: 'Maya Chen', due: 'Thu', subject: 'Saturday in the community garden', when: 'Nov 13' },
+  {
+    sender: 'Maple Library',
+    due: 'Fri',
+    subject: 'Your holds are ready to collect',
+    when: 'Nov 13',
+  },
+  { sender: 'Sam Rivera', subject: 'Cabin weekend: a few loose ends', when: '8:32 PM' },
+];
+
+const heroRows: Row[] = [
   { sender: 'Maya Chen', due: 'Thu', subject: 'Saturday in the community garden', when: 'Nov 13' },
   {
     sender: 'Maple Library',
@@ -13,6 +24,23 @@ const rows: Row[] = [
   { sender: 'Theo Kim', subject: 'Friday review: agenda and room', when: '8:32 PM' },
 ];
 
+type Focus = { sender: string; due: string; time: string; text: string; serif?: boolean };
+
+const subjectFocus: Focus = {
+  sender: 'Jordan Park',
+  due: 'Wed',
+  time: '9:17 PM',
+  text: 'A quieter home for our project',
+};
+
+export const summaryFocus: Focus = {
+  sender: 'Theo Kim',
+  due: 'Fri',
+  time: '8:32 PM',
+  text: 'Theo needs the room for Friday’s review confirmed by tomorrow.',
+  serif: true,
+};
+
 function DueChip({ day }: { day: string }) {
   return (
     <span className="chip">
@@ -22,15 +50,15 @@ function DueChip({ day }: { day: string }) {
   );
 }
 
-function FocusCard() {
+function FocusCard({ focus }: { focus: Focus }) {
   return (
     <div className="focus-card">
       <div className="focus-meta">
-        <span className="focus-sender">Jordan Park</span>
-        <DueChip day="Wed" />
-        <span className="focus-time">9:17 PM</span>
+        <span className="focus-sender">{focus.sender}</span>
+        <DueChip day={focus.due} />
+        <span className="focus-time">{focus.time}</span>
       </div>
-      <p className="focus-summary">Jordan wants your pick between two layouts by tomorrow.</p>
+      <p className={focus.serif ? 'focus-summary' : 'focus-subject'}>{focus.text}</p>
       <div className="focus-actions">
         <span className="mock-filled">
           <ReplyIcon />
@@ -69,17 +97,24 @@ function MailRow({ row }: { row: Row }) {
   );
 }
 
+type HomeMockProps = { focus?: Focus; rows?: Row[]; plain?: boolean; className?: string };
+
 /** A small, static copy of Home: the section label, the focus card and the next rows. */
-export function HomeMock() {
+export function HomeMock({
+  focus = subjectFocus,
+  rows = heroRows,
+  plain,
+  className = '',
+}: HomeMockProps) {
   return (
-    <div className="mock mock-home" aria-hidden="true">
+    <div className={`mock mock-home ${plain ? 'mock-plain' : ''} ${className}`} aria-hidden="true">
       <div className="home-head">
         <span className="home-label">
           Do now <span className="home-count">6</span>
         </span>
         <span className="home-link">Go one by one</span>
       </div>
-      <FocusCard />
+      <FocusCard focus={focus} />
       <ul className="mail-rows">
         {rows.map(row => (
           <MailRow key={row.sender} row={row} />
@@ -203,6 +238,42 @@ export function ProviderMock() {
           </li>
         ))}
       </ul>
+    </div>
+  );
+}
+
+const dayEvents = [
+  { title: 'Design critique', time: '2:00 PM', top: 0, tall: 1, tone: 'blue' },
+  { title: 'Dentist', time: '3:15 PM', top: 1.25, tall: 0.75, tone: 'sand' },
+];
+
+const hours = ['2 PM', '3 PM', '4 PM', '5 PM'];
+
+/** A phone-sized day view of Thursday, in the calendar's style. Shown instead of the wide crop. */
+export function CalendarDayMock() {
+  return (
+    <div className="mock mock-day" aria-hidden="true">
+      <div className="day-head">
+        <span className="day-title">Thursday 19</span>
+        <span className="day-sub">November 2026</span>
+      </div>
+      <div className="day-grid">
+        {hours.map(hour => (
+          <div key={hour} className="day-hour">
+            <span>{hour}</span>
+          </div>
+        ))}
+        {dayEvents.map(event => (
+          <div
+            key={event.title}
+            className={`day-event day-${event.tone}`}
+            style={{ top: `${event.top * 56}px`, height: `${event.tall * 56 - 4}px` }}
+          >
+            <strong>{event.title}</strong>
+            <span>{event.time}</span>
+          </div>
+        ))}
+      </div>
     </div>
   );
 }
