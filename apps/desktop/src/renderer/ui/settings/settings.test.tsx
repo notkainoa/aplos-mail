@@ -557,7 +557,7 @@ test('KeyRecorder idle: a changed shortcut offers Reset; a clash at rest is mark
   assert.match(out, /aria-label="Reset Done to its default"[^>]*>Reset</);
   assert.match(out, /Same keys as Toggle the Ask dock/);
   assert.match(out, /<svg[^>]*class="[^"]*ui-set-icon/);
-  assert.match(out, /<kbd class="ui-key-recorder__kbd">⌘J<\/kbd>/);
+  assert.match(out, /<kbd class="ui-key-recorder__kbd"><span class="ui-key-mod">⌘<\/span>J<\/kbd>/);
   const none = html(<KeyRecorder {...recorder({ chords: [] })} />);
   assert.match(none, /Now not set/);
   assert.match(none, />None</);

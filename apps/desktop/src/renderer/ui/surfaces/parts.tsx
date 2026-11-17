@@ -96,7 +96,7 @@ import {
   type Ref,
 } from 'react';
 import { createAppRegistry, type Registry } from '../../commands/index';
-import { CommandKeysContext, displayChord } from '../buttons-keys/keyHints';
+import { ChordText, CommandKeysContext } from '../buttons-keys/keyHints';
 import type { Anchor, CommandId, IconName, KeyHint, LiteralKey } from '../props';
 
 /* ───────────── Icons: the closed IconName set, Lucide fallback (DESIGN 4.7) ───────────── */
@@ -238,7 +238,9 @@ export function PartKeys({
       {chords.map((chord, i) => (
         <span key={chord} className="ui-part-keys__group">
           {i > 0 ? <span className="ui-part-keys__or">or</span> : null}
-          <kbd className="ui-part-kbd">{displayChord(chord)}</kbd>
+          <kbd className="ui-part-kbd">
+            <ChordText chord={chord} />
+          </kbd>
         </span>
       ))}
     </span>

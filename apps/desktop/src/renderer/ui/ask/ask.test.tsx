@@ -537,7 +537,7 @@ test('Palette first open: context line, Suggested and Go to, digits 1 to 3, keyc
   assert.match(markup, /id="cmd-done"[^>]*aria-selected="false"/);
   assert.match(markup, /<kbd[^>]*>R<\/kbd>/);
   assert.match(markup, /<kbd[^>]*>E<\/kbd>/);
-  assert.match(markup, /<kbd[^>]*>⌃1<\/kbd>/);
+  assert.match(markup, /<kbd[^>]*><span class="ui-key-mod">⌃<\/span>1<\/kbd>/);
   assert.match(markup, /placeholder="Type a command"/);
   assert.doesNotMatch(markup, /ui-palette__confirm/);
   clean(markup);
@@ -599,7 +599,7 @@ test('Palette destructive confirm defaults to Cancel: Return cancels, ⇧Return 
   assert.match(text(markup), /Delete forever\?/);
   assert.ok(markup.indexOf('Cancel') < markup.indexOf('Delete forever</span>'), 'Cancel row first');
   assert.match(markup, /data-primary="true"[^>]*><span>Cancel<\/span><kbd[^>]*>↩<\/kbd>/);
-  assert.match(markup, /data-tone="danger"[^>]*>.*<span>Delete forever<\/span><kbd[^>]*>⇧↩<\/kbd>/);
+  assert.match(markup, /data-tone="danger".*Delete forever<\/span><kbd[^>]*><span[^>]*>⇧/);
   assert.match(markup, /readOnly|readonly/);
   assert.doesNotMatch(markup, /role="listbox"/);
   assert.doesNotMatch(markup, /For: /);

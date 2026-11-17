@@ -3,14 +3,14 @@
 // A 'badge' overlays its positioned parent and never shifts layout.
 import { Fragment } from 'react';
 import type { KbdProps, ShortcutChord } from '../props';
-import { displayChord, revealVisible, useKeyHints } from './keyHints';
+import { ChordText, revealVisible, useKeyHints } from './keyHints';
 
 export function Kbd({ chord, reveal = 'always' }: KbdProps) {
   const { showKeys } = useKeyHints();
   if (!revealVisible(reveal, showKeys)) return null;
   return (
     <kbd className="ui-kbd" data-reveal={reveal}>
-      {displayChord(chord)}
+      <ChordText chord={chord} />
     </kbd>
   );
 }

@@ -29,7 +29,10 @@ export const decode = (s: string) =>
 export function textOf(html: string): string {
   const labels = [...html.matchAll(/aria-label="([^"]*)"/g)].map(m => m[1]);
   return decode(
-    `${html.replace(/<!--.*?-->/g, '').replace(/<[^>]+>/g, ' ')} ${labels.join(' ')}`,
+    `${html
+      .replace(/<!--.*?-->/g, '')
+      .replace(/<span class="ui-key-mod">([^<]*)<\/span>/g, '$1')
+      .replace(/<[^>]+>/g, ' ')} ${labels.join(' ')}`,
   ).replace(/\s+/g, ' ');
 }
 export const BANNED_GLYPHS = /lucide-(sparkle|star|wand|brain|bot)|✨|⭐|🪄|🤖|🧠/i;

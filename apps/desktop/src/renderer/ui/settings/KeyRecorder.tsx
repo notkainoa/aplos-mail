@@ -3,7 +3,7 @@ import type { KeyboardEvent } from 'react';
 import { formatChord } from '../../commands';
 import { chordFromEvent, chordId, parseChord } from '../../commands/internal';
 import type { KeyRecorderProps } from '../props';
-import { displayChord } from '../buttons-keys/keyHints';
+import { ChordText, displayChord } from '../buttons-keys/keyHints';
 import { SetIcon } from './icons';
 
 /** A chord as a keycap ("shift+r" to "⇧R", Return as ↩). Text that is not a chord (already a display form) is shown as it came. */
@@ -157,7 +157,9 @@ export function KeyRecorder({
               shown.map((k, i) => (
                 <Fragment key={k}>
                   {i > 0 ? <span className="ui-key-recorder__or">or</span> : null}
-                  <kbd className="ui-key-recorder__kbd">{k}</kbd>
+                  <kbd className="ui-key-recorder__kbd">
+                    <ChordText chord={k} />
+                  </kbd>
                 </Fragment>
               ))
             ) : (

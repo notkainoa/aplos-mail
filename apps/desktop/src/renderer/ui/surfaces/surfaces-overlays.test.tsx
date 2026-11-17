@@ -131,7 +131,7 @@ describe('Confirm', () => {
     );
     assert.match(
       html,
-      /data-tone="danger"><span class="ui-confirm__row-label">Delete forever<\/span>.*?<kbd class="ui-part-kbd">⇧↩<\/kbd>/,
+      /data-tone="danger"><span class="ui-confirm__row-label">Delete forever<\/span>.*?<kbd class="ui-part-kbd"><span class="ui-key-mod">⇧<\/span>↩<\/kbd>/,
     );
     assert.match(html, /data-destructive="true"/);
     assertIdRefs(html);
