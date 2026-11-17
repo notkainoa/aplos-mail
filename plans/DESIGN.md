@@ -147,6 +147,7 @@ All tokens live in one source file, `apps/desktop/src/renderer/ui/tokens.json`, 
 | `--raised` | `#f6f6f7` | `#2b2c30` | Quiet fills: the low-importance band, chips, attachments, the undo-send line. At night one step above `--paper`, so a chip on a card still shows. |
 | `--sunken` | `#efeff1` | `#0e0f10` | Segmented tracks, fields |
 | `--keycap` | `#efeff1` | ink 8 % over `--paper` | A keycap's plate. By day the sunken step; at night one step lighter than whatever it sits on (the near-black slab was the heaviest mark on the card and the bar, council 2 round 4). Always with a 1 px `--line` edge, so it survives a highlighted row in both themes. |
+| `--keycap-ink` | `--dim` | `--ink-2` | A keycap's letter. At night the secondary ink, so the letter is not much quieter than its label (council 2 round 7); 4.5:1 or better on the plate in both themes. |
 | `--ink` | `#1d1e21` | `#ececed` | Primary text, unread senders |
 | `--ink-2` | `#46484d` | `#c4c5c9` | Read senders, subjects, unread summaries, secondary text |
 | `--dim` | `#63666c` | `#9a9da4` | Metadata, timestamps, counts, placeholders, read summaries, disabled text |
@@ -289,7 +290,7 @@ Six pairs, assigned by a stable hash of the name, with a manual override in Sett
 | Ask dock | A 360 px second pane, 8 px from the main pane (320 px when the window is under 1180 px), resizable 300–440, remembered |
 | Palette | 600 px wide, 16 vh from the top, results at most 420 px tall |
 | Settings | 180 px nav + 600 px content |
-| Toast | up to 440 px |
+| Toast | 440 px, growing to fit its words up to 560 px |
 | Minimum window | 900 × 600 |
 | Onboarding window | 640 × 600, minimum 640 × 520 |
 
@@ -313,8 +314,8 @@ Light comes from hairline rings and soft shadows. There is no glass.
 | Name | Light | Dark | Used for |
 |---|---|---|---|
 | shell | no shadow | no shadow | The window background and the sidebar |
-| `--elev-pane` | `--line` ring + `0 1px 2px` shadow-ink 3 % | ring + inset `0 1px 0` `--sheen` | The pane, the Ask dock |
-| `--elev-card` | `--line-strong` ring + `0 1px 2px` 4 % + `0 6px 20px` 5 % | ring + sheen + `0 8px 24px` black 30 % | The focus letter, the inline reply card, proposal cards |
+| `--elev-pane` | `--line-strong` ring + `0 1px 2px` shadow-ink 5 % | ring + inset `0 1px 0` `--sheen` | The pane, the Ask dock, the reader's message cards |
+| `--elev-card` | `--line-strong` ring + `0 1px 2px` 6 % + `0 6px 20px` 8 % | ring + sheen + `0 8px 24px` black 30 % | The focus letter, the inline reply card, proposal cards |
 | `--elev-float` | `--line-strong` ring + `0 4px 12px` 6 % + `0 16px 40px` 10 %, on opaque `--float` | ring + sheen + black 30 % / 40 % | Menus, popovers, tooltips, toasts, the palette |
 | `--elev-dialog` | `--line-strong` ring + `0 8px 24px` 8 % + `0 32px 72px` 14 %, `--scrim` behind | ring + sheen + black 40 % / 50 % | Dialogs and confirmations |
 | `--elev-lift` | `--elev-card` + `0 12px 32px` 10 % | + black 45 % | A dragged row or letter |
@@ -877,7 +878,7 @@ This is the screen shown after setup, before the inbox (the last step of the onb
 
 *Mockup: `toasts.html` (stack, pending, remind, offline).*
 
-- **Stack.** Toasts stack bottom-centre of the *main pane*, never under the dock, up to three. They are opaque `--float` with `--elev-float`, radius 12, `ui` text, up to 440 px wide. Hover or focus pauses them. Plain toasts last 4 s; Undo toasts last 8 s, then fade over 400 ms.
+- **Stack.** Toasts stack bottom-centre of the *main pane*, never under the dock, up to three. They are opaque `--float` with `--elev-float`, radius 12, `ui` text, 440 px wide and growing to fit their words up to 560 px (a sender's name is never cut while it fits). Hover or focus pauses them. Plain toasts last 4 s; Undo toasts last 8 s, then fade over 400 ms.
 - **Wording follows the op queue:**
   - Pending: "Archiving…"
   - Confirmed: "Done · Undo Z"

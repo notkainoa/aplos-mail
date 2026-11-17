@@ -43,19 +43,15 @@
   transform: translateX(calc(var(--switch-w) - var(--switch-thumb) - 2 * var(--switch-pad)));
 }
 /* Dark: the off track is the 3:1 control edge as a solid fill, so the whole switch reads against the pane, not only a
-   hairline round a 1.4:1 fill. The thumb stays --paper, a clear step darker than the track. */
+   hairline round a 1.4:1 fill. */
 :root[data-theme='dark'] .ui-switch:not([data-state='on'], :disabled, [aria-disabled='true']) {
   background: var(--control-edge);
   box-shadow: none;
 }
-/* The off thumb is a dark disc on a mid track: a 1 px lighter ring (--dim) gives it an edge of its own, so the disc and the
-   track read as two parts and the switch reads as off at a glance. */
-:root[data-theme='dark']
-  .ui-switch:not([data-state='on'], :disabled, [aria-disabled='true'])
-  .ui-switch-thumb {
-  box-shadow:
-    var(--elev-thumb),
-    inset 0 0 0 1px var(--dim);
+/* A light thumb in both states, only the track changes (council 2, round 7): a --paper thumb in dark read as a hole in the
+   accent track when on. --ink is the light end of the night scale, clear of the mid off track and the accent track. */
+:root[data-theme='dark'] .ui-switch:not(:disabled, [aria-disabled='true']) .ui-switch-thumb {
+  background: var(--ink);
 }
 .ui-switch:focus-visible {
   outline: var(--focus-width) solid var(--accent);
@@ -386,6 +382,10 @@
 .ui-shortcut-group + .ui-shortcut-group {
   /* A whole row (28 px), so every column's rows sit on one 28 px grid and the first view can end between rows. */
   margin-top: var(--control-sm);
+}
+.ui-shortcut-group + .ui-shortcut-group .ui-shortcut-group-label {
+  /* A hairline on the heading's top edge (the 28 px gap is above it), so the groups read as groups. */
+  box-shadow: 0 calc(-1 * var(--hairline)) 0 var(--line);
 }
 .ui-shortcut-group-label {
   margin: 0;

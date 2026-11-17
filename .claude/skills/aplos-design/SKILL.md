@@ -60,6 +60,7 @@ Use `var(--token)` in CSS and the imports from `ui/generated/motion.ts` in TS. N
 | `--raised` | Quiet fills: the low-importance band, chips, attachments, the undo-send line. In dark (`#2b2c30`) one step above `--paper`. |
 | `--sunken` | Segmented tracks, fields |
 | `--keycap` | A keycap's plate: sunken by day, one step lighter than its surface at night, always with a 1 px `--line` edge |
+| `--keycap-ink` | A keycap's letter: `--dim` by day, `--ink-2` at night (passes 4.5:1 on the plate) |
 | `--ink` | Primary text, unread senders |
 | `--ink-2` | Read senders, subjects, unread summaries, secondary text |
 | `--dim` | Metadata, timestamps, counts, placeholders, read summaries, disabled text |
@@ -131,7 +132,7 @@ Rules:
   - Ask dock 360 (320 under a 1180 px window, resizable 300–440).
   - Palette 600 wide, 16vh from the top, results at most 420.
   - Settings 180 nav + 600 content.
-  - Toast up to 440.
+  - Toast 440, growing to fit its words up to 560 (`--toast-grow-max`).
   - Minimum window 900 × 600.
 
 ### Radius: six steps, no others
@@ -149,7 +150,7 @@ Rules:
 
 | Token | Use |
 |---|---|
-| `--elev-pane` | The pane, the dock |
+| `--elev-pane` | The pane, the dock, the reader's message cards (day ring is `--line-strong`) |
 | `--elev-card` | Focus letter, inline reply, proposal cards |
 | `--elev-float` | Menus, popovers, tooltips, toasts, the palette (opaque `--float`) |
 | `--elev-dialog` | Dialogs and confirmations, with `--scrim` behind |

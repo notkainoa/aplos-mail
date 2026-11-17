@@ -123,14 +123,21 @@ export function suggestedLabel(suggestion: SuggestedAction, sender: string): str
 }
 
 /** Longest sender name a triage toast shows before it is cut with an ellipsis. */
-const TOAST_NAME_MAX = 24;
+const TOAST_NAME_MAX = 40;
+/** A name longer than this crowds the toast, so "no date" gives way: "Set a date" beside it already says so. */
+const TOAST_NAME_ROOMY = 28;
+const NO_DATE_TAIL = ' · no date';
 
-/** A triage toast names its thread: "Done · Jordan Park", the sender cut with an ellipsis when long. */
+/** A triage toast names its thread: "Done · Jordan Park", the sender cut with an ellipsis only when very long. */
 export function namedToast(message: string, row: ThreadRow): string {
   const name = senderOf(row);
   const short =
     name.length > TOAST_NAME_MAX ? `${name.slice(0, TOAST_NAME_MAX - 1).trimEnd()}…` : name;
-  return `${message} · ${short}`;
+  const lead =
+    name.length > TOAST_NAME_ROOMY && message.endsWith(NO_DATE_TAIL)
+      ? message.slice(0, -NO_DATE_TAIL.length)
+      : message;
+  return `${lead} · ${short}`;
 }
 
 /**

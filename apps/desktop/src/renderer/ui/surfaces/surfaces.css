@@ -58,7 +58,7 @@
   border-radius: var(--radius-xs);
   background: var(--keycap);
   box-shadow: inset 0 0 0 var(--hairline) var(--line);
-  color: var(--dim);
+  color: var(--keycap-ink);
   font: var(--type-caption);
   letter-spacing: var(--track-caption);
   flex: none;
@@ -215,6 +215,14 @@
 .ui-part-button[data-variant='text']:active,
 .ui-part-button[data-variant='icon']:active {
   background: var(--press);
+}
+/* A pane tool that cannot run right now (New event on view-only calendars): clearly faded, a not-allowed cursor on its wrapper, and the wrapper still shows the tooltip that says why. */
+.ui-pane__tools > .ui-part-tipwrap:has(> .ui-part-button:disabled) {
+  cursor: not-allowed;
+}
+.ui-pane__tools .ui-part-button:disabled,
+.ui-pane__tools .ui-part-button:disabled .ui-part-icon {
+  color: var(--faint);
 }
 
 /* Overlay tooltip: label + keys, opaque paper. It never moves layout; hover or keyboard focus shows it. */
@@ -626,6 +634,14 @@ html[data-real-key] .ui-part-tipwrap:has(> :focus-visible) > .ui-part-tip {
   font: var(--type-ui);
   letter-spacing: var(--track-ui);
   animation: ui-reveal var(--dur-reveal-in) var(--ease-out) both;
+}
+/* Night: a menu or popover on a card needs an edge you can see, so the 1 px ring is laid twice (the stronger line, over the one
+   --elev-float already draws). */
+:root[data-theme='dark'] .ui-menu,
+:root[data-theme='dark'] .ui-popover {
+  box-shadow:
+    0 0 0 1px var(--line-strong),
+    var(--elev-float);
 }
 .ui-menu:not([data-placed]),
 .ui-popover:not([data-placed]) {
@@ -1148,6 +1164,14 @@ html[data-real-key] .ui-part-tipwrap:has(> :focus-visible) > .ui-part-tip {
 .ui-puck[data-kind='selection'] .ui-puck__cell {
   display: flex;
 }
+/* The reader is open over this place: it stays marked, with the lighter hover fill instead of the puck, so it reads as where
+   you came from and not as where you are. */
+.aplos-sidebar[data-origin='true'] .ui-puck[data-kind='selection'] > .ui-puck__thumb,
+.aplos-sidebar[data-origin='true']
+  .ui-puck[data-kind='selection']:not([data-ready])
+  .ui-puck__item[data-selected='true'] {
+  background: var(--hover);
+}
 .ui-puck[data-kind='selection'] .ui-puck__item {
   flex: 1;
   height: var(--control-sm);
@@ -1206,11 +1230,14 @@ html[data-real-key] .ui-part-tipwrap:has(> :focus-visible) > .ui-part-tip {
   z-index: var(--z-toast);
   display: flex;
   flex-direction: column-reverse;
-  /* One column, one width: the stack is --toast-max wide (less in a narrow pane) and every toast fills it, so a single
-     toast, a persistent error and a stack of three are the same width; the words wrap inside. */
+  /* One column, one width: the stack is at least --toast-max wide and grows to fit its longest toast up to --toast-grow-max
+     (less in a narrow pane), and every toast fills it, so a stack of three is one width; a sender's name is never cut
+     while it fits. */
   align-items: stretch;
   gap: var(--space-2);
-  width: min(var(--toast-max), calc(100% - var(--space-6) * 2));
+  width: max-content;
+  min-width: min(var(--toast-max), calc(100% - var(--space-6) * 2));
+  max-width: min(var(--toast-grow-max), calc(100% - var(--space-6) * 2));
   transform: translateX(-50%);
   pointer-events: none;
 }

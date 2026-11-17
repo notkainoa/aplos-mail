@@ -13,6 +13,7 @@
   --raised: #f6f6f7;
   --sunken: #efeff1;
   --keycap: #efeff1;
+  --keycap-ink: var(--dim);
   --ink: #1d1e21;
   --ink-2: #46484d;
   --dim: #63666c;
@@ -120,6 +121,7 @@
   --settings-nav: 11.25rem;
   --settings-content: 37.5rem;
   --toast-max: 27.5rem;
+  --toast-grow-max: 35rem;
   --sender-w: 8.5rem;
   --menu-min: 13.75rem;
   --icon: 1rem;
@@ -148,12 +150,12 @@
   --radius-xl: 1rem;
   --radius-pill: 62.4375rem;
   --elev-pane:
-    0px 0px 0px var(--hairline) var(--line),
-    0px 1px 2px 0px color-mix(in srgb, var(--shadow-ink) 3%, transparent);
+    0px 0px 0px var(--hairline) var(--line-strong),
+    0px 1px 2px 0px color-mix(in srgb, var(--shadow-ink) 5%, transparent);
   --elev-card:
     0px 0px 0px var(--hairline) var(--line-strong),
-    0px 1px 2px 0px color-mix(in srgb, var(--shadow-ink) 4%, transparent),
-    0px 6px 20px 0px color-mix(in srgb, var(--shadow-ink) 5%, transparent);
+    0px 1px 2px 0px color-mix(in srgb, var(--shadow-ink) 6%, transparent),
+    0px 6px 20px 0px color-mix(in srgb, var(--shadow-ink) 8%, transparent);
   --elev-float:
     0px 0px 0px var(--hairline) var(--line-strong),
     0px 4px 12px 0px color-mix(in srgb, var(--shadow-ink) 6%, transparent),
@@ -357,6 +359,7 @@
   --raised: #2b2c30;
   --sunken: #0e0f10;
   --keycap: color-mix(in srgb, var(--ink) 8%, transparent);
+  --keycap-ink: var(--ink-2);
   --ink: #ececed;
   --ink-2: #c4c5c9;
   --dim: #9a9da4;
