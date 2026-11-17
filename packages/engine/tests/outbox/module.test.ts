@@ -183,3 +183,34 @@ test('with no send port a new send is refused up front, so no draft is locked fo
     file.cleanup();
   }
 });
+
+test('a stored Undo send setting sets the next send’s window, and a send already queued keeps its own', async () => {
+  const w = await engineWorld();
+  try {
+    await w.call('Settings/set', { opId: 'undo-3', patch: { mail: { undoSendSeconds: 3 } } });
+    const first = await w.call('Submission/set', {
+      opId: 'send-1',
+      action: { type: 'send', draftId: 'd1', revision: 1 },
+    });
+    assert.equal(first.submission.notBefore - first.submission.queuedAt, 3 * SEC);
+    // Changing the setting afterwards does not move the window of the send already queued.
+    await w.call('Settings/set', { opId: 'undo-20', patch: { mail: { undoSendSeconds: 20 } } });
+    const got = await w.call('Submission/get', { ids: [first.submission.id] });
+    assert.equal(got.list[0].notBefore - got.list[0].queuedAt, 3 * SEC);
+  } finally {
+    await w.cleanup();
+  }
+});
+
+test('with no stored setting the window is the setting default (8 s), not the outbox’s bare fallback', async () => {
+  const w = await engineWorld();
+  try {
+    const out = await w.call('Submission/set', {
+      opId: 'send-default',
+      action: { type: 'send', draftId: 'd1', revision: 1 },
+    });
+    assert.equal(out.submission.notBefore - out.submission.queuedAt, 8 * SEC);
+  } finally {
+    await w.cleanup();
+  }
+});
