@@ -19,6 +19,7 @@ export function commandsForReader(actions: ReaderActions): CommandHandlerTable {
     'mail.done': run(actions.done),
     'mail.later': run(actions.later),
     'mail.trash': run(actions.trash),
+    'mail.restore': run(actions.restore),
     'mail.bookmark': run(actions.bookmark),
     'mail.toggleRead': run(actions.toggleRead),
     'app.undo': run(actions.undo),

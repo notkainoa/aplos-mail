@@ -221,7 +221,7 @@ export const LIST_COMMANDS: readonly CommandSpec[] = [
     id: 'mail.restore',
     label: 'Restore',
     keys: [],
-    contexts: ['list'],
+    contexts: ['list', 'reader'],
     group: 'Actions',
     undo: { label: 'Restored' },
   },

@@ -30,6 +30,30 @@ test('the first letter keeps the sheet blank until its body is ready, and the li
   assert.deepEqual(view(state, 3000), { letter: 'a', loadingLine: false, blank: false });
 });
 
+test('an immediate want puts the letter on paper at once: the first letter, or one that replaces a letter sent away', () => {
+  let state = reduce(EMPTY_BUFFER, { type: 'want', id: 'a', now: 0, immediate: true });
+  assert.deepEqual(view(state, 0), { letter: 'a', loadingLine: false, blank: false });
+  state = readyAt(state, 'a', 10);
+  state = reduce(state, { type: 'want', id: 'b', now: 20, immediate: true });
+  assert.equal(state.shown, 'b', 'the letter that left is not kept while b loads');
+  assert.equal(
+    view(state, 20 + LOAD_LINE_MS).loadingLine,
+    false,
+    'b is on paper: nothing is waited for',
+  );
+  state = readyAt(state, 'b', 30);
+  assert.equal(state.shown, 'b');
+});
+
+test('a want told again as immediate (Done pressed while the next letter loads) takes the paper at once', () => {
+  let state = readyAt(want(EMPTY_BUFFER, 'a', 0), 'a', 10);
+  state = want(state, 'b', 100);
+  assert.equal(state.shown, 'a');
+  state = reduce(state, { type: 'want', id: 'b', now: 200, immediate: true });
+  assert.equal(state.shown, 'b', 'a, which was sent away, leaves the paper');
+  assert.equal(state.wantedSince, 100, 'the wait for b is the same one');
+});
+
 test('moving on keeps the previous letter on paper until the next body is ready', () => {
   let state = readyAt(want(EMPTY_BUFFER, 'a', 0), 'a', 10);
   state = want(state, 'b', 100);

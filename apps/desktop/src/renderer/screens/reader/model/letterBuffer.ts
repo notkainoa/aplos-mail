@@ -25,7 +25,13 @@ export interface LetterState {
 
 /** What can happen to the buffer; `now` is the event's time in milliseconds. */
 export type LetterEvent =
-  | { readonly type: 'want'; readonly id: string; readonly now: number }
+  | {
+      readonly type: 'want';
+      readonly id: string;
+      readonly now: number;
+      /** Nothing worth keeping is on paper (no letter yet, or the one there was sent away): the wanted letter replaces it at once. */
+      readonly immediate?: boolean;
+    }
   | { readonly type: 'ready'; readonly id: string; readonly now: number }
   | { readonly type: 'evict'; readonly id: string };
 
@@ -50,12 +56,14 @@ export const EMPTY_BUFFER: LetterState = {
 };
 
 /**
- * A `want` asks for a letter. One already held shows in the same event; any other keeps the letter on paper and
- * waits. The deadline belongs to the wanted id, so asking for the same letter again does not restart the wait.
+ * A `want` asks for a letter. One already held shows in the same event, and so does any when `immediate` says the letter
+ * on paper is not worth keeping (nothing shown yet, or it was sent away by Done, Later or Trash); any other keeps the
+ * letter on paper and waits. The deadline belongs to the wanted id, so asking for the same letter again does not restart the wait.
  */
-function want(state: LetterState, id: string, now: number): LetterState {
+function want(state: LetterState, id: string, now: number, immediate: boolean): LetterState {
   const wantedSince = state.wanted === id ? state.wantedSince : now;
-  return { ...state, wanted: id, wantedSince, shown: state.ready.has(id) ? id : state.shown };
+  const shown = state.ready.has(id) || immediate ? id : state.shown;
+  return { ...state, wanted: id, wantedSince, shown };
 }
 
 /**
@@ -81,7 +89,7 @@ function evict(state: LetterState, id: string): LetterState {
 export function reduce(state: LetterState, event: LetterEvent): LetterState {
   switch (event.type) {
     case 'want':
-      return want(state, event.id, event.now);
+      return want(state, event.id, event.now, event.immediate === true);
     case 'ready':
       return markReady(state, event.id);
     case 'evict':

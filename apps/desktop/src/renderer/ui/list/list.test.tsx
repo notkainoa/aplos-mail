@@ -236,8 +236,8 @@ describe('ListBox, ListGroup, SectionHeader', () => {
     );
     assert.match(
       m,
-      /title="Go one by one · S" aria-hidden="true"/,
-      'pointer duplicate of S inside the listbox (a span: not focusable, so not nested-interactive)',
+      /<button type="button" class="ui-list-btn"[^>]*title="Go one by one · S"/,
+      'a real button, so it is in the accessibility tree (it sits in the group header, not inside an option)',
     );
     assert.doesNotMatch(m, /<h1|<h2|page-title/, 'no page title, no heading inside the listbox');
   });
