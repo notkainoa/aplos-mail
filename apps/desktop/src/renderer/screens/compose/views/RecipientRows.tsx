@@ -64,14 +64,18 @@ function OneRow(props: {
     reset();
   };
   // The newest query and rows, read when a send asks for the typed text (not the render it was registered in).
-  const latest = useRef({ query, recipients: props.recipients, onChange: props.onChange });
-  latest.current = { query, recipients: props.recipients, onChange: props.onChange };
+  const latest = useRef({ query, recipients: props.recipients, onChange: props.onChange, reset });
+  latest.current = { query, recipients: props.recipients, onChange: props.onChange, reset };
   const { registerTyped } = props;
   useEffect(
     () =>
       registerTyped?.(() => {
         const now = latest.current;
-        if (now.query.trim() !== '') now.onChange(addRecipients(now.recipients, now.query));
+        if (now.query.trim() === '') return;
+        const next = addRecipients(now.recipients, now.query);
+        // The text is a chip now (or a duplicate of one): the field is empty, so a refused send does not re-commit it.
+        now.reset();
+        if (next !== now.recipients) now.onChange(next);
       }),
     [registerTyped],
   );
