@@ -30,12 +30,21 @@
 .search-screen:has(> .search-screen__column > .ui-empty-line) > .search-screen__column {
   flex: 1 0 auto;
 }
+/* A no-match line sits under the field (80 px), where the eye already is, not in the middle of the pane. */
 .search-screen__column > .ui-empty-line {
-  flex: 1 0 auto;
+  flex: 0 0 auto;
   align-items: center;
-  justify-content: center;
-  padding-bottom: var(--space-10);
+  padding: calc(var(--space-10) + var(--space-4)) var(--space-3) var(--space-6);
   text-align: center;
+}
+.search-screen__column > .ui-empty-line .ui-empty-line__text {
+  color: var(--ink-2);
+  font: var(--type-base);
+  letter-spacing: var(--track-base);
+}
+.search-screen__column > .ui-empty-line .ui-empty-line__detail {
+  font: var(--type-ui);
+  letter-spacing: var(--track-ui);
 }
 .search-screen__column > .ui-empty-line .ui-empty-line__copy {
   align-items: center;
@@ -46,11 +55,12 @@
 
 /* Search rows show the subject as the row's first cell and the matched snippet beside it in --dim, so the two cells
    read as two things; each cell ellipsises only its own end. The subject keeps the list's weight (400 read, 500 unread)
-   and the snippet always keeps room for about 25 characters, cut on a word by the model. */
+   and the snippet shares what the subject leaves: it starts near the first match, so the cell's ellipsis cuts the end. */
 .search-screen .ui-list-row__primary[data-has-secondary='true'] {
   max-width: 58%;
   color: var(--ink-2);
 }
 .search-screen .ui-list-row__secondary {
-  flex: 1 0 min(13rem, 45%);
+  flex: 1 1 0;
+  min-width: min(8rem, 30%);
 }

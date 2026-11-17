@@ -484,7 +484,7 @@ export function highlightTerms(query: SearchQuery): string[] {
 }
 
 /** How many characters of snippet may come before the first match; the rest of the cell is for the match itself. */
-const SNIPPET_LEAD = 20;
+const SNIPPET_LEAD = 14;
 /**
  * The snippet with its first match near the left edge, so the one ellipsis the cell draws at its end never hides the
  * matched word. A leading "…" marks the cut; text with no match or a match already near the start is unchanged.
@@ -506,8 +506,8 @@ export function snippetAround(
   return `…${text.slice(start)}`;
 }
 
-/** About how many characters of snippet the cell shows; the cut falls on a word so no word is left half-drawn. */
-const SNIPPET_FIT = 25;
+/** About how many characters of snippet travel to the cell, which draws its own ellipsis; the cut falls on a word so no word is left half-drawn. */
+const SNIPPET_FIT = 100;
 /**
  * The snippet cut after a whole word, with a "…" when text follows. The match always stays inside the kept text, so
  * the cell's own ellipsis rarely has to cut a word in half.

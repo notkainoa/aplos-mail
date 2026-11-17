@@ -91,6 +91,7 @@ export const DRAFTS_CONFIG: ListConfig = {
     view: { kind: 'drafts' },
     empty: 'No drafts',
     emptyIcon: 'file',
+    emptyDetail: 'Press C to write a message',
     hoverActions: [],
   }),
   dateGroups: true,

@@ -31,6 +31,8 @@ export interface SearchPageHandlers {
   onRemoveToken: (index: number) => void;
   /** Return in the field: search all mail on Google (only Return does). */
   onSubmit: () => void;
+  /** "Clear search" under a no-match line: empties the field and the pills, and the field takes focus. */
+  onClear: () => void;
   /** Try again on a failed local window: the screen remounts the view (`Reopenable`). */
   onRetryResults: () => void;
   onLeaveToList: (edge: 'first' | 'last') => void;
@@ -52,6 +54,12 @@ export interface SearchPageProps {
   readonly inputRef?: Ref<HTMLInputElement>;
   readonly listRef?: Ref<HTMLElement>;
 }
+
+const NO_MATCH_HINT = 'Try fewer words or remove a filter.';
+
+/** The quiet way out of a dead end: empty the search and type again. */
+const CLEAR_SEARCH = (onSelect: () => void) =>
+  ({ label: 'Clear search', emphasis: 'text', onSelect }) as const;
 
 export const RESULTS_ID = 'search-results';
 
@@ -165,6 +173,7 @@ export function SearchPage(props: SearchPageProps) {
           <EmptyLine
             icon="search"
             text={model.noMatch}
+            detail={NO_MATCH_HINT}
             action={
               model.noMatchOffer
                 ? {
@@ -174,8 +183,9 @@ export function SearchPage(props: SearchPageProps) {
                     emphasis: 'text',
                     onSelect: handlers.onSubmit,
                   }
-                : undefined
+                : CLEAR_SEARCH(handlers.onClear)
             }
+            secondaryAction={model.noMatchOffer ? CLEAR_SEARCH(handlers.onClear) : undefined}
           />
         ) : null}
         {line?.kind === 'offer' ? (

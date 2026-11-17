@@ -332,6 +332,7 @@ test('the page renders the announce sentence in a hidden live region', () => {
         onChange: () => undefined,
         onRemoveToken: () => undefined,
         onSubmit: () => undefined,
+        onClear: () => undefined,
         onRetryResults: () => undefined,
         onLeaveToList: () => undefined,
         onSelectRow: () => undefined,
@@ -453,19 +454,16 @@ test('free terms bold in subjects and snippets; quoted phrases stay whole', () =
 test('a snippet whose match sits far in starts a few words before it, one leading ellipsis', () => {
   const text =
     'The printer queue was cleared overnight, and the invoice reminder went out before nine';
-  assert.equal(
-    snippetAround(text, ['invoice']),
-    '…overnight, and the invoice reminder went out before nine',
-  );
+  assert.equal(snippetAround(text, ['invoice']), '…and the invoice reminder went out before nine');
   assert.equal(snippetAround(text, ['printer']), text, 'a match near the start is left alone');
   assert.equal(snippetAround(text, ['nothing']), text, 'no match, no cut');
 });
 
 test('a snippet is cut after a whole word, keeps its match, and short text is left alone', () => {
   const text = '…can close out the project. The two layout directions are ready';
-  assert.equal(snippetFit(text, ['project']), '…can close out the project…');
+  assert.equal(snippetFit(text, ['project'], 25), '…can close out the project…');
   assert.equal(
-    snippetFit('Our project review is Friday at ten', ['project']),
+    snippetFit('Our project review is Friday at ten', ['project'], 25),
     'Our project review is…',
   );
   assert.equal(snippetFit('A short line', ['line']), 'A short line');

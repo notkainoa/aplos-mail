@@ -39,6 +39,7 @@ function markupFor(field: string): string {
         onChange: () => undefined,
         onRemoveToken: () => undefined,
         onSubmit: () => undefined,
+        onClear: () => undefined,
         onRetryResults: () => undefined,
         onLeaveToList: () => undefined,
         onSelectRow: () => undefined,

@@ -392,6 +392,10 @@ function SearchBody(props: SearchBodyProps): ReactElement {
     onChange: (text: string) => perform(typeField(stateRef.current, text)),
     onRemoveToken: (index: number) => perform(removeToken(stateRef.current, index)),
     onSubmit: remoteSubmit,
+    onClear: () => {
+      perform(clearField(stateRef.current));
+      inputRef.current?.focus();
+    },
     onRetryResults: reopen,
     onLeaveToList: (edge: 'first' | 'last') => {
       const row = edge === 'first' ? all[0] : all[all.length - 1];

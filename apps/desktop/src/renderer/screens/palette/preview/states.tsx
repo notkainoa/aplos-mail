@@ -29,6 +29,7 @@ const SEARCH_HANDLERS = {
   onChange: noop,
   onRemoveToken: noop,
   onSubmit: noop,
+  onClear: noop,
   onRetryResults: noop,
   onLeaveToList: noop,
   onSelectRow: noop,
