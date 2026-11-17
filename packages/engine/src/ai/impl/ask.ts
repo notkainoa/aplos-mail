@@ -62,6 +62,21 @@ function plain(html: string): string {
 const MAX_SOURCES = 8;
 const MAX_SOURCE_CHARS = 2_500;
 
+/**
+ * Quoted mail can fake the source block's own structure: a body line starting `[2]`, `Account:` or `---`
+ * would pass for a new source or a boundary. Any such line gets a visible prefix so the structure keys can
+ * only come from the engine.
+ */
+const FAKE_STRUCTURE = /^\s*(?:\[\s*\d|account:|from:|subject:|-{3,})/i;
+
+function quoteText(text: string): string {
+  return text
+    .replace(/\r\n?/g, '\n')
+    .split('\n')
+    .map(l => (FAKE_STRUCTURE.test(l) ? `> ${l}` : l))
+    .join('\n');
+}
+
 /** Sources for a run: the thread being read first, then FTS hits for the question, allowed accounts only. */
 function findSources(
   q: StoreReader,
@@ -408,7 +423,7 @@ async function askRun(
     const quoted = sources
       .map(
         s =>
-          `[${s.n}]${labels.size > 1 ? ` Account: ${labels.get(s.accountId)}` : ''}\nFrom: ${s.fromName ?? 'unknown'}\nSubject: ${s.subject}\n\n${s.text}`,
+          `[${s.n}]${labels.size > 1 ? ` Account: ${labels.get(s.accountId)}` : ''}\nFrom: ${s.fromName ?? 'unknown'}\nSubject: ${s.subject}\n\n${quoteText(s.text)}`,
       )
       .join('\n\n---\n\n');
     const history = args.conversationId

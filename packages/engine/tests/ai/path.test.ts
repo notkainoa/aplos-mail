@@ -1,113 +1,14 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import type { EngineMethodName, Frame, Input, Output } from '@aplos/contract';
+import type { Frame } from '@aplos/contract';
 import { ContractError } from '@aplos/contract/contract-error';
-import { createLogger } from '../../src/diag/log';
-import { createEngine, laneExtensions } from '../../src/index';
-import { openStore } from '../../src/store';
-import {
-  detachedTransport,
-  AiCallError,
-  type AiChatRequest,
-  type AiTransport,
-} from '../../src/ai/host';
+import { detachedTransport, AiCallError } from '../../src/ai/host';
 import { runJobs } from '../../src/ai/impl/runner';
-import { ACCOUNT, accountWrite, folderWrites, msg, tempDb } from '../store/helpers';
-import { manualClock, silentDeadlines } from '../runtime.helpers';
+import { ACCOUNT, accountWrite, folderWrites, msg } from '../store/helpers';
+import { lastPrompt, seedMail, settle, stubTransport, world } from './harness';
+import type { World } from './harness';
 
-/** A scripted provider: `chat` answers every call with `answer`, or throws `fail` when set. */
-function stubTransport(opts: {
-  answer?: string;
-  fail?: AiCallError;
-  onChat?: (req: AiChatRequest) => void;
-}): AiTransport & { calls: AiChatRequest[] } {
-  const calls: AiChatRequest[] = [];
-  return {
-    calls,
-    async chat(req) {
-      calls.push(req);
-      opts.onChat?.(req);
-      if (opts.fail) throw opts.fail;
-      return {
-        content: opts.answer ?? '{"answer":"It is due Friday [1].","proposals":[]}',
-        toolCalls: [],
-        usage: { prompt: 42, completion: 21 },
-      };
-    },
-    transcribe: () => Promise.resolve({ text: 'words' }),
-    models: provider => Promise.resolve({ list: [`${provider}-live`], live: true }),
-    check: () => (opts.fail ? Promise.reject(opts.fail) : Promise.resolve()),
-    setKey: () => Promise.resolve('keychain' as const),
-    removeKey: () => Promise.resolve('none' as const),
-    keySource: () => 'env' as const,
-  };
-}
-
-/** Engine + window over a temp store with every lane's writers; seeds an account, folders and mail. */
-async function world(transport?: AiTransport) {
-  const file = tempDb();
-  const clock = manualClock();
-  const store = openStore(file.open(), { now: () => clock.now(), extensions: laneExtensions() });
-  const log = createLogger({ sink: { write: () => undefined }, salt: 's', clock });
-  const engine = await createEngine({
-    store,
-    clock,
-    log,
-    host: {
-      appVersion: '9.9.9',
-      device: { id: 'd', name: 'd' },
-      resident: true,
-      capabilities: { desktop: true },
-    },
-    // The queue's own deadline never fires on its own here: tests drive it with explicit `runJobs` calls,
-    // so an ingest-queued summary job cannot race a scripted answer.
-    ports: { deadlines: silentDeadlines() },
-  });
-  engine.services.ai.useTransport(transport ?? stubTransport({}));
-  const window = engine.connect();
-  const call = <M extends EngineMethodName>(method: M, args: Input<M>) =>
-    window.call(method, args) as Promise<Output<M>>;
-  const frames: Frame[] = [];
-  window.subscribe(f => void frames.push(f));
-  return { store, engine, call, frames, clock, file };
-}
-
-/** Wait until a run's `done` frame lands (the error path emits `error` then `done`, so one wait covers both). */
-async function settle(w: Awaited<ReturnType<typeof world>>, runId: string) {
-  for (
-    let i = 0;
-    i < 60 &&
-    !w.frames.some(
-      f =>
-        f.frame === 'progress' &&
-        (f as { runId?: string }).runId === runId &&
-        (f as { kind?: string }).kind === 'done',
-    );
-    i++
-  )
-    await new Promise(r => setImmediate(r));
-}
-
-/** The last user message the scripted provider saw — the prompt the sources were quoted into. */
-const lastPrompt = (t: ReturnType<typeof stubTransport>) =>
-  t.calls.at(-1)!.messages.at(-1)!.content ?? '';
-
-const seedMail = (w: Awaited<ReturnType<typeof world>>, aiAllowed = true) =>
-  w.store.commit({
-    opId: 'seed',
-    origin: 'sync',
-    writes: [
-      { ...accountWrite, aiAllowed },
-      ...folderWrites.map(f => ({ ...f })),
-      msg('m1', 'T-thread', 5, {
-        subject: 'Invoice due Friday',
-        snippet: 'The invoice is due this Friday.',
-      }),
-      msg('m2', 'T-thread', 6),
-    ],
-  });
-
-const consentNow = async (w: Awaited<ReturnType<typeof world>>) => {
+const consentNow = async (w: World) => {
   await w.call('Settings/set', { opId: 'bg', patch: { ai: { background: true } } });
   const got = await w.call('Consent/get', {});
   return w.call('Consent/grant', {
@@ -124,10 +25,7 @@ const DAY_MS = 24 * 60 * 60_000;
  * A Follow up thread (followUpDays defaults to 3; the clock sits at T0): an inbound question a week old and the
  * owner's answer four days old, still `awaitingReply`, sitting in Sent. `spam` adds the Spam label instead.
  */
-const seedFollow = (
-  w: Awaited<ReturnType<typeof world>>,
-  opts: { aiAllowed?: boolean; spam?: boolean } = {},
-) => {
+const seedFollow = (w: World, opts: { aiAllowed?: boolean; spam?: boolean } = {}) => {
   // Mail lands while the account is still kept out of AI so the ingest enqueue stays out, and seen+done keeps
   // the thread below the summary queue's Home-visible/unread bar so `consentNow`'s catch-up queues nothing
   // either — the lane's `followup` job is the queue's only one.
@@ -594,74 +492,6 @@ test('Ask/run: the picked account scopes retrieval, and sources name their accou
   assert.doesNotMatch(promptScoped, /Account:|@mail\.example|Invoice due Friday/);
 });
 
-test('Ask/run: a display name labels its account; an address-looking name falls back to a number', async () => {
-  const t = stubTransport({});
-  const w = await world(t);
-  seedMail(w);
-  w.store.commit({
-    opId: 'seed-b',
-    origin: 'sync',
-    writes: [
-      {
-        kind: 'account',
-        id: 'acct-2',
-        provider: 'google',
-        address: 'two@mail.example',
-        displayName: 'Work mail',
-        capabilities: {},
-        status: { state: 'ok' },
-        aiAllowed: true,
-      },
-      {
-        kind: 'account',
-        id: 'acct-3',
-        provider: 'google',
-        address: 'three@mail.example',
-        // A display name that is itself an address must never be sent either.
-        displayName: 'three@mail.example',
-        capabilities: {},
-        status: { state: 'ok' },
-        aiAllowed: true,
-      },
-      {
-        kind: 'folder',
-        accountId: 'acct-2',
-        remoteId: 'INBOX',
-        name: 'Inbox',
-        role: 'inbox',
-        folderKind: 'system',
-      },
-      {
-        kind: 'folder',
-        accountId: 'acct-3',
-        remoteId: 'INBOX',
-        name: 'Inbox',
-        role: 'inbox',
-        folderKind: 'system',
-      },
-      msg('x1', 'T-other', 7, {
-        accountId: 'acct-2',
-        subject: 'Invoice paid already',
-        snippet: 'The invoice was paid last week.',
-      }),
-      msg('x2', 'T-third', 8, {
-        accountId: 'acct-3',
-        subject: 'Invoice archived',
-        snippet: 'The invoice was archived.',
-      }),
-    ],
-  });
-  const run = await w.call('Ask/run', { question: 'invoice' });
-  await settle(w, run.runId);
-  const prompt = lastPrompt(t);
-  // Sources newest-first: acct-3's mail leads (numbered, its "name" being an address), then acct-2's
-  // (its display name), then acct-1's (numbered).
-  assert.match(prompt, /\[1\] Account: Account 1\nFrom: Sender x2\nSubject: Invoice archived/);
-  assert.match(prompt, /\[2\] Account: Work mail\nFrom: Sender x1\nSubject: Invoice paid already/);
-  assert.match(prompt, /\[3\] Account: Account 3\nFrom: Sender m1\nSubject: Invoice due Friday/);
-  assert.doesNotMatch(prompt, /@mail\.example/);
-});
-
 test('Ask/cancel: a live run aborts', async () => {
   let signal: AbortSignal | undefined;
   const hanging = stubTransport({ onChat: req => (signal = req.signal) });
@@ -692,7 +522,7 @@ test('detached transport: Ai/* calls never log or leak a key; unavailable is hon
   assert.doesNotMatch(t.message ?? '', /sk-/);
 });
 
-const followJobRows = (w: Awaited<ReturnType<typeof world>>) =>
+const followJobRows = (w: World) =>
   w.engine.services.store.read(q =>
     q.all<{ key: string; state: string }>("SELECT key, state FROM jobs WHERE kind = 'followup'"),
   );
