@@ -359,7 +359,9 @@
 .ui-shortcut-sheet-cols {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
-  column-gap: var(--space-8);
+  /* 32 px between columns, so the widest row ("Send a queued follow-up now · while queued") stays on one line and every
+     column keeps the 28 px grid the first view is trimmed to. */
+  column-gap: var(--space-7);
   align-items: start;
 }
 .ui-shortcut-group + .ui-shortcut-group {
@@ -385,7 +387,7 @@
   display: grid;
   grid-template-columns: minmax(0, 1fr) auto;
   align-items: center;
-  column-gap: var(--space-3);
+  column-gap: var(--space-2);
   min-height: var(--control-sm);
   font: var(--type-ui);
   letter-spacing: var(--track-ui);
