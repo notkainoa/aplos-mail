@@ -129,7 +129,10 @@
   flex-direction: column;
   width: var(--sidebar-w);
   padding: var(--space-3) var(--space-2) var(--space-2) var(--space-3);
-  overflow-y: auto;
+  /* Not a scroll container: the places' tooltips open to the right of their row (placement 'end') and a clip here cut them
+     off at the sidebar's edge, leaving only a 1 px ring and a soft patch of their shadow beside the selected row. Only the
+     screen's slot gives up height, and it scrolls on its own. */
+  overflow: visible;
   -webkit-app-region: drag;
 }
 
