@@ -437,9 +437,8 @@
 .ui-recipient-field__list {
   position: absolute;
   top: 100%;
-  /* The list opens under the people column, shifted by its own padding and the option's, so a name starts exactly
-     where the typed text does. */
-  left: calc(-1 * (var(--space-1) + var(--space-2)));
+  /* The list opens under the people column, its left edge on the typed text's (council 2, round 4). */
+  left: 0;
   z-index: var(--z-menu);
   width: max(var(--menu-min), 60%);
   max-width: 100%;

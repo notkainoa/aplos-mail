@@ -244,7 +244,12 @@
 }
 /* Later's return time sits in one fixed-width column at the right, so the subjects keep the same room on every row;
    the widest label ("Back Wed, Nov 18, 9:00 AM") fits whole. */
-.ui-list-row[data-layout='later'] .ui-list-row__meta .ui-chip[data-kind='laterUntil'] {
+.ui-list-row__back {
+  display: contents;
+}
+.ui-list-row[data-layout='later'] .ui-list-row__meta .ui-list-row__back {
+  display: flex;
+  flex: none;
   justify-content: flex-start;
   width: calc(var(--space-10) * 3 - var(--space-2));
 }

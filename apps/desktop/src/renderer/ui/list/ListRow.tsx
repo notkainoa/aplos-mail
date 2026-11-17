@@ -83,7 +83,11 @@ function DateColumn({
   if (layout === 'done') return <DoneStamp doneAt={doneAt} estimated={doneEstimated} />;
   if (layout === 'later' && hideReturn) return null;
   if (layout === 'later' && laterUntil)
-    return <Chip kind="laterUntil" until={laterUntil} afterDue={afterDue} />;
+    return (
+      <span className="ui-list-row__back">
+        <Chip kind="laterUntil" until={laterUntil} afterDue={afterDue} />
+      </span>
+    );
   return (
     <time className="ui-list-row__date" dateTime={date} title={formatFull(date)}>
       {formatListDate(date)}
