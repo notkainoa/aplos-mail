@@ -48,6 +48,15 @@ test('a style that only places text keeps a mail plain; one colour beside it doe
   assert.equal(plainOf('<p>see style="margin:0</p><p><font color="#000000">x</font></p>'), false);
 });
 
+test('a wrapper that only sets direction, a class or a colour-free body style stays plain', () => {
+  const plainBody = (attributes: string) =>
+    plainOf(`<html><body ${attributes}><p>Hello</p></body></html>`);
+  assert.equal(plainBody('dir="ltr"'), true);
+  assert.equal(plainBody('class="msg" style="margin:0;padding:0"'), true);
+  assert.equal(plainBody('bgcolor="#112233"'), false);
+  assert.equal(plainBody('dir="ltr" style="margin:0;color:#c00"'), false);
+});
+
 test('a plain email paints the card’s own colours: paper in the light theme, the dark surface in the dark one', () => {
   const light = frameDocument(PLAIN, 'block', undefined, false);
   assert.equal(light.plain, true);

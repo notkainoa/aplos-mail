@@ -142,8 +142,8 @@ export function priorityOf(
  * (`priorityOf` 0/1), never Spam/Trash, no `ready` summary for the current input hash. The job row leads: a
  * missing key enqueues (nonce opId — a retry must land, never replay), a `dead`/`skipped`/`done` row gets a
  * fresh attempt budget, and a `queued`/`running`/`failed` row is already live. Only then does an open gate
- * write the `pending` placeholder Home shows while the work sits queued or runs, so a placeholder never
- * outlives the job behind it; a paused gate queues the job without one (the row stays collapsed, and a later
+ * write the `pending` placeholder Home shows while the work is due or runs (never while it waits out a backoff
+ * or a rate-limit pause), so a placeholder never outlives the job behind it; a paused gate queues the job without one (the row stays collapsed, and a later
  * gate-open fire writes `ready` straight away).
  */
 export function queueSummary(
@@ -173,6 +173,9 @@ export function queueSummary(
   }));
   // A landed summary for this exact input never re-runs — the `done` job under the same key is the dedupe.
   if (summary?.state === 'ready') return;
+  // Whether the work runs now: a fresh or re-armed row, a claimed one, or a queued row that is due. A row
+  // waiting out a retry backoff or a rate-limit pause is not working, so it gets no placeholder.
+  let working = true;
   if (job === undefined) {
     // The model goes in the payload so a settled row logs the model it ran under, not the one Settings
     // happens to hold later (`logOutcome`), and `jobOf` surfaces it as `AiJob.model`.
@@ -209,32 +212,49 @@ export function queueSummary(
       ],
     });
     services.deadlines.changed('jobs');
+  } else {
+    working =
+      job.state === 'running' || (job.state === 'queued' && job.next_at <= services.clock.now());
   }
-  if (summary?.state !== 'pending' && backgroundGate(services, 'summaries', accountId).ok) {
-    // The placeholder carries an older input's text/model when one exists: Home shows it until the re-run lands.
-    const prior = services.store.read(q =>
-      q.get<{ text: string; model: string; action: string | null }>(
-        'SELECT text, model, action FROM summaries WHERE thread_id = ? ORDER BY created_at DESC LIMIT 1',
-        info.threadRowId,
-      ),
-    );
-    services.store.commit({
-      opId: `ai-pending-${accountId}:${remoteThreadId}:${hash}-${hexId(services.randomBytes, 'p')}`,
-      origin: 'system',
-      writes: [
-        {
-          kind: 'summary',
-          accountId,
-          remoteThreadId,
-          inputHash: hash,
-          model: prior?.model ?? '',
-          text: prior?.text ?? '',
-          ...(prior?.action !== undefined ? { action: prior.action } : {}),
-          state: 'pending',
-        },
-      ],
-    });
-  }
+  if (
+    working &&
+    summary?.state !== 'pending' &&
+    backgroundGate(services, 'summaries', accountId).ok
+  )
+    writePlaceholder(services, accountId, remoteThreadId, info.threadRowId, hash);
+}
+
+/** The `pending` row Home shows while a summary is being made. It carries an older input's text/model when one
+ * exists, so Home keeps showing that until the re-run lands. */
+function writePlaceholder(
+  services: EngineServices,
+  accountId: string,
+  remoteThreadId: string,
+  threadRowId: number,
+  hash: string,
+): void {
+  const prior = services.store.read(q =>
+    q.get<{ text: string; model: string; action: string | null }>(
+      'SELECT text, model, action FROM summaries WHERE thread_id = ? ORDER BY created_at DESC LIMIT 1',
+      threadRowId,
+    ),
+  );
+  services.store.commit({
+    opId: `ai-pending-${accountId}:${remoteThreadId}:${hash}-${hexId(services.randomBytes, 'p')}`,
+    origin: 'system',
+    writes: [
+      {
+        kind: 'summary',
+        accountId,
+        remoteThreadId,
+        inputHash: hash,
+        model: prior?.model ?? '',
+        text: prior?.text ?? '',
+        ...(prior?.action !== undefined ? { action: prior.action } : {}),
+        state: 'pending',
+      },
+    ],
+  });
 }
 
 /** Enqueue one job under its singleton key; returns the stored row (the winner when it raced). */

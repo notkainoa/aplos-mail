@@ -103,6 +103,20 @@ glob.IS_REACT_ACT_ENVIRONMENT = true;
 
 const sleep = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
 
+/**
+ * Waits until `condition` holds, inside `act` so the hook's effects and renders land each poll.
+ * Bounded by real time so a broken implementation still fails rather than hanging — the
+ * assertions themselves never loosen (a fixed `sleep` only ever proved "not yet", never the
+ * verdict the tests name).
+ */
+const waitFor = async (condition: () => boolean): Promise<void> => {
+  const deadline = Date.now() + 5_000;
+  while (!condition()) {
+    assert.ok(Date.now() < deadline, 'the condition never held');
+    await act(() => sleep(2));
+  }
+};
+
 const fakeDoc = () => ({
   nodeType: 9,
   addEventListener: () => {},
@@ -326,17 +340,21 @@ test('review22: the Review button declares its dialog', () => {
 
 test('review22: a retried item still failed gets one quiet notice under the op id', async () => {
   resetToasts();
+  let calls = 0;
   const item = calItem({ id: 'cal:op-again' });
-  const list = () => Promise.resolve<readonly QueueItem[]>([item]);
+  const list = () => {
+    calls += 1;
+    return Promise.resolve<readonly QueueItem[]>([item]);
+  };
   function Probe() {
     useFailedHolds('', ACCOUNTS, {}, { list });
     return null;
   }
   const unmount = mount(<Probe />);
-  await act(() => sleep(10));
+  await waitFor(() => calls >= 1);
   // Queue/retry resolved, but the refreshed list still shows the hold failed.
   noteHoldRetried('cal:op-again');
-  await act(() => sleep(20));
+  await waitFor(() => calls >= 2);
   unmount();
   const toast = getToasts().find(t => t.id === 'op-again:failed');
   assert.equal(toast?.message, "Still didn't send.");
@@ -346,15 +364,20 @@ test('review22: a retried item still failed gets one quiet notice under the op i
 
 test('review22: a retried item that left the queue stays quiet', async () => {
   resetToasts();
-  const list = () => Promise.resolve<readonly QueueItem[]>([]);
+  let calls = 0;
+  const list = () => {
+    calls += 1;
+    return Promise.resolve<readonly QueueItem[]>([]);
+  };
   function Probe() {
     useFailedHolds('', ACCOUNTS, {}, { list });
     return null;
   }
   const unmount = mount(<Probe />);
-  await act(() => sleep(10));
+  await waitFor(() => calls >= 1);
   noteHoldRetried('cal:op-gone');
-  await act(() => sleep(20));
+  // The refreshed list already answered the verdict: the item is gone, so nothing is said.
+  await waitFor(() => calls >= 2);
   unmount();
   assert.equal(
     getToasts().find(t => t.id === 'op-gone:failed'),
@@ -382,7 +405,7 @@ test('review22: a rejected list retries on the same bound and still lands the ho
     return null;
   }
   const unmount = mount(<Probe />);
-  await act(() => sleep(80));
+  await waitFor(() => seen.at(-1) === 1);
   unmount();
   assert.ok(calls >= 3, 'the rejected lists retried instead of dying');
   assert.equal(seen.at(-1), 1);
@@ -399,7 +422,11 @@ test('review22: a dead engine stops the list retries at the cap and never throws
     return null;
   }
   const unmount = mount(<Probe />);
-  await act(() => sleep(120));
+  // First list plus five bounded retries: wait for the cap to be reached (no real-time
+  // budget), then hold one more window open — five retry gaps' worth — so a wrongly armed
+  // seventh call still trips the count, exactly as the old fixed sleep checked.
+  await waitFor(() => calls === 6);
+  await act(() => sleep(50));
   unmount();
-  assert.equal(calls, 6); // the first list plus five bounded retries
+  assert.equal(calls, 6);
 });

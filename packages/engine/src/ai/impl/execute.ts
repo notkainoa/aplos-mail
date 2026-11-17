@@ -34,6 +34,16 @@ const RELEASE_CODES: ReadonlySet<string> = new Set([
 ]);
 
 const MAX_ATTEMPTS = 5;
+/** The shortest queue pause after a rate limit; a provider's own Retry-After can only lengthen it. */
+export const RATE_LIMIT_MIN_MS = 60_000;
+/** The longest: a daily-quota Retry-After of hours is re-asked after this, not slept through. */
+export const RATE_LIMIT_MAX_MS = 15 * 60_000;
+
+/** How long a rate-limited feature waits: the provider's Retry-After, held between the floor and the ceiling. */
+export function rateLimitWait(retryAfterMs: number | undefined): number {
+  const asked = Number.isFinite(retryAfterMs) ? (retryAfterMs as number) : 0;
+  return Math.min(RATE_LIMIT_MAX_MS, Math.max(RATE_LIMIT_MIN_MS, asked));
+}
 /** Mail text sent to a provider is capped; a longer thread is truncated, never dropped mid-word. */
 const MAX_THREAD_CHARS = 12_000;
 /** A follow-up prompt carries the owner's last message plus the inbound it answers — much smaller than a summary's. */
@@ -406,6 +416,16 @@ export async function executeJob(services: EngineServices, row: JobRow): Promise
     // code rides along so the runner can tell an off state (placeholder collapses) from a wait (it holds).
     if (error instanceof AiCallError && RELEASE_CODES.has(error.code))
       return { state: 'release', code: error.code };
+    // A rate limit is the provider asking the whole queue to wait, not this job failing: the row goes back to
+    // the queue without spending an attempt, and the runner pauses every other due row until the window
+    // reopens (a 429 storm used to burn all five attempts of every queued job in the same second).
+    if (error instanceof AiCallError && error.code === 'rateLimited')
+      return {
+        state: 'release',
+        code: 'rateLimited',
+        lastError: JSON.stringify({ reasonCode: 'ai.rateLimited' }),
+        nextAt: services.clock.now() + rateLimitWait(error.retryAfterMs),
+      };
     const reason =
       error instanceof AiCallError
         ? error.message.startsWith('ai.')

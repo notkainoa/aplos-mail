@@ -96,6 +96,11 @@ export const S = (patch: Partial<CalendarState> = {}): CalendarState => ({
 
 export const nextTask = () => new Promise<void>(resolve => setImmediate(resolve));
 
+// The real `setTimeout`, captured before any test shims `global.setTimeout` (review7/8/9 do), so a
+// timer hop in `settle` can never be stolen by a capture-only mock.
+const realSetTimeout = setTimeout;
+const timerHop = () => new Promise<void>(resolve => realSetTimeout(resolve, 0));
+
 export async function boot() {
   const engine = createFixtureEngine({ scenario: 'demo', clock: defaultNow });
   const scheduler = createManualScheduler();
@@ -111,7 +116,20 @@ export async function boot() {
 }
 
 export async function settle(flush: () => void) {
-  for (let i = 0; i < 20; i++) {
+  for (let round = 0; round < 4; round++) {
+    for (let i = 0; i < 5; i++) {
+      await nextTask();
+      flush();
+    }
+    // The stand-in delivers a call's captured frames on a real `setTimeout(0)`, and an unbroken
+    // run of `setImmediate` turns can finish inside its millisecond without that timer ever
+    // firing (the 'stackedWrites roll back in any order' flake: the `cancelled` frame landed only
+    // after the fixed hops ran out). A timer hop waits past its deadline — every timer armed
+    // before it fires first — so rounds also catch timers the deliveries arm in turn.
+    await timerHop();
+    flush();
+  }
+  for (let i = 0; i < 5; i++) {
     await nextTask();
     flush();
   }
