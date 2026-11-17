@@ -34,7 +34,6 @@ export const SETTING_ROWS: readonly RowSpec[] = [
     'comfortable',
     'spacing',
   ]),
-  row('general', 'keyHints', 'Show all key hints', ['shortcuts', 'keycaps', 'keys']),
   row('general', 'swipeDirection', 'Swipe direction', ['arrows', 'done', 'later', 'triage']),
   row('general', 'sidebarMinimised', 'Minimized sidebar', ['hide sidebar', 'menu']),
   row('general', 'openAtLogin', 'Open Aplos when you log in', ['login', 'startup', 'launch']),
@@ -138,6 +137,7 @@ export const SETTING_ROWS: readonly RowSpec[] = [
   ]),
   // Keyboard
   row('keyboard', 'singleKeys', 'Single-key shortcuts', ['letters', 'wcag', 'accessibility']),
+  row('keyboard', 'keyHints', 'Show all key hints', ['shortcuts', 'keycaps', 'keys']),
   row('keyboard', 'holdMs', 'Hold time', ['dictation', 'tap', 'hold', 'milliseconds']),
   row('keyboard', 'shortcuts', 'Change a shortcut', [
     'remap',

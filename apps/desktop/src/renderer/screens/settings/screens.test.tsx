@@ -449,7 +449,13 @@ describe('states, copy and design rules', () => {
   test('switches are role="switch" with a name from their row', () => {
     const general = render('general');
     assert.match(general, /role="switch"/);
-    assert.match(general, /aria-labelledby="set-general-keyHints"/);
+    assert.match(general, /aria-labelledby="set-general-sidebarMinimised"/);
+    assert.doesNotMatch(
+      general,
+      /Show all key hints/,
+      'the key hints switch lives in Keyboard only',
+    );
+    assert.match(render('keyboard-default'), /aria-labelledby="set-keyboard-keyHints"/);
   });
 
   test('Help: version line, queue inspector rows, diagnostics preview, welcome', () => {

@@ -60,19 +60,6 @@ export function General({ data, actions }: SectionProps) {
       <Group id="set-general-keys" label="Keys and gestures">
         <Row
           section="general"
-          anchor="keyHints"
-          description="Keep every shortcut visible next to its button."
-          control={id => (
-            <Switch
-              label="Show all key hints"
-              labelledBy={id}
-              checked={ui.keyHints === 'always'}
-              onChange={on => void actions.setUi({ keyHints: on ? 'always' : 'tooltip' })}
-            />
-          )}
-        />
-        <Row
-          section="general"
           anchor="swipeDirection"
           description="Which way Done goes on Home and one by one."
           control={

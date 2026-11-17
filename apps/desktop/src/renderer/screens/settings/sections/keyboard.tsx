@@ -47,9 +47,8 @@ export function Keyboard({ data, view, actions, host }: SectionProps) {
           )}
         />
         <Row
-          section="general"
+          section="keyboard"
           anchor="keyHints"
-          idSuffix="keys"
           description="Keep every shortcut visible next to its button."
           control={id => (
             <Switch

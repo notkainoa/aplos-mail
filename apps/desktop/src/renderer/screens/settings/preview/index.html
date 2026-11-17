@@ -1,25 +1,50 @@
 <!doctype html>
 <html lang="en">
-<head>
-<meta charset="UTF-8">
-<meta name="viewport" content="width=device-width,initial-scale=1">
-<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:">
-<title>Aplos Settings preview</title>
-<style>
-  /* Development-only gallery. The window is the main window (1440 × 900): the gray shell, a 232 px sidebar column
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width,initial-scale=1" />
+    <meta
+      http-equiv="Content-Security-Policy"
+      content="default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:"
+    />
+    <title>Aplos Settings preview</title>
+    <style>
+      /* Development-only gallery. The window is the main window (1440 × 900): the gray shell, a 232 px sidebar column
      (the shell's, left empty here) and one white pane that holds Settings. The sizes are the window's, not
      design tokens, so they live here and nowhere in the app's CSS. */
-  html, body, #root { height: 100%; margin: 0; }
-  .set-frame { display: flex; height: 100%; min-width: 0; background: var(--shell); }
-  .set-frame__side { flex: none; width: var(--sidebar-w); }
-  .set-frame .ui-pane { flex: 1; }
-  .set-index { padding: 24px 32px; font: 13px/20px system-ui; }
-  .set-index li { margin: 4px 0; }
-  .set-index a { color: var(--accent); }
-</style>
-</head>
-<body>
-<div id="root"></div>
-<script type="module" src="./main.tsx"></script>
-</body>
+      html,
+      body,
+      #root {
+        height: 100%;
+        margin: 0;
+      }
+      .set-frame {
+        display: flex;
+        height: 100%;
+        min-width: 0;
+        background: var(--shell);
+      }
+      .set-frame__side {
+        flex: none;
+        width: var(--sidebar-w);
+      }
+      .set-frame .ui-pane {
+        flex: 1;
+      }
+      .set-index {
+        padding: 24px 32px;
+        font: 13px/20px system-ui;
+      }
+      .set-index li {
+        margin: 4px 0;
+      }
+      .set-index a {
+        color: var(--accent);
+      }
+    </style>
+  </head>
+  <body>
+    <div id="root"></div>
+    <script type="module" src="./main.tsx"></script>
+  </body>
 </html>
