@@ -57,9 +57,11 @@ function settle(
     state: 'done' | 'failed' | 'dead' | 'skipped' | 'release';
     lastError?: string | null;
     nextAt?: number;
+    code?: string;
   },
 ): void {
   // 'release' is a gate/cap pause mid-run: back to queued with a fresh attempt budget at the pause horizon.
+  // A rate limit keeps the budget the job had before this claim — the wait was the provider's, not the job's.
   const write =
     result.state === 'release'
       ? {
@@ -67,6 +69,7 @@ function settle(
           action: 'requeue' as const,
           id: row.id,
           nextAt: result.nextAt ?? services.clock.now() + PAUSE_MS,
+          ...(result.code === 'rateLimited' ? { attempts: row.attempts } : {}),
         }
       : {
           kind: 'job' as const,
@@ -181,7 +184,7 @@ function logOutcome(
       model: model?.model ?? 'unknown',
       durationMs: Math.max(0, services.clock.now() - started),
     });
-  if (outcome.state === 'failed' || outcome.state === 'dead')
+  if (outcome.state === 'failed' || outcome.state === 'dead' || outcome.code === 'rateLimited')
     services.log.event('ai.job.failed', {
       job: String(row.id),
       feature,
@@ -320,18 +323,16 @@ function closePendingSummaries(services: EngineServices, now: number, force = fa
 }
 
 /**
- * The release reasons whose card's "nothing is coming" is already true: no key, no provider, no AI on this
- * build — and a spent day cap, which waits until tomorrow but holds the card on "Summarizing…" for the rest
- * of today, so it settles the same way (the queue's own cap pause force-closes any placeholder it missed).
- * `gatePaused` alone stays a real wait: a paused gate lifts in minutes, not overnight. The job keeps its
- * queue slot either way — the subset of `RELEASE_CODES` (execute.ts) that collapses the placeholder now.
+ * Whether a summary job's outcome leaves its card on "Summarizing…". Only work that is really still going
+ * holds it (owner rule: the placeholder shows only while really working; it collapses if AI is off or the
+ * request fails). So a landed summary (which writes `ready` itself) and a `gatePaused` release — a paused
+ * gate lifts in minutes — keep it; every other outcome settles it now: a dead or skipped job, a release for
+ * an off state (no key, no provider, no AI on this build, a spent day cap) or a rate limit, and a retryable
+ * `failed` attempt, whose next try may sit an hour or more out on backoff. The job keeps its queue slot
+ * wherever it has one, and a later success writes `ready` over the collapsed row.
  */
-const AI_OFF_RELEASE: ReadonlySet<string> = new Set([
-  'missingKey',
-  'unavailable',
-  'noProvider',
-  'dailyLimit',
-]);
+export const holdsPlaceholder = (outcome: JobOutcome): boolean =>
+  outcome.state === 'done' || (outcome.state === 'release' && outcome.code === 'gatePaused');
 
 const resetDone = new WeakSet<object>();
 /** The day a `budget_exhausted` event was last logged, per engine — a spent cap warns once, then sleeps till tomorrow. */
@@ -396,6 +397,7 @@ export async function runJobs(services: EngineServices, now: number): Promise<vo
       return;
     }
     let handled = 0;
+    let rateLimitedUntil = 0;
     // Due 'wake' sentinels run in one batched pass: every wake action is idempotent under the job/summary
     // singleton keys, so there is no claim, and the whole set is deleted in a single commit — a delivery
     // burst must not spend a claim-plus-settle pair per touched thread. Deleting (not settling) is the whole
@@ -446,19 +448,19 @@ export async function runJobs(services: EngineServices, now: number): Promise<vo
           const outcome = await executeJob(services, row);
           logOutcome(services, row, outcome, started);
           settle(services, row, outcome);
-          // A summary job that will not run again clears its `pending` placeholder to `failed` (a Home row
-          // collapses); a retryable 'failed' attempt keeps it while the queue retries. So does a release for
-          // an AI-off reason — the job stays queued for the owner's fix but nothing is coming now — while a
-          // release for a short wait (a paused gate) holds the placeholder.
-          if (
-            (row.kind === 'summary' || row.kind === 'classify') &&
-            (outcome.state === 'dead' ||
-              outcome.state === 'skipped' ||
-              (outcome.state === 'release' && AI_OFF_RELEASE.has(outcome.code ?? '')))
-          )
+          if (outcome.code === 'rateLimited')
+            rateLimitedUntil = Math.max(rateLimitedUntil, outcome.nextAt ?? now);
+          // The card collapses unless this work is still really going (see `holdsPlaceholder`).
+          if ((row.kind === 'summary' || row.kind === 'classify') && !holdsPlaceholder(outcome))
             failSummary(services, row);
         }),
     );
+    // The provider said "slow down": every other due row waits out the same window instead of each spending an
+    // attempt on its own 429 — the queue then drains at the provider's pace, Home's priority-0 cards first.
+    if (rateLimitedUntil) {
+      closePendingSummaries(services, now, true);
+      return pauseDue(services, now, rateLimitedUntil);
+    }
     if (!handled) return;
     // A round finished; loop while more work is due right now — an ingest sentinel's `summary` job lands here.
     // The yield is a real timer turn, not a microtask: a pass of only sentinels awaits nothing else, and a
