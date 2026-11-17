@@ -331,24 +331,30 @@
   display: flex;
   flex: none;
   align-items: center;
-  gap: var(--space-2);
+  gap: var(--space-1);
   margin-right: var(--space-2);
 }
 
-/* The footer is one quiet size: a text button there (Back) reads at the same `small` size as "Step N of 4". */
+/* The footer is one quiet size: a text button there (Back) reads at the `small` size, like the note beside the marks. */
 .ui-onboarding-step__foot .ui-onb-button[data-variant='text'] {
   font: var(--type-small);
   font-weight: 500;
   letter-spacing: var(--track-small);
 }
 
-/* The words say where you are. */
-.ui-onboarding-step__where {
-  font: var(--type-small);
-  font-variant-numeric: var(--num-small);
-  letter-spacing: var(--track-small);
-  color: var(--dim);
-  white-space: nowrap;
+/* Four marks, one per step: the one you are on in ink, the ones behind you in --dim. */
+.ui-onboarding-step__mark {
+  display: block;
+  width: var(--space-4);
+  height: var(--space-half);
+  border-radius: var(--hairline);
+  background: var(--line-strong);
+}
+.ui-onboarding-step__mark[data-state='on'] {
+  background: var(--ink);
+}
+.ui-onboarding-step__mark[data-state='done'] {
+  background: var(--dim);
 }
 
 .ui-onboarding-step__sr {

@@ -99,7 +99,7 @@ describe('statusCopy (DESIGN 7.1 table)', () => {
     [{ kind: 'misconfigured' }, 'Google sign-in isn’t set up in this build.', 'Copy diagnostics'],
     [{ kind: 'offline', changesWaiting: 2 }, 'Offline · 2 changes waiting', undefined],
     [{ kind: 'error' }, 'Sync hit a problem.', 'View details'],
-    [{ kind: 'demo' }, 'Demo mail. Remove it in Settings.', undefined],
+    [{ kind: 'demo' }, 'Demo mail · Remove in Settings', undefined],
   ];
   for (const [status, text, action] of cases) {
     it(`${status.kind}${'reason' in status ? ` (${status.reason})` : ''}: "${text}"`, () => {

@@ -6,7 +6,7 @@
  *   visually hidden status "Loading demo mail." and a second click is ignored. Welcome's strip button has no busy
  *   look yet (REQUEST ui-foundation: a `demoBusy` flag on `OnboardingStep`), so the picture is Welcome itself.
  * - `demo-loaded`: the moment after the handoff, drawn as the mail window: the sidebar footer's status slot says
- *   "Demo mail. Remove it in Settings." (real `StatusSlot`) and the one toast says "Demo mail loaded. Remove it any
+ *   "Demo mail · Remove in Settings" (real `StatusSlot`) and the one toast says "Demo mail loaded. Remove it any
  *   time in Settings." (real `ToastStack`) over the pane. Home's list belongs to the Home lane and is left out.
  *
  * The gallery (`./preview/main.tsx`) imports `demoStates` with the same shape as `stepStates`.

@@ -277,7 +277,7 @@ describe('ui-onboard: visual states, light and dark, 640 × 600 and 640 × 520 (
     assert.match(markup(demoStates['demo-loading']), /Loading demo mail\./);
     assert.match(markup(demoStates['demo-loading']), /Try demo mail/);
     const loaded = markup(demoStates['demo-loaded']);
-    assert.match(loaded, /Demo mail\. Remove it in Settings\./);
+    assert.match(loaded, /Demo mail · Remove in Settings/);
     assert.match(loaded, /Demo mail loaded\. Remove it any time in Settings\./);
     const due = markup(reconnectStates['reconnect-due']);
     assert.match(due, /Gmail will ask you to reconnect tomorrow at /);

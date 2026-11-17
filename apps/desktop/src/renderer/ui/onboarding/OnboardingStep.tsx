@@ -107,9 +107,21 @@ export function OnboardingStep({
 
       <footer className="ui-onboarding-step__foot">
         {dashes ? (
-          <div className="ui-onboarding-step__steps">
-            {/* The words alone say where you are: dashes beside "Step 2 of 4" only said it twice. */}
-            <span className="ui-onboarding-step__where">{`Step ${dashes.step} of ${dashes.of}`}</span>
+          // The marks are the whole display (onboarding-welcome.html); the words go to the label, not the screen.
+          <div
+            className="ui-onboarding-step__steps"
+            role="img"
+            aria-label={`Step ${dashes.step} of ${dashes.of}`}
+          >
+            {Array.from({ length: dashes.of }, (_, at) => (
+              <span
+                key={at}
+                className="ui-onboarding-step__mark"
+                data-state={
+                  at + 1 === dashes.step ? 'on' : at + 1 < dashes.step ? 'done' : undefined
+                }
+              />
+            ))}
           </div>
         ) : null}
         <span className="ui-onboarding-step__note">

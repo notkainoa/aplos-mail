@@ -544,7 +544,7 @@ Every screen is built from these components in `src/renderer/ui/`. Screens never
 | `misconfigured` | "Google sign-in isn't set up in this build." | Copy diagnostics |
 | `offline` | "Offline · 2 changes waiting" | none |
 | `error` | "Sync hit a problem." | View details |
-| demo account | "Demo mail. Remove it in Settings." | none |
+| demo account | "Demo mail · Remove in Settings" | The line itself opens Settings → Accounts |
 
 - **The reconnect sheet** (roadmap N3). Google's Testing mode makes Gmail ask for sign-in every 7 days. Reconnect now, Reconnect and the Settings account row all open one small sheet (`--elev-dialog`) that opens Google in the browser with the address filled in (`login_hint`). It shows "Waiting for Google in your browser…" with Cancel, then closes with a "Reconnected" toast. Nothing resyncs, and local changes are kept.
 
