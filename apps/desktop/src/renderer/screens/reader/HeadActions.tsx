@@ -10,6 +10,7 @@ import { useRegisterCommands, type CommandHandlerTable } from '../../shell';
 import { Button, Icon, Tooltip } from '../../ui/buttons-keys';
 import type { MenuEntry, SuggestedAction } from '../../ui/props';
 import { Menu } from '../../ui/surfaces';
+import { UnsubscribeAction } from './UnsubscribeAction';
 import type { MovableLane } from '../home/homeModel';
 import {
   IMPORTANCE_LABEL,
@@ -304,6 +305,7 @@ export function HeadActions(props: HeadActionsProps) {
   return (
     <>
       <NotificationBell state={notificationOf(props.message)} />
+      <UnsubscribeAction row={props.row} />
       <ImportanceMenu row={props.row} controls={props.controls} />
       <MoreMenu {...props} />
     </>
