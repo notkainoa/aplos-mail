@@ -52,7 +52,7 @@ test('another sheet replaces the Add account sheet and cancels it', () => {
 
 test('the choose state has the address field, the Google row and Cancel, and no filled button', () => {
   const out = html({});
-  assert.match(out, /Add an account/);
+  assert.match(out, /Add account/);
   assert.match(out, /placeholder="name@example.com"/);
   assert.doesNotMatch(out, /Or choose a provider/, 'one provider row needs no label');
   assert.match(out, /Google/);
@@ -141,6 +141,6 @@ test('an unsupported address says so in words', () => {
 test('the switcher menu still ends with Add an account, and the empty copy is unchanged', () => {
   const entries = accountEntries([], noop);
   const last = entries.at(-1);
-  assert.equal(last?.kind === 'item' ? last.label : undefined, 'Add an account');
+  assert.equal(last?.kind === 'item' ? last.label : undefined, 'Add account');
   assert.equal(emptyText('later'), 'Nothing set aside for later');
 });

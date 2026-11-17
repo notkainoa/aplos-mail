@@ -116,7 +116,7 @@ export const SETTING_ROWS: readonly RowSpec[] = [
     'reset demo',
     'remove demo',
   ]),
-  row('accounts', 'addAccount', 'Add an account', ['more accounts', 'connect', 'google', 'gmail']),
+  row('accounts', 'addAccount', 'Add account', ['more accounts', 'connect', 'google', 'gmail']),
   row('accounts', 'accountAi', 'Use this account’s mail for AI', [
     'privacy',
     'exclude',

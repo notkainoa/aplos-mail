@@ -323,7 +323,7 @@ const ACCOUNT_ENTRIES: MenuEntry[] = [
   },
   { kind: 'item', id: 'fern', label: 'alex@fernworks.studio', swatch: 'hill', aside: 'Synced' },
   { kind: 'separator' },
-  { kind: 'item', id: 'add', label: 'Add an account', icon: 'plus' },
+  { kind: 'item', id: 'add', label: 'Add account', icon: 'plus' },
 ];
 
 describe('Menu', () => {

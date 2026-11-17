@@ -60,7 +60,7 @@ export function accountEntries(
     { kind: 'item', id: ALL_ID, label: ALL_LABEL, icon: 'users' },
     ...accounts.map((account, index) => accountEntry(account, index, onReconnect)),
     { kind: 'separator' },
-    { kind: 'item', id: ADD_ID, label: 'Add an account', icon: 'plus' },
+    { kind: 'item', id: ADD_ID, label: 'Add account', icon: 'plus' },
   ];
 }
 
