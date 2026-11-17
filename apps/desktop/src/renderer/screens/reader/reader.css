@@ -322,6 +322,7 @@
 }
 .aplos-recipients__button[aria-expanded='true'] {
   background-color: var(--hover);
+  color: var(--ink-2);
 }
 .aplos-recipients__button:focus-visible {
   outline: var(--focus-width) solid var(--accent);
