@@ -19,6 +19,15 @@
 .search-screen .ui-search-field__meta {
   padding-left: var(--space-3);
 }
+/* and the scope label ends on the rows' date column (their 12 px right inset) */
+.search-screen .ui-search-field__meta {
+  padding-right: var(--space-3);
+}
+
+/* The section label keeps the field header's 12 px inset: the icon, "Narrow with" and the label share one left edge here. */
+.search-screen .ui-section-header {
+  padding-left: var(--space-3);
+}
 
 /* No results: the line centres in what is left of the pane under the field (owner review 2026-11-05), the same
    calm centred line as every other empty state. The slot, its fill wrapper and the page become one flex column. */
@@ -63,13 +72,32 @@
 }
 
 /* Search rows show the subject as the row's first cell and the muted snippet (or summary) beside it in --dim, so the two cells
-   read as two things; each cell ellipsises only its own end. The subject keeps the list's weight (400 read, 500 unread)
-   and the snippet shares what the subject leaves: it starts near the first match, so the cell's ellipsis cuts the end. */
+   read as two things; each cell ellipsises only its own end. The subject keeps the list's weight (400 read, 500 unread).
+   Search is its own screen and its rows carry no due chip, so the chip slot Home and the places reserve collapses here and
+   the subject takes the room. What is left of the line is shared so the reason a row matched always stays on screen: the
+   snippet starts a few words before the match (search.model: 14 characters, so lead, match and the cell's "…" fit the floor) and keeps a floor of 10 rem, and the subject gives way
+   first. */
+.search-screen:not(:has(.ui-list-row__due)) .ui-list-row__line {
+  padding-left: 0;
+}
 .search-screen .ui-list-row__primary[data-has-secondary='true'] {
-  max-width: 58%;
+  flex: 0 1 auto;
+  min-width: 8rem;
+  max-width: none;
   color: var(--ink-2);
 }
 .search-screen .ui-list-row__secondary {
   flex: 1 1 0;
-  min-width: min(8rem, 30%);
+  min-width: 10rem;
+}
+
+/* The header's scope label ends on the rows' date column (the row's 12 px inset), and the operators read at the UI size. */
+.search-screen .ui-search-field__meta > .ui-compose-btn {
+  margin-right: 0;
+}
+.search-screen .ui-search-field__meta,
+.search-screen .ui-search-field__hint > .ui-compose-btn {
+  font: var(--type-ui);
+  font-variant-numeric: var(--num-small);
+  letter-spacing: var(--track-ui);
 }
