@@ -192,8 +192,8 @@ test('EventBlock: 30 minutes or less is one line, the title alone in a column an
   assert.doesNotMatch(tiny, /ui-event-block__time">[^<]*–/, 'no full range in a narrow column');
   assert.match(
     tiny,
-    /data-compact="true">· \d{1,2}:\d{2}</,
-    'the start time follows the title: "Weekly sync · 9:00"',
+    /data-compact="true">· \d{1,2}:\d{2} [AP]M</,
+    'the start time follows the title: "Weekly sync · 9:00 AM"',
   );
   const wideTiny = html(
     <EventBlock

@@ -584,6 +584,13 @@
   width: calc(100% / var(--lanes, 1) - var(--ev-gap) * 2);
 }
 
+/* Two overlapping tiles in a week's narrow column split 60/40, so the later one keeps about 60 px and the first reads in
+   about 90, instead of two 70 px tiles that both cut their titles. A day column has room for an even split. */
+.ui-calendar-grid[data-view='week'] .ui-calendar-grid__slot[data-pair='true'] {
+  left: calc(60% * var(--lane, 0) + var(--ev-gap));
+  width: calc(60% - 20% * var(--lane, 0) - var(--ev-gap) * 2);
+}
+
 /* Folded cluster: the kept lanes share the width left of the "+N" stack (--lanes counts only them). */
 .ui-calendar-grid__slot[data-beside='true'] {
   left: calc(
@@ -740,9 +747,9 @@
 .ui-event-block__time[data-compact='true'] {
   margin-left: calc(
     -1 * var(--space-1)
-  ); /* "Weekly sync · 9:00": the dot sits close to the title, not a gap away */
+  ); /* "Weekly sync · 9:00 AM": the dot sits close to the title, not a gap away */
 }
-@container (max-width: 7rem) {
+@container (max-width: 8.5rem) {
   .ui-event-block__time[data-compact='true'] {
     display: none;
   }

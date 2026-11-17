@@ -424,6 +424,7 @@ export function TimeGrid(props: CalendarGridProps) {
                         key={item.event.id}
                         className="ui-calendar-grid__slot"
                         data-beside={item.beside ? 'true' : undefined}
+                        data-pair={item.lanes === 2 && !item.beside ? 'true' : undefined}
                         data-dragging={dragging ? 'true' : undefined}
                         style={slotStyle(item.at, item.end, item.lane, item.lanes)}
                         onPointerDown={e => {

@@ -13,14 +13,14 @@ import {
 } from './eventText';
 import { ActiveStack, FirstSegment } from './segment';
 
-/** A short tile alone in a narrow week column still says when it starts, "Weekly sync · 9:00", if the tile has room. */
+/** A short tile alone in a narrow week column still says when it starts, "Weekly sync · 9:00 AM", if the tile has room. */
 function compactStartOf(
   event: CalendarEventData,
   density: ReturnType<typeof densityOf>,
   lanes: number,
 ): string | null {
   if (lanes !== 1 || (density !== 'one' && density !== 'tiny')) return null;
-  return timeOf(event.start).replace(/\s?[AP]M$/, '');
+  return timeOf(event.start);
 }
 
 function isTall(event: CalendarEventData, density: ReturnType<typeof densityOf>): boolean {
@@ -43,7 +43,11 @@ function blockWords(
   const showPlace = placement.wide && !!event.place && density === 'full';
   const detail = showPlace ? `${time} · ${event.place}` : time;
   // The name holds every visible word: when the place is drawn, it is in the label too.
-  const label = eventLabel(event, { place: showPlace, startOnly });
+  // A compact tile draws only the start time ("· 9:00 AM"), so its name says that, like a crowded tile's.
+  const label = eventLabel(event, {
+    place: showPlace,
+    startOnly: startOnly || compactStart !== null,
+  });
   return { showTime, compactStart, detail, label };
 }
 
