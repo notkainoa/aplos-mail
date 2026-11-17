@@ -66,35 +66,65 @@ const MAX_SOURCE_CHARS = 2_500;
 
 /**
  * Quoted mail can fake the source block's own structure: a body line that is or starts `[2]`,
- * `Account:` or a `---` rule would pass for a new source or a boundary. Any such line gets a visible
- * prefix so the structure keys can only come from the engine.
+ * `Account:` or a `---` rule would pass for a new source or a boundary. The check runs on a
+ * folded copy of each line (entities decoded, compatibility forms flattened, invisible
+ * characters dropped) so disguises like `&#xff3b;` or `Account∶` still count — but the fold
+ * never leaves `quoteText`: a caught line is sent with its original text behind `> `.
  */
-const FAKE_STRUCTURE = /^\s*(?:\[\s*\d|(?:account|from|subject|sources)\s*:|(?:[-_*=—–]\s*){3,}$)/i;
+const FAKE_STRUCTURE =
+  /^\s*(?:\p{Ps}\s*\d|(?:account|from|subject|sources)\s*[:∶：]|(?:[-_*=—–─━]\s*){3,})/iu;
+
+/** The entities a fake can hide a bracket or colon behind: `&#91;`, `&#x5b;`, `&lt;` and friends. */
+const HTML_ENTITY = /&(amp|lt|gt|quot|#(?:x[0-9a-f]+|\d+));/gi;
 
 /**
- * Body text folded into the shape `FAKE_STRUCTURE` is checked against: NFKC so full-width `［２］`
- * and `Ａｃｃｏｕｎｔ：` land on their ASCII twins, numeric entities (`&#91;`, `&#x5b;`) decoded,
- * zero-width characters dropped, and every line-break flavour (\r, \r\n, U+2028, U+2029, U+0085,
- * \v, \f) made a real \n so a fake cannot hide behind an exotic break.
+ * Characters a fake can hide inside 'Account' or between a bracket and its digit: every
+ * format character (zero-widths, bidi controls, the soft hyphen) plus U+034F and U+180E,
+ * named explicitly because their category moved between Unicode versions.
  */
-function normalizeMailText(text: string): string {
-  return text
-    .normalize('NFKC')
-    .replace(/&#(x?[0-9a-f]+);/gi, (raw, digits: string) => {
-      const hex = /^x/i.test(digits);
-      const n = Number.parseInt(hex ? digits.slice(1) : digits, hex ? 16 : 10);
-      return n >= 0 && n <= 0x10ffff ? String.fromCodePoint(n) : raw;
-    })
-    .replace(/[\u200b-\u200d\u2060\ufeff]/g, '')
-    .replace(/\r\n|[\r\u0085\u2028\u2029\v\f]/g, '\n');
+const INVISIBLE = /[\p{Cf}\u034f\u180e\u00ad]/gu;
+
+/** Every line-break flavour (\r, \r\n, U+2028, U+2029, U+0085, \v, \f) made a real \n. */
+const LINE_BREAKS = /\r\n|[\r\u0085\u2028\u2029\v\f]/g;
+
+function decodeEntities(text: string): string {
+  return text.replace(HTML_ENTITY, (raw, body: string) => {
+    const named: Record<string, string> = { amp: '&', lt: '<', gt: '>', quot: '"' };
+    const key = body.toLowerCase();
+    if (key in named) return named[key];
+    const hex = key.startsWith('#x');
+    const n = Number.parseInt(body.slice(hex ? 2 : 1), hex ? 16 : 10);
+    return n >= 0 && n <= 0x10ffff ? String.fromCodePoint(n) : raw;
+  });
 }
 
-/** Owner addresses inside body text (a quoted-reply header, a signature) get the neutral label too. */
+/**
+ * A line folded into the shape `FAKE_STRUCTURE` is checked against — for the CHECK only; the
+ * provider always sees the original. Decode, fold, drop invisibles, twice: one pass leaves
+ * `&amp;#91;` at `&#91;` and `&#xff3b;` at `［`; the second lands both on `[`.
+ */
+function foldForCheck(line: string): string {
+  let out = line;
+  for (let i = 0; i < 2; i++) out = decodeEntities(out).normalize('NFKC').replace(INVISIBLE, '');
+  return out;
+}
+
+/**
+ * Owner addresses inside body text (a quoted-reply header, a signature) get the neutral label
+ * too — including the `local+anything@domain` plus-tag form of an owner address. The boundary
+ * counts `.x`, `-x` or `+x` after the domain as an address continuation (a longer token is a
+ * different address and must not be mangled) but a sentence-ending `.`, `-` or `+` on its own
+ * as a boundary.
+ */
 function maskOwners(text: string, byAddress: Map<string, string>): string {
   let out = text;
+  const esc = (s: string) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
   for (const [addr, label] of byAddress) {
+    const at = addr.indexOf('@');
+    // An address without '@' is masked verbatim; otherwise its local+tag@domain forms too.
+    const rest = at < 0 ? '' : `(?:\\+[\\w.+-]*)?${esc(addr.slice(at))}`;
     const re = new RegExp(
-      `(?<![\\w.+-])${addr.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}(?![\\w.+-])`,
+      `(?<![\\w.+-])${esc(at < 0 ? addr : addr.slice(0, at))}${rest}(?![\\w]|\\.[\\w-]|[+-][\\w.+-])`,
       'gi',
     );
     out = out.replace(re, label);
@@ -103,15 +133,20 @@ function maskOwners(text: string, byAddress: Map<string, string>): string {
 }
 
 function quoteText(text: string, owners: Map<string, string>): string {
-  return maskOwners(normalizeMailText(text), owners)
+  return maskOwners(text.replace(LINE_BREAKS, '\n'), owners)
     .split('\n')
-    .map(l => (FAKE_STRUCTURE.test(l) ? `> ${l}` : l))
+    .map(l => (FAKE_STRUCTURE.test(foldForCheck(l)) ? `> ${l}` : l))
     .join('\n');
 }
 
-/** A display name becomes label text only cleaned: controls out, single spaces, capped at 60. */
+/**
+ * A display name becomes label text only cleaned: NFKC so a full-width 'Account ２' or a
+ * 'me＠x.com' lookalike hits the `@`/`Account N` checks below on its folded form, controls
+ * out, single spaces, capped at 60.
+ */
 function cleanLabel(name: string | null): string {
   return (name ?? '')
+    .normalize('NFKC')
     .replace(/\p{Cc}/gu, ' ')
     .replace(/\s+/g, ' ')
     .trim()
@@ -127,11 +162,17 @@ type AccountRow = {
 /**
  * Every account gets a label in a fixed order (the caller passes rows sorted by created_at, id), so
  * 'Account 2' means the same mailbox in every run and turn, including the history the model sees. A
- * display name is used only when usable: non-empty, not itself an address or an 'Account N' fallback,
- * and not shared — ignoring case and whitespace — with any other account, counted over ALL accounts
- * so a kept-out twin cannot smuggle in a second meaning for the name.
+ * display name is used only when usable: the account must be in `allowed` (a kept-out account never
+ * lends its display name — not even to address masking, where `Account N` stands in instead),
+ * non-empty, not itself an address or an 'Account N' fallback, and not shared — ignoring case and
+ * whitespace — with any other account. The collision count still covers ALL accounts, including
+ * kept-out ones: a name shared with a kept-out twin stays unusable, and the count itself reveals
+ * nothing but multiplicity.
  */
-function accountLabels(accounts: readonly AccountRow[]): {
+function accountLabels(
+  accounts: readonly AccountRow[],
+  allowed: readonly string[],
+): {
   labels: Map<string, string>;
   byAddress: Map<string, string>;
 } {
@@ -145,6 +186,7 @@ function accountLabels(accounts: readonly AccountRow[]): {
   accounts.forEach((a, i) => {
     const shown = cleanLabel(a.display_name);
     const label =
+      allowed.includes(a.id) &&
       shown &&
       !shown.includes('@') &&
       !/^account \d+$/i.test(shown) &&
@@ -484,9 +526,11 @@ async function askRun(
       }));
       let message =
         "No account allows AI to read its mail. Turn on 'Use this account's mail for AI' in Settings → AI.";
+      // Singular/plural follows the distinct KNOWN picked ids: a duplicated or long-gone id does
+      // not pluralize a refusal that is really about one account.
       if (othersAllow && picked && pickedKnown > 0)
         message =
-          picked.length > 1
+          pickedKnown > 1
             ? "These accounts aren't allowed to use AI. Turn on 'Use this account's mail for AI' in Settings → AI, or pick All accounts."
             : "This account isn't allowed to use AI. Turn on 'Use this account's mail for AI' in Settings → AI, or pick All accounts.";
       throw new ContractError({ type: 'forbidden', message, reasonCode: 'ai.accountExcluded' });
@@ -513,14 +557,14 @@ async function askRun(
     // 'Account 2' means the same mailbox in every run and turn, and a From: or quoted-reply header
     // that is the owner themself shows the label, not the address. The Account: line is still omitted
     // when every source in the run is from one account.
-    const { labels, byAddress } = accountLabels(accounts);
+    const { labels, byAddress } = accountLabels(accounts, allowed);
     const multi = new Set(sources.map(s => s.accountId)).size > 1;
     const quoted = sources
       .map(
         s =>
           `[${s.n}]${multi ? ` Account: ${labels.get(s.accountId)!}` : ''}\nFrom: ${
             (s.fromAddr && byAddress.get(s.fromAddr.toLowerCase())) ?? s.fromName ?? 'unknown'
-          }\nSubject: ${s.subject}\n\n${quoteText(s.text, byAddress)}`,
+          }\nSubject: ${maskOwners(s.subject, byAddress)}\n\n${quoteText(s.text, byAddress)}`,
       )
       .join('\n\n---\n\n');
     const history = args.conversationId
