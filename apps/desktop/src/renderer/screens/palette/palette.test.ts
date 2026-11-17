@@ -24,6 +24,7 @@ import {
   pushRecent,
   rank,
   setQuery,
+  suggestedEntries,
   togglePalette,
   type Candidate,
   type PaletteInput,
@@ -136,6 +137,23 @@ test('a recent command is boosted but never beats an exact match', () => {
 test('matchLabel is case- and accent-insensitive', () => {
   assert.equal(matchLabel('cafe', 'Café notes')?.tier, 3);
   assert.equal(matchLabel('move to label', 'Move to label…')?.tier, 4);
+});
+
+test('a suggestion that is Reply or Done shows once, not beside the plain command it names', () => {
+  const run = entry('mail.suggested', { label: 'Reply to Jordan Park', suggested: true });
+  const reply = entry('mail.reply', { label: 'Reply', suggested: true });
+  const done = entry('mail.done', { label: 'Done', suggested: true });
+  const later = entry('mail.later', { label: 'Later', suggested: true });
+  assert.deepEqual(
+    suggestedEntries([run, reply, done, later]).map(e => e.id),
+    ['mail.suggested', 'mail.done', 'mail.later'],
+  );
+  const markDone = { ...run, label: 'Mark done' };
+  assert.deepEqual(
+    suggestedEntries([markDone, reply, done, later]).map(e => e.id),
+    ['mail.suggested', 'mail.reply', 'mail.later'],
+  );
+  assert.equal(suggestedEntries([reply, done]).length, 2, 'with no named suggestion both stay');
 });
 
 test('first open shows Suggested then Go to, at most nine rows', () => {
