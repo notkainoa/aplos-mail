@@ -217,7 +217,9 @@ function useForwardCompose(
     if (failed) onClose?.();
   }, [failed, onClose]);
   if (decided.current || !latest) return decided.current;
-  if (body.status !== 'ready' && body.status !== 'failed') return null;
+  // A body that failed because the account is paused comes back by itself: wait for it rather than quote the snippet.
+  const paused = body.status === 'failed' && body.error?.type === 'paused';
+  if ((body.status !== 'ready' && body.status !== 'failed') || paused) return null;
   const seed = forwardSeed(latest, body.body?.text ?? latest.snippet);
   decided.current = freshCompose(seed.context, seed.fields);
   return decided.current;
@@ -232,13 +234,20 @@ export function ComposeScreen(props: ComposeScreenProps) {
   );
 }
 
+/** While a forward's message is still loading no composer is open to close: the × leaves the page. */
+function closeWhileLoading(onClose: (() => void) | undefined): CommandHandlerTable {
+  return { 'compose.close': { run: () => onClose?.() } };
+}
+
 function ForwardScreen(props: ComposeScreenProps & { readonly threadId: string }) {
   const initial = useForwardCompose(props.threadId, props.onClose);
+  useRegisterCommands(initial ? NO_COMMANDS : closeWhileLoading(props.onClose));
   return <ComposeBound initial={initial} props={props} />;
 }
 
 function ComposePage(props: ComposeScreenProps) {
-  return <ComposeBound initial={useInitialCompose(props)} props={props} />;
+  const initial = useInitialCompose(props);
+  return <ComposeBound initial={initial} props={props} />;
 }
 
 function ComposeBound({

@@ -27,7 +27,7 @@ export interface HeadControls {
   readonly done: () => void;
   /** Absent where the view has no reply-all of its own (one by one): the ⋯ menu then leaves the row out. */
   readonly replyAll?: () => void;
-  /** Absent where the view cannot open a forward (one by one): the ⋯ menu then leaves the rows out. */
+  /** Absent where the view has no forward of its own: the ⋯ menu then leaves the row out. */
   readonly forward?: () => void;
   /** Marks the thread read or unread (a read thread is marked unread and the reader returns to its list). */
   readonly toggleRead?: () => void;

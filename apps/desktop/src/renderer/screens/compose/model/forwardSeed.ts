@@ -9,7 +9,7 @@ import type { ComposeContext, ComposeFields } from './fields';
 /** "Fwd: Launch plan", never "Fwd: Fwd: Launch plan". */
 export function forwardSubject(subject: string): string {
   const trimmed = subject.trim();
-  return /^(fwd?):/i.test(trimmed) ? trimmed : `Fwd: ${trimmed}`;
+  return /^(fwd?):/i.test(trimmed) ? trimmed : `Fwd: ${trimmed}`.trimEnd();
 }
 
 function nameOf(address: Address): string {
