@@ -30,6 +30,11 @@ export interface OutboxDeps {
   drafts?: DraftSyncPort;
   /** Where `Draft/changed` goes. */
   frames?: { emit(frame: EngineFrame): void };
+  /**
+   * Runs after a send settles `sent`: the account's sync wakes on a `push` so Sent and the thread hold the new
+   * message within seconds instead of the next poll. Best effort; the row is already settled when it runs.
+   */
+  afterSend?(accountId: string): void;
 }
 
 /** What this outbox instance holds in memory; everything else is in the store. */
