@@ -59,6 +59,40 @@ export function joinForward(note: string, quote: string): string {
   return note === '' ? quote : `${note}\n\n${quote}`;
 }
 
+/** The quote as two parts: the standard header block (kept as it is, what is sent) and the original's own text. */
+export function splitQuote(quote: string): { readonly header: string; readonly text: string } {
+  const at = quote.indexOf('\n\n');
+  if (at < 0) return { header: quote, text: '' };
+  return { header: quote.slice(0, at), text: quote.slice(at + 2) };
+}
+
+/** The two parts of a quote back into one; `splitQuote` undoes it. */
+export function joinQuote(header: string, text: string): string {
+  return text === '' ? header : `${header}\n\n${text}`;
+}
+
+function headerValue(header: string, key: string): string {
+  const line = header.split('\n').find(l => l.startsWith(`${key}: `));
+  return line ? line.slice(key.length + 2) : '';
+}
+
+/** "Mon, Oct 26, 2026 at 8:30 AM PDT" as "Mon, Oct 26 at 8:30 AM": the year and the zone are noise in a caption. */
+function shortWhen(date: string): string {
+  const match = /^(\w{3}, \w{3} \d{1,2}), \d{4} at (\d{1,2}:\d{2} [AP]M)(?: [A-Z]{2,5})?$/.exec(
+    date,
+  );
+  return match ? `${match[1]} at ${match[2]}` : date;
+}
+
+/** The small line above a quoted original: "Forwarded from Jordan Park · Mon, Nov 16 at 8:29 PM". */
+export function forwardCaption(header: string): string {
+  const from = headerValue(header, 'From');
+  const name = from.replace(/\s*<[^<>]*>\s*$/, '').trim() || from;
+  const when = shortWhen(headerValue(header, 'Date'));
+  const parts = [name === '' ? 'Forwarded message' : `Forwarded from ${name}`, when];
+  return parts.filter(part => part !== '').join(' · ');
+}
+
 /** The header block above the quoted text; a line with nothing to say is left out. */
 export function forwardHeader(message: Message): string {
   const lines: readonly (readonly [string, string])[] = [

@@ -7,6 +7,7 @@ import { getNow, toIsoDateTime, useView, type Message } from '../../../data';
 import { ThreadMessage } from '../../../ui/reader';
 import { pendingSentStore, stillPending } from '../model/pendingSent';
 import { toLabelOf } from './SendStatus';
+import { SentMark, SentRecipients } from './SentHead';
 
 /** Messages of yours in the thread: the engine's own flag, which a provider sets on every message you sent. */
 export function mineIn(messages: readonly Pick<Message, 'fromMe'>[]): number {
@@ -30,6 +31,8 @@ export function PendingSent({ threadId }: { readonly threadId: string }) {
           id={`sent-${note.key}`}
           from="You"
           toLabel={toLabelOf(note.fields)}
+          leading={<SentMark />}
+          recipients={<SentRecipients fields={note.fields} />}
           date={toIsoDateTime(note.at)}
           cursor={false}
           body={<p className="aplos-compose-sent__body">{note.fields.body}</p>}

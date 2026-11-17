@@ -59,10 +59,22 @@
   min-height: var(--space-7);
 }
 .aplos-compose-quote {
-  display: grid;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
   padding-left: var(--space-4);
   box-shadow: inset var(--hairline) 0 0 var(--line-strong);
   color: var(--dim);
+}
+/* The standard header lines, as one small caption above the original's own text. */
+.aplos-compose-quote__caption {
+  margin: 0;
+  color: var(--dim);
+  font: var(--type-small);
+  letter-spacing: var(--track-small);
+}
+.aplos-compose-quote__text {
+  display: grid;
 }
 .aplos-compose-quote .aplos-compose-editor__mirror,
 .aplos-compose-quote .aplos-compose-editor__input {
@@ -74,8 +86,18 @@
   caret-color: var(--ink);
 }
 
+/* The sent card's "to" line: the recipients line's type and height, with no button (nothing to open). */
+.aplos-recipients[data-static='true'] {
+  height: var(--control-xs);
+  padding: 0 var(--space-2);
+  color: var(--dim);
+  font: var(--type-small);
+  letter-spacing: var(--track-small);
+}
+/* The body starts in the name's column, as a received message's does (`--plain-indent` is the mark's width and gap). */
 .aplos-compose-sent__body {
   margin: 0;
+  padding-left: var(--plain-indent, 0px);
   color: var(--ink);
   font: var(--type-read);
   letter-spacing: var(--track-read);

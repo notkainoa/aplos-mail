@@ -7,7 +7,13 @@
  * (`data-dictation="body"`, read by the shell's key listener); To and Subject type spaces.
  */
 import type { Ref } from 'react';
-import { joinForward, splitForward } from '../model/forwardSeed';
+import {
+  forwardCaption,
+  joinForward,
+  joinQuote,
+  splitForward,
+  splitQuote,
+} from '../model/forwardSeed';
 
 export interface BodyEditorProps {
   readonly value: string;
@@ -27,7 +33,10 @@ const BODY_PLACEHOLDER = 'Write something…';
 /** A forward's note area: the original is already below it. */
 const NOTE_PLACEHOLDER = 'Add a note…';
 
-/** The forwarded original: a quiet region in the reader's quote style, still editable like any text. */
+/**
+ * The forwarded original: a quiet region in the reader's quote style, still editable like any text. The standard header
+ * lines (what is sent) show as one small caption above the text, "Forwarded from Jordan Park · Mon, Nov 16 at 8:29 PM".
+ */
 function QuoteEditor({
   value,
   onChange,
@@ -35,20 +44,24 @@ function QuoteEditor({
   readonly value: string;
   readonly onChange: (value: string) => void;
 }) {
+  const { header, text } = splitQuote(value);
   return (
     <div className="aplos-compose-quote">
-      <div className="aplos-compose-editor__mirror" aria-hidden="true">
-        {value}
-        <span className="aplos-compose-editor__end"> </span>
+      <p className="aplos-compose-quote__caption">{forwardCaption(header)}</p>
+      <div className="aplos-compose-quote__text">
+        <div className="aplos-compose-editor__mirror" aria-hidden="true">
+          {text}
+          <span className="aplos-compose-editor__end"> </span>
+        </div>
+        <textarea
+          className="aplos-compose-editor__input"
+          aria-label="Forwarded message"
+          dir="auto"
+          spellCheck
+          value={text}
+          onChange={event => onChange(joinQuote(header, event.target.value))}
+        />
       </div>
-      <textarea
-        className="aplos-compose-editor__input"
-        aria-label="Forwarded message"
-        dir="auto"
-        spellCheck
-        value={value}
-        onChange={event => onChange(event.target.value)}
-      />
     </div>
   );
 }
