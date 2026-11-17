@@ -5,7 +5,15 @@ import { hexId } from '../../sync/connect-sessions';
 import { readBody } from '../../store/bodies';
 import { AiCallError } from '../host';
 import { backgroundGate } from './gate';
-import { followEligible, followUpDaysOf, lastSentHashOf, priorityOf, type JobRow } from './jobs';
+import {
+  featureOf,
+  followEligible,
+  followUpDaysOf,
+  lastSentHashOf,
+  limitStreaks,
+  priorityOf,
+  type JobRow,
+} from './jobs';
 import { callMessage, meteredChat } from './runtime';
 import { planJob, suggestReplyJob } from './plan-jobs';
 import './ai-writes';
@@ -39,10 +47,11 @@ export const RATE_LIMIT_MIN_MS = 60_000;
 /** The longest: a daily-quota Retry-After of hours is re-asked after this, not slept through. */
 export const RATE_LIMIT_MAX_MS = 15 * 60_000;
 
-/** How long a rate-limited feature waits: the provider's Retry-After, held between the floor and the ceiling. */
-export function rateLimitWait(retryAfterMs: number | undefined): number {
+/** How long a rate-limited feature waits: the provider's Retry-After times `streak + 1` (each consecutive
+ * pause waits longer), held between the floor and the ceiling. */
+export function rateLimitWait(retryAfterMs: number | undefined, streak = 0): number {
   const asked = Number.isFinite(retryAfterMs) ? (retryAfterMs as number) : 0;
-  return Math.min(RATE_LIMIT_MAX_MS, Math.max(RATE_LIMIT_MIN_MS, asked));
+  return Math.min(RATE_LIMIT_MAX_MS, Math.max(RATE_LIMIT_MIN_MS, asked) * (1 + streak));
 }
 /** Mail text sent to a provider is capped; a longer thread is truncated, never dropped mid-word. */
 const MAX_THREAD_CHARS = 12_000;
@@ -424,7 +433,9 @@ export async function executeJob(services: EngineServices, row: JobRow): Promise
         state: 'release',
         code: 'rateLimited',
         lastError: JSON.stringify({ reasonCode: 'ai.rateLimited' }),
-        nextAt: services.clock.now() + rateLimitWait(error.retryAfterMs),
+        nextAt:
+          services.clock.now() +
+          rateLimitWait(error.retryAfterMs, limitStreaks(services).get(featureOf(row.kind)) ?? 0),
       };
     const reason =
       error instanceof AiCallError

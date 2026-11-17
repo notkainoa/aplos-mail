@@ -27,12 +27,29 @@ export interface JobRow {
 }
 
 /** Which background feature a job kind asks the gate for (consent covers all three, R2B-4). */
-export const featureOf = (kind: string): 'summaries' | 'plans' | 'drafts' =>
+export type FeatureName = 'summaries' | 'plans' | 'drafts';
+export const featureOf = (kind: string): FeatureName =>
   kind === 'plan'
     ? 'plans'
     : kind === 'followup' || kind === 'suggestAction'
       ? 'drafts'
       : 'summaries';
+
+/** `featureOf`'s inverse for a bulk pause: the job kinds a feature's defer covers ('wake' is never paused). */
+export const KINDS_OF: Record<FeatureName, readonly string[]> = {
+  summaries: ['summary', 'classify'],
+  plans: ['plan'],
+  drafts: ['followup', 'suggestAction'],
+};
+
+const streaks = new WeakMap<object, Map<string, number>>();
+/** Consecutive provider pauses per feature on this store: the next rate limit waits `streak + 1` times the
+ * ask, and a pass that ran the feature without one resets it to the floor. */
+export const limitStreaks = (services: EngineServices): Map<string, number> => {
+  let m = streaks.get(services.store);
+  if (!m) streaks.set(services.store, (m = new Map()));
+  return m;
+};
 
 const JOB_KINDS = new Set(['summary', 'classify', 'plan', 'suggestAction', 'followup']);
 
