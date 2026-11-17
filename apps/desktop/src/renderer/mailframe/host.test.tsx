@@ -265,6 +265,19 @@ describe('frame document', () => {
     assert.doesNotMatch(html, /allow-same-origin/);
   });
 
+  test('a sealed frame starts on the app’s colour scheme, so a plain letter can report its dark surface', () => {
+    const url: FrameSource = {
+      kind: 'url',
+      key: 'u',
+      url: `aplos-mail://m/${TOKEN}/`,
+      token: TOKEN,
+      blocked: 0,
+    };
+    const html = renderToStaticMarkup(<MailFrameView source={url} onReady={noop} onKey={noop} />);
+    assert.match(html, /color-scheme:normal/);
+    assert.doesNotMatch(html, /color-scheme:light/);
+  });
+
   test('host styles sit in the aplos layer, declared first, with !important measuring rules', () => {
     const { srcdoc } = frameDocument('<style>p{color:red}</style><p>x</p>', 'block', undefined);
     const firstStyle = srcdoc.indexOf('<style>');

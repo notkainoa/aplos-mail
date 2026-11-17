@@ -107,6 +107,14 @@ test('the host draws a trusted-plain email on the card (no inset, no rounding, i
   });
 });
 
+test('before the sealed frame reports, its colour scheme is the app’s, never pinned light (real Chromium: an iframe element’s color-scheme is the frame’s prefers-color-scheme)', () => {
+  assert.equal(sheetOf(false, FRAME_PAPER.paper, false).colorScheme, 'normal');
+  assert.equal(sheetOf(true, FRAME_PAPER.paper, false).colorScheme, 'normal');
+  // Once reported, a rich letter is pinned light and a plain one follows its surface.
+  assert.equal(sheetOf(false, FRAME_PAPER.paper).colorScheme, 'light');
+  assert.equal(sheetOf(true, FRAME_DARK.surface).colorScheme, 'dark');
+});
+
 test('sheetKind marks a light sheet apart from an email that sits on the card, for the pinned bar tray', () => {
   assert.equal(sheetKind(false, '#ece8df'), 'paper');
   assert.equal(sheetKind(true, FRAME_DARK.surface), 'app');

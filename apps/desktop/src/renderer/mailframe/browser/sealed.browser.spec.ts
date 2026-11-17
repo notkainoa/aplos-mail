@@ -283,6 +283,11 @@ for (const [name, html, plain] of PLAIN_CASES)
 const DARK_CASES: [string, string, { plain: boolean; folded: boolean }][] = [
   ['a plain letter', '<p>Hello there</p>', { plain: true, folded: false }],
   [
+    'an inline reply as the composer writes it',
+    '<p>Sounds good, see you at noon.</p><p><br></p><p>Thanks,</p><p>Owner</p>\r\n',
+    { plain: true, folded: false },
+  ],
+  [
     'a reply with a quote bar',
     `<div dir="ltr">Thanks</div><div class="gmail_quote"><blockquote class="gmail_quote" style="margin:0;border-left:1px solid ${FRAME_DARK.rule};padding-left:0">old text</blockquote></div>`,
     { plain: true, folded: true },
