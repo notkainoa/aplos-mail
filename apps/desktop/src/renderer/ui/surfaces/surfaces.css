@@ -1301,7 +1301,10 @@ html[data-real-key] .ui-part-tipwrap:has(> :focus-visible) > .ui-part-tip {
 }
 /* Only two cards peek; deeper ones wait unseen until the deck fans out or the cards in front of them leave. */
 .ui-toast-stack:not([data-expanded])
-  .ui-toast-card:not([data-depth='0'], [data-depth='1'], [data-depth='2']) {
+  .ui-toast-card:not([data-depth='0'], [data-depth='1'], [data-depth='2']),
+.ui-toast-stack:not([data-expanded])
+  .ui-toast-card:not([data-depth='0'], [data-depth='1'], [data-depth='2'])
+  .ui-toast {
   opacity: 0;
   pointer-events: none;
 }

@@ -175,6 +175,11 @@ function useFan(count: number) {
     setHovered(false);
     setFocused(false);
   }, [count]);
+  // A toast closes while its own button has focus (Undo, Set a date): the browser blurs it, but React drops events that
+  // fire while it removes a node, so `onBlur` never runs. When the toasts change, fold the deck if focus is no longer in it.
+  useEffect(() => {
+    if (focused && !ref.current?.contains(document.activeElement)) setFocused(false);
+  }, [focused, count]);
   return {
     ref,
     open: count > 0 && (hovered || focused),
