@@ -55,9 +55,9 @@ Use `var(--token)` in CSS and the imports from `ui/generated/motion.ts` in TS. N
 |---|---|
 | `--shell` | The window background. The sidebar sits on it, transparent. |
 | `--canvas` | The one white pane: lists, the reader, compose, settings |
-| `--paper` | Cards on the pane: focus letter, inline reply, proposal card. Lighter than the pane in dark. |
+| `--paper` | Cards on the pane: focus letter, inline reply, proposal card. Lighter than the pane in dark (`#242528` over the pane's `#191a1c`, a step you can see). |
 | `--float` | Floating surfaces: dialogs, menus, popovers, tooltips, toasts, the palette, the selected segment. White like `--paper` by day; at night one clear step lighter than a card or the pane (council 2, round 2: they melted into the card under them). |
-| `--raised` | Quiet fills: the low-importance band, chips, attachments, the undo-send line |
+| `--raised` | Quiet fills: the low-importance band, chips, attachments, the undo-send line. In dark (`#2b2c30`) one step above `--paper`. |
 | `--sunken` | Keycaps, segmented tracks, fields |
 | `--ink` | Primary text, unread senders |
 | `--ink-2` | Read senders, subjects, unread summaries, secondary text |

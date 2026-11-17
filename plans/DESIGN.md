@@ -142,9 +142,9 @@ All tokens live in one source file, `apps/desktop/src/renderer/ui/tokens.json`, 
 |---|---|---|---|
 | `--shell` | `#f5f5f6` | `#121314` | The window background. The sidebar sits on it, transparent. |
 | `--canvas` | `#ffffff` | `#191a1c` | The pane that lists, the reader, compose and settings sit on |
-| `--paper` | `#ffffff` | `#1f2023` | Cards on the pane: the focus letter, the inline reply, proposal cards. In dark it is *lighter* than the pane (the Redakt lesson) [V: `redakt/inbox-desktop-dark.png`]. |
+| `--paper` | `#ffffff` | `#242528` | Cards on the pane: the focus letter, the inline reply, proposal cards. In dark it is *lighter* than the pane (the Redakt lesson) [V: `redakt/inbox-desktop-dark.png`], a perceptible step (`#242528` over `#191a1c`, council 2 round 3: the focus card, the reader card and the inline reply were melting into the pane). |
 | `--float` | `#ffffff` | ink 8 % over `--paper` (opaque) | Floating surfaces: dialogs, menus, popovers, tooltips, toasts, the palette, the selected segment. White by day; at night one clear step lighter than a card, so a floating surface never melts into what is under it (UI council 2, round 2). |
-| `--raised` | `#f6f6f7` | `#212225` | Quiet fills: the low-importance band, chips, attachments, the undo-send line |
+| `--raised` | `#f6f6f7` | `#2b2c30` | Quiet fills: the low-importance band, chips, attachments, the undo-send line. At night one step above `--paper`, so a chip on a card still shows. |
 | `--sunken` | `#efeff1` | `#0e0f10` | Keycaps, segmented tracks, fields |
 | `--ink` | `#1d1e21` | `#ececed` | Primary text, unread senders |
 | `--ink-2` | `#46484d` | `#c4c5c9` | Read senders, subjects, unread summaries, secondary text |
@@ -164,7 +164,7 @@ All tokens live in one source file, `apps/desktop/src/renderer/ui/tokens.json`, 
 | `--fill-ink` | `#ffffff` | `#08111a` | Text on hill, dusk and stamp fills |
 | `--hover` / `--press` | ink at 4 % / 8 % | ink at 5 % / 10 % | Hover and press fills |
 | `--puck` | ink at 6 % | ink at 8 % | Sidebar selection, the keyboard cursor, segmented thumbs |
-| `--today-tint` | accent at 4 % | accent at 10 % | The calendar's today column |
+| `--today-tint` | accent at 4 % | accent at 6 % | The calendar's today column |
 | `--scrim` | ink at 18 % | `#000` at 50 % | Behind dialogs and the palette |
 | `--shadow-ink` | `#1d1e21` | `#000000` | The base colour for every shadow |
 | `--sheen` | none | white at 4 % | The 1 px top sheen on dark panes and cards |
@@ -173,17 +173,17 @@ All tokens live in one source file, `apps/desktop/src/renderer/ui/tokens.json`, 
 
 | Pair | Light | Dark |
 |---|---|---|
-| ink on pane / shell / paper / raised / sunken | 16.67 / 15.30 / 16.67 / 15.43 / 14.51 | 14.75 / 15.76 / 13.80 / 13.47 / 16.25 |
-| ink-2 on pane / shell / raised | 9.15 / 8.40 / 8.47 | 10.10 / 10.79 / 9.22 |
-| dim on pane / shell / paper / raised / sunken | **5.76** / 5.28 / 5.76 / 5.33 / **5.01** | 6.41 / 6.85 / 6.00 / **5.86** / 7.07 |
+| ink on pane / shell / paper / raised / sunken | 16.67 / 15.30 / 16.67 / 15.43 / 14.51 | 14.75 / 15.76 / 12.98 / 11.81 / 16.25 |
+| ink-2 on pane / shell / raised | 9.15 / 8.40 / 8.47 | 10.10 / 10.79 / 8.09 |
+| dim on pane / shell / paper / raised / sunken | **5.76** / 5.28 / 5.76 / 5.33 / **5.01** | 6.41 / 6.85 / 5.64 / **5.14** / 7.07 |
 | dim on a bulk-picked row (accent-wash) | 5.07 | 5.19 |
 | dim on the keyboard cursor (puck over pane) / a sidebar count (puck over shell) | 5.12 / 4.71 | 5.23 / 5.70 |
-| dim on hover / on today-tint | 5.33 / 5.41 | 5.68 / 5.40 |
+| dim on hover / on today-tint | 5.33 / 5.41 | 5.68 / 5.80 |
 | faint on pane, non-text only (3:1 needed) | 3.12 | 3.61 |
 | accent text on pane / shell | 7.84 / 7.19 | 7.61 / 8.13 |
 | accent-ink on the accent fill | **7.84** (today 3.73) | 8.30 |
 | fill-ink on hill / dusk / stamp | 6.13 / 7.31 / 5.52 | 8.21 / 7.88 / 7.47 |
-| fill-ink on a 70 % fill over paper (dark swipe underlay) | n/a (light fills are solid) | hill 4.85, dusk 4.70, accent 4.91 |
+| fill-ink on a 70 % fill over paper (dark swipe underlay) | n/a (light fills are solid) | hill 4.95, dusk 4.80, accent 5.01 |
 | stamp-ink on stamp-tint | 6.63 | 6.48 |
 | control-edge on pane / paper (3:1 needed) | 3.07 / 3.07 | 3.41 / 3.19 |
 | line-strong field ring at rest (decision 20) | 1.33 | 1.38 |

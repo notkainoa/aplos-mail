@@ -128,9 +128,9 @@
       "min": 4.5,
       "usage": "Text on cards, dialogs, menus and toasts",
       "fgHex": "#ececed",
-      "bgHex": "#1f2023",
+      "bgHex": "#242528",
       "fgRgb": [0.92549, 0.92549, 0.929412],
-      "bgRgb": [0.121569, 0.12549, 0.137255]
+      "bgRgb": [0.141176, 0.145098, 0.156863]
     },
     {
       "id": "ink-on-paper",
@@ -154,9 +154,9 @@
       "min": 4.5,
       "usage": "Text on cards, dialogs, menus and toasts",
       "fgHex": "#ececed",
-      "bgHex": "#1f2023",
+      "bgHex": "#242528",
       "fgRgb": [0.92549, 0.92549, 0.929412],
-      "bgRgb": [0.121569, 0.12549, 0.137255]
+      "bgRgb": [0.141176, 0.145098, 0.156863]
     },
     {
       "id": "ink-on-float",
@@ -180,9 +180,9 @@
       "min": 4.5,
       "usage": "Text on menus, popovers, tooltips, toasts, dialogs and the palette",
       "fgHex": "#ececed",
-      "bgHex": "#2f3033",
+      "bgHex": "#343538",
       "fgRgb": [0.92549, 0.92549, 0.929412],
-      "bgRgb": [0.185882, 0.18949, 0.200627]
+      "bgRgb": [0.203922, 0.207529, 0.218667]
     },
     {
       "id": "ink-on-float",
@@ -206,9 +206,9 @@
       "min": 4.5,
       "usage": "Text on menus, popovers, tooltips, toasts, dialogs and the palette",
       "fgHex": "#ececed",
-      "bgHex": "#2f3033",
+      "bgHex": "#343538",
       "fgRgb": [0.92549, 0.92549, 0.929412],
-      "bgRgb": [0.185882, 0.18949, 0.200627]
+      "bgRgb": [0.203922, 0.207529, 0.218667]
     },
     {
       "id": "ink-2-on-float",
@@ -232,9 +232,9 @@
       "min": 4.5,
       "usage": "Secondary text on menus, popovers, dialogs and the palette",
       "fgHex": "#c4c5c9",
-      "bgHex": "#2f3033",
+      "bgHex": "#343538",
       "fgRgb": [0.768627, 0.772549, 0.788235],
-      "bgRgb": [0.185882, 0.18949, 0.200627]
+      "bgRgb": [0.203922, 0.207529, 0.218667]
     },
     {
       "id": "ink-2-on-float",
@@ -258,9 +258,9 @@
       "min": 4.5,
       "usage": "Secondary text on menus, popovers, dialogs and the palette",
       "fgHex": "#c4c5c9",
-      "bgHex": "#2f3033",
+      "bgHex": "#343538",
       "fgRgb": [0.768627, 0.772549, 0.788235],
-      "bgRgb": [0.185882, 0.18949, 0.200627]
+      "bgRgb": [0.203922, 0.207529, 0.218667]
     },
     {
       "id": "dim-on-float",
@@ -284,9 +284,9 @@
       "min": 4.5,
       "usage": "Metadata on menus, popovers, dialogs and the palette",
       "fgHex": "#9a9da4",
-      "bgHex": "#2f3033",
+      "bgHex": "#343538",
       "fgRgb": [0.603922, 0.615686, 0.643137],
-      "bgRgb": [0.185882, 0.18949, 0.200627]
+      "bgRgb": [0.203922, 0.207529, 0.218667]
     },
     {
       "id": "dim-on-float",
@@ -310,9 +310,9 @@
       "min": 4.5,
       "usage": "Metadata on menus, popovers, dialogs and the palette",
       "fgHex": "#9a9da4",
-      "bgHex": "#2f3033",
+      "bgHex": "#343538",
       "fgRgb": [0.603922, 0.615686, 0.643137],
-      "bgRgb": [0.185882, 0.18949, 0.200627]
+      "bgRgb": [0.203922, 0.207529, 0.218667]
     },
     {
       "id": "control-edge-on-float",
@@ -335,10 +335,10 @@
       "kind": "nontext",
       "min": 3,
       "usage": "Checkbox, radio and switch-off edges on dialogs and popovers",
-      "fgHex": "#7b7b7d",
-      "bgHex": "#2f3033",
-      "fgRgb": [0.481725, 0.48389, 0.492141],
-      "bgRgb": [0.185882, 0.18949, 0.200627]
+      "fgHex": "#7e7e80",
+      "bgHex": "#343538",
+      "fgRgb": [0.492549, 0.494714, 0.502965],
+      "bgRgb": [0.203922, 0.207529, 0.218667]
     },
     {
       "id": "control-edge-on-float",
@@ -361,10 +361,10 @@
       "kind": "nontext",
       "min": 3,
       "usage": "Checkbox, radio and switch-off edges on dialogs and popovers",
-      "fgHex": "#7b7b7d",
-      "bgHex": "#2f3033",
-      "fgRgb": [0.481725, 0.48389, 0.492141],
-      "bgRgb": [0.185882, 0.18949, 0.200627]
+      "fgHex": "#7e7e80",
+      "bgHex": "#343538",
+      "fgRgb": [0.492549, 0.494714, 0.502965],
+      "bgRgb": [0.203922, 0.207529, 0.218667]
     },
     {
       "id": "focus-ring-on-float",
@@ -388,9 +388,9 @@
       "min": 3,
       "usage": "Focus ring inside menus, popovers and dialogs",
       "fgHex": "#88aee0",
-      "bgHex": "#2f3033",
+      "bgHex": "#343538",
       "fgRgb": [0.533333, 0.682353, 0.878431],
-      "bgRgb": [0.185882, 0.18949, 0.200627]
+      "bgRgb": [0.203922, 0.207529, 0.218667]
     },
     {
       "id": "focus-ring-on-float",
@@ -414,9 +414,9 @@
       "min": 3,
       "usage": "Focus ring inside menus, popovers and dialogs",
       "fgHex": "#88aee0",
-      "bgHex": "#2f3033",
+      "bgHex": "#343538",
       "fgRgb": [0.533333, 0.682353, 0.878431],
-      "bgRgb": [0.185882, 0.18949, 0.200627]
+      "bgRgb": [0.203922, 0.207529, 0.218667]
     },
     {
       "id": "ink-on-raised",
@@ -440,9 +440,9 @@
       "min": 4.5,
       "usage": "Text on quiet fills: the low-importance band, chips, attachments",
       "fgHex": "#ececed",
-      "bgHex": "#212225",
+      "bgHex": "#2b2c30",
       "fgRgb": [0.92549, 0.92549, 0.929412],
-      "bgRgb": [0.129412, 0.133333, 0.145098]
+      "bgRgb": [0.168627, 0.172549, 0.188235]
     },
     {
       "id": "ink-on-raised",
@@ -466,9 +466,9 @@
       "min": 4.5,
       "usage": "Text on quiet fills: the low-importance band, chips, attachments",
       "fgHex": "#ececed",
-      "bgHex": "#212225",
+      "bgHex": "#2b2c30",
       "fgRgb": [0.92549, 0.92549, 0.929412],
-      "bgRgb": [0.129412, 0.133333, 0.145098]
+      "bgRgb": [0.168627, 0.172549, 0.188235]
     },
     {
       "id": "ink-on-sunken",
@@ -648,9 +648,9 @@
       "min": 4.5,
       "usage": "Secondary text on quiet fills",
       "fgHex": "#c4c5c9",
-      "bgHex": "#212225",
+      "bgHex": "#2b2c30",
       "fgRgb": [0.768627, 0.772549, 0.788235],
-      "bgRgb": [0.129412, 0.133333, 0.145098]
+      "bgRgb": [0.168627, 0.172549, 0.188235]
     },
     {
       "id": "ink-2-on-raised",
@@ -674,9 +674,9 @@
       "min": 4.5,
       "usage": "Secondary text on quiet fills",
       "fgHex": "#c4c5c9",
-      "bgHex": "#212225",
+      "bgHex": "#2b2c30",
       "fgRgb": [0.768627, 0.772549, 0.788235],
-      "bgRgb": [0.129412, 0.133333, 0.145098]
+      "bgRgb": [0.168627, 0.172549, 0.188235]
     },
     {
       "id": "dim-on-canvas",
@@ -804,9 +804,9 @@
       "min": 4.5,
       "usage": "Metadata on cards and menus",
       "fgHex": "#9a9da4",
-      "bgHex": "#1f2023",
+      "bgHex": "#242528",
       "fgRgb": [0.603922, 0.615686, 0.643137],
-      "bgRgb": [0.121569, 0.12549, 0.137255]
+      "bgRgb": [0.141176, 0.145098, 0.156863]
     },
     {
       "id": "dim-on-paper",
@@ -830,9 +830,9 @@
       "min": 4.5,
       "usage": "Metadata on cards and menus",
       "fgHex": "#9a9da4",
-      "bgHex": "#1f2023",
+      "bgHex": "#242528",
       "fgRgb": [0.603922, 0.615686, 0.643137],
-      "bgRgb": [0.121569, 0.12549, 0.137255]
+      "bgRgb": [0.141176, 0.145098, 0.156863]
     },
     {
       "id": "dim-on-raised",
@@ -856,9 +856,9 @@
       "min": 4.5,
       "usage": "Metadata on quiet fills",
       "fgHex": "#9a9da4",
-      "bgHex": "#212225",
+      "bgHex": "#2b2c30",
       "fgRgb": [0.603922, 0.615686, 0.643137],
-      "bgRgb": [0.129412, 0.133333, 0.145098]
+      "bgRgb": [0.168627, 0.172549, 0.188235]
     },
     {
       "id": "dim-on-raised",
@@ -882,9 +882,9 @@
       "min": 4.5,
       "usage": "Metadata on quiet fills",
       "fgHex": "#9a9da4",
-      "bgHex": "#212225",
+      "bgHex": "#2b2c30",
       "fgRgb": [0.603922, 0.615686, 0.643137],
-      "bgRgb": [0.129412, 0.133333, 0.145098]
+      "bgRgb": [0.168627, 0.172549, 0.188235]
     },
     {
       "id": "dim-on-sunken",
@@ -1186,9 +1186,9 @@
       "min": 4.5,
       "usage": "Text in the calendar's today column",
       "fgHex": "#9a9da4",
-      "bgHex": "#242930",
+      "bgHex": "#202328",
       "fgRgb": [0.603922, 0.615686, 0.643137],
-      "bgRgb": [0.141569, 0.16, 0.186667]
+      "bgRgb": [0.124157, 0.136784, 0.155922]
     },
     {
       "id": "dim-on-today-tint-over-canvas",
@@ -1214,9 +1214,9 @@
       "min": 4.5,
       "usage": "Text in the calendar's today column",
       "fgHex": "#9a9da4",
-      "bgHex": "#242930",
+      "bgHex": "#202328",
       "fgRgb": [0.603922, 0.615686, 0.643137],
-      "bgRgb": [0.141569, 0.16, 0.186667]
+      "bgRgb": [0.124157, 0.136784, 0.155922]
     },
     {
       "id": "ink-on-selection",
@@ -1644,9 +1644,9 @@
       "min": 4.5,
       "usage": "Dark swipe underlay for Done, capped at a 70 % mix over paper (light fills are solid)",
       "fgHex": "#08111a",
-      "bgHex": "#678a55",
+      "bgHex": "#698c56",
       "fgRgb": [0.031373, 0.066667, 0.101961],
-      "bgRgb": [0.404314, 0.542745, 0.332157]
+      "bgRgb": [0.410196, 0.548627, 0.338039]
     },
     {
       "id": "fill-ink-on-hill-70-over-paper",
@@ -1658,9 +1658,9 @@
       "min": 4.5,
       "usage": "Dark swipe underlay for Done, capped at a 70 % mix over paper (light fills are solid)",
       "fgHex": "#08111a",
-      "bgHex": "#678a55",
+      "bgHex": "#698c56",
       "fgRgb": [0.031373, 0.066667, 0.101961],
-      "bgRgb": [0.404314, 0.542745, 0.332157]
+      "bgRgb": [0.410196, 0.548627, 0.338039]
     },
     {
       "id": "fill-ink-on-dusk-70-over-paper",
@@ -1672,9 +1672,9 @@
       "min": 4.5,
       "usage": "Dark swipe underlay for Later, 70 % over paper",
       "fgHex": "#08111a",
-      "bgHex": "#6d8099",
+      "bgHex": "#6f819b",
       "fgRgb": [0.031373, 0.066667, 0.101961],
-      "bgRgb": [0.42902, 0.501569, 0.601176]
+      "bgRgb": [0.434902, 0.507451, 0.607059]
     },
     {
       "id": "fill-ink-on-dusk-70-over-paper",
@@ -1686,9 +1686,9 @@
       "min": 4.5,
       "usage": "Dark swipe underlay for Later, 70 % over paper",
       "fgHex": "#08111a",
-      "bgHex": "#6d8099",
+      "bgHex": "#6f819b",
       "fgRgb": [0.031373, 0.066667, 0.101961],
-      "bgRgb": [0.42902, 0.501569, 0.601176]
+      "bgRgb": [0.434902, 0.507451, 0.607059]
     },
     {
       "id": "fill-ink-on-accent-70-over-paper",
@@ -1700,9 +1700,9 @@
       "min": 4.5,
       "usage": "Dark swipe underlay in the accent, 70 % over paper",
       "fgHex": "#08111a",
-      "bgHex": "#6983a7",
+      "bgHex": "#6a85a9",
       "fgRgb": [0.031373, 0.066667, 0.101961],
-      "bgRgb": [0.409804, 0.515294, 0.656078]
+      "bgRgb": [0.415686, 0.521176, 0.661961]
     },
     {
       "id": "fill-ink-on-accent-70-over-paper",
@@ -1714,9 +1714,9 @@
       "min": 4.5,
       "usage": "Dark swipe underlay in the accent, 70 % over paper",
       "fgHex": "#08111a",
-      "bgHex": "#6983a7",
+      "bgHex": "#6a85a9",
       "fgRgb": [0.031373, 0.066667, 0.101961],
-      "bgRgb": [0.409804, 0.515294, 0.656078]
+      "bgRgb": [0.415686, 0.521176, 0.661961]
     },
     {
       "id": "stamp-ink-on-stamp-tint-over-canvas",
@@ -2791,10 +2791,10 @@
       "kind": "nontext",
       "min": 3,
       "usage": "Checkbox, radio and switch-off edges on cards and dialogs",
-      "fgHex": "#717274",
-      "bgHex": "#1f2023",
-      "fgRgb": [0.443137, 0.44549, 0.454118],
-      "bgRgb": [0.121569, 0.12549, 0.137255]
+      "fgHex": "#747577",
+      "bgHex": "#242528",
+      "fgRgb": [0.454902, 0.457255, 0.465882],
+      "bgRgb": [0.141176, 0.145098, 0.156863]
     },
     {
       "id": "control-edge-on-paper",
@@ -2817,10 +2817,10 @@
       "kind": "nontext",
       "min": 3,
       "usage": "Checkbox, radio and switch-off edges on cards and dialogs",
-      "fgHex": "#717274",
-      "bgHex": "#1f2023",
-      "fgRgb": [0.443137, 0.44549, 0.454118],
-      "bgRgb": [0.121569, 0.12549, 0.137255]
+      "fgHex": "#747577",
+      "bgHex": "#242528",
+      "fgRgb": [0.454902, 0.457255, 0.465882],
+      "bgRgb": [0.141176, 0.145098, 0.156863]
     },
     {
       "id": "focus-ring-on-canvas",
@@ -2948,9 +2948,9 @@
       "min": 3,
       "usage": "Focus ring inside cards, menus and dialogs",
       "fgHex": "#88aee0",
-      "bgHex": "#1f2023",
+      "bgHex": "#242528",
       "fgRgb": [0.533333, 0.682353, 0.878431],
-      "bgRgb": [0.121569, 0.12549, 0.137255]
+      "bgRgb": [0.141176, 0.145098, 0.156863]
     },
     {
       "id": "focus-ring-on-paper",
@@ -2974,9 +2974,9 @@
       "min": 3,
       "usage": "Focus ring inside cards, menus and dialogs",
       "fgHex": "#88aee0",
-      "bgHex": "#1f2023",
+      "bgHex": "#242528",
       "fgRgb": [0.533333, 0.682353, 0.878431],
-      "bgRgb": [0.121569, 0.12549, 0.137255]
+      "bgRgb": [0.141176, 0.145098, 0.156863]
     },
     {
       "id": "hill-on-paper",
@@ -3000,9 +3000,9 @@
       "min": 3,
       "usage": "The Done commit edge on the focus letter or reader",
       "fgHex": "#86b86a",
-      "bgHex": "#1f2023",
+      "bgHex": "#242528",
       "fgRgb": [0.52549, 0.721569, 0.415686],
-      "bgRgb": [0.121569, 0.12549, 0.137255]
+      "bgRgb": [0.141176, 0.145098, 0.156863]
     },
     {
       "id": "hill-on-paper",
@@ -3026,9 +3026,9 @@
       "min": 3,
       "usage": "The Done commit edge on the focus letter or reader",
       "fgHex": "#86b86a",
-      "bgHex": "#1f2023",
+      "bgHex": "#242528",
       "fgRgb": [0.52549, 0.721569, 0.415686],
-      "bgRgb": [0.121569, 0.12549, 0.137255]
+      "bgRgb": [0.141176, 0.145098, 0.156863]
     },
     {
       "id": "dusk-on-paper",
@@ -3052,9 +3052,9 @@
       "min": 3,
       "usage": "The Later commit edge; paused sync segments",
       "fgHex": "#8fa9cc",
-      "bgHex": "#1f2023",
+      "bgHex": "#242528",
       "fgRgb": [0.560784, 0.662745, 0.8],
-      "bgRgb": [0.121569, 0.12549, 0.137255]
+      "bgRgb": [0.141176, 0.145098, 0.156863]
     },
     {
       "id": "dusk-on-paper",
@@ -3078,9 +3078,9 @@
       "min": 3,
       "usage": "The Later commit edge; paused sync segments",
       "fgHex": "#8fa9cc",
-      "bgHex": "#1f2023",
+      "bgHex": "#242528",
       "fgRgb": [0.560784, 0.662745, 0.8],
-      "bgRgb": [0.121569, 0.12549, 0.137255]
+      "bgRgb": [0.141176, 0.145098, 0.156863]
     },
     {
       "id": "stamp-on-canvas",
