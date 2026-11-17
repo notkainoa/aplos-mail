@@ -726,7 +726,9 @@
   max-width: 60%;
 }
 .ui-list-row__secondary {
+  /* Never a lone dot: at the narrowest window the subject gives way first, so the summary keeps room for a few words. */
   flex: 1 1 0;
+  min-width: 4rem;
   color: var(--dim);
 }
 .ui-list-row__secondary::before {
