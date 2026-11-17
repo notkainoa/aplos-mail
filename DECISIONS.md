@@ -1,5 +1,11 @@
 # Decisions
 
+## 2026-11-17 — A paused or spent queue settles "Summarizing…" cards; the provider-call bound splits by lane
+
+- **A spent day cap is an off state for the card.** A `dailyLimit` release kept the job queued for tomorrow while its `pending` placeholder held "Summarizing…" for the rest of the day — `missingKey`/`unavailable`/`noProvider` already settled `failed`/`stale` on the same "nothing is coming now" logic, and `dailyLimit` now joins them. `gatePaused` stays a held placeholder: a paused gate lifts in minutes.
+- **The queue's own pauses force-close every placeholder.** `closePendingSummaries` runs before the daily-cap pause and the setup-session pause with `force`: a held job re-queues itself through the usual paths (catch-up skips only `ready`, a settled row re-pends), so collapsing the card costs nothing and hanging it costs a day. The same sweep now also closes orphan rows — `pending` with no `queued`/`running`/`failed` job under the `summary:acct:remote:hash` singleton key (`classify` shares the key, so one check covers both kinds; `failed` is live — a retryable job still owns its card).
+- **120 s bounds the background lane only.** Interactive calls (Ask, drafts, plans, polish) and every local provider (`ollama`/`lmstudio`/`custom`, in any lane) get `LONG_CHAT_TIMEOUT_MS` = 10 min: an interactive call has the caller's own signal and a watching owner, and a slow local model was being cut before it could ever finish. The bound still exists everywhere — a stalled stream lets go instead of wedging the queue — it is a hang-guard, not a deadline.
+
 ## 2026-10-29 — Timer loop: the 1 s backoff applies only to sources that do not move `next()`
 
 - **The F3 contract, not an every-fire cap.** `DeadlineSource.fire`'s contract is "must move `next()` past `now`, or the loop backs off 1 s and logs". `clock/loop.ts` originally also clamped every re-fire to `lastFire + 1 s`, which throttled a correct source that does move its deadline (eng-views' 50 ms ticker registered as `views`) to one fire a second. The per-fire clamp is removed; a stuck source still backs off through `backoffUntil`, and sustained spinning is bounded by the wake budget (`maxWakesPerHour`), which spaces out a source's fires once it exceeds it — the two contract-sanctioned rate limits.
