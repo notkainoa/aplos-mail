@@ -2032,3 +2032,103 @@ img {
     grid-template-columns: 36px minmax(0, 1fr);
   }
 }
+
+/* Round 6 */
+
+.hero-copy {
+  max-width: 880px;
+  padding-inline: 0;
+}
+
+.pane-keys .pane-copy {
+  text-align: left;
+}
+
+.pane-keys .pane-copy h2,
+.pane-keys .pane-copy p {
+  margin-inline: 0;
+}
+
+.pane-keys .pane-aside {
+  max-width: none;
+  margin-inline: 0;
+}
+
+.key-item {
+  column-gap: 14px;
+}
+
+.key-item .cap {
+  padding-inline: 8px;
+}
+
+@media (min-width: 901px) {
+  .pane-keys .key-grid {
+    column-gap: 24px;
+  }
+
+  .pane-keys .key-item {
+    grid-template-columns: 64px minmax(0, 1fr);
+  }
+}
+
+@media (max-width: 640px) {
+  .nav-cta {
+    display: none;
+  }
+
+  .key-grid {
+    column-gap: 12px;
+  }
+
+  .key-item,
+  .key-item:nth-child(even) {
+    grid-template-columns: 50px minmax(0, 1fr);
+    column-gap: 10px;
+    font-size: 14px;
+  }
+
+  .key-item:first-child .cap {
+    min-width: 0;
+    padding-inline: 5px;
+    font-size: 12.5px;
+  }
+
+  .close .close-spec {
+    margin-bottom: 28px;
+  }
+
+  .footer-links {
+    gap: 16px;
+  }
+
+  .footer .text-link {
+    font-size: 16px;
+  }
+
+  .close-spec {
+    margin-top: 0;
+    margin-bottom: 24px;
+  }
+
+  .close p {
+    margin-bottom: 12px;
+  }
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --canvas: #202125;
+    --line: color-mix(in srgb, var(--ink) 19%, transparent);
+    --line-strong: color-mix(in srgb, var(--ink) 34%, transparent);
+  }
+
+  .hero-note,
+  .window-note,
+  .window figcaption,
+  .aside-note,
+  .ask-source,
+  .ask-source-from {
+    color: #d4d6db;
+  }
+}

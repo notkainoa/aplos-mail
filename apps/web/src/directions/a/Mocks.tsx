@@ -181,7 +181,7 @@ const keys: Key[] = [
   { cap: 'Z', does: 'Undo' },
   { cap: 'B', does: 'Bookmark' },
   { cap: 'C', does: 'Compose' },
-  { cap: 'A', does: 'Ask, hold to dictate' },
+  { cap: 'A', does: 'Ask or dictate' },
   { cap: '?', does: 'All shortcuts' },
 ];
 

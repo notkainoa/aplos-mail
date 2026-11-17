@@ -55,8 +55,8 @@
     --band-ink: #f7fbfb;
     --band-sub: #f7fbfb;
     --band-line: rgb(225 238 237 / 14%);
-    --band-btn: #e1eeed;
-    --band-btn-hover: #f7fbfb;
+    --band-btn: #f7fbfb;
+    --band-btn-hover: #e1eeed;
     --band-btn-ink: #07463a;
 
     --page: #121314;
@@ -373,10 +373,24 @@ h2 {
   padding-top: var(--section);
 }
 
-.b-primary {
-  margin-top: var(--section);
-  padding-bottom: var(--section);
+.b-bridge {
+  position: relative;
+  isolation: isolate;
+}
+
+.b-bridge::before {
+  content: '';
+  position: absolute;
+  z-index: -1;
+  top: var(--overlap);
+  right: 0;
+  bottom: 0;
+  left: 0;
   background: var(--shell);
+}
+
+.b-primary {
+  padding-bottom: var(--section);
 }
 
 .b-primary .b-mock,
@@ -402,6 +416,8 @@ h2 {
 }
 
 .b-feature.is-compact h2 {
+  font-weight: 520;
+  letter-spacing: -0.008em;
   font-size: clamp(28px, 2.8vw, 36px);
 }
 
@@ -549,7 +565,7 @@ h2 {
   display: inline-flex;
   align-items: center;
   gap: 8px;
-  color: var(--ink-2);
+  color: var(--ink);
 }
 
 .b-kbd {
@@ -910,7 +926,6 @@ h2 {
 
 .b-providers {
   display: grid;
-  border-bottom: 1px solid var(--line-strong);
   color: var(--ink);
   font-size: 18px;
   font-weight: 500;
@@ -1002,7 +1017,8 @@ h2 {
 }
 
 .b-close-body .b-close-note {
-  margin-top: 16px;
+  margin-top: 12px;
+  font-size: 14px;
 }
 
 .b-footer {
@@ -1012,7 +1028,7 @@ h2 {
   gap: 24px;
   padding-top: 40px;
   padding-bottom: 48px;
-  font-size: 15px;
+  font-size: 16px;
   color: var(--band-ink);
 }
 
@@ -1110,13 +1126,13 @@ h2 {
   }
 
   .b-hero-body {
-    padding-top: 44px;
+    padding-top: 28px;
     padding-bottom: 56px;
   }
 
   .b-hero-logo .logo {
-    width: 72px;
-    height: 72px;
+    width: 64px;
+    height: 64px;
   }
 
   .b-hero h1 {
@@ -1179,7 +1195,22 @@ h2 {
   }
 
   .b-focus {
-    padding: 18px;
+    padding: 18px 16px;
+  }
+
+  .b-focus-actions {
+    flex-wrap: nowrap;
+    gap: 8px 12px;
+    font-size: 14px;
+  }
+
+  .b-reply {
+    gap: 8px;
+    padding: 8px 8px 8px 12px;
+  }
+
+  .b-action {
+    gap: 6px;
   }
 
   .b-rows li {
@@ -1219,14 +1250,33 @@ h2 {
     min-width: 48px;
   }
 
+  .b-keys-main li:first-child {
+    grid-column: 1 / -1;
+  }
+
   .b-keys-main li:first-child .b-cap {
     min-width: 72px;
   }
 
+  .b-keys-more {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 12px 12px;
+  }
+
+  .b-keys-more li:nth-child(2) {
+    grid-column: 1 / -1;
+    order: -1;
+  }
+
   .b-week {
-    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) minmax(0, 1.35fr);
-    gap: 6px;
-    min-height: 200px;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 8px;
+    min-height: 0;
+  }
+
+  .b-day:last-child {
+    grid-column: 1 / -1;
   }
 
   .b-day {

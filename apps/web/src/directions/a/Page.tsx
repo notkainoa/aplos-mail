@@ -31,7 +31,7 @@ function Nav() {
         <a className="text-link" href={PRIVACY}>
           Privacy
         </a>
-        <a className="text-link text-link-strong" href={DOWNLOAD}>
+        <a className="text-link text-link-strong nav-cta" href={DOWNLOAD}>
           How to get it
         </a>
       </nav>
@@ -44,9 +44,9 @@ function Hero() {
     <section className="hero" aria-labelledby="hero-title">
       <div className="hero-copy">
         <h1 id="hero-title">Finish your inbox, one email at a time.</h1>
-        <p className="hero-sub" data-claim="gmail-google-calendar home-focus">
-          Aplos Mail is a Mac app for Gmail and Google Calendar. It puts the email that needs you in
-          focus, then brings the next.
+        <p className="hero-sub" data-claim="gmail-google-calendar home-focus keyboard-first">
+          Aplos Mail is a keyboard-first Mac app for Gmail and Google Calendar. It puts the email
+          that needs you in focus, then brings the next.
         </p>
         <div className="hero-cta">
           <a className="button button-large" href={DOWNLOAD}>
@@ -120,7 +120,7 @@ function HomePane() {
         <>
           <HomeMock focus={summaryFocus} summaryOnly />
           <p className="aside-note" data-claim="summaries-with-ai">
-            A summary in Aplos Mail, once you turn on AI.
+            A summary in Aplos Mail, with Reply, Later and Done.
           </p>
         </>
       }
@@ -200,9 +200,9 @@ function AiPane() {
         your Mac, and Ollama and LM Studio run on it too.
       </p>
       <p data-claim="groq-default provider-per-feature ai-providers ai-routers">
-        Groq is the default for every AI feature. In Settings you pick a provider for each one, such
-        as OpenAI, Claude, Gemini, Ollama or your own server. A feature’s text goes only to the
-        provider you picked for it; routers like OpenRouter pass it on to the model’s host.
+        Groq is the default for every AI feature, and in Settings you pick a provider for each one.
+        A feature’s text goes only to the provider you picked; routers like OpenRouter pass it on to
+        the model’s host.
       </p>
     </Pane>
   );

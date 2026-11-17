@@ -328,10 +328,12 @@ export function Page() {
       </a>
       <Hero />
       <main id="b-main">
-        <HeroShot />
-        <div className="b-primary">
-          <Home />
-          <Keyboard />
+        <div className="b-bridge">
+          <HeroShot />
+          <div className="b-primary">
+            <Home />
+            <Keyboard />
+          </div>
         </div>
         <Calendar />
         <Ask />
