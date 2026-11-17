@@ -363,7 +363,8 @@
   align-items: start;
 }
 .ui-shortcut-group + .ui-shortcut-group {
-  margin-top: var(--space-6);
+  /* A whole row (28 px), so every column's rows sit on one 28 px grid and the first view can end between rows. */
+  margin-top: var(--control-sm);
 }
 .ui-shortcut-group-label {
   margin: 0;

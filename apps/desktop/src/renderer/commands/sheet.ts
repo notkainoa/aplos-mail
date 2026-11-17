@@ -10,7 +10,7 @@ export interface SheetRow {
   /** "J or ↓", "Hold R", "1–9", "⌥-click". */
   readonly keys: string;
   readonly kind: 'key' | 'pointer';
-  /** A short qualifier for a key that several commands share ("while a follow-up is queued"). */
+  /** A short qualifier for a key that several commands share ("while queued"). */
   readonly note?: string;
 }
 
@@ -60,8 +60,7 @@ export const SHEET_SECTIONS: readonly SectionDef[] = [
 
 /** When a key is shared between commands, the context that picks which one runs, said beside the row. */
 export const SHEET_NOTES: Readonly<Record<string, string>> = {
-  'nav.later': 'opens the list',
-  'ask.sendNow': 'while a follow-up is queued',
+  'ask.sendNow': 'while queued',
   'ask.stop': 'while it answers',
   'ask.clear': 'with a question typed',
   'ask.close': 'when it is empty',

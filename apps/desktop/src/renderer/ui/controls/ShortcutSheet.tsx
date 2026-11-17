@@ -3,10 +3,19 @@
 // places while the filter narrows them. Esc clears the filter first, then closes; "?" again, the close button
 // and the scrim close too. Handles only its own widget's keys, and never while an IME is composing.
 import { createPortal } from 'react-dom';
-import { useEffect, useId, useRef, useState, type KeyboardEvent, type ReactNode } from 'react';
+import {
+  useEffect,
+  useId,
+  useLayoutEffect,
+  useRef,
+  useState,
+  type KeyboardEvent,
+  type ReactNode,
+} from 'react';
 import { Button } from '../buttons-keys/Button';
 import { KeyCaps } from '../buttons-keys/Kbd';
 import type { ShortcutEntry, ShortcutGroup, ShortcutSheetProps } from '../props';
+import { wholeRowsHeight } from './sheetModel';
 import { TextField } from './TextField';
 
 const FOCUSABLE = 'button:not(:disabled), input:not(:disabled), [tabindex]:not([tabindex="-1"])';
@@ -57,6 +66,34 @@ function useMoreBelow(): [React.RefObject<HTMLDivElement | null>, boolean] {
   return [ref, more];
 }
 
+const ROW = '.ui-shortcut-row, .ui-shortcut-group-label';
+
+/** Trims the scroll area to whole rows while its content is taller than the room it has (re-read when the list changes). */
+function useWholeRows(ref: React.RefObject<HTMLDivElement | null>, key: unknown) {
+  useLayoutEffect(() => {
+    const el = ref.current;
+    if (!el) return;
+    const fit = () => {
+      el.style.height = '';
+      el.style.flex = '';
+      if (el.scrollHeight <= el.clientHeight + 1) return;
+      const top = el.getBoundingClientRect().top - el.scrollTop;
+      const edges = Array.from(el.querySelectorAll<HTMLElement>(ROW)).map(row => {
+        const box = row.getBoundingClientRect();
+        return { top: box.top - top, bottom: box.bottom - top };
+      });
+      const room = el.clientHeight;
+      const height = wholeRowsHeight(edges, room);
+      if (height >= room) return;
+      el.style.flex = 'none';
+      el.style.height = `${Math.round(height)}px`;
+    };
+    fit();
+    window.addEventListener('resize', fit);
+    return () => window.removeEventListener('resize', fit);
+  }, [ref, key]);
+}
+
 export function ShortcutSheet({
   open,
   groups,
@@ -71,6 +108,7 @@ export function ShortcutSheet({
   const dialogRef = useRef<HTMLElement | null>(null);
   const opener = useRef<HTMLElement | null>(null);
   const [bodyRef, more] = useMoreBelow();
+  useWholeRows(bodyRef, `${open}:${query}:${columns.length}`);
 
   // Focus goes back to whatever opened the sheet. It is read during render, before the filter field takes focus.
   if (

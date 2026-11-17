@@ -185,7 +185,7 @@ test('a command is listed once with the same keys, except Done and Later, which 
 
 test('a key several commands share carries a short qualifier', () => {
   const rows = buildSheet(wiredRegistry()).flatMap(s => s.rows);
-  assert.equal(rows.find(r => r.id === 'ask.sendNow')?.note, 'while a follow-up is queued');
+  assert.equal(rows.find(r => r.id === 'ask.sendNow')?.note, 'while queued');
 });
 
 test('the sheet includes ⌃5, ⌃7, ⌃8, ⌘K and ⌘/ (baseline defect 5)', () => {

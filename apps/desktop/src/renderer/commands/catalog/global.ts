@@ -112,7 +112,8 @@ export const GLOBAL_COMMANDS: readonly CommandSpec[] = [
   },
   {
     id: 'nav.later',
-    label: 'Later',
+    // "Later list", not "Later": the palette also has the Later action, and two rows with one name and one clock read as one.
+    label: 'Later list',
     icon: 'clock',
     keys: ['ctrl+2'],
     contexts: ['global'],
