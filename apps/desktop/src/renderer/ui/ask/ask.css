@@ -175,16 +175,17 @@
   }
 }
 
-/* no provider: one plain line and a link, never a red error */
+/* no provider: one plain line and a link above the field, never a red error */
 .ui-ask-dock__noprovider {
   display: flex;
-  flex-direction: column;
-  align-items: flex-start;
-  gap: var(--space-4);
-  padding: var(--space-4) 0;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: var(--space-1);
+  margin: 0 0 var(--space-2);
+  padding: 0 var(--space-1);
   color: var(--ink-2);
-  font: var(--type-base);
-  letter-spacing: var(--track-base);
+  font: var(--type-ui);
+  letter-spacing: var(--track-ui);
 }
 .ui-ask-dock__link {
   color: var(--accent);

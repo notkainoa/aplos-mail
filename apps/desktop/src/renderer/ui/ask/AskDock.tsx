@@ -225,11 +225,12 @@ function QueuedCard({
 /** The queued cards and the field with its Stop and Ask buttons. */
 function DockFoot(props: AskDockProps & { activeOption: string | undefined; emptyId: string }) {
   const { value, onChange, onSubmit, working, onStop, queued, dictation, fieldRef } = props;
+  const { providerReady, onOpenSettings } = props;
   const sendNowKeys = describeKeys('ask.sendNow');
   function onFieldKey(event: KeyboardEvent<HTMLTextAreaElement>) {
     if (event.nativeEvent.isComposing || event.key !== 'Enter' || event.shiftKey) return;
     event.preventDefault();
-    onSubmit(event.metaKey ? 'searchAll' : 'ask');
+    if (providerReady) onSubmit(event.metaKey ? 'searchAll' : 'ask');
   }
   return (
     <footer className="ui-ask-dock__foot">
@@ -242,6 +243,14 @@ function DockFoot(props: AskDockProps & { activeOption: string | undefined; empt
           onSendNow={props.onSendQueuedNow}
         />
       ))}
+      {providerReady ? null : (
+        <p className="ui-ask-dock__noprovider" role="status">
+          <span>Add an AI key to ask. </span>
+          <button type="button" className="ui-ask-dock__link" onClick={onOpenSettings}>
+            Open Settings → AI
+          </button>
+        </p>
+      )}
       <div
         className="ui-ask-dock__field"
         data-dictating={dictation ? 'true' : undefined}
@@ -277,6 +286,7 @@ function DockFoot(props: AskDockProps & { activeOption: string | undefined; empt
               icon="arrow-up"
               label="Ask"
               commandId="ask.submit"
+              disabled={!providerReady}
               onPress={() => onSubmit('ask')}
             />
           </span>
@@ -295,7 +305,7 @@ function DockFoot(props: AskDockProps & { activeOption: string | undefined; empt
  * Esc (stop, then clear, then close) and ↑/↓ over suggestions belong to the registry's ask context.
  */
 export function AskDock(props: AskDockProps) {
-  const { tab, onTabChange, onClose, width, onWidthChange, providerReady, onOpenSettings } = props;
+  const { tab, onTabChange, onClose, width, onWidthChange, providerReady } = props;
   const { conversation, empty, today } = props;
   const baseId = useId();
   const size = clampWidth(width);
@@ -334,14 +344,6 @@ export function AskDock(props: AskDockProps) {
         aria-labelledby={`${baseId}-tab-${tab}`}
       >
         {tab === 'today' ? today : null}
-        {tab === 'ask' && !providerReady ? (
-          <div className="ui-ask-dock__noprovider">
-            <p>Ask needs a provider. Choose one in Settings.</p>
-            <button type="button" className="ui-ask-dock__link" onClick={onOpenSettings}>
-              Open Settings → AI
-            </button>
-          </div>
-        ) : null}
         {tab === 'ask' && providerReady && conversation ? conversation : null}
         {showEmpty && empty ? <EmptyView empty={empty} listId={emptyId} /> : null}
       </div>
