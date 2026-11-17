@@ -382,13 +382,21 @@ async function askRun(
   try {
     const model = interactiveModel(services, 'ask', { withMail: true });
     const { allowed, excluded } = allowedAccounts(services, args.scope?.accountIds);
-    if (!allowed.length)
+    if (!allowed.length) {
+      // A picked account that keeps its mail out of AI is not "no account allows AI": while other
+      // accounts would answer, the fix is that account's toggle or picking All accounts.
+      const othersAllow = services.store.read(
+        q => q.get('SELECT 1 AS one FROM accounts WHERE ai_allowed = 1 LIMIT 1') !== undefined,
+      );
       throw new ContractError({
         type: 'forbidden',
         message:
-          "No account allows AI to read its mail. Turn on 'Use this account's mail for AI' in Settings → AI.",
+          args.scope?.accountIds?.length && othersAllow
+            ? "This account isn't allowed to use AI. Turn on 'Use this account's mail for AI' in Settings → AI, or pick All accounts."
+            : "No account allows AI to read its mail. Turn on 'Use this account's mail for AI' in Settings → AI.",
         reasonCode: 'ai.accountExcluded',
       });
+    }
     emit({ kind: 'step', step: steps.emit('search', 'Searching your mail', 'running') });
     // searchAllMail widens retrieval beyond the default inbox-facing sources.
     const { sources, names } = services.store.read(q => ({

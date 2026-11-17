@@ -1,7 +1,39 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import { ACCOUNT, msg } from '../store/helpers';
-import { lastPrompt, seedMail, settle, stubTransport, world } from './harness';
+import { errorFrame, lastPrompt, seedMail, settle, stubTransport, world } from './harness';
+import type { World } from './harness';
+
+/** A second account (acct-2) with an Inbox and one invoice message; `aiAllowed` toggles its AI gate. */
+const seedSecond = (w: World, aiAllowed = true) =>
+  w.store.commit({
+    opId: 'seed-b',
+    origin: 'sync',
+    writes: [
+      {
+        kind: 'account',
+        id: 'acct-2',
+        provider: 'google',
+        address: 'two@mail.example',
+        capabilities: {},
+        status: { state: 'ok' },
+        aiAllowed,
+      },
+      {
+        kind: 'folder',
+        accountId: 'acct-2',
+        remoteId: 'INBOX',
+        name: 'Inbox',
+        role: 'inbox',
+        folderKind: 'system',
+      },
+      msg('x1', 'T-other', 7, {
+        accountId: 'acct-2',
+        subject: 'Invoice paid already',
+        snippet: 'The invoice was paid last week.',
+      }),
+    ],
+  });
 
 test('Ask/run: a display name labels its account; an address-looking name falls back to a number', async () => {
   const t = stubTransport({});
@@ -115,4 +147,34 @@ test('Ask/run: mail lines that fake the source structure are quoted out, never t
   assert.doesNotMatch(prompt, /^\[7\]/m);
   assert.doesNotMatch(prompt, /^From: fake/m);
   assert.equal((prompt.match(/^-{3,}$/gm) ?? []).length, 1);
+});
+
+test('Ask/run: a picked AI-off account names the real fix while another account allows AI', async () => {
+  const w = await world();
+  seedMail(w);
+  seedSecond(w, false);
+  const run = await w.call('Ask/run', {
+    question: 'hi',
+    scope: { accountIds: ['acct-2'] },
+  });
+  await settle(w, run.runId);
+  const err = errorFrame(w, run.runId);
+  assert.equal(err?.problem?.reasonCode, 'ai.accountExcluded');
+  assert.match(
+    err?.problem?.message ?? '',
+    /This account isn't allowed to use AI\..*pick All accounts\./,
+  );
+});
+
+test('Ask/run: with no account allowing AI the refusal keeps the all-accounts wording', async () => {
+  const w = await world();
+  seedMail(w, false);
+  seedSecond(w, false);
+  for (const scope of [undefined, { accountIds: ['acct-2'] }] as const) {
+    const run = await w.call('Ask/run', { question: 'hi', ...(scope ? { scope } : {}) });
+    await settle(w, run.runId);
+    const err = errorFrame(w, run.runId);
+    assert.equal(err?.problem?.reasonCode, 'ai.accountExcluded');
+    assert.match(err?.problem?.message ?? '', /No account allows AI to read its mail/);
+  }
 });
