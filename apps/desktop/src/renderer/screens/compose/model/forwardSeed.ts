@@ -20,15 +20,27 @@ function listOf(addresses: readonly Address[]): string {
   return addresses.map(nameOf).join(', ');
 }
 
-function dateOf(date: number): string {
-  return new Date(date).toUTCString().replace(/ GMT$/, ' UTC');
+/** "Mon, Oct 26, 2026 at 8:30 AM PDT": the time in the owner's own zone (`timeZone` is for tests), never UTC. */
+export function forwardDate(date: number, timeZone?: string): string {
+  return new Intl.DateTimeFormat('en-US', {
+    weekday: 'short',
+    month: 'short',
+    day: 'numeric',
+    year: 'numeric',
+    hour: 'numeric',
+    minute: '2-digit',
+    timeZoneName: 'short',
+    ...(timeZone ? { timeZone } : {}),
+  })
+    .format(new Date(date))
+    .replace(/, (\d{1,2}:\d{2})/, ' at $1');
 }
 
 /** The header block above the quoted text; a line with nothing to say is left out. */
 export function forwardHeader(message: Message): string {
   const lines: readonly (readonly [string, string])[] = [
     ['From', message.from ? nameOf(message.from) : ''],
-    ['Date', dateOf(message.date)],
+    ['Date', forwardDate(message.date)],
     ['Subject', message.subject],
     ['To', listOf(message.to)],
     ['Cc', listOf(message.cc)],

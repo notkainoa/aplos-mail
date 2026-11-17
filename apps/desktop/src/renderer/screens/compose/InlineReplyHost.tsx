@@ -12,6 +12,7 @@ import { api, getNow, useAccounts, useRow, useView, type Message } from '../../d
 import { useRegisterCommands, type CommandHandlerTable } from '../../shell';
 import { InlineReply } from '../../ui/compose';
 import { composeFromDraft, freshCompose, type ComposeState } from './model/composeState';
+import { pendingSentStore } from './model/pendingSent';
 import { replyDraftFor, rowsResolved } from './model/reopen';
 import { ownAddresses, replySeed } from './model/replySeed';
 import { dictateReplyCommands } from './runtime/composeCommands';
@@ -23,6 +24,7 @@ import type { ComposeSession } from './runtime/session';
 import { useComposeSession, type ComposeBinding } from './runtime/useComposeSession';
 import { useSchedulePresets } from './runtime/useSchedulePresets';
 import { ComposeMenu, DiscardConfirm } from './views/ComposeOverlays';
+import { mineIn } from './views/PendingSent';
 import { SendStatus, useReducedMotion } from './views/SendStatus';
 import { useSharedComposerProps } from './views/composerParts';
 
@@ -32,6 +34,8 @@ export interface InlineReplyHostProps {
   readonly messageId: string;
   /** The reply has gone: closed with Esc (draft kept), discarded, or sent and settled. The reader shows its stub again. */
   readonly onClose: () => void;
+  /** Open on this draft (an Undo send handed it back), not on what the drafts window happens to hold yet. */
+  readonly draftId?: string;
   /** ⇧R: reply to everyone. */
   readonly replyAll?: boolean;
   /** A suggestion to show as dim text: the Follow up nudge, or a reply suggestion's drafted text. */
@@ -68,6 +72,7 @@ function useInitialReply(props: InlineReplyHostProps): ComposeState | null {
   const drafts = useView({ kind: 'drafts' });
   const scheduled = useView({ kind: 'scheduled' });
   const message = useRow('Message', props.messageId);
+  const thread = useView({ kind: 'thread', threadId: props.threadId });
   const accounts = useAccounts();
   const gaveUp = useElapsed(ROWS_WAIT_MS);
   const rowsIn = (rowsResolved(drafts) && rowsResolved(scheduled)) || gaveUp;
@@ -75,21 +80,28 @@ function useInitialReply(props: InlineReplyHostProps): ComposeState | null {
   const ready =
     settled(drafts.status) && settled(scheduled.status) && rowsIn && message !== undefined;
   const candidate = ready
-    ? replyDraftFor(props.threadId, rowsOf(drafts.rows), rowsOf(scheduled.rows))
+    ? (props.draftId ?? replyDraftFor(props.threadId, rowsOf(drafts.rows), rowsOf(scheduled.rows)))
     : null;
   const draft = useRow('Draft', candidate ?? undefined);
   const decided = useRef<ComposeState | null>(null);
   if (decided.current || !ready) return decided.current;
   if (candidate && !draft) return null;
   const me = ownAddresses(accounts);
-  const start = draft ? composeFromDraft(draft) : freshFrom(message, me, props.replyAll ?? false);
+  const start = draft
+    ? composeFromDraft(draft)
+    : freshFrom(message, me, props.replyAll ?? false, rowsOf(thread.rows));
   // Text a closed reply could not save yet is taken over, never shown stale.
   decided.current = withKeptText(start);
   return decided.current;
 }
 
-function freshFrom(message: Message, me: ReadonlySet<string>, replyAll: boolean): ComposeState {
-  const seed = replySeed(message, me, replyAll);
+function freshFrom(
+  message: Message,
+  me: ReadonlySet<string>,
+  replyAll: boolean,
+  thread: readonly Message[],
+): ComposeState {
+  const seed = replySeed(message, me, replyAll, thread);
   return freshCompose(seed.context, seed.fields);
 }
 
@@ -114,8 +126,25 @@ function useSuggestion(
   }, [session, threadId]);
 }
 
+/** How many messages of yours the thread holds when the reply opens, and now: a send is settled once it holds one more. */
+function useMessagesOfMine(threadId: string): {
+  readonly baseline: number | null;
+  readonly now: number;
+} {
+  const view = useView({ kind: 'thread', threadId });
+  const now = mineIn(view.ids.flatMap(id => view.rows.get(id) ?? []));
+  const baseline = useRef<number | null>(null);
+  if (baseline.current === null && view.status === 'live' && view.ids.length === view.rows.size)
+    baseline.current = now;
+  return { baseline: baseline.current, now };
+}
+
 /** Tells the reader when the card opens and closes, and when the reply has gone for good. */
-function useLifecycle(binding: ComposeBinding | null, props: InlineReplyHostProps) {
+function useLifecycle(
+  binding: ComposeBinding | null,
+  props: InlineReplyHostProps,
+  mine: { readonly baseline: number | null; readonly now: number },
+) {
   const open = binding?.view.open ?? false;
   const { onOpenChange, onClose } = props;
   useEffect(() => {
@@ -130,9 +159,35 @@ function useLifecycle(binding: ComposeBinding | null, props: InlineReplyHostProp
     (binding?.state.ended !== null ||
       view.phase.kind === 'scheduled' ||
       view.phase.kind === 'sent');
+  const latest = useRef({ binding, mine });
+  latest.current = { binding, mine };
   useEffect(() => {
-    if (gone) onClose();
-  }, [gone, onClose]);
+    if (!gone) return;
+    keepSentReply(props.threadId, latest.current);
+    onClose();
+  }, [gone, onClose, props.threadId]);
+}
+
+/** A reply that was sent and that the thread does not hold yet stays in the reader (`PendingSent`) until it does. */
+function keepSentReply(
+  threadId: string,
+  now: {
+    readonly binding: ComposeBinding | null;
+    readonly mine: { readonly baseline: number | null; readonly now: number };
+  },
+): void {
+  const { binding, mine } = now;
+  if (!binding || mine.baseline === null || mine.now > mine.baseline) return;
+  const { state, view } = binding;
+  if (view.phase.kind !== 'sent' && state.ended !== 'sent') return;
+  const at = sentAt(state);
+  pendingSentStore.add({
+    key: `${state.save.draftId ?? threadId}-${at}`,
+    threadId,
+    fields: state.fields,
+    at,
+    baseline: mine.baseline,
+  });
 }
 
 const NO_COMMANDS: CommandHandlerTable = {};
@@ -209,6 +264,7 @@ export function InlineReplyView({
           fields={state.fields}
           at={sentAt(state)}
           reducedMotion={reducedMotion}
+          bare={['sending', 'offline', 'sent'].includes(view.phase.kind)}
           onAction={controls.onSendAction}
         />
       )}
@@ -234,7 +290,7 @@ export function InlineReplyHost(props: InlineReplyHostProps) {
   const initial = useInitialReply(props);
   const binding = useComposeSession(initial);
   useSuggestion(binding, props.threadId, props.suggest);
-  useLifecycle(binding, props);
+  useLifecycle(binding, props, useMessagesOfMine(props.threadId));
   if (!binding) return null;
   return <InlineReplyView binding={binding} props={props} />;
 }

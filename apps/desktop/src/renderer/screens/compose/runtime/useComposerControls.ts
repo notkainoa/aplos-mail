@@ -31,6 +31,8 @@ export interface ComposerControls {
   readonly menuAnchor: Anchor;
   readonly setMenuAnchor: (anchor: Anchor) => void;
   readonly send: (alsoDone?: boolean, notBefore?: number) => void;
+  /** A recipient field offers its "commit what is typed" so a send takes the address typed but not yet a chip. */
+  readonly registerTyped: (commit: () => void) => () => void;
   readonly onSendAction: (action: SendAction) => void;
   readonly startDictation: (holdKey: HoldKey) => void;
   readonly endDictation: (keep: boolean) => void;
@@ -97,15 +99,25 @@ export function useComposerControls(
   const dictation = useDictation(onText, options.dictationSource);
   const { controller } = dictation;
 
+  const typed = useRef(new Set<() => void>());
+  const registerTyped = useCallback((commit: () => void) => {
+    typed.current.add(commit);
+    return () => {
+      typed.current.delete(commit);
+    };
+  }, []);
   const send = useCallback(
-    (alsoDone = false, notBefore?: number) =>
+    (alsoDone = false, notBefore?: number) => {
+      // An address typed but not yet a chip becomes one before the send reads the fields.
+      for (const commit of [...typed.current]) commit();
       session.dispatch({
         type: 'send',
         now: getNow(),
         undoSeconds,
         alsoDone,
         ...(notBefore ? { notBefore } : {}),
-      }),
+      });
+    },
     [session, undoSeconds],
   );
   const onSendAction = useCallback(
@@ -159,6 +171,7 @@ export function useComposerControls(
     menuAnchor,
     setMenuAnchor,
     send,
+    registerTyped,
     onSendAction,
     startDictation,
     endDictation,

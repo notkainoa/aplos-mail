@@ -4,7 +4,7 @@
  * people you have written to or heard from (the From account's correspondents): arrows move, Return or Tab accepts,
  * Esc closes it without leaving the composer. The engine answers from local data only.
  */
-import { useId, useState, type KeyboardEvent } from 'react';
+import { useEffect, useId, useRef, useState, type KeyboardEvent } from 'react';
 import type { Recipient } from '../../../ui/props';
 import { RecipientField } from '../../../ui/compose';
 import { addRecipients } from '../model/recipients';
@@ -26,6 +26,8 @@ export interface RecipientRowsProps {
   readonly onShowCc: () => void;
   readonly invalid: readonly string[];
   readonly autoFocus?: boolean;
+  /** Each row hands over its "commit what is typed", for the composer's send. */
+  readonly registerTyped?: (commit: () => void) => () => void;
   /** Asks for suggestions; the running app uses `Contact/suggest`, a test passes its own. */
   readonly suggest?: SuggestFn;
 }
@@ -39,6 +41,7 @@ function OneRow(props: {
   readonly invalid: readonly string[];
   readonly ccButton?: { onSelect: () => void; commandId: string };
   readonly autoFocus?: boolean;
+  readonly registerTyped?: (commit: () => void) => () => void;
 }) {
   const [query, setQuery] = useState('');
   const [arrowed, setArrowed] = useState<string | undefined>(undefined);
@@ -60,6 +63,22 @@ function OneRow(props: {
     props.onChange(addRecipients(props.recipients, text));
     reset();
   };
+  // The newest query and rows, read when a send asks for the typed text (not the render it was registered in).
+  const latest = useRef({ query, recipients: props.recipients, onChange: props.onChange, reset });
+  latest.current = { query, recipients: props.recipients, onChange: props.onChange, reset };
+  const { registerTyped } = props;
+  useEffect(
+    () =>
+      registerTyped?.(() => {
+        const now = latest.current;
+        if (now.query.trim() === '') return;
+        const next = addRecipients(now.recipients, now.query);
+        // The text is a chip now (or a duplicate of one): the field is empty, so a refused send does not re-commit it.
+        now.reset();
+        if (next !== now.recipients) now.onChange(next);
+      }),
+    [registerTyped],
+  );
   const pick = (id: string) => {
     const person = list.find(r => r.id === id);
     if (!person) return;
@@ -118,6 +137,7 @@ export function RecipientRows({
   onShowCc,
   invalid,
   autoFocus,
+  registerTyped,
   suggest = contactSuggest,
 }: RecipientRowsProps) {
   const ccButton = showCc ? undefined : { onSelect: onShowCc, commandId: 'compose.ccBcc' };
@@ -132,6 +152,7 @@ export function RecipientRows({
         invalid={invalid}
         ccButton={ccButton}
         autoFocus={autoFocus}
+        registerTyped={registerTyped}
       />
       {showCc ? (
         <>
@@ -142,6 +163,7 @@ export function RecipientRows({
             recipients={fields.cc}
             onChange={cc => onChange({ cc })}
             invalid={invalid}
+            registerTyped={registerTyped}
           />
           <OneRow
             row="bcc"
@@ -150,6 +172,7 @@ export function RecipientRows({
             recipients={fields.bcc}
             onChange={bcc => onChange({ bcc })}
             invalid={invalid}
+            registerTyped={registerTyped}
           />
         </>
       ) : null}
