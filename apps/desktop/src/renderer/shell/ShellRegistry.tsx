@@ -8,6 +8,7 @@ import { createAppRegistry, type CommandHandlers, type Registry } from '../comma
 import { undoStack } from '../data';
 import { ALL_PLACES, placeRoute, placeScreen } from './nav';
 import { openCompose } from './store-compose';
+import { openShortcuts } from './store-shortcuts';
 import { setRoute, setScreen } from './store-route';
 
 /** Handlers keyed by command id. */
@@ -39,6 +40,12 @@ export function placeHandlers(): CommandHandlerTable {
 /** Handlers the shell attaches first, so the command works on every screen; a screen's own registration shadows it. */
 export const DEFAULT_HANDLERS: CommandHandlerTable = {
   ...placeHandlers(),
+  // ?: the shortcut sheet, over the place handler for the same id (the sidebar's Help row still opens Help & about).
+  'app.shortcuts': {
+    run: () => {
+      openShortcuts();
+    },
+  },
   // C: a new message, on every screen.
   'mail.compose': {
     run: () => {

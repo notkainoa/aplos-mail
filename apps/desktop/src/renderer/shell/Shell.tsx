@@ -37,6 +37,7 @@ import { focusRegion, type RegionRoot } from './regions';
 import { KeysProviders, useRunCommand } from './KeysProviders';
 import { MinimisedNav } from './MinimisedNav';
 import { SheetHost } from './SheetHost';
+import { ShortcutsHost } from './ShortcutsHost';
 import { Sidebar } from './Sidebar';
 import { StatusHost } from './StatusHost';
 import { ToastHost } from './ToastHost';
@@ -531,6 +532,7 @@ function ShellFrame({ renderScreen, renderDock }: ShellProps) {
         overlay={
           <>
             <SheetHost />
+            <ShortcutsHost />
             <PaletteHost open={paletteOpen} onClose={closePalette} />
           </>
         }
