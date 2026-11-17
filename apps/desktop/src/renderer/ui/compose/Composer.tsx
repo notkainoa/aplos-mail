@@ -89,6 +89,7 @@ export function Composer(props: ComposerProps) {
               onRetrySave={onRetrySave}
               dictation={dictation}
               onSend={props.onSend}
+              sendDisabled={props.sendDisabled}
               closeHint
               trailing={footerActions({
                 commands,

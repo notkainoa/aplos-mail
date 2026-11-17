@@ -64,6 +64,8 @@ export interface ComposerProps {
   commands: ComposeCommands;
   /** Send. */
   onSend: () => void;
+  /** No valid recipient yet: Send takes the disabled look until there is one. ⌘↩ still answers, with the reason. */
+  sendDisabled?: boolean;
   /** Attach a file. */
   onAttach: () => void;
   /** Format menu. */
@@ -94,6 +96,8 @@ export interface InlineReplyProps {
   commands: ComposeCommands;
   /** Send. */
   onSend: () => void;
+  /** No valid recipient yet: Send takes the disabled look until there is one. ⌘↩ still answers, with the reason. */
+  sendDisabled?: boolean;
   /** Attach a file. */
   onAttach: () => void;
   /** ⋯ (format, schedule, discard). */

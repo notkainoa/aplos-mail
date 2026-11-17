@@ -158,7 +158,7 @@ test('an untouched reply is created on Send; a blocked send outlines To and expl
   );
   const none = freshCompose(CONTEXT);
   const blocked = run(none, { type: 'send', now: T0, undoSeconds: 8 });
-  assert.deepEqual(blocked.state.blocked, { field: 'to', message: 'Add at least one recipient.' });
+  assert.deepEqual(blocked.state.blocked, { field: 'to', message: 'Add a recipient.' });
   assert.equal(blocked.state.open, true);
   assert.deepEqual(blocked.effects, []);
   const bad = run(

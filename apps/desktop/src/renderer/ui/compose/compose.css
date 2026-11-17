@@ -136,7 +136,11 @@
   color: var(--faint);
 }
 .ui-compose-btn[data-variant='filled']:disabled {
-  background: var(--sunken);
+  background: color-mix(
+    in srgb,
+    var(--accent) 30%,
+    transparent
+  ); /* the primary, faded, the same by day and at night */
   box-shadow: none;
 }
 .ui-compose-btn:focus-visible,
@@ -353,6 +357,7 @@
   align-self: center;
 }
 .ui-recipient-field__people {
+  position: relative;
   display: flex;
   flex: 1;
   flex-wrap: wrap;
@@ -431,7 +436,9 @@
 .ui-recipient-field__list {
   position: absolute;
   top: 100%;
-  left: 0;
+  /* The list opens under the people column, shifted by its own padding and the option's, so a name starts exactly
+     where the typed text does. */
+  left: calc(-1 * (var(--space-1) + var(--space-2)));
   z-index: var(--z-menu);
   width: max(var(--menu-min), 60%);
   max-width: 100%;
@@ -471,9 +478,8 @@
   flex: none;
   max-width: 100%;
   overflow: hidden;
-  color: var(--dim);
+  color: var(--ink-2);
   font: var(--type-small);
-  font-family: var(--font-mono);
   text-overflow: ellipsis;
   white-space: nowrap;
 }

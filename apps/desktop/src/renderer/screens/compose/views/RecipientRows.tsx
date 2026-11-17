@@ -4,7 +4,7 @@
  * people you have written to or heard from (the From account's correspondents): arrows move, Return or Tab accepts,
  * Esc closes it without leaving the composer. The engine answers from local data only.
  */
-import { useId, useState, type KeyboardEvent } from 'react';
+import { useEffect, useId, useRef, useState, type KeyboardEvent } from 'react';
 import type { Recipient } from '../../../ui/props';
 import { RecipientField } from '../../../ui/compose';
 import { addRecipients } from '../model/recipients';
@@ -26,6 +26,8 @@ export interface RecipientRowsProps {
   readonly onShowCc: () => void;
   readonly invalid: readonly string[];
   readonly autoFocus?: boolean;
+  /** The send block on the To row (a new object each press): the To field takes focus so the line has its place. */
+  readonly blockedTo?: object | undefined;
   /** Asks for suggestions; the running app uses `Contact/suggest`, a test passes its own. */
   readonly suggest?: SuggestFn;
 }
@@ -39,7 +41,12 @@ function OneRow(props: {
   readonly invalid: readonly string[];
   readonly ccButton?: { onSelect: () => void; commandId: string };
   readonly autoFocus?: boolean;
+  readonly blockedTo?: object | undefined;
 }) {
+  const box = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    if (props.blockedTo) box.current?.querySelector('input')?.focus();
+  }, [props.blockedTo]);
   const [query, setQuery] = useState('');
   const [arrowed, setArrowed] = useState<string | undefined>(undefined);
   const [closedFor, setClosedFor] = useState<string | null>(null);
@@ -81,7 +88,7 @@ function OneRow(props: {
     }
   };
   return (
-    <div className="compose-suggest" onKeyDownCapture={onKeyDownCapture}>
+    <div ref={box} className="compose-suggest" onKeyDownCapture={onKeyDownCapture}>
       <RecipientField
         label={LABEL[props.row]}
         recipients={props.recipients}
@@ -118,6 +125,7 @@ export function RecipientRows({
   onShowCc,
   invalid,
   autoFocus,
+  blockedTo,
   suggest = contactSuggest,
 }: RecipientRowsProps) {
   const ccButton = showCc ? undefined : { onSelect: onShowCc, commandId: 'compose.ccBcc' };
@@ -132,6 +140,7 @@ export function RecipientRows({
         invalid={invalid}
         ccButton={ccButton}
         autoFocus={autoFocus}
+        blockedTo={blockedTo}
       />
       {showCc ? (
         <>

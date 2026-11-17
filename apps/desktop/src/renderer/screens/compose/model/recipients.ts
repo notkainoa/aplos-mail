@@ -58,7 +58,7 @@ export function invalidIds(recipients: readonly Recipient[]): readonly string[] 
 }
 
 export const BLOCKED_COPY = {
-  noRecipient: 'Add at least one recipient.',
+  noRecipient: 'Add a recipient.',
   badAddress: (address: string) => `Check the address ${address}. It doesn’t look complete.`,
 } as const;
 

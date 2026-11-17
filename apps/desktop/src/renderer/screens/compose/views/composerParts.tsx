@@ -37,6 +37,7 @@ export interface SharedComposerProps {
   readonly blocked: BlockedSend | undefined;
   readonly commands: ComposeCommands;
   readonly onSend: () => void;
+  readonly sendDisabled: boolean;
   /** Attachments are a later slice's: the button is there and does nothing yet (REQUEST in the lane report). */
   readonly onAttach: () => void;
   readonly editorRef: RefObject<HTMLTextAreaElement | null>;
@@ -84,6 +85,7 @@ export function useSharedComposerProps(
           onShowCc={() => controls.setShowCc(true)}
           invalid={view.invalid}
           autoFocus={options.focusTo}
+          blockedTo={view.blocked?.field === 'to' ? view.blocked : undefined}
         />
       </>
     ),
@@ -110,6 +112,7 @@ export function useSharedComposerProps(
     blocked: view.blocked,
     commands: COMPOSE_COMMANDS,
     onSend: () => controls.send(),
+    sendDisabled: !view.canSend,
     onAttach: () => undefined,
     editorRef,
   };
