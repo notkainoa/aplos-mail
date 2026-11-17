@@ -1,359 +1,255 @@
-import { useEffect, useRef, useState } from 'react';
+import { useRef, useState } from 'react';
+import { BubbleIcon, CheckIcon, CloseIcon } from './Icons';
+import { questions, wordCount, type Answer, type Proposal } from './askData';
+import { useAskScript, useHoldToDictate } from './askHooks';
 
-// A scripted copy of the Ask panel. Questions and answers come from the app's original demo data; nothing is sent anywhere.
-type Proposal = { title: string; when: string; calendar: string };
-type Answer = { text: string; sources?: string[]; proposal?: Proposal };
-const questions: [string, Answer][] = [
-  [
-    'What plans do I have this week?',
-    {
-      text: 'Besides the 9 AM standups: design critique Monday at 1, dinner with Sam Tuesday at 7, a welcome lunch Wednesday at noon, yoga Thursday at 6 and team retro Friday at 10. The cabin weekend starts Friday.',
-      sources: ['Design critique', 'Dinner with Sam', 'Cabin weekend'],
-    },
-  ],
-  [
-    'Which emails still need a reply?',
-    {
-      text: 'Three are waiting on you. Jordan Park wants your pick of two layout directions by tomorrow. Rowan Pottery is holding a seat in the Tuesday evening class. Drew’s October invoice is overdue for approval.',
-      sources: ['Jordan Park', 'Rowan Pottery', 'Drew'],
-    },
-  ],
-  [
-    'Book lunch with Maya Friday at noon',
-    {
-      text: 'Here is the event. It goes on your calendar only when you add it.',
-      proposal: { title: 'Lunch with Maya', when: 'Friday, 12:00 – 1:00 PM', calendar: 'Personal' },
-    },
-  ],
-];
+type Booking = 'open' | 'added' | 'dismissed';
 
-const reduced = () => window.matchMedia('(prefers-reduced-motion: reduce)').matches;
-
-function Bubble() {
+function Listening() {
   return (
-    <svg className="ask-bubble" viewBox="0 0 16 16" aria-hidden="true">
-      <path
-        d="M3 3.5h10a1.5 1.5 0 0 1 1.5 1.5v5A1.5 1.5 0 0 1 13 11.5H7.5L4.5 14v-2.5H3A1.5 1.5 0 0 1 1.5 10V5A1.5 1.5 0 0 1 3 3.5Z"
-        fill="none"
-        stroke="currentColor"
-        strokeWidth="1.2"
-        strokeLinejoin="round"
-      />
-    </svg>
+    <span className="ask-listening" role="status">
+      Listening
+      <span className="ask-level" aria-hidden="true">
+        <i />
+        <i />
+        <i />
+        <i />
+        <i />
+      </span>
+    </span>
   );
 }
 
+type TalkProps = { listening: boolean; listen: () => void; release: () => void };
+
+function TalkButton({ listening, listen, release }: TalkProps) {
+  const onKey = (event: React.KeyboardEvent, down: boolean) => {
+    if (event.key !== ' ' && event.key !== 'Enter') return;
+    event.preventDefault();
+    if (down && !event.repeat) listen();
+    if (!down) release();
+  };
+  return (
+    <button
+      type="button"
+      className="ask-talk"
+      title="Press and hold to dictate"
+      onPointerDown={event => {
+        event.currentTarget.setPointerCapture(event.pointerId);
+        listen();
+      }}
+      onPointerUp={release}
+      onPointerCancel={release}
+      onKeyDown={event => onKey(event, true)}
+      onKeyUp={event => onKey(event, false)}
+      onContextMenu={event => event.preventDefault()}
+    >
+      {listening ? (
+        'Release to ask'
+      ) : (
+        <>
+          Hold <kbd className="kbd">A</kbd> to dictate
+        </>
+      )}
+    </button>
+  );
+}
+
+type FieldProps = TalkProps & { typed: string };
+
+function AskField({ typed, listening, listen, release }: FieldProps) {
+  return (
+    <div className={`ask-field${listening ? ' is-listening' : ''}`}>
+      {listening ? (
+        <Listening />
+      ) : (
+        <span className={typed ? 'ask-typed' : 'ask-placeholder'} aria-hidden="true">
+          {typed || 'Ask about your mail or calendar'}
+        </span>
+      )}
+      {typed ? null : <TalkButton listening={listening} listen={listen} release={release} />}
+    </div>
+  );
+}
+
+type SuggestionsProps = { onAsk: (index: number) => void; label: string; skip?: number | null };
+
+function Suggestions({ onAsk, label, skip = null }: SuggestionsProps) {
+  return (
+    <div className="ask-body">
+      <p className="ask-label">{label}</p>
+      <ul className="ask-list">
+        {questions.map(([question], index) =>
+          index === skip ? null : (
+            <li key={question}>
+              <button type="button" onClick={() => onAsk(index)}>
+                <BubbleIcon />
+                {question}
+              </button>
+            </li>
+          ),
+        )}
+      </ul>
+    </div>
+  );
+}
+
+type ProposalProps = {
+  proposal: Proposal;
+  shown: boolean;
+  booking: Booking;
+  onBook: (b: Booking) => void;
+};
+
+function ProposalCard({ proposal, shown, booking, onBook }: ProposalProps) {
+  return (
+    <div className={`ask-event${shown ? ' on' : ''}`}>
+      <div className="ask-event-text">
+        <b>{proposal.title}</b>
+        <span>
+          {proposal.when} · {proposal.calendar}
+        </span>
+      </div>
+      {booking === 'open' ? (
+        <div className="ask-event-actions">
+          <button
+            type="button"
+            className="app-text"
+            onClick={() => onBook('dismissed')}
+            tabIndex={shown ? 0 : -1}
+          >
+            Not now
+          </button>
+          <button
+            type="button"
+            className="app-filled"
+            onClick={() => onBook('added')}
+            tabIndex={shown ? 0 : -1}
+          >
+            Add to calendar
+          </button>
+        </div>
+      ) : null}
+      {booking === 'added' ? (
+        <p className="ask-event-state" role="status">
+          <CheckIcon />
+          Added to {proposal.when.split(',')[0]}
+        </p>
+      ) : null}
+      {booking === 'dismissed' ? (
+        <p className="ask-event-state" role="status">
+          Nothing was added.
+        </p>
+      ) : null}
+    </div>
+  );
+}
+
+type AnswerProps = {
+  question: string;
+  answer: Answer;
+  words: number;
+  booking: Booking;
+  onBook: (b: Booking) => void;
+};
+
+function AnswerView({ question, answer, words, booking, onBook }: AnswerProps) {
+  const done = words >= wordCount(answer.text);
+  return (
+    <div className="ask-body">
+      <p className="ask-question">{question}</p>
+      <p className="ask-answer">
+        {answer.text.split(' ').map((word, i) => (
+          <span key={i} className={i < words ? 'w on' : 'w'}>
+            {word}{' '}
+          </span>
+        ))}
+      </p>
+      {answer.sources ? (
+        <ul className={`ask-sources${done ? ' on' : ''}`} aria-label="Messages and events used">
+          {answer.sources.map(source => (
+            <li key={source}>{source}</li>
+          ))}
+        </ul>
+      ) : null}
+      {answer.proposal ? (
+        <ProposalCard proposal={answer.proposal} shown={done} booking={booking} onBook={onBook} />
+      ) : null}
+    </div>
+  );
+}
+
+// A scripted copy of the Ask panel. Questions and answers come from the app's original demo data; nothing is sent
+// anywhere. A question types itself into the field, then the answer streams in a word at a time, like the app.
 export function Ask() {
-  const [asked, setAsked] = useState<number | null>(null);
-  const [typed, setTyped] = useState('');
-  const [words, setWords] = useState(0);
-  const [booking, setBooking] = useState<'open' | 'added' | 'dismissed'>('open');
-  const [run, setRun] = useState(0); // counts asks, so asking the same question again replays it
-  const timer = useRef(0);
   const panel = useRef<HTMLDivElement>(null);
-  // Hold to dictate: while A (or the hint) is held the panel listens; on release it "hears" the next sample question.
-  const [listening, setListening] = useState(false);
-  const hold = useRef({ on: false, since: 0, next: 0 });
-  const answer = asked === null ? null : questions[asked][1];
-  const total = answer ? answer.text.split(' ').length : 0;
-  const done = answer !== null && words >= total;
-
-  // Type the question into the field, then stream the answer a word at a time, like the app.
-  useEffect(() => {
-    if (asked === null) return;
-    const question = questions[asked][0];
-    const answerWords = questions[asked][1].text.split(' ').length;
-    if (reduced()) {
-      setTyped(question);
-      setWords(answerWords);
-      return;
-    }
-    let chars = 0,
-      count = 0;
-    const typeNext = () => {
-      chars++;
-      setTyped(question.slice(0, chars));
-      timer.current = window.setTimeout(
-        chars < question.length ? typeNext : streamNext,
-        chars < question.length ? 22 : 260,
-      );
-    };
-    const streamNext = () => {
-      count++;
-      setWords(count);
-      if (count < answerWords) timer.current = window.setTimeout(streamNext, 38);
-    };
-    typeNext();
-    return () => window.clearTimeout(timer.current);
-  }, [asked, run]);
-
-  const ask = (i: number) => {
-    window.clearTimeout(timer.current);
-    setTyped('');
-    setWords(0);
-    setBooking('open');
-    setAsked(i);
-    setRun(n => n + 1);
-  };
-  const clear = () => {
-    window.clearTimeout(timer.current);
-    setAsked(null);
-    setTyped('');
-    setWords(0);
-  };
+  const script = useAskScript(0);
+  const [booking, setBooking] = useState<Booking>('open');
   // The pressed suggestion or clear button goes away with the view it was in; keep keyboard focus in the panel.
   const keepFocus = () =>
     requestAnimationFrame(() => {
       if (document.activeElement === document.body) panel.current?.focus({ preventScroll: true });
     });
-  const listen = () => {
-    if (hold.current.on) return;
-    hold.current.on = true;
-    hold.current.since = performance.now();
-    setListening(true);
+  const ask = (index: number) => {
+    setBooking('open');
+    script.ask(index);
+    keepFocus();
   };
-  const release = () => {
-    if (!hold.current.on) return;
-    hold.current.on = false;
-    setListening(false);
-    if (performance.now() - hold.current.since < 350) return;
-    const next = hold.current.next;
-    hold.current.next = (next + 1) % questions.length;
-    ask(next);
+  const clear = () => {
+    script.clear();
+    keepFocus();
   };
-  const listenRef = useRef({ listen, release, ask });
-  listenRef.current = { listen, release, ask };
-  // The suggestions in the screenshot at the top of the page ask here.
-  useEffect(() => {
-    const fromTour = (event: Event) => {
-      panel.current!.scrollIntoView({ behavior: reduced() ? 'auto' : 'smooth', block: 'center' });
-      listenRef.current.ask((event as CustomEvent<number>).detail);
-    };
-    window.addEventListener('aplos:ask', fromTour);
-    return () => window.removeEventListener('aplos:ask', fromTour);
-  }, []);
-  useEffect(() => {
-    let visible = false;
-    const observer = new IntersectionObserver(
-      ([entry]) => {
-        visible = entry.isIntersecting;
-      },
-      { threshold: 0.5 },
-    );
-    observer.observe(panel.current!);
-    const down = (event: KeyboardEvent) => {
-      if (
-        event.key.toLowerCase() !== 'a' ||
-        event.repeat ||
-        !visible ||
-        event.metaKey ||
-        event.ctrlKey ||
-        event.altKey
-      )
-        return;
-      if ((event.target as HTMLElement).closest('input, textarea, select, [role="group"]')) return;
-      listenRef.current.listen();
-    };
-    const up = (event: KeyboardEvent) => {
-      if (event.key.toLowerCase() === 'a') listenRef.current.release();
-    };
-    const blur = () => listenRef.current.release();
-    window.addEventListener('keydown', down);
-    window.addEventListener('keyup', up);
-    window.addEventListener('blur', blur);
-    return () => {
-      observer.disconnect();
-      window.removeEventListener('keydown', down);
-      window.removeEventListener('keyup', up);
-      window.removeEventListener('blur', blur);
-    };
-  }, []);
+  const book = (next: Booking) => {
+    setBooking(next);
+    keepFocus();
+  };
+  const dictate = useHoldToDictate(panel, ask);
+  const { asked, typed, words } = script;
+  const answer = asked === null ? null : questions[asked][1];
+  const done = answer !== null && words >= wordCount(answer.text);
 
   return (
     <div
-      className="askp"
-      data-ui
+      className="ask-panel"
       data-claim="ask-cites ask-dictate plans-confirm"
       ref={panel}
       tabIndex={-1}
     >
-      <div className="askp-top">
-        <div className="askp-tabs" aria-hidden="true">
-          <span className="on">Ask</span>
-          <span>Calendar</span>
-        </div>
-        {asked !== null && (
+      <div className="ask-head">
+        <BubbleIcon />
+        <span>Ask</span>
+        {asked !== null ? (
           <button
             type="button"
-            className="askp-clear"
-            onClick={() => {
-              clear();
-              keepFocus();
-            }}
+            className="app-icon"
+            onClick={clear}
             aria-label="Clear the question"
           >
-            <svg viewBox="0 0 16 16" aria-hidden="true">
-              <path
-                d="m4 4 8 8m0-8-8 8"
-                stroke="currentColor"
-                strokeWidth="1.4"
-                strokeLinecap="round"
-              />
-            </svg>
+            <CloseIcon />
           </button>
-        )}
+        ) : null}
       </div>
-      <div className={`askp-field${listening ? ' is-listening' : ''}`}>
-        {listening ? (
-          <span className="askp-listening" role="status">
-            Listening
-            <span className="askp-level" aria-hidden="true">
-              <i />
-              <i />
-              <i />
-              <i />
-              <i />
-            </span>
-          </span>
-        ) : (
-          <span className={typed ? 'askp-typed' : 'askp-placeholder'} aria-hidden="true">
-            {typed || 'Ask about your mail or calendar'}
-          </span>
-        )}
-        {!typed && (
-          <button
-            type="button"
-            className="askp-talk"
-            aria-label="Hold to dictate"
-            onPointerDown={event => {
-              event.currentTarget.setPointerCapture(event.pointerId);
-              listen();
-            }}
-            onPointerUp={release}
-            onPointerCancel={release}
-            onKeyDown={event => {
-              if ((event.key === ' ' || event.key === 'Enter') && !event.repeat) {
-                event.preventDefault();
-                listen();
-              }
-            }}
-            onKeyUp={event => {
-              if (event.key === ' ' || event.key === 'Enter') release();
-            }}
-            onContextMenu={event => event.preventDefault()}
-          >
-            {listening ? (
-              'Release to ask'
-            ) : (
-              <>
-                Hold <kbd>A</kbd> to dictate
-              </>
-            )}
-          </button>
-        )}
-      </div>
-      {asked === null ? (
-        <div className="askp-body" key="list">
-          <p className="askp-label">Try asking</p>
-          <ul className="askp-list">
-            {questions.map(([q], i) => (
-              <li key={q}>
-                <button
-                  type="button"
-                  onClick={() => {
-                    ask(i);
-                    keepFocus();
-                  }}
-                >
-                  <Bubble />
-                  {q}
-                </button>
-              </li>
-            ))}
-          </ul>
-        </div>
+      {asked === null || !answer ? (
+        <Suggestions onAsk={ask} label="Try asking" />
       ) : (
-        <div className="askp-body" key={`a${asked}-${run}`}>
-          <p className="askp-answer">
-            {answer!.text.split(' ').map((word, i) => (
-              <span key={i} className={i < words ? 'w on' : 'w'}>
-                {word}{' '}
-              </span>
-            ))}
-          </p>
-          {answer!.sources && (
-            <ul
-              className={`askp-sources${done ? ' on' : ''}`}
-              aria-label="Messages and events used"
-            >
-              {answer!.sources.map(s => (
-                <li key={s}>{s}</li>
-              ))}
-            </ul>
-          )}
-          {answer!.proposal && (
-            <div
-              className={`askp-event${done ? ' on' : ''}${booking !== 'open' ? ` is-${booking}` : ''}`}
-            >
-              <div className="askp-event-text">
-                <b>{answer!.proposal.title}</b>
-                <span>
-                  {answer!.proposal.when} · {answer!.proposal.calendar}
-                </span>
-              </div>
-              {booking === 'open' && (
-                <div className="askp-event-actions">
-                  <button
-                    type="button"
-                    className="act"
-                    onClick={() => {
-                      setBooking('dismissed');
-                      keepFocus();
-                    }}
-                    tabIndex={done ? 0 : -1}
-                  >
-                    Not now
-                  </button>
-                  <button
-                    type="button"
-                    className="act act-primary"
-                    onClick={() => {
-                      setBooking('added');
-                      keepFocus();
-                    }}
-                    tabIndex={done ? 0 : -1}
-                  >
-                    Add to calendar
-                  </button>
-                </div>
-              )}
-              {booking === 'added' && (
-                <p className="askp-event-state" role="status">
-                  <svg viewBox="0 0 16 16" aria-hidden="true">
-                    <path
-                      d="m3.5 8.5 3 3 6-7"
-                      fill="none"
-                      stroke="currentColor"
-                      strokeWidth="1.6"
-                      strokeLinecap="round"
-                      strokeLinejoin="round"
-                    />
-                  </svg>
-                  Added to Friday
-                </p>
-              )}
-              {booking === 'dismissed' && (
-                <p className="askp-event-state" role="status">
-                  Nothing was added.
-                </p>
-              )}
-            </div>
-          )}
-        </div>
+        <AnswerView
+          key={`${asked}-${script.run}`}
+          question={questions[asked][0]}
+          answer={answer}
+          words={words}
+          booking={booking}
+          onBook={book}
+        />
       )}
+      {done && asked !== null ? (
+        <div className="ask-more">
+          <Suggestions onAsk={ask} label="Try another" skip={asked} />
+        </div>
+      ) : null}
+      <AskField typed={typed} {...dictate} />
       {/* One region that stays mounted, so screen readers hear the answer once it is complete. */}
       <p className="sr" aria-live="polite">
-        {done ? answer!.text : ''}
+        {done && answer ? answer.text : ''}
       </p>
     </div>
   );

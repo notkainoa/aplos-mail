@@ -1,0 +1,174 @@
+/* Reset, type, links, focus and the few controls every page uses. */
+
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+html {
+  -webkit-text-size-adjust: 100%;
+  text-size-adjust: 100%;
+}
+
+body {
+  margin: 0;
+  background: var(--shell);
+  color: var(--ink);
+  font-family: var(--font-sans);
+  font-size: 17px;
+  line-height: 1.6;
+  letter-spacing: -0.006em;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  text-rendering: optimizelegibility;
+}
+
+h1,
+h2,
+h3 {
+  margin: 0;
+  font-family: var(--font-display);
+  font-weight: 600;
+  color: var(--ink);
+  text-wrap: balance;
+}
+
+p,
+ul,
+ol,
+dl,
+dd,
+figure {
+  margin: 0;
+}
+
+p,
+li {
+  text-wrap: pretty;
+}
+
+a {
+  color: inherit;
+}
+
+img,
+svg {
+  display: block;
+  max-width: 100%;
+}
+
+img {
+  height: auto;
+}
+
+button {
+  font: inherit;
+  color: inherit;
+}
+
+::selection {
+  background: color-mix(in srgb, var(--brand) 22%, var(--canvas));
+  color: var(--ink);
+}
+
+:focus-visible {
+  outline: 2px solid var(--link);
+  outline-offset: 3px;
+  border-radius: 6px;
+}
+
+.close :focus-visible {
+  outline-color: var(--brand-ink);
+}
+
+.sr {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+
+.site {
+  overflow-x: clip;
+}
+
+.page {
+  max-width: calc(var(--page-w) + 2 * var(--gutter));
+  margin: 0 auto;
+  padding: 0 var(--gutter);
+}
+
+.logo {
+  flex: none;
+}
+
+.glyph {
+  flex: none;
+  width: 15px;
+  height: 15px;
+}
+
+.grow {
+  flex: 1;
+}
+
+/* Keycaps, as in the app: caption type on the sunken fill. */
+.kbd {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 18px;
+  height: 18px;
+  padding: 0 5px;
+  border-radius: 4px;
+  background: var(--sunken);
+  color: var(--ink-2);
+  font: 500 11px/1 var(--font-sans);
+  font-variant-numeric: tabular-nums;
+  letter-spacing: 0;
+  vertical-align: 0.12em;
+}
+
+.note {
+  color: var(--ink-2);
+  font-size: 15px;
+}
+
+/* Copy that depends on the input: a keyboard and pointer, or touch. */
+.touch-only {
+  display: none;
+}
+
+@media (hover: none), (pointer: coarse) {
+  .pointer-only {
+    display: none;
+  }
+
+  .touch-only {
+    display: inline;
+  }
+}
+
+/* Elements marked data-reveal fade in once as they enter the viewport (reveal.ts). */
+[data-reveal] {
+  opacity: 0;
+  transform: translateY(12px);
+  transition:
+    opacity 500ms var(--ease-std),
+    transform 700ms var(--ease-out);
+}
+
+[data-reveal].is-in {
+  opacity: 1;
+  transform: none;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  [data-reveal] {
+    transform: none;
+    transition: opacity 200ms linear;
+  }
+}

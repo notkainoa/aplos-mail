@@ -685,16 +685,6 @@
       "count": 3
     }
   },
-  "apps/web/src/InstallArt.tsx": {
-    "@typescript-eslint/no-unused-vars": {
-      "count": 1
-    }
-  },
-  "apps/web/src/platform.ts": {
-    "complexity": {
-      "count": 1
-    }
-  },
   "packages/emulators/src/gmail/generate.ts": {
     "complexity": {
       "count": 1
