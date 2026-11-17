@@ -53,10 +53,12 @@ function Hero() {
   );
 }
 
-function Crop({ name, alt, eager }: { name: 'home' | 'calendar'; alt: string; eager?: boolean }) {
+function Crop({ name, alt, eager }: { name: 'home'; alt: string; eager?: boolean }) {
   return (
-    <div className={`b-frame b-crop b-crop-${name}`}>
-      <AppShot name={name} alt={alt} eager={eager} />
+    <div className="b-frame">
+      <div className={`b-crop b-crop-${name}`}>
+        <AppShot name={name} alt={alt} eager={eager} />
+      </div>
     </div>
   );
 }
@@ -78,8 +80,7 @@ function Tag({ children }: { children: string }) {
   return <p className="b-tag">{children}</p>;
 }
 
-function featureClass(flip?: boolean, stack?: boolean) {
-  if (stack) return 'b-feature b-wrap is-stack';
+function featureClass(flip?: boolean) {
   return flip ? 'b-feature b-wrap is-flip' : 'b-feature b-wrap';
 }
 
@@ -92,7 +93,6 @@ function Feature({
   tag,
   title,
   flip,
-  stack,
   aside,
   children,
 }: {
@@ -100,16 +100,15 @@ function Feature({
   tag: string;
   title: ReactNode;
   flip?: boolean;
-  stack?: boolean;
   aside: ReactNode;
   children: ReactNode;
 }) {
   return (
-    <section className={featureClass(flip, stack)} aria-labelledby={id}>
+    <section className={featureClass(flip)} aria-labelledby={id}>
       <div className="b-feature-text">
         <Tag>{tag}</Tag>
         <h2 id={id}>{title}</h2>
-        {stack ? <div className="b-copy">{children}</div> : children}
+        {children}
       </div>
       <div className="b-feature-aside">{aside}</div>
     </section>
@@ -147,24 +146,11 @@ function Calendar() {
       tag="Calendar"
       title={
         <>
-          <Line>Your mail and calendar,</Line>
+          <Line>Mail and calendar,</Line>
           <Line>in one app.</Line>
         </>
       }
-      stack
-      aside={
-        <>
-          <div className="b-desk-only">
-            <Crop
-              name="calendar"
-              alt="Aplos Mail's Calendar: a week from Sunday 15 to Saturday 21 November, with a design critique and a dentist visit on Thursday"
-            />
-          </div>
-          <div className="b-narrow-only">
-            <CalendarMock />
-          </div>
-        </>
-      }
+      aside={<CalendarMock />}
     >
       <p data-claim="google-calendar-views">
         Your Google calendars share one day, week and month view.
@@ -191,6 +177,7 @@ function Ask() {
           <Line>mail or calendar.</Line>
         </>
       }
+      flip
       aside={<AskMock />}
     >
       <p data-claim="ask-dictate">Type a question, or hold A and say it.</p>
@@ -293,11 +280,13 @@ function Privacy() {
 function Footer() {
   return (
     <footer className="b-footer b-wrap">
-      <a className="b-brand" href="../../">
-        <Logo size={22} />
-        <span>Aplos Mail</span>
-      </a>
-      <p data-claim="mac-only">Independent software for Mac.</p>
+      <div className="b-footer-id">
+        <a className="b-brand" href="../../">
+          <Logo size={22} />
+          <span>Aplos Mail</span>
+        </a>
+        <p data-claim="mac-only">Independent software for Mac.</p>
+      </div>
       <nav className="b-footer-links" aria-label="Footer">
         <a href={download}>How to get it</a>
         <a href={privacy}>Privacy</a>

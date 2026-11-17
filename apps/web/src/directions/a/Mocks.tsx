@@ -174,44 +174,28 @@ export function AskMock() {
 
 type Key = { cap: string; does: string };
 
-const mainKeys: Key[] = [
+const keys: Key[] = [
   { cap: 'Space', does: 'Main action' },
-  { cap: '←', does: 'Later' },
   { cap: '→', does: 'Done' },
+  { cap: '←', does: 'Later' },
   { cap: 'Z', does: 'Undo' },
-];
-
-const moreKeys: Key[] = [
   { cap: 'B', does: 'Bookmark' },
-  { cap: 'A', does: 'Ask, hold to dictate' },
   { cap: 'C', does: 'Compose' },
+  { cap: 'A', does: 'Ask, hold to dictate' },
   { cap: '?', does: 'All shortcuts' },
 ];
 
-function KeyItem({ item, large }: { item: Key; large?: boolean }) {
-  return (
-    <li className={large ? 'key-main' : 'key-more'}>
-      <kbd className="cap">{item.cap}</kbd>
-      <span>{item.does}</span>
-    </li>
-  );
-}
-
-/** The four keys that run Home first, the rest as a quieter list. */
+/** The keyboard map as one list: the cap, then what it does, in reading order. */
 export function KeyList() {
   return (
-    <div className="keys" data-claim="key-list">
-      <ul className="key-grid">
-        {mainKeys.map(key => (
-          <KeyItem key={key.cap} item={key} large />
-        ))}
-      </ul>
-      <ul className="key-rest">
-        {moreKeys.map(key => (
-          <KeyItem key={key.cap} item={key} />
-        ))}
-      </ul>
-    </div>
+    <ul className="key-grid" data-claim="key-list">
+      {keys.map(item => (
+        <li key={item.cap} className="key-item">
+          <kbd className="cap">{item.cap}</kbd>
+          <span>{item.does}</span>
+        </li>
+      ))}
+    </ul>
   );
 }
 
@@ -257,18 +241,18 @@ export function ProviderMock() {
 }
 
 const dayEvents = [
-  { title: 'Design critique', time: '2:00 PM', top: 0, tall: 1, tone: 'blue' },
-  { title: 'Dentist', time: '3:15 PM', top: 1.25, tall: 0.75, tone: 'sand' },
+  { title: 'Friday review', time: '11:00 AM', top: 1, tall: 1, tone: 'blue' },
+  { title: 'Cabin planning', time: '1:00 PM', top: 3, tall: 1, tone: 'sand' },
 ];
 
-const hours = ['2 PM', '3 PM', '4 PM', '5 PM'];
+const hours = ['10 AM', '11 AM', '12 PM', '1 PM'];
 
-/** A phone-sized day view of Thursday, in the calendar's style. Shown instead of the wide crop. */
+/** A phone-sized day view of Friday, in the calendar's style. Shown instead of the wide crop. */
 export function CalendarDayMock() {
   return (
     <div className="mock mock-day" aria-hidden="true">
       <div className="day-head">
-        <span className="day-title">Thursday 19</span>
+        <span className="day-title">Friday 20</span>
         <span className="day-sub">November 2026</span>
       </div>
       <div className="day-grid">

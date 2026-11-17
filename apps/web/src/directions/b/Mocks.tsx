@@ -80,21 +80,23 @@ export function HomeMock() {
       <div className="b-home-focus">
         <FocusCard focus={maya} />
       </div>
-      <ul className="b-rows">
-        {rows
-          .filter(row => homeRows.includes(row.from))
-          .map(row => (
-            <li key={row.from}>
-              <span className="b-row-from">{row.from}</span>
-              <span className="b-row-subject">{row.subject}</span>
-              <span className="b-dim">{row.when}</span>
-            </li>
-          ))}
-      </ul>
-      <div className="b-low">
-        <span className="b-low-label">Low importance</span>
-        <span className="b-dim b-low-names">Weekly Digest, Parcel Trail and Book Nook</span>
-        <span className="b-dim">3</span>
+      <div className="b-home-list">
+        <ul className="b-rows">
+          {rows
+            .filter(row => homeRows.includes(row.from))
+            .map(row => (
+              <li key={row.from}>
+                <span className="b-row-from">{row.from}</span>
+                <span className="b-row-subject">{row.subject}</span>
+                <span className="b-dim">{row.when}</span>
+              </li>
+            ))}
+        </ul>
+        <div className="b-low">
+          <span className="b-low-label">Low importance</span>
+          <span className="b-dim b-low-names">Weekly Digest, Parcel Trail and Book Nook</span>
+          <span className="b-dim">3</span>
+        </div>
       </div>
     </figure>
   );

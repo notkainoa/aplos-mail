@@ -75,7 +75,6 @@ function Hero() {
 
 type PaneProps = {
   id: string;
-  label: string;
   title: string;
   children: ReactNode;
   aside: ReactNode;
@@ -84,12 +83,11 @@ type PaneProps = {
   asideClass?: string;
 };
 
-function Pane({ id, label, title, children, aside, flip, wide, asideClass }: PaneProps) {
+function Pane({ id, title, children, aside, flip, wide, asideClass }: PaneProps) {
   const layout = wide ? 'pane-wide' : flip ? 'pane-split pane-flip' : 'pane-split';
   return (
     <section className={`pane ${layout}`} aria-labelledby={id}>
       <div className="pane-copy">
-        <p className="pane-label">{label}</p>
         <h2 id={id}>{title}</h2>
         {children}
       </div>
@@ -102,7 +100,6 @@ function HomePane() {
   return (
     <Pane
       id="home"
-      label="Home"
       title="Read the point, then decide."
       asideClass="aside-home"
       aside={
@@ -126,7 +123,6 @@ function CalendarPane() {
   return (
     <Pane
       id="calendar"
-      label="Calendar"
       title="Your calendar sits next to your mail."
       wide
       aside={
@@ -153,7 +149,7 @@ function CalendarPane() {
 
 function AskPane() {
   return (
-    <Pane id="ask" label="Ask" title="Ask about your mail or calendar." flip aside={<AskMock />}>
+    <Pane id="ask" title="Ask about your mail or calendar." flip aside={<AskMock />}>
       <p data-claim="ask-dictate">Type a question, or hold A and say it.</p>
       <p data-claim="ask-cites">
         Ask reads your mail and calendar, and shows the messages its answer came from.
@@ -167,7 +163,7 @@ function AskPane() {
 
 function KeysPane() {
   return (
-    <Pane id="keys" label="Keyboard" title="Made for the keyboard." aside={<KeyList />}>
+    <Pane id="keys" title="Made for the keyboard." aside={<KeyList />}>
       <p data-claim="keyboard-first">
         Your hands stay on the keyboard from the first email to the last.
       </p>
@@ -177,21 +173,15 @@ function KeysPane() {
 
 function AiPane() {
   return (
-    <Pane
-      id="ai"
-      label="AI and privacy"
-      title="Your provider, your keys, your Mac."
-      flip
-      aside={<ProviderMock />}
-    >
+    <Pane id="ai" title="Your provider, your keys, your Mac." flip aside={<ProviderMock />}>
       <p className="lead" data-claim="keys-on-mac local-models no-aplos-server">
         No Aplos server ever sees your mail, calendar or sign&#8209;in details. Your keys stay on
         your Mac, and Ollama and LM Studio run on it too.
       </p>
       <p data-claim="groq-default provider-per-feature ai-providers ai-routers">
-        Every AI feature runs on Groq by default. In Settings you pick a provider for each one:
-        Groq, OpenAI, Claude, Gemini, OpenRouter, OpenCode Go, Ollama, LM Studio or your own server.
-        OpenRouter and OpenCode Go pass each request on to the company that runs the chosen model.
+        Groq is the default for every AI feature. In Settings you pick a provider for each one, such
+        as OpenAI, Claude, Gemini, Ollama or your own server. A feature’s text goes only to the
+        provider you picked for it; routers like OpenRouter pass it on to the model’s host.
       </p>
     </Pane>
   );
@@ -228,7 +218,7 @@ function Footer() {
       </div>
       <nav className="footer-links" aria-label="Footer">
         <a className="text-link" href={DOWNLOAD}>
-          How to get it
+          Get Aplos Mail
         </a>
         <a className="text-link" href={PRIVACY}>
           Privacy
