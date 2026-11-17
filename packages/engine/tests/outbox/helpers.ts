@@ -384,6 +384,8 @@ export function outboxWorld(
     drafts?: boolean;
     /** A real adapter's `SendPort` in place of the counting fake (`world.server` then sees nothing). */
     send?: SendPort;
+    /** Recorded in `world.sent`, in place of the sync wake a send's settle fires. */
+    afterSend?(accountId: string): void;
   } = {},
 ) {
   const file = tempDb();
@@ -473,6 +475,7 @@ export function outboxWorld(
       log,
       blobs: blobSource,
       settings: options.settings,
+      ...(options.afterSend ? { afterSend: options.afterSend } : {}),
       ...(options.drafts
         ? { drafts: remoteDrafts.port, frames: { emit: f => frames.push(f) } }
         : {}),

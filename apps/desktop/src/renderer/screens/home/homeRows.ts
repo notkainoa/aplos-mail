@@ -109,23 +109,34 @@ export function senderOf(row: ThreadRow): string {
   return from || cleanName(row.subject) || 'No sender';
 }
 
-/** The main line of a row: the summary when it is ready, otherwise the subject (DESIGN 7.2 "No AI"). */
+/**
+ * The main line of every list row: the subject, always (owner decision 2026-11-16, DECISIONS; DESIGN 7.2). A summary
+ * never replaces it; see `secondaryOf`.
+ */
 export function primaryOf(row: ThreadRow): string {
-  const { state, text } = row.summary;
-  return (
-    ((state === 'ready' || state === 'stale') && text ? text : row.subject).trim() || 'No subject'
-  );
+  return subjectOf(row);
+}
+
+/**
+ * The muted phrase after the subject: a ready or stale summary's text on one line, else nothing (a pending, failed,
+ * none or empty summary leaves the subject alone). Search may still fill the slot with its match snippet.
+ */
+export function secondaryOf(row: Partial<Pick<ThreadRow, 'summary'>>): string | undefined {
+  const { state, text } = row.summary ?? {};
+  if (state !== 'ready' && state !== 'stale') return undefined;
+  return text?.replace(/\s+/g, ' ').trim() || undefined;
 }
 
 /**
  * What the focus letter's summary slot shows: serif when written, the placeholder while it is being made, and the
- * subject alone (the space collapses) when no summary is coming. `gaveUp`: it was pending too long (owner decision
- * 2026-11-13: never a placeholder that spins forever, never an error on the card).
+ * subject alone (the space collapses) when no summary is coming. Pending means pending — the placeholder holds
+ * while the engine has live or queued work and the space collapses only when the engine settles the row `failed`
+ * (the request failed) or `none` (AI off, no job): never an error on the card (owner rule, hands-on 2026-11-16).
  */
-export function summaryOf(row: ThreadRow, gaveUp = false): SummaryContent {
+export function summaryOf(row: ThreadRow): SummaryContent {
   const { state, text, provider, local } = row.summary;
   const subject = subjectOf(row);
-  if (state === 'pending' && !gaveUp) return { state: 'pending', subject };
+  if (state === 'pending') return { state: 'pending', subject };
   if ((state === 'ready' || state === 'stale') && text)
     return {
       state: 'ready',
@@ -200,6 +211,7 @@ export function listRowProps(row: ThreadRow, context: RowContext): ListRowProps 
     density: context.density,
     sender: senderOf(row),
     primary: primaryOf(row),
+    secondary: secondaryOf(row),
     unread: row.unread,
     date: dateOf(row),
     due: dueOf(row),

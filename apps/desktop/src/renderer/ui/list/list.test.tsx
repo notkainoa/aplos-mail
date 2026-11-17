@@ -162,6 +162,11 @@ describe('ListRow', () => {
     assert.match(m, /class="ui-list-row__sender" dir="auto" title="[^"]+"/);
     assert.match(m, /class="ui-list-row__primary" dir="auto"/);
     assert.match(m, /class="ui-list-row__secondary" dir="auto"/);
+    assert.match(
+      m,
+      /ui-list-row__primary[^>]*>[^<]*<\/span><span class="ui-list-row__sep" aria-hidden="true">·<\/span><span class="ui-list-row__secondary"/,
+      'a dot (hidden from screen readers) sits between the subject and the summary',
+    );
   });
 
   test('search: secondary snippet and bold terms, marks with screen-reader words', () => {
@@ -236,8 +241,13 @@ describe('ListBox, ListGroup, SectionHeader', () => {
     );
     assert.match(
       m,
-      /<button type="button" class="ui-list-btn"[^>]*title="Go one by one · S"/,
-      'a real button, so it is in the accessibility tree (it sits in the group header, not inside an option)',
+      /title="Go one by one · S" aria-hidden="true"/,
+      'a pointer duplicate of S inside the listbox (a span: not focusable and out of the accessibility tree, so the group owns only options)',
+    );
+    assert.doesNotMatch(
+      m,
+      /<button[^>]*Go one by one/,
+      'no button inside the listbox: axe aria-required-children (#534 had made it one)',
     );
     assert.doesNotMatch(m, /<h1|<h2|page-title/, 'no page title, no heading inside the listbox');
   });

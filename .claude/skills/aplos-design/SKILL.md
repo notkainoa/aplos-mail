@@ -84,7 +84,7 @@ Use `var(--token)` in CSS and the imports from `ui/generated/motion.ts` in TS. N
 Rules:
 
 - Colour is rare. Everything else is gray, black or white.
-- A read row is a 400 `--ink-2` sender and a `--dim` summary. An unread row is a 600 `--ink` sender and a 500 `--ink-2` summary, with no dot (owner, 2026-11-13).
+- Every list row shows the email's subject, then a written summary after it as a muted `--dim` " · summary" ending in an ellipsis; the summary never replaces the subject (owner, 2026-11-16). A read row is a 400 `--ink-2` sender; an unread row is a 600 `--ink` sender and a 500 subject, with no dot (owner, 2026-11-13).
 - The keyboard cursor is `--puck` plus a 2 px accent bar on the leading edge. Never use opacity for text.
 - Disabled text is `--dim` and disabled icons are `--faint`.
 - Dark-theme large fills (the swipe underlay) are capped at a 70 % mix over paper. Small commit chips are solid.
@@ -340,7 +340,7 @@ How Home behaves:
 - The focus letter is a fixed-height `--elev-card` (it fits its content when no summary is coming). It holds the meta line, the serif summary (two lines at most on Home; while it is being written, a quiet two-line placeholder with "Summarizing…") and the action row: the filled suggestion with its Space keycap, then Later and Done as text buttons, then ⋯. There is no subject.
 - Empty sections don't render, except while held.
 - The sidebar count is Do now plus Important updates.
-- With no AI, rows show the subject, the focus letter shows the subject at `summary` size in SF, and there is no error.
+- Rows always show the subject (a written summary follows it, muted); with no AI the focus letter shows the subject at `summary` size in SF, and there is no error.
 
 ### How AI appears (DESIGN §9)
 

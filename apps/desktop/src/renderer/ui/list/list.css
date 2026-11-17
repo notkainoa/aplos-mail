@@ -720,11 +720,23 @@
   flex: 1 1 auto;
 }
 .ui-list-row__primary[data-has-secondary='true'] {
+  /* One calm line: the subject at its own width (at most 60 % of the line, so the summary always keeps a share), then
+     the muted summary, which takes the rest and ends in an ellipsis (owner decision 2026-11-16). */
   flex: 0 1 auto;
-  max-width: 45%;
+  max-width: 60%;
+  /* The subject outranks its summary: --ink-2 beside the summary's --dim, read or unread. */
+  color: var(--ink-2);
 }
 .ui-list-row__secondary {
+  /* Never a lone dot: at the narrowest window the subject gives way first, so the summary keeps room for a few words. */
   flex: 1 1 0;
+  min-width: 4rem;
+  color: var(--dim);
+}
+.ui-list-row__sep {
+  /* The " · " between the subject and its summary: its own flex item, so it follows the line's direction (RTL too)
+     and a screen reader skips it. */
+  flex: none;
   color: var(--dim);
 }
 .ui-list-row__hit {

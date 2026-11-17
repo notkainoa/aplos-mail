@@ -100,6 +100,30 @@ test('the run effect carries the context: question, scope, view, the draft accou
   assert.equal(args.timeZone, 'Europe/Berlin');
 });
 
+test('the sidebar picker scopes the run: one account narrows, All accounts sends nothing', () => {
+  // Account A picked: the run searches A only (the engine still refuses a kept-out id).
+  const picked = askRunArgs(
+    { question: 'invoices?', searchAll: false },
+    { target: null, screen: 'home', accountScope: 'acct-work' },
+    'UTC',
+  );
+  assert.deepEqual(picked.scope, { accountIds: ['acct-work'] });
+  // The search-all toggle rides alongside the pick, not instead of it.
+  const pickedAll = askRunArgs(
+    { question: 'invoices?', searchAll: true },
+    { target: null, screen: 'home', accountScope: 'acct-work' },
+    'UTC',
+  );
+  assert.deepEqual(pickedAll.scope, { searchAllMail: true, accountIds: ['acct-work'] });
+  // All accounts: no scope at all — the engine reads every AI-allowed account.
+  const all = askRunArgs(
+    { question: 'invoices?', searchAll: false },
+    { target: null, screen: 'home', accountScope: null },
+    'UTC',
+  );
+  assert.equal(all.scope, undefined);
+});
+
 test('an ai.accountExcluded refusal maps to the excluded turn and the question stays in the field', () => {
   const state = runRefused(running(), 'c1', {
     type: 'forbidden',

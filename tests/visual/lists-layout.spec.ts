@@ -64,3 +64,40 @@ test('every list puts its empty line at the same point in the pane', async ({ pa
     expect(Math.abs(centre.y - spam.y), `${id} y`).toBeLessThanOrEqual(1);
   }
 });
+
+for (const density of ['roomy', 'comfortable', 'compact'] as const) {
+  test(`a subject-and-summary row stays one line at the narrowest window, ${density}`, async ({
+    page,
+  }) => {
+    await page.setViewportSize({ width: 900, height: 600 });
+    await openState(page, stateOf('list-all-mail'));
+    await page.evaluate(value => {
+      for (const row of document.querySelectorAll<HTMLElement>('.ui-list-row'))
+        row.dataset.density = value;
+    }, density);
+    const rows = await page.$$eval('.ui-list-row', nodes =>
+      nodes.map(node => {
+        const box = (selector: string) =>
+          node.querySelector<HTMLElement>(selector)?.getBoundingClientRect();
+        const primary = box('.ui-list-row__primary');
+        const secondary = box('.ui-list-row__secondary');
+        return {
+          height: node.getBoundingClientRect().height,
+          primaryTop: primary?.top,
+          secondaryTop: secondary?.top,
+          secondaryWidth: secondary?.width ?? 0,
+          sepFirst: Boolean(node.querySelector('.ui-list-row__sep')),
+        };
+      }),
+    );
+    const withSummary = rows.filter(row => row.secondaryWidth > 0);
+    expect(withSummary.length).toBeGreaterThan(5);
+    const height = { roomy: 48, comfortable: 40, compact: 34 }[density];
+    for (const row of withSummary) {
+      expect(row.height).toBe(height);
+      expect(Math.abs((row.secondaryTop ?? 0) - (row.primaryTop ?? 0))).toBeLessThan(4);
+      expect(row.secondaryWidth).toBeGreaterThanOrEqual(60);
+      expect(row.sepFirst).toBe(true);
+    }
+  });
+}

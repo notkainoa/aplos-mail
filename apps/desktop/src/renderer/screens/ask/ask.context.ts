@@ -22,6 +22,8 @@ export interface AskShellState {
   readonly screen: Screen;
   /** `openDraftAccount`: the account an open composer is writing in; absent while none is open. */
   readonly draftAccountId?: string;
+  /** `useAccountScope`: the sidebar picker's account; null/absent means All accounts. */
+  readonly accountScope?: string | null;
 }
 
 /** The `context` one `Ask/run` carries; a draft's account goes only while its composer is open. */
@@ -45,10 +47,17 @@ export function askRunArgs(
   shell: AskShellState,
   timeZone: string,
 ): RunArgs {
+  // The sidebar picker scopes the mail a run searches: one account sends its id (the engine narrows to
+  // AI-allowed accounts only, never wider), All accounts sends none. `searchAllMail` stays the search-all
+  // toggle — both can ride `scope` at once.
+  const scope: RunArgs['scope'] = {
+    ...(effect.searchAll ? { searchAllMail: true } : {}),
+    ...(shell.accountScope ? { accountIds: [shell.accountScope] } : {}),
+  };
   return {
     question: effect.question,
     conversationId: effect.conversationId,
-    scope: effect.searchAll ? { searchAllMail: true } : undefined,
+    scope: Object.keys(scope).length ? scope : undefined,
     context: askContext(shell),
     timeZone,
   };
