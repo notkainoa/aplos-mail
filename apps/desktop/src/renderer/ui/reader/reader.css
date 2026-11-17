@@ -128,6 +128,20 @@
   background: none;
   color: var(--dim);
 }
+/* The primary slot while "Replying": the filled button's own width (an unseen copy sizes it) with the quiet state
+   centred in it, so Later and Done keep their places and keycaps. */
+.ui-reader-actions__slot {
+  display: grid;
+}
+.ui-reader-actions__slot > * {
+  grid-area: 1 / 1;
+}
+.ui-reader-actions__slot > .ui-list-btn[aria-hidden='true'] {
+  visibility: hidden;
+}
+.ui-reader-actions__slot > button.ui-list-btn {
+  justify-content: center;
+}
 /* While the reply is open the bar rests in the flow under it: it never floats over the card being written. */
 .ui-reader-actions[data-demoted='true'] {
   position: relative;

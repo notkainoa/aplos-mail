@@ -105,6 +105,12 @@
   overflow-wrap: anywhere;
 }
 
+/* The inline reply's text starts in the same column as the message cards' bodies above it (the sender mark's width and
+   its gap), so a reply does not jump 32 px sideways when it is sent and becomes a card of its own. */
+.aplos-reader:not([data-cards='off']) .ui-inline-reply__editor {
+  padding-left: calc(var(--control-xs) + var(--space-2));
+}
+
 /* The compose page fills the pane, so its hairline and Send sit at the pane's bottom (DESIGN 7.6; mockups/compose.html)
    however short the text, and a long text scrolls inside the page above them. `.aplos-compose` is the page's root; it
    carries the card option on trial (`data-cards`), and draws nothing itself. */

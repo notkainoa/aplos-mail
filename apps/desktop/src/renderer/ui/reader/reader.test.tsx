@@ -169,7 +169,26 @@ describe('ReaderActions', () => {
     );
     assert.match(done, /data-variant="filled"[^>]*>.*Done<\/span><kbd class="ui-list-kbd">Space/);
     const demoted = render(<ReaderActions {...actions({ demoted: true })} />);
-    assert.doesNotMatch(demoted, /data-variant="filled"|<kbd/);
+    assert.doesNotMatch(
+      demoted,
+      /data-variant="filled"/,
+      'the filled button belongs to the open composer',
+    );
+    assert.match(
+      demoted,
+      /title="Later · ←"[\s\S]*<kbd[^>]*>←<\/kbd>/,
+      'Later keeps its key while replying',
+    );
+    assert.match(
+      demoted,
+      /title="Done · →"[\s\S]*<kbd[^>]*>→<\/kbd>/,
+      'Done keeps its key while replying',
+    );
+    assert.match(
+      demoted,
+      /ui-reader-actions__slot/,
+      'the primary slot keeps the filled button’s width',
+    );
     assert.match(demoted, /data-demoted="true"/, 'the bar rests in the flow under the open reply');
     assert.match(text(demoted), /Replying/, 'the reply button says so while the reply is open');
     assert.match(demoted, /aria-pressed="true"/);
