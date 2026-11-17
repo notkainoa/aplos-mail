@@ -21,13 +21,13 @@ export const DEMO_ACCOUNTS: readonly DemoAccountSpec[] = [
   {
     id: 'demo-work',
     address: 'alex@studio.example',
-    colorTag: 'sage',
+    colorTag: 'sky',
     label: { remoteId: 'label-projects', name: 'Projects' },
   },
   {
     id: 'demo-personal',
     address: 'alex@home.example',
-    colorTag: 'clay',
+    colorTag: 'sand',
     label: { remoteId: 'label-friends', name: 'Friends and family' },
   },
 ];

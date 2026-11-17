@@ -4,6 +4,7 @@ import type { LogRecord } from '@aplos/contract';
 import { ContractError } from '@aplos/contract/contract-error';
 import { DEMO_ACCOUNTS } from '../../src/ai/demo/data';
 import { DEMO_ACCOUNT_IDS } from '../../src/ai/demo/load';
+import { accountIds } from '../../src/sync/account-read';
 import { createLogger } from '../../src/diag/log';
 import { createEngine, laneExtensions } from '../../src/index';
 import type { Caller } from '../../src/methods/types';
@@ -298,6 +299,24 @@ test('Demo/load commits two demo accounts and about 18 threads across every plac
         WHERE f.remote_id = 'DRAFTS'`,
       ),
       1,
+    );
+  } finally {
+    await t.cleanup();
+  }
+});
+
+test('the demo accounts list in one stable order, each with a colour tag the app draws', async () => {
+  const t = await demoEngine();
+  try {
+    await t.window().call('Demo/load', {});
+    assert.deepEqual(
+      accountIds(t.store),
+      [...DEMO_ACCOUNT_IDS],
+      'creation order, not alphabetical',
+    );
+    assert.deepEqual(
+      DEMO_ACCOUNTS.map(a => a.colorTag),
+      ['sky', 'sand'],
     );
   } finally {
     await t.cleanup();

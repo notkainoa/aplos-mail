@@ -49,10 +49,10 @@ const CAPABILITY_FLAGS = [
   'unsubscribeHeaders',
 ] as const;
 
-/** The ids of every stored account, oldest first. */
+/** The ids of every stored account, oldest first; accounts made in one commit keep the order they were written in. */
 export function accountIds(store: StorePort): string[] {
   return store.read(q =>
-    q.all<{ id: string }>('SELECT id FROM accounts ORDER BY created_at, id').map(r => r.id),
+    q.all<{ id: string }>('SELECT id FROM accounts ORDER BY created_at, rowid').map(r => r.id),
   );
 }
 
