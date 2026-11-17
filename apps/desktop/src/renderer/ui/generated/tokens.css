@@ -49,7 +49,7 @@
     'Newsreader', 'Newsreader Fallback New York', 'Newsreader Fallback Georgia', 'New York',
     'Georgia', serif;
   --font-mono: ui-monospace, 'SF Mono', 'Menlo', monospace;
-  --type-caption: 500 0.71875rem/1rem var(--font-sans);
+  --type-caption: 500 0.7188rem/1rem var(--font-sans);
   --track-caption: calc(0.04px + var(--track-boost));
   --type-small: 400 0.75rem/1.125rem var(--font-sans);
   --track-small: calc(0px + var(--track-boost));

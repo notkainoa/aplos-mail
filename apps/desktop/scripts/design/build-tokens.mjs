@@ -95,7 +95,7 @@ export function remFromPx(value) {
     return String(value);
   }
   const n = Number(match[1]);
-  return n === 0 ? '0' : `${Number((n / REM_BASE).toFixed(6))}rem`;
+  return n === 0 ? '0' : `${Number((n / REM_BASE).toFixed(4))}rem`;
 }
 
 function cssDimension(flat, token, value) {
