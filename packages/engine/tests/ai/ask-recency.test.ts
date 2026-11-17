@@ -1,6 +1,12 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { isRecencyQuestion, topicWords, wantsNewest } from '../../src/ai/impl/ask-recency';
+import {
+  isoDate,
+  isRecencyQuestion,
+  newestFirst,
+  topicWords,
+  wantsNewest,
+} from '../../src/ai/impl/ask-recency';
 import { msg } from '../store/helpers';
 import { lastPrompt, seedMail, settle, stubTransport, world, type World } from './harness';
 
@@ -133,4 +139,54 @@ test('Ask/run: "the latest about X" keeps keyword retrieval but lists the hits n
     dates,
     [...dates].sort((a, b) => b - a),
   );
+});
+
+test('newestFirst keeps the leading sources, sorts the rest newest first and renumbers', () => {
+  const src = (n: number, date?: number) => ({ n, date });
+  const out = newestFirst([src(1, 5), src(2, 1), src(3, 9), src(4), src(5, 4)], 1);
+  assert.deepEqual(
+    out.map(s => [s.n, s.date]),
+    [
+      [1, 5],
+      [2, 9],
+      [3, 4],
+      [4, 1],
+      [5, undefined],
+    ],
+  );
+});
+
+test('a date past what JS holds drops the Date line instead of failing the run', async () => {
+  assert.equal(isoDate(9e15), undefined);
+  assert.equal(isoDate(Number.NaN), undefined);
+  assert.equal(isoDate(0), '1970-01-01T00:00:00.000Z');
+  const t = stubTransport({});
+  const w = await world(t);
+  seedRecent(w);
+  w.store.commit({
+    opId: 'far-future',
+    origin: 'sync',
+    writes: [msg('far', 'T-far', 0, { subject: 'From the far future', internalDate: 9e15 })],
+  });
+  const run = await w.call('Ask/run', { question: 'What are my latest emails about?' });
+  await settle(w, run.runId);
+  assert.equal(t.calls.length, 1, 'the provider was asked');
+  const prompt = lastPrompt(t);
+  assert.match(prompt, /\[1\]\nFrom: [^\n]*\nSubject: From the far future\n\n/);
+});
+
+test('the newest mail never includes a thread in Trash or Spam', async () => {
+  const t = stubTransport({});
+  const w = await world(t);
+  seedRecent(w);
+  w.store.commit({
+    opId: 'trashed',
+    origin: 'sync',
+    writes: [msg('bin', 'T-bin', 90, { subject: 'Thrown away', folders: [{ folder: 'TRASH' }] })],
+  });
+  const run = await w.call('Ask/run', { question: 'What are my most recent emails about?' });
+  await settle(w, run.runId);
+  const prompt = lastPrompt(t);
+  assert.ok(!prompt.includes('Thrown away'), 'the newest message is in Trash and stays out');
+  assert.match(prompt, /\[1\]\nFrom: [^\n]*\nSubject: Re: Lunch/);
 });
