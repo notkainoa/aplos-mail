@@ -8,7 +8,7 @@ import type { StoreReader } from '../../store/port';
  */
 
 const RECENT =
-  /\b(recent(ly)?|latest|newest|last|today|tonight|yesterday|this (morning|afternoon|evening|week)|just (got|sent|received|came|arrived))\b/i;
+  /\b(recent(ly)?|latest|newest|last (\d+|few|couple|one|two|three|four|five|six|seven|eight|nine|ten|e-?mails?|mails?|messages?|threads?|things?|night|week)|today|tonight|yesterday|this (morning|afternoon|evening|week)|just (got|sent|received|came|arrived))\b/i;
 
 /** Words that say nothing about a topic: question filler, counts, mail nouns and the recency words themselves. */
 const FILLER = new Set(
@@ -18,7 +18,9 @@ const FILLER = new Set(
    did does doing can could would should will shall may might tell show give list summarize summarise summary
    recap say says said one two three four five six seven eight nine ten top first couple handful
    email emails mail mails message messages inbox account accounts thread threads conversation conversations
-   letter letters note notes get gotten i me my mine our ours you your yours they them their its it`
+   letter letters note notes get gotten i me my mine our ours you your yours they them their its it
+   anything something everything nothing going happening happened up in on of to at by an as or if so do
+   we us is be no go new news important`
     .split(/\s+/)
     .filter(Boolean),
 );
@@ -30,7 +32,8 @@ export function isRecencyQuestion(question: string): boolean {
 
 /** The question's topic words: what is left once filler, counts and mail nouns are dropped. */
 export function topicWords(question: string): string[] {
-  const words = question.toLowerCase().match(/[\p{L}\p{N}']{3,}/gu) ?? [];
+  // Two letters can be a topic ("HR", "Q3"); the filler list holds the short words that never are.
+  const words = question.toLowerCase().match(/[\p{L}\p{N}']{2,}/gu) ?? [];
   return [...new Set(words.map(w => w.replace(/'s$/, '')))].filter(w => !FILLER.has(w));
 }
 
@@ -52,7 +55,10 @@ export interface SourceRow {
   remote_thread: string;
 }
 
-/** The newest delivered or sent messages in the allowed accounts: no drafts, nothing in Spam or Trash. */
+/**
+ * The newest delivered or sent mail in the allowed accounts, one message per thread (its newest), so a busy
+ * conversation does not fill every source: no drafts, nothing in Spam or Trash.
+ */
 export function newestMessages(
   q: StoreReader,
   allowed: readonly string[],
@@ -60,13 +66,15 @@ export function newestMessages(
 ): SourceRow[] {
   if (!allowed.length) return [];
   return q.all<SourceRow>(
-    `SELECT m.id, m.remote_id, m.account_id, m.thread_id, m.subject, m.from_name, m.from_addr, m.internal_date, m.snippet, t.remote_id AS remote_thread
+    // SQLite fills the bare columns of a MAX() group from the row that holds the max: each thread's newest message.
+    `SELECT m.id, m.remote_id, m.account_id, m.thread_id, m.subject, m.from_name, m.from_addr, MAX(m.internal_date) AS internal_date, m.snippet, t.remote_id AS remote_thread
      FROM messages m JOIN threads t ON t.id = m.thread_id
      WHERE m.account_id IN (${allowed.map(() => '?').join(',')})
        AND (m.flags & ${FLAG.draft}) = 0
        AND NOT EXISTS (SELECT 1 FROM thread_folders tf JOIN folders fo ON fo.id = tf.folder_id
                        WHERE tf.thread_id = m.thread_id AND fo.role IN ('trash','spam'))
-     ORDER BY m.internal_date DESC, m.id DESC LIMIT ?`,
+     GROUP BY m.thread_id
+     ORDER BY internal_date DESC, m.id DESC LIMIT ?`,
     ...allowed,
     limit,
   );

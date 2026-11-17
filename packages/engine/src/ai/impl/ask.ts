@@ -653,7 +653,7 @@ async function askRun(
       ]),
       {
         role: 'user',
-        content: `${maskOwners(args.question, byAddress)}\n\nSources:\n${quoted || '(no matching mail found)'}${draftCtx(args.context?.draft, byAddress)}\n\nNow: ${new Date(services.clock.now()).toISOString()}.${args.timeZone ? `\n\nThe reader's time zone: ${args.timeZone}.` : ''}`,
+        content: `${maskOwners(args.question, byAddress)}\n\nNow: ${new Date(services.clock.now()).toISOString()}.\n\nSources:\n${quoted || '(no matching mail found)'}${draftCtx(args.context?.draft, byAddress)}${args.timeZone ? `\n\nThe reader's time zone: ${args.timeZone}.` : ''}`,
       },
     ];
     const turnId = hexId(services.randomBytes, 'turn');
