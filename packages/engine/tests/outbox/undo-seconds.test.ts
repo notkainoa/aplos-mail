@@ -1,7 +1,9 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import type { StorePort } from '../../src/ports';
-import { storedUndoSeconds } from '../../src/outbox/module';
+import { storedMailSettings } from '../../src/outbox/module';
+
+const storedUndoSeconds = (store: StorePort) => storedMailSettings(store).undoSendSeconds;
 
 /** A store whose settings row holds `data` (or no row at all). */
 function storeWith(data: string | undefined): StorePort {

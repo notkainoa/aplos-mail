@@ -253,15 +253,16 @@ export const lane = 'eng-time';
 export const extensions: readonly CommitExtension[] = [outboxExtension];
 
 /**
- * The owner's undo-send window, read from the stored settings at each send (so a change applies to the next Send, and
- * the countdown matches Settings → Mail, whose default is the runtime's, not this module's bare fallback).
+ * The owner's mail settings as stored, read at each send: the outbox takes `undoSendSeconds` from them, so a change
+ * applies to the next Send and the countdown matches Settings → Mail (whose default is the runtime's, not this module's
+ * bare fallback).
  */
-export const storedUndoSeconds = (store: StorePort): number =>
+export const storedMailSettings = (store: StorePort) =>
   withDefaults(
     parseStored(
       store.read(q => q.get<{ data: string }>('SELECT data FROM settings WHERE id = 1'))?.data,
     ),
-  ).mail.undoSendSeconds;
+  ).mail;
 
 /** Builds the outbox once the core services exist; runs once, in the root's fixed order, after the clock module. */
 export function createModule(services: EngineServices): LaneModule {
@@ -272,7 +273,7 @@ export function createModule(services: EngineServices): LaneModule {
     deadlines: services.deadlines,
     log: services.log,
     randomBytes: services.randomBytes,
-    settings: () => ({ undoSendSeconds: storedUndoSeconds(services.store) }),
+    settings: () => storedMailSettings(services.store),
     drafts: services.drafts,
     frames: services.frames,
     // A draft's own attachments, whoever made them (`Draft/set` checked the owner); a missing blob is left out.

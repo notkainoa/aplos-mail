@@ -6,7 +6,7 @@ import { inWorld, MIN, SEC, T0 } from './helpers';
  * The Undo-send window is read exactly once, when a send is queued: `prepareSend` asks `OutboxDeps.settings` for
  * `undoSendSeconds` and stamps the deadline on the submission row (`not_before`). The runner only ever reads the row,
  * so a setting change applies to the next send, never to one already waiting, and a restart keeps the stored
- * deadline. The world's `settings` stub stands in for `storedUndoSeconds` on the live engine.
+ * deadline. The world's `settings` stub stands in for `storedMailSettings` on the live engine.
  */
 
 test('a zero window is due at once: the deadline is now and one runner tick sends it once', () =>
