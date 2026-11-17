@@ -237,7 +237,8 @@ function HoverActions({
  * 11:59 PM") say it twice, so the deadline stays and the return, which only repeats it, goes.
  */
 function returnsOnDeadlineOf(props: ListRowProps, laterOverdue: boolean): boolean {
-  if (props.layout !== 'later' || laterOverdue) return false;
+  // A rejected row shows its error line in place of the due chip, so the return time stays.
+  if (props.layout !== 'later' || laterOverdue || props.rejected) return false;
   const { due, laterUntil } = props;
   return due !== undefined && laterUntil?.kind === 'at' && sameDay(due.at, laterUntil.at);
 }

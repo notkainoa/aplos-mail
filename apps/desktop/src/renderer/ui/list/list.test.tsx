@@ -157,6 +157,22 @@ describe('ListRow', () => {
     );
   });
 
+  test('later layout: a rejected row has no due chip, so its return time stays', () => {
+    const m = render(
+      <ListRow
+        {...row({
+          layout: 'later',
+          due: { at: '2026-10-29T23:59:00-07:00', overdue: false, source: 'user' },
+          laterUntil: { kind: 'at', at: '2026-10-29T23:59:00-07:00', overdue: false },
+          rejected: { op: 'move to Later', onRetry: noop },
+        })}
+      />,
+    );
+    assert.match(m, /data-state="rejected"/);
+    assert.doesNotMatch(m, /data-kind="due"/);
+    assert.match(m, /data-kind="laterUntil"/);
+  });
+
   test('rejected write: back in place with "Couldn’t move to Later." and Retry', () => {
     const m = render(<ListRow {...row({ rejected: { op: 'move to Later', onRetry: noop } })} />);
     assert.match(m, /data-state="rejected"/);
