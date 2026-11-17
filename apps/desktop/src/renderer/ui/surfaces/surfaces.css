@@ -643,6 +643,39 @@ html[data-real-key] .ui-part-tipwrap:has(> :focus-visible) > .ui-part-tip {
     0 0 0 1px var(--line-strong),
     var(--elev-float);
 }
+/* Night: --dim is 4.4:1 on --float and 3.6:1 on the cursor row over it, under the 4.5:1 DESIGN 12.4 asks of text. So inside every
+   surface at --float or lighter, --dim is re-pointed at --dim-on-float (the secondary ink at night; the same dim step by day, so
+   light does not change) and every dim line there follows, hovered, selected or not. A disabled control takes --dim-inactive and
+   keeps the dim step, so it still reads as quieter than an enabled one. */
+.ui-menu,
+.ui-popover,
+.ui-dialog,
+.ui-toast,
+.ui-part-tip,
+.ui-palette__panel,
+.ui-low-sheet__panel,
+.ui-shortcut-sheet-dialog,
+.ui-recipient-field__list,
+.ui-date-presets,
+.cal-screen__empty-box {
+  --dim: var(--dim-on-float);
+}
+:is(
+    .ui-menu,
+    .ui-popover,
+    .ui-dialog,
+    .ui-toast,
+    .ui-part-tip,
+    .ui-palette__panel,
+    .ui-low-sheet__panel,
+    .ui-shortcut-sheet-dialog,
+    .ui-recipient-field__list,
+    .ui-date-presets,
+    .cal-screen__empty-box
+  )
+  :is(:disabled, [aria-disabled='true']) {
+  --dim: var(--dim-inactive);
+}
 .ui-menu:not([data-placed]),
 .ui-popover:not([data-placed]) {
   position: relative;

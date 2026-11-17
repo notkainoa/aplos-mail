@@ -17,6 +17,8 @@
   --ink: #1d1e21;
   --ink-2: #46484d;
   --dim: #63666c;
+  --dim-on-float: var(--dim);
+  --dim-inactive: var(--dim);
   --faint: #8f9298;
   --line: color-mix(in srgb, var(--ink) 9%, transparent);
   --line-strong: color-mix(in srgb, var(--ink) 14%, transparent);
@@ -363,6 +365,7 @@
   --ink: #ececed;
   --ink-2: #c4c5c9;
   --dim: #9a9da4;
+  --dim-on-float: var(--ink-2);
   --faint: #6f7278;
   --line: color-mix(in srgb, var(--ink) 8%, transparent);
   --line-strong: color-mix(in srgb, var(--ink) 12%, transparent);

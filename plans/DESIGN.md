@@ -148,6 +148,8 @@ All tokens live in one source file, `apps/desktop/src/renderer/ui/tokens.json`, 
 | `--sunken` | `#efeff1` | `#0e0f10` | Segmented tracks, fields |
 | `--keycap` | `#efeff1` | ink 8 % over `--paper` | A keycap's plate. By day the sunken step; at night one step lighter than whatever it sits on (the near-black slab was the heaviest mark on the card and the bar, council 2 round 4). Always with a 1 px `--line` edge, so it survives a highlighted row in both themes. |
 | `--keycap-ink` | `--dim` | `--ink-2` | A keycap's letter. At night the secondary ink, so the letter is not much quieter than its label (council 2 round 7); 4.5:1 or better on the plate in both themes. |
+| `--dim-on-float` | `--dim` | `--ink-2` | Metadata on a floating surface (`--float` or lighter: menus, popovers, dialogs, the palette, sheets, toasts) and on a hovered or cursor row there. Raw `--dim` is 4.5, 3.9 and 3.6:1 on `--float`, hover over it and the cursor row over it at night, so inside those surfaces `--dim` is re-pointed at this token (one rule in `surfaces.css`) and every dim line follows; by day it is `--dim`, unchanged. Council 2, 2026-11-17. |
+| `--dim-inactive` | `--dim` | `--dim` | Disabled text on a floating surface: keeps the dim step, so a disabled control stays quieter than an enabled one (exempt from the 4.5:1 minimum; WCAG 1.4.3). |
 | `--ink` | `#1d1e21` | `#ececed` | Primary text, unread senders |
 | `--ink-2` | `#46484d` | `#c4c5c9` | Read senders, subjects, unread summaries, secondary text |
 | `--dim` | `#63666c` | `#9a9da4` | Metadata, timestamps, counts, placeholders, read summaries, disabled text |
@@ -171,13 +173,16 @@ All tokens live in one source file, `apps/desktop/src/renderer/ui/tokens.json`, 
 | `--shadow-ink` | `#1d1e21` | `#000000` | The base colour for every shadow |
 | `--sheen` | none | white at 4 % | The 1 px top sheen on dark panes and cards |
 
-**Computed contrast, WCAG 2.x** [V: `/tmp/paper-design/c.py`]. Translucent tokens are composited over the surface named.
+**Computed contrast, WCAG 2.x** [V: `/tmp/paper-design/c.py`; the `--float` rows were added 2026-11-17 and computed by `apps/desktop/scripts/design/check-contrast.mjs`]. Translucent tokens are composited over the surface named. `--float` at night is `#343538` computed (a browser rounds it to `#353639`, which is why axe reads 4.44 where the script reads 4.52); hover over it is `#3d3e41` and the keyboard cursor row (`--puck`) over it is `#434446`.
 
 | Pair | Light | Dark |
 |---|---|---|
 | ink on pane / shell / paper / raised / sunken | 16.67 / 15.30 / 16.67 / 15.43 / 14.51 | 14.75 / 15.76 / 12.98 / 11.81 / 16.25 |
 | ink-2 on pane / shell / raised | 9.15 / 8.40 / 8.47 | 10.10 / 10.79 / 8.09 |
 | dim on pane / shell / paper / raised / sunken | **5.76** / 5.28 / 5.76 / 5.33 / **5.01** | 6.41 / 6.85 / 5.64 / **5.14** / 7.07 |
+| dim on --float / on hover over --float / on the cursor row (puck) over --float | 5.76 / 5.33 / 5.12 | **4.52** (axe 4.44) / **3.93** / **3.61** (axe 3.59) |
+| ink-2 on --float / on hover over --float / on the cursor row (puck) over --float | 9.15 / 8.47 / 8.14 | 7.12 / 6.19 / 5.68 |
+| `--dim-on-float` (dim by day, ink-2 at night) on --float / hover / cursor row over --float | 5.76 / 5.33 / 5.12 | 7.12 / 6.19 / 5.68 |
 | dim on a bulk-picked row (accent-wash) | 5.07 | 5.19 |
 | dim on the keyboard cursor (puck over pane) / a sidebar count (puck over shell) | 5.12 / 4.71 | 5.23 / 5.70 |
 | dim on hover / on today-tint | 5.33 / 5.41 | 5.68 / 5.80 |

@@ -61,6 +61,8 @@ Use `var(--token)` in CSS and the imports from `ui/generated/motion.ts` in TS. N
 | `--sunken` | Segmented tracks, fields |
 | `--keycap` | A keycap's plate: sunken by day, one step lighter than its surface at night, always with a 1 px `--line` edge |
 | `--keycap-ink` | A keycap's letter: `--dim` by day, `--ink-2` at night (passes 4.5:1 on the plate) |
+| `--dim-on-float` | Metadata on a floating surface (`--float` or lighter) and on a hovered or cursor row there: `--dim` by day, `--ink-2` at night. A rule in `surfaces.css` re-points `--dim` at it inside every floating surface, so components keep writing `var(--dim)`. |
+| `--dim-inactive` | Disabled text on a floating surface: keeps the dim step (exempt from 4.5:1) |
 | `--ink` | Primary text, unread senders |
 | `--ink-2` | Read senders, subjects, unread summaries, secondary text |
 | `--dim` | Metadata, timestamps, counts, placeholders, read summaries, disabled text |
