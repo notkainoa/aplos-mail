@@ -298,7 +298,7 @@
   height: min(calc(100vh - var(--space-6) * 2), calc(var(--space-10) * 11));
   overflow: hidden;
   border-radius: var(--radius-xl);
-  background: var(--paper);
+  background: var(--float);
   color: var(--ink-2);
   box-shadow: var(--elev-dialog);
   animation: ui-shortcut-settle var(--dur-settle-in) var(--ease-out) both;

@@ -9,6 +9,7 @@
   --shell: #f5f5f6;
   --canvas: #ffffff;
   --paper: #ffffff;
+  --float: #ffffff;
   --raised: #f6f6f7;
   --sunken: #efeff1;
   --ink: #1d1e21;
@@ -352,6 +353,7 @@
   --shell: #121314;
   --canvas: #191a1c;
   --paper: #1f2023;
+  --float: color-mix(in srgb, var(--ink) 8%, var(--paper));
   --raised: #212225;
   --sunken: #0e0f10;
   --ink: #ececed;

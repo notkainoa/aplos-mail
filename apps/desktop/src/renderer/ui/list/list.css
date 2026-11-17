@@ -1226,7 +1226,7 @@
   max-height: 100%;
   padding: var(--space-5) var(--space-4) var(--space-4);
   border-radius: var(--radius-xl);
-  background-color: var(--paper);
+  background-color: var(--float);
   box-shadow: var(--elev-dialog);
   color: var(--ink);
 }

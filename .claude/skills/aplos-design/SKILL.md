@@ -55,7 +55,8 @@ Use `var(--token)` in CSS and the imports from `ui/generated/motion.ts` in TS. N
 |---|---|
 | `--shell` | The window background. The sidebar sits on it, transparent. |
 | `--canvas` | The one white pane: lists, the reader, compose, settings |
-| `--paper` | Cards on the pane: focus letter, inline reply, proposal card, dialogs, menus, toasts. Lighter than the pane in dark. |
+| `--paper` | Cards on the pane: focus letter, inline reply, proposal card. Lighter than the pane in dark. |
+| `--float` | Floating surfaces: dialogs, menus, popovers, tooltips, toasts, the palette, the selected segment. White like `--paper` by day; at night one clear step lighter than a card or the pane (council 2, round 2: they melted into the card under them). |
 | `--raised` | Quiet fills: the low-importance band, chips, attachments, the undo-send line |
 | `--sunken` | Keycaps, segmented tracks, fields |
 | `--ink` | Primary text, unread senders |
@@ -149,7 +150,7 @@ Rules:
 |---|---|
 | `--elev-pane` | The pane, the dock |
 | `--elev-card` | Focus letter, inline reply, proposal cards |
-| `--elev-float` | Menus, popovers, tooltips, toasts, the palette (opaque `--paper`) |
+| `--elev-float` | Menus, popovers, tooltips, toasts, the palette (opaque `--float`) |
 | `--elev-dialog` | Dialogs and confirmations, with `--scrim` behind |
 | `--elev-lift` | A dragged row or letter |
 | `--elev-puck` | A segmented control's thumb |

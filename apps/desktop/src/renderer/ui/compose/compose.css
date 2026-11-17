@@ -438,7 +438,7 @@
   margin: 0;
   padding: var(--space-1);
   list-style: none;
-  background: var(--paper);
+  background: var(--float);
   border-radius: var(--radius-lg);
   box-shadow: var(--elev-float);
 }

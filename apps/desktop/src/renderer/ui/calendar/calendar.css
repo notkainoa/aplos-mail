@@ -1438,7 +1438,7 @@
   width: calc(var(--menu-min) + var(--space-9));
   padding: var(--space-1);
   border-radius: var(--radius-lg);
-  background: var(--paper);
+  background: var(--float);
   box-shadow: var(--elev-float);
   color: var(--ink);
   font: var(--type-ui);

@@ -238,7 +238,7 @@
   max-width: calc(var(--menu-min) + var(--space-9));
   padding: var(--space-1) var(--space-2);
   border-radius: var(--radius-md);
-  background: var(--paper);
+  background: var(--float);
   box-shadow: var(--elev-float);
   color: var(--ink);
   font: var(--type-small);
@@ -602,7 +602,7 @@ html[data-real-key] .ui-part-tipwrap:has(> :focus-visible) > .ui-part-tip {
   color: var(--dim);
 }
 
-/* ───────────── Floating: Menu, Popover (opaque --paper, --elev-float, `reveal`) ───────────── */
+/* ───────────── Floating: Menu, Popover (opaque --float, --elev-float, `reveal`) ───────────── */
 
 .ui-menu,
 .ui-popover {
@@ -612,7 +612,7 @@ html[data-real-key] .ui-part-tipwrap:has(> :focus-visible) > .ui-part-tip {
   /* --z-menu is being added to the layer tokens; until it lands, the existing popover layer holds. */
   z-index: var(--z-menu, var(--z-popover));
   border-radius: var(--radius-lg);
-  background: var(--paper);
+  background: var(--float);
   box-shadow: var(--elev-float);
   color: var(--ink);
   font: var(--type-ui);
@@ -724,7 +724,7 @@ html[data-real-key] .ui-part-tipwrap:has(> :focus-visible) > .ui-part-tip {
 }
 .ui-menu__swatch + .ui-menu__swatch {
   margin-left: calc(-1 * var(--space-half));
-  box-shadow: calc(-1 * 1px) 0 0 var(--paper);
+  box-shadow: calc(-1 * 1px) 0 0 var(--float);
 }
 .ui-menu__text {
   display: flex;
@@ -859,7 +859,7 @@ html[data-real-key] .ui-part-tipwrap:has(> :focus-visible) > .ui-part-tip {
   width: 100%;
   max-height: 100%;
   border-radius: var(--radius-xl);
-  background: var(--paper);
+  background: var(--float);
   box-shadow: var(--elev-dialog);
   color: var(--ink);
   font: var(--type-ui);
@@ -1098,7 +1098,7 @@ html[data-real-key] .ui-part-tipwrap:has(> :focus-visible) > .ui-part-tip {
   text-overflow: ellipsis;
 }
 
-/* segmented: a --sunken track, a --paper thumb */
+/* segmented: a --sunken track, a --float thumb (one clear step lighter than the track at night) */
 .ui-puck[data-kind='segmented'] {
   display: inline-flex;
   padding: var(--space-half);
@@ -1107,7 +1107,7 @@ html[data-real-key] .ui-part-tipwrap:has(> :focus-visible) > .ui-part-tip {
 }
 .ui-puck[data-kind='segmented'] > .ui-puck__thumb {
   border-radius: var(--radius-sm);
-  background: var(--paper);
+  background: var(--float);
   box-shadow: var(--elev-puck);
 }
 .ui-puck[data-kind='segmented'] .ui-puck__item {
@@ -1121,17 +1121,8 @@ html[data-real-key] .ui-part-tipwrap:has(> :focus-visible) > .ui-part-tip {
   font-weight: 500;
 }
 .ui-puck[data-kind='segmented']:not([data-ready]) .ui-puck__item[data-selected='true'] {
-  background: var(--paper);
+  background: var(--float);
   box-shadow: var(--elev-puck);
-}
-
-/* Dark: --paper is barely lighter than the track, so the thumb takes --puck (the token's role for segmented
-   thumbs), which reads clearly against --sunken. */
-:root[data-theme='dark'] .ui-puck[data-kind='segmented'] > .ui-puck__thumb,
-:root[data-theme='dark']
-  .ui-puck[data-kind='segmented']:not([data-ready])
-  .ui-puck__item[data-selected='true'] {
-  background: var(--puck);
 }
 
 /* Dark: the options you are not on read one step above --dim on the near-black track. */
@@ -1198,7 +1189,7 @@ html[data-real-key] .ui-part-tipwrap:has(> :focus-visible) > .ui-part-tip {
   }
 }
 
-/* ───────────── Toasts (opaque --paper, --elev-float, radius 12, up to 440 px) ───────────── */
+/* ───────────── Toasts (opaque --float, --elev-float, radius 12, up to 440 px) ───────────── */
 
 .ui-toast-stack {
   position: absolute;
@@ -1225,7 +1216,7 @@ html[data-real-key] .ui-part-tipwrap:has(> :focus-visible) > .ui-part-tip {
   padding: var(--space-1) var(--space-2) var(--space-1) var(--space-4);
   overflow: hidden;
   border-radius: var(--radius-lg);
-  background: var(--paper);
+  background: var(--float);
   box-shadow: var(--elev-float);
   color: var(--ink);
   font: var(--type-ui);

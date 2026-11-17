@@ -82,7 +82,7 @@
     color var(--dur-hover) var(--ease-std);
 }
 .ui-ask-dock__tab[aria-selected='true'] {
-  background: var(--paper);
+  background: var(--float);
   box-shadow: var(--elev-puck);
   color: var(--ink);
   font-weight: 500;
@@ -749,7 +749,7 @@
   max-width: calc(100% - 2 * var(--space-4));
   overflow: hidden;
   border-radius: var(--radius-xl);
-  background: var(--paper);
+  background: var(--float);
   box-shadow: var(--elev-float);
   color: var(--ink);
 }
