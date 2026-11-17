@@ -73,13 +73,17 @@ function DateColumn({
   doneEstimated,
   laterUntil,
   hideReturn,
+  afterDue,
 }: Pick<RowProps, 'layout' | 'date' | 'doneAt' | 'doneEstimated' | 'laterUntil'> & {
   /** The row's due chip already says the day it comes back. */
   hideReturn?: boolean;
+  /** The row shows a due chip: the return time reads "Back …". */
+  afterDue?: boolean;
 }) {
   if (layout === 'done') return <DoneStamp doneAt={doneAt} estimated={doneEstimated} />;
   if (layout === 'later' && hideReturn) return null;
-  if (layout === 'later' && laterUntil) return <Chip kind="laterUntil" until={laterUntil} />;
+  if (layout === 'later' && laterUntil)
+    return <Chip kind="laterUntil" until={laterUntil} afterDue={afterDue} />;
   return (
     <time className="ui-list-row__date" dateTime={date} title={formatFull(date)}>
       {formatListDate(date)}
@@ -218,6 +222,16 @@ function HoverActions({
 }
 
 /** A mail row in any list: Home, Later, All mail, Done, Drafts, Sent, Trash, Spam, search, the Low sheet. */
+/**
+ * One statement per meaning: a deadline chip and a return chip for the same day ("Due today" beside "Today,
+ * 11:59 PM") say it twice, so the deadline stays and the return, which only repeats it, goes.
+ */
+function returnsOnDeadlineOf(props: ListRowProps, laterOverdue: boolean): boolean {
+  if (props.layout !== 'later' || laterOverdue) return false;
+  const { due, laterUntil } = props;
+  return due !== undefined && laterUntil?.kind === 'at' && sameDay(due.at, laterUntil.at);
+}
+
 export function ListRow(props: ListRowProps) {
   const { id, layout, density, sender, account, unread, cursor, picked } = props;
   const { picking, hoverActions, swipe, rejected, lifted, onSelect, onOpen, onAction, ref } = props;
@@ -226,15 +240,7 @@ export function ListRow(props: ListRowProps) {
   // would be a second red time ("Yesterday" beside "Today, 8:00 AM").
   const laterOverdue =
     layout === 'later' && props.laterUntil?.kind === 'at' && props.laterUntil.overdue;
-
-  // One statement per meaning: a deadline chip and a return chip for the same day ("Due today" beside "Today,
-  // 11:59 PM") say it twice, so the deadline stays and the return, which only repeats it, goes.
-  const returnsOnDeadline =
-    layout === 'later' &&
-    !laterOverdue &&
-    props.due !== undefined &&
-    props.laterUntil?.kind === 'at' &&
-    sameDay(props.due.at, props.laterUntil.at);
+  const returnsOnDeadline = returnsOnDeadlineOf(props, laterOverdue);
 
   // The action count sizes the date column so the hover overlay never spills over the line (DESIGN §5 rule 17).
   const rowStyle =
@@ -295,6 +301,7 @@ export function ListRow(props: ListRowProps) {
           doneEstimated={props.doneEstimated}
           laterUntil={props.laterUntil}
           hideReturn={returnsOnDeadline}
+          afterDue={!laterOverdue && props.due !== undefined}
         />
         {/* Inside the meta cell so the overlay always covers the whole date column: no half glyph or chip. */}
         {hoverActions.length > 0 ? (

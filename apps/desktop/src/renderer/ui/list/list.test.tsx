@@ -136,6 +136,20 @@ describe('ListRow', () => {
       />,
     );
     assert.match(other, /data-kind="laterUntil"/);
+    assert.match(
+      text(other),
+      /Back (Oct 31|Sat, Oct 31|\w+, Oct 31)/,
+      'beside a due chip it says Back',
+    );
+    const alone = render(
+      <ListRow
+        {...row({
+          layout: 'later',
+          laterUntil: { kind: 'at', at: '2026-10-31T09:00:00-07:00', overdue: false },
+        })}
+      />,
+    );
+    assert.doesNotMatch(text(alone), /Back /, 'with no due chip the return time stands alone');
   });
 
   test('rejected write: back in place with "Couldn’t move to Later." and Retry', () => {

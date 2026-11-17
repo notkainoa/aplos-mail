@@ -315,6 +315,8 @@ export type ChipProps =
       kind: 'laterUntil';
       /** The Later date. */
       until: LaterUntil;
+      /** The row also carries a due chip: this one says "Back tomorrow, 9:00 AM" so the two read as two facts. */
+      afterDue?: boolean;
     }
   | {
       /** A mail label. */

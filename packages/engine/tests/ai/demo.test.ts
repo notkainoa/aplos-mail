@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import type { LogRecord } from '@aplos/contract';
 import { ContractError } from '@aplos/contract/contract-error';
-import { DEMO_ACCOUNTS } from '../../src/ai/demo/data';
+import { DEMO_ACCOUNTS, returnTime } from '../../src/ai/demo/data';
 import { DEMO_ACCOUNT_IDS } from '../../src/ai/demo/load';
 import { accountIds } from '../../src/sync/account-read';
 import { createLogger } from '../../src/diag/log';
@@ -320,6 +320,21 @@ test('the demo accounts list in one stable order, each with a colour tag the app
     );
   } finally {
     await t.cleanup();
+  }
+});
+
+test('a demo Later item comes back at a working hour on the day it implies, never at the load time of day', () => {
+  const hour = 3_600_000;
+  for (const loadHour of [0, 2, 9, 13, 17, 23]) {
+    const now = new Date(2026, 10, 16, loadHour, 49).getTime();
+    for (const hours of [6, 22, 24, 72, 96]) {
+      const at = new Date(returnTime(now, hours));
+      assert.ok(at.getTime() > now + hour - 1, `after the load (${loadHour}h load, +${hours}h)`);
+      assert.ok([9, 17].includes(at.getHours()), `${at.toString()} is a working hour`);
+      assert.equal(at.getMinutes(), 0);
+      const days = Math.round((at.getTime() - now) / (24 * hour));
+      assert.ok(Math.abs(days - hours / 24) <= 1.01, 'within a day of the day it implies');
+    }
   }
 });
 

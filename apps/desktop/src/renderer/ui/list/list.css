@@ -242,6 +242,12 @@
 .ui-list-row[data-layout='later'] .ui-list-row__line .ui-chip[data-overdue='true'] {
   background-color: var(--raised);
 }
+/* Later's return time sits in one fixed-width column at the right, so the subjects keep the same room on every row;
+   the widest label ("Back Wed, Nov 18, 9:00 AM") fits whole. */
+.ui-list-row[data-layout='later'] .ui-list-row__meta .ui-chip[data-kind='laterUntil'] {
+  justify-content: flex-start;
+  width: calc(var(--space-10) * 3 - var(--space-2));
+}
 .ui-chip[data-kind='label'][data-color] {
   box-shadow: inset 0 0 0 1px var(--swatch);
 }

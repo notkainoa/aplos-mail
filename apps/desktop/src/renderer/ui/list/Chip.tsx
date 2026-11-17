@@ -3,7 +3,7 @@
 // with --stamp-ink and a clock so colour is never the only cue; pill only for operator tokens.
 
 import type { CSSProperties } from 'react';
-import type { ChipProps } from '../props';
+import type { ChipProps, IsoDateTime } from '../props';
 import { Action } from './internal/Action';
 import { formatBytes, formatDue, formatFull, formatLaterUntil } from './internal/format';
 import { Icon } from './internal/Icon';
@@ -15,6 +15,13 @@ function dueTitle(due: { at: string; source: string }, found: boolean): string {
 }
 
 /** A due, Later-until, label, attachment or operator chip. */
+/** "Tomorrow, 9:00 AM", or after a due chip "Back tomorrow, 9:00 AM" / "Back Thu, Nov 19, 9:00 AM". */
+function laterUntilText(at: IsoDateTime, afterDue: boolean): string {
+  const text = formatLaterUntil(at);
+  if (!afterDue) return text;
+  return `Back ${text.replace(/^(Today|Tomorrow|Yesterday)/, word => word.toLowerCase())}`;
+}
+
 export function Chip(props: ChipProps) {
   switch (props.kind) {
     case 'due': {
@@ -34,7 +41,7 @@ export function Chip(props: ChipProps) {
       );
     }
     case 'laterUntil': {
-      const { until } = props;
+      const { until, afterDue } = props;
       const overdue = until.kind === 'at' && until.overdue;
       return (
         <span
@@ -45,7 +52,7 @@ export function Chip(props: ChipProps) {
         >
           <Icon name="clock" size="sm" />
           <span className="ui-chip__text">
-            {until.kind === 'someday' ? 'Someday' : formatLaterUntil(until.at)}
+            {until.kind === 'someday' ? 'Someday' : laterUntilText(until.at, afterDue === true)}
           </span>
         </span>
       );
