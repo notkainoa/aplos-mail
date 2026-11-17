@@ -518,7 +518,11 @@ export function CalendarView({ vm, dispatch, announce, focus }: CalendarViewProp
               aria-label="Event details"
               tabIndex={-1}
             >
-              <EventDetail {...detailProps} presentation="rail" />
+              <EventDetail
+                {...detailProps}
+                presentation="rail"
+                onClose={() => dispatch({ type: 'close' })}
+              />
               {vm.editing ? <EditingNote editing={vm.editing} dispatch={dispatch} /> : null}
             </aside>
           ) : null}

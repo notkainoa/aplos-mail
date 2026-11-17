@@ -36,8 +36,24 @@ test('dates: titles carry the comma, ranges share AM or PM, durations read plain
 
 test('dates: the grid opens at 8 AM, or an hour before now when today is shown, or where the screen says', () => {
   assert.equal(openHour({ today: false, nowHours: 15 }), 8);
-  assert.equal(openHour({ today: true, nowHours: 15.5 }), 14.5);
-  assert.equal(openHour({ today: true, nowHours: 0.25 }), 0);
+  assert.equal(openHour({ today: true, nowHours: 15.5 }), 14);
+  assert.equal(openHour({ today: true, nowHours: 0.25 }), 7, 'never above 7 AM');
+  assert.equal(
+    openHour({ today: true, nowHours: 13, firstEvent: 9 }),
+    8.5,
+    'the first event is in view',
+  );
+  assert.equal(
+    openHour({ today: false, nowHours: 13, firstEvent: 14 }),
+    8,
+    'a late first event keeps 8 AM',
+  );
+  assert.equal(
+    openHour({ today: true, nowHours: 15, firstEvent: 6 }),
+    7,
+    'the floor wins over an early event',
+  );
+  assert.equal(openHour({ today: true, nowHours: 15, override: 3 }), 3, 'the screen can say');
   assert.equal(openHour({ today: true, nowHours: 15, override: 6 }), 6);
   assert.equal(openHour({ today: false, nowHours: 15, override: 99 }), 24);
 });

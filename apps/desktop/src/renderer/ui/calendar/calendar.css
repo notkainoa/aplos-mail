@@ -682,6 +682,16 @@
   box-shadow: inset var(--select-bar) 0 0 var(--cal); /* the 2 px leading rule */
 }
 
+/* A tile cut off by the top of the grid keeps its title in sight: `clip` (unlike `hidden`) makes no scroll box, so the
+   title sticks to the scroller's top edge while the rest of the tile scrolls away under it. */
+.ui-event-block[data-kind='event'] {
+  overflow: clip;
+}
+.ui-event-block[data-kind='event'] .ui-event-block__title {
+  position: sticky;
+  top: 0;
+}
+
 .ui-event-block__title,
 .ui-event-block__time,
 .ui-plan-outline__title {
