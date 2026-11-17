@@ -8,7 +8,7 @@ import { api, type DataApi, type ThreadId } from '../../data';
 import { dismissToast, openThread, pushToast, type PushedToast } from '../../shell';
 import type { Screen } from '../../shell/store-route';
 import type { ToastKind } from '../../ui/props';
-import { UNDO_ACTION, undoHandler } from '../undoOperation';
+import { UNDO_ACTION, triageSlot, undoHandler } from '../undoOperation';
 
 /** One `Thread/act` action (done, later, trash, bookmark, read/unread, …). */
 export type RowAction = Parameters<DataApi['thread']['act']>[0]['action'];
@@ -42,6 +42,7 @@ export function actOnRow(
     undoable: true,
     actions: [UNDO_ACTION],
     onAction: undoHandler(opId),
+    ...triageSlot(toast.kind),
     ...toast,
   });
   receipt.catch(() => deps.dismiss(opId));

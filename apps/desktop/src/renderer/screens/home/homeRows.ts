@@ -109,6 +109,17 @@ export function senderOf(row: ThreadRow): string {
   return from || cleanName(row.subject) || 'No sender';
 }
 
+/** Longest sender name a triage toast shows before it is cut with an ellipsis. */
+const TOAST_NAME_MAX = 24;
+
+/** A triage toast names its thread: "Done · Jordan Park", the sender cut with an ellipsis when long. */
+export function namedToast(message: string, row: ThreadRow): string {
+  const name = senderOf(row);
+  const short =
+    name.length > TOAST_NAME_MAX ? `${name.slice(0, TOAST_NAME_MAX - 1).trimEnd()}…` : name;
+  return `${message} · ${short}`;
+}
+
 /** The main line of a row: the summary when it is ready, otherwise the subject (DESIGN 7.2 "No AI"). */
 export function primaryOf(row: ThreadRow): string {
   const { state, text } = row.summary;

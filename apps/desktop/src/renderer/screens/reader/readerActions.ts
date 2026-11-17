@@ -7,8 +7,8 @@
  */
 import { undoStack, type DataApi, type ThreadAction, type ThreadRow } from '../../data';
 import type { PushedToast } from '../../shell';
-import { UNDO_ACTION, afterAccepted, undoHandler } from '../undoOperation';
-import { failurePhrase, senderOf } from '../home/homeRows';
+import { UNDO_ACTION, afterAccepted, triageSlot, undoHandler } from '../undoOperation';
+import { failurePhrase, namedToast, senderOf } from '../home/homeRows';
 import type { MovableLane } from '../home/homeModel';
 import { LANE_LABEL } from './readerLane';
 import { suggestionFor } from './readerRows';
@@ -159,6 +159,7 @@ export function createReaderActions(deps: ReaderDeps): ReaderActions {
       undoable: true,
       actions: [UNDO_ACTION],
       onAction: undoHandler(opId, undone(opId, restore?.undone)),
+      ...triageSlot(toast.kind),
       ...toast,
     });
     failOnReject(opId, action, receipt, restore?.rejected);
@@ -188,21 +189,21 @@ export function createReaderActions(deps: ReaderDeps): ReaderActions {
       leaveList(
         row,
         { type: 'done' },
-        { kind: 'done', message: deps.undoLabel('mail.done', 'Done') },
+        { kind: 'done', message: namedToast(deps.undoLabel('mail.done', 'Done'), row) },
       );
   }
 
   function later(): void {
     const row = current();
     if (!row) return;
-    const message = deps.undoLabel('mail.later', 'Moved to Later');
+    const message = namedToast(deps.undoLabel('mail.later', 'Moved to Later'), row);
     leaveList(row, { type: 'later' }, { kind: 'later', message });
   }
 
   function trash(): void {
     const row = current();
     if (!row) return;
-    const message = deps.undoLabel('mail.trash', 'Moved to Trash');
+    const message = namedToast(deps.undoLabel('mail.trash', 'Moved to Trash'), row);
     leaveList(row, { type: 'trash' }, { kind: 'trash', message });
   }
 

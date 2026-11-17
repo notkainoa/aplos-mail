@@ -63,7 +63,7 @@ test('the Settings and Done place commands run through the registry too', () => 
 
 const undoToast = (id: string): PushedToast => ({
   id,
-  kind: 'done',
+  kind: 'bookmark',
   message: id,
   undoable: true,
   actions: [{ id: 'undo', label: 'Undo', commandId: 'app.undo' }],

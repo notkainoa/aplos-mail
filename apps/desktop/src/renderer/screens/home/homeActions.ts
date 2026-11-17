@@ -24,8 +24,8 @@ import {
 } from './homeModel';
 import { dropFromPick } from '../lists/bulkActions';
 import { createHomeBulk, type HomeBulkDeps } from './homeBulk';
-import { failurePhrase, senderOf } from './homeRows';
-import { UNDO_ACTION, undoHandler } from '../undoOperation';
+import { failurePhrase, namedToast, senderOf } from './homeRows';
+import { UNDO_ACTION, triageSlot, undoHandler } from '../undoOperation';
 
 /** The live state an action reads when its key arrives. */
 export interface HomeSnapshot {
@@ -214,7 +214,8 @@ export function createHomeActions(deps: HomeDeps): HomeActions {
     deps.push({
       id: opId,
       kind: 'done',
-      message: deps.undoLabel('mail.done', 'Done'),
+      ...triageSlot('done'),
+      message: namedToast(deps.undoLabel('mail.done', 'Done'), target.row),
       undoable: true,
       actions: remind
         ? [
@@ -243,7 +244,8 @@ export function createHomeActions(deps: HomeDeps): HomeActions {
     deps.push({
       id: opId,
       kind: 'later',
-      message: deps.undoLabel('mail.later', 'Moved to Later'),
+      ...triageSlot('later'),
+      message: namedToast(deps.undoLabel('mail.later', 'Moved to Later'), target.row),
       undoable: true,
       actions: [{ id: 'setDate', label: 'Set a date', keysFrom: 'mail.setDate' }, UNDO_ACTION],
       onAction: actionId => {
@@ -317,7 +319,8 @@ export function createHomeActions(deps: HomeDeps): HomeActions {
     deps.push({
       id: opId,
       kind: 'trash',
-      message: deps.undoLabel('mail.trash', 'Moved to Trash'),
+      ...triageSlot('trash'),
+      message: namedToast(deps.undoLabel('mail.trash', 'Moved to Trash'), target.row),
       undoable: true,
       actions: [UNDO_ACTION],
       onAction: undoHandler(opId),

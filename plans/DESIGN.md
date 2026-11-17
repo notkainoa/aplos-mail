@@ -884,7 +884,7 @@ This is the screen shown after setup, before the inbox (the last step of the onb
   - Offline: "Saved here · will sync"
 - **Rules.**
   - One operation, one notice.
-  - An Undo toast is never silently replaced; new toasts stack.
+  - An Undo toast is never silently replaced; new toasts stack. Triage (Done, Later, Trash on a thread) is the one exception (council 2, 2026-11-16): it is one slot, a newer triage toast takes the place of the older one and names the sender ("Done · Jordan Park"); the older operation stays on the undo stack, so Z undoes the newest and then the one before.
   - Toasts never appear for navigation, successful saves or sync ticks.
   - They are announced politely and never steal focus.
 - **First launch** shows one toast, once: "Hold ⌘ to see keys." It makes up for key hints living in tooltips.

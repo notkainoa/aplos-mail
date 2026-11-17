@@ -289,7 +289,7 @@ test('Done: the row leaves at once, one toast with the opId offers Undo, and Z b
     );
     const toast = getToasts().find(t => t.kind === 'done');
     assert.ok(toast, 'a Done toast');
-    assert.equal(toast.message, 'Done');
+    assert.match(toast.message, /^Done · \S/, 'Done names the sender');
     assert.equal(toast.undoable, true);
     assert.deepEqual(
       toast.actions?.map(a => a.id),
@@ -496,7 +496,12 @@ for (const lane of LANE_CARDS) {
         return registry.run(resolution.commandId, context).status;
       };
       const opened = () => calls.filter(c => c.startsWith('open:'));
-      const toasted = (kind: string) => getToasts().filter(t => t.kind === kind).length;
+      // One triage slot: a verb shows as a new toast taking the place of the last one.
+      const toasted = (kind: string) =>
+        getToasts()
+          .filter(t => t.kind === kind)
+          .map(t => t.id)
+          .join();
       const undo = () => {
         assert.equal(press('z'), 'ran');
         key.current = id;
@@ -505,13 +510,13 @@ for (const lane of LANE_CARDS) {
       for (const k of ['ArrowRight', 'e']) {
         const before = toasted('done');
         assert.equal(press(k), 'ran', k);
-        assert.equal(toasted('done'), before + 1, `${k} is Done on the ${lane} card`);
+        assert.notEqual(toasted('done'), before, `${k} is Done on the ${lane} card`);
         undo();
       }
       for (const k of ['ArrowLeft', 'l']) {
         const before = toasted('later');
         assert.equal(press(k), 'ran', k);
-        assert.equal(toasted('later'), before + 1, `${k} is Later on the ${lane} card`);
+        assert.notEqual(toasted('later'), before, `${k} is Later on the ${lane} card`);
         undo();
       }
       assert.equal(press('r'), 'ran');
@@ -528,7 +533,7 @@ for (const lane of LANE_CARDS) {
       const doneBefore = toasted('done');
       const openedBefore = opened().length;
       assert.equal(press(' '), 'ran');
-      if (command === 'mail.done') assert.equal(toasted('done'), doneBefore + 1);
+      if (command === 'mail.done') assert.notEqual(toasted('done'), doneBefore);
       else {
         const how = command === 'mail.open' ? 'open' : lane === 'follow' ? 'nudge' : 'reply';
         assert.equal(opened()[openedBefore], `open:${how}:${id}`);
@@ -541,7 +546,7 @@ for (const lane of LANE_CARDS) {
   });
 }
 
-test('a toast Undo undoes its own operation, not the newest one', async () => {
+test('a newer Done takes the triage slot, and Z still undoes the newest then the one before', async () => {
   resetToasts();
   const world = await boot();
   try {
@@ -555,10 +560,14 @@ test('a toast Undo undoes its own operation, not the newest one', async () => {
     assert.ok(older, 'the first Done toast');
     key.current = second;
     actions.done();
-    runToastAction(older.id, 'undo');
-    const ids = world.home.snapshot().ids;
-    assert.ok(ids.includes(first), 'the older toast restored its own thread');
-    assert.ok(!ids.includes(second), 'and left the newer one done');
+    const shown = getToasts().filter(t => t.kind === 'done');
+    assert.equal(shown.length, 1, 'one toast for triage');
+    assert.notEqual(shown[0]?.id, older.id, 'the newest Done replaced the older toast');
+    undoStack.undoLast();
+    assert.ok(world.home.snapshot().ids.includes(second), 'Z undid the newest');
+    assert.ok(!world.home.snapshot().ids.includes(first), 'and left the older one done');
+    undoStack.undoLast();
+    assert.ok(world.home.snapshot().ids.includes(first), 'the next Z undid the older one');
     await world.flush();
   } finally {
     world.connection.close();

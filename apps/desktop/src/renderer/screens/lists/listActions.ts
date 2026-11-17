@@ -18,10 +18,11 @@ import {
   type BulkPick,
   type PickControls,
 } from './bulkActions';
+import { namedToast } from '../home/homeRows';
 import { stepKey, neighbourKeys } from './listModel';
 import { openKindOf, isThread, type ListRowData, type OpenKind } from './listRows';
 import type { ListKind } from './listKinds';
-import { UNDO_ACTION, undoHandler } from '../undoOperation';
+import { UNDO_ACTION, triageSlot, undoHandler } from '../undoOperation';
 
 /** The live state an action reads when its key arrives. */
 export interface ListSnapshot {
@@ -141,6 +142,9 @@ function threadIdsOf(snapshot: ListSnapshot): readonly string[] {
   });
 }
 
+/** The toasts that name their thread (the triage slot). */
+const NAMED_KINDS: ReadonlySet<string> = new Set(['done', 'later', 'trash']);
+
 function threadAt(deps: ListDeps, key?: string): ThreadRow | null {
   const target = targetAt(deps, key);
   return target && isThread(target.row) ? target.row : null;
@@ -163,6 +167,8 @@ function createRowVerbs(deps: ListDeps) {
       actions: [UNDO_ACTION],
       onAction: undoHandler(opId),
       ...toast,
+      ...triageSlot(toast.kind),
+      message: NAMED_KINDS.has(toast.kind) ? namedToast(toast.message, row) : toast.message,
     });
     receipt.catch(() => deps.dismiss(opId));
   }

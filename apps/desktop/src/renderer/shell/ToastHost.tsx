@@ -3,10 +3,35 @@
  * list, so every toast is opaque `--paper` with `--elev-float` through the component. It sits inside the main pane,
  * bottom-centre, never under the dock.
  */
+import { useEffect, useReducer } from 'react';
+import type { Registry } from '../commands';
 import type { ToastData, ToastStackProps } from '../ui/props';
 import { ToastStack } from '../ui/surfaces';
 import { useUndoSendNotice } from '../screens/compose';
-import { dismissToast, runToastAction, useToasts } from './index';
+import { dismissToast, runToastAction, useAppRoute, useToasts } from './index';
+import { useShellRegistry } from './ShellRegistry';
+
+/**
+ * A toast action's keycap only shows while the screen under it binds that key: "Remind me if no reply R" and
+ * "Set a date D" belong to Home, so in the reader (where R replies) the button stays and the keycap goes.
+ */
+export function withLiveKeys(
+  toasts: readonly ToastData[],
+  owns: (commandId: string) => boolean,
+): readonly ToastData[] {
+  return toasts.map(toast => {
+    const actions = toast.actions?.map(action =>
+      action.keysFrom && !action.commandId && !owns(action.keysFrom)
+        ? { ...action, keysFrom: undefined }
+        : action,
+    );
+    return actions ? { ...toast, actions } : toast;
+  });
+}
+
+function ownedBy(registry: Registry): (commandId: string) => boolean {
+  return commandId => registry.get(commandId)?.handlers !== undefined;
+}
 
 /** Props for `ToastHostView`. */
 export interface ToastHostViewProps {
@@ -27,10 +52,15 @@ export function ToastHostView({ toasts, onAction, onDismiss, undoSend }: ToastHo
 /** The shell's toast stack, live. */
 export function ToastHost() {
   const toasts = useToasts();
+  const { registry } = useShellRegistry();
+  // The screen's handlers attach in its effects, one pass after the route changes: render again once they have.
+  const route = useAppRoute();
+  const [, settle] = useReducer((n: number) => n + 1, 0);
+  useEffect(() => settle(), [route]);
   const undoSend = useUndoSendNotice();
   return (
     <ToastHostView
-      toasts={toasts}
+      toasts={withLiveKeys(toasts, ownedBy(registry))}
       onAction={runToastAction}
       onDismiss={dismissToast}
       undoSend={undoSend}

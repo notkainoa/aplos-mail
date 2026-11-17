@@ -319,7 +319,7 @@ pushToast({
 ```
 
 - The wording follows the op queue: "Archiving…" while pending, then "Done · Undo Z". With a destination it reads "Moved to Later · Set a date D · Undo Z". Offline it reads "Saved here · will sync".
-- An Undo toast is never silently replaced. A second move adds a second toast; the stack holds three, oldest first out. Never filter out an earlier toast.
+- An Undo toast is never silently replaced, with one exception: triage (Done, Later, Trash on a thread, `slot: 'triage'`) is one slot. A newer triage toast takes the place of the older one and names the sender ("Done · Jordan Park"); the older operation stays on the undo stack, so Z still undoes it. Every other Undo toast stacks (the stack holds three, oldest first out).
 - No toast for navigation, successful saves or sync ticks. Sends use the `UndoTray` at the message, not a toast, unless no thread is visible.
 
 ## 5. Home, AI, voice

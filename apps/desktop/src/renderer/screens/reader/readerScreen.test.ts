@@ -326,8 +326,11 @@ test('Later and Trash leave the same way with their own words', async () => {
     actions.trash();
     assert.equal(state.open, ids[2]);
     const messages = getToasts().map(t => t.message);
-    assert.ok(messages.includes('Moved to Later'));
-    assert.ok(messages.includes('Moved to Trash'));
+    // One triage slot: the Trash toast took Later's place, and both name the thread they moved.
+    assert.equal(messages.length, 1);
+    assert.match(messages[0]!, /^Moved to Trash · \S/);
+    const later = getToasts().filter(t => t.kind === 'later');
+    assert.equal(later.length, 0);
     await world.flush();
   } finally {
     world.connection.close();
@@ -500,19 +503,18 @@ test('E, J, E before the next letter lands does not run Done on the thread that 
     actions.done();
     actions.step('next');
     actions.done();
+    const first = getToasts().filter(t => t.kind === 'done');
     assert.equal(
-      getToasts().filter(t => t.kind === 'done').length,
+      first.length,
       1,
       'the shown letter is still the one that left: nothing happens, nothing is cleared',
     );
     assert.ok(state.gone.has(ids[0]!));
     controller.ready(state.open);
     actions.done();
-    assert.equal(
-      getToasts().filter(t => t.kind === 'done').length,
-      2,
-      'the next letter takes E once it lands',
-    );
+    const second = getToasts().filter(t => t.kind === 'done');
+    assert.equal(second.length, 1, 'one triage slot');
+    assert.notEqual(second[0]?.id, first[0]?.id, 'the next letter takes E once it lands');
     await world.flush();
   } finally {
     world.connection.close();

@@ -5,7 +5,7 @@
  */
 import type { DataApi } from '../../data';
 import type { PushedToast } from '../../shell';
-import { UNDO_ACTION, undoHandler } from '../undoOperation';
+import { UNDO_ACTION, triageSlot, undoHandler } from '../undoOperation';
 
 /** The screen's side of re-dating. */
 export interface RescheduleDeps {
@@ -29,6 +29,7 @@ export function reschedule(
   deps.push({
     id: opId,
     kind: 'later',
+    ...triageSlot('later'),
     message: `Moved to ${label}`,
     undoable: true,
     actions: [UNDO_ACTION],
