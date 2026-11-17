@@ -97,15 +97,29 @@ function MailRow({ row }: { row: Row }) {
   );
 }
 
-type HomeMockProps = { focus?: Focus; rows?: Row[]; plain?: boolean; className?: string };
+type HomeMockProps = {
+  focus?: Focus;
+  rows?: Row[];
+  plain?: boolean;
+  summaryOnly?: boolean;
+  className?: string;
+};
 
 /** A small, static copy of Home: the section label, the focus card and the next rows. */
 export function HomeMock({
   focus = subjectFocus,
   rows = heroRows,
   plain,
+  summaryOnly,
   className = '',
 }: HomeMockProps) {
+  if (summaryOnly) {
+    return (
+      <div className={`mock mock-home mock-solo ${className}`} aria-hidden="true">
+        <FocusCard focus={focus} />
+      </div>
+    );
+  }
   return (
     <div className={`mock mock-home ${plain ? 'mock-plain' : ''} ${className}`} aria-hidden="true">
       <div className="home-head">
@@ -169,7 +183,7 @@ const mainKeys: Key[] = [
 
 const moreKeys: Key[] = [
   { cap: 'B', does: 'Bookmark' },
-  { cap: 'A', does: 'Ask, hold to dictate' },
+  { cap: 'A', does: 'Ask or dictate' },
   { cap: 'C', does: 'Compose' },
   { cap: '?', does: 'All shortcuts' },
 ];
@@ -267,7 +281,7 @@ export function CalendarDayMock() {
           <div
             key={event.title}
             className={`day-event day-${event.tone}`}
-            style={{ top: `${event.top * 56}px`, height: `${event.tall * 56 - 4}px` }}
+            style={{ top: `${event.top * 64}px`, height: `${event.tall * 64 - 4}px` }}
           >
             <strong>{event.title}</strong>
             <span>{event.time}</span>

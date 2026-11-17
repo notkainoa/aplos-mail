@@ -5,6 +5,7 @@ function Kbd({ children }: { children: string }) {
 }
 
 const rows = [
+  { from: 'Jordan Park', subject: 'A quieter home for our project', when: '9:17 PM' },
   { from: 'Maya Chen', subject: 'Saturday in the community garden', when: 'Nov 13' },
   { from: 'Maple Library', subject: 'Your holds are ready to collect', when: 'Nov 13' },
   { from: 'Theo Kim', subject: 'Friday review: agenda and room', when: '8:32 PM' },
@@ -12,17 +13,31 @@ const rows = [
   { from: 'Rowan Pottery', subject: 'A place opened in the evening class', when: 'Nov 12' },
 ];
 
-function FocusCard() {
+type Focus = { from: string; time: string; subject: string; summary: string };
+
+const jordan: Focus = {
+  from: 'Jordan Park',
+  time: '9:17 PM',
+  subject: 'A quieter home for our project',
+  summary: 'Jordan wants your pick between two layouts by tomorrow.',
+};
+
+const maya: Focus = {
+  from: 'Maya Chen',
+  time: 'Nov 13',
+  subject: 'Saturday in the community garden',
+  summary: 'Maya asks if you can bring tools on Saturday morning.',
+};
+
+function FocusCard({ focus }: { focus: Focus }) {
   return (
     <div className="b-focus">
       <div className="b-focus-top">
-        <span className="b-focus-from">Jordan Park</span>
-        <span className="b-focus-time">9:17 PM</span>
+        <span className="b-focus-from">{focus.from}</span>
+        <span className="b-focus-time">{focus.time}</span>
       </div>
-      <p className="b-focus-subject">A quieter home for our project</p>
-      <p className="b-summary b-summary-lg">
-        Jordan wants your pick between two layouts by tomorrow.
-      </p>
+      <p className="b-focus-subject">{focus.subject}</p>
+      <p className="b-summary b-summary-lg">{focus.summary}</p>
       <div className="b-focus-actions">
         <span className="b-reply">
           Reply <Kbd>Space</Kbd>
@@ -38,12 +53,21 @@ function FocusCard() {
   );
 }
 
+/** The hero's phone-width stand-in for the app window: one email in focus. */
+export function HeroCard() {
+  return (
+    <figure className="b-hero-card" aria-label="Jordan Park's email in focus on Home">
+      <FocusCard focus={jordan} />
+    </figure>
+  );
+}
+
 /** Home: one email in focus, the rest of Do now beneath it. */
 export function HomeMock() {
   return (
     <figure
       className="b-mock"
-      aria-label="Home with Jordan Park's email in focus and more emails under Do now"
+      aria-label="Home with Maya Chen's email in focus and more emails under Do now"
     >
       <div className="b-mock-head">
         <span>
@@ -51,20 +75,24 @@ export function HomeMock() {
         </span>
         <span className="b-dim">Go one by one</span>
       </div>
-      <FocusCard />
+      <FocusCard focus={maya} />
       <ul className="b-rows">
-        {rows.map(row => (
-          <li
-            key={row.from}
-            className={
-              row.from === 'Maya Chen' || row.from === 'Maple Library' ? undefined : 'b-row-extra'
-            }
-          >
-            <span className="b-row-from">{row.from}</span>
-            <span className="b-row-subject">{row.subject}</span>
-            <span className="b-dim">{row.when}</span>
-          </li>
-        ))}
+        {rows
+          .filter(row => row.from !== 'Maya Chen')
+          .map(row => (
+            <li
+              key={row.from}
+              className={
+                row.from === 'Jordan Park' || row.from === 'Maple Library'
+                  ? undefined
+                  : 'b-row-extra'
+              }
+            >
+              <span className="b-row-from">{row.from}</span>
+              <span className="b-row-subject">{row.subject}</span>
+              <span className="b-dim">{row.when}</span>
+            </li>
+          ))}
       </ul>
       <div className="b-low">
         <span className="b-low-label">Low importance</span>
@@ -143,32 +171,44 @@ export function KeyGrid() {
   );
 }
 
-/** Calendar on a phone: the same Thursday as the app's week, at a readable size. */
+/** Calendar: three days of the week, the Thursday events and a proposed one awaiting confirmation. */
 export function CalendarMock() {
   return (
     <figure
       className="b-mock b-cal-mock"
-      aria-label="Calendar for Thursday 19 November with a design critique and a dentist visit from 2 PM"
+      aria-label="Calendar for Wednesday to Friday with a design critique and a dentist visit on Thursday, and a proposed event waiting for confirmation on Friday"
     >
       <p className="b-mock-head">
         <strong>November 2026</strong>
-        <span className="b-dim">Thu 19</span>
+        <span className="b-dim">Nov 15 – 21</span>
       </p>
-      <ul className="b-hours">
-        <li>
-          <span className="b-dim">2 PM</span>
-          <span className="b-events">
-            <span className="b-event b-event-blue">Design critique</span>
-            <span className="b-event b-event-gold">Dentist</span>
+      <div className="b-week">
+        <div className="b-day">
+          <p className="b-day-name">
+            Wed <strong>18</strong>
+          </p>
+        </div>
+        <div className="b-day">
+          <p className="b-day-name">
+            Thu <strong>19</strong>
+          </p>
+          <span className="b-event b-event-blue">
+            Design critique <span className="b-dim">2 PM</span>
           </span>
-        </li>
-        <li>
-          <span className="b-dim">3 PM</span>
-        </li>
-        <li>
-          <span className="b-dim">4 PM</span>
-        </li>
-      </ul>
+          <span className="b-event b-event-gold">
+            Dentist <span className="b-dim">2:30 PM</span>
+          </span>
+        </div>
+        <div className="b-day">
+          <p className="b-day-name">
+            Fri <strong>20</strong>
+          </p>
+          <span className="b-event b-event-proposed">
+            Friday review <span className="b-dim">10 AM</span>
+            <span className="b-confirm">Confirm</span>
+          </span>
+        </div>
+      </div>
     </figure>
   );
 }

@@ -1,6 +1,6 @@
 import type { ReactNode } from 'react';
 import { AppShot, Logo } from '../../shared/brand';
-import { AskMock, CalendarMock, HomeMock, KeyGrid } from './Mocks';
+import { AskMock, CalendarMock, HeroCard, HomeMock, KeyGrid } from './Mocks';
 
 const download = '../../download/';
 const privacy = '../../privacy/';
@@ -36,12 +36,11 @@ function Hero() {
       <Nav />
       <div className="b-hero-body b-wrap">
         <div className="b-hero-logo">
-          <Logo size={88} alt="Aplos Mail" />
+          <Logo size={112} alt="Aplos Mail" />
         </div>
         <h1 data-claim="home-focus">Finish your inbox, one email at a time.</h1>
         <p className="b-hero-sub" data-claim="gmail-google-calendar keyboard-first">
-          Aplos Mail is a Mac app for Gmail and Google Calendar. Your hands stay on the keyboard
-          from the first email to the last.
+          Aplos Mail is a Mac app for Gmail and Google Calendar, built to be used from the keyboard.
         </p>
         <div className="b-hero-cta">
           <Cta />
@@ -57,6 +56,7 @@ function Hero() {
 function HeroShot() {
   return (
     <div className="b-wrap b-hero-shot">
+      <HeroCard />
       <div className="b-frame">
         <AppShot
           name="home"
@@ -123,41 +123,30 @@ function Home() {
 
 function Calendar() {
   return (
-    <section className="b-calendar" aria-labelledby="b-cal">
-      <div className="b-wrap b-cal-head">
-        <div>
-          <Tag>Calendar</Tag>
-          <h2 id="b-cal">Your mail and calendar, in one app.</h2>
-        </div>
-        <div className="b-cal-copy">
-          <p data-claim="google-calendar-views">
-            Your Google calendars share one day, week and month view.
-          </p>
-          <p data-claim="plans-confirm">
-            When an email mentions a plan, Aplos can propose the event. It goes on your calendar
-            only after you confirm.
-          </p>
-          <p data-claim="several-accounts">
-            Connect several Google accounts at once and see them together.
-          </p>
-        </div>
-      </div>
-      <div className="b-wrap">
-        <div className="b-frame b-frame-cal">
-          <AppShot
-            name="calendar"
-            alt="Aplos Mail's calendar: a week in November with a design critique and a dentist appointment"
-          />
-        </div>
-        <CalendarMock />
-      </div>
-    </section>
+    <Feature
+      id="b-cal"
+      tag="Calendar"
+      title="Your mail and calendar, in one app."
+      flip
+      aside={<CalendarMock />}
+    >
+      <p data-claim="google-calendar-views">
+        Your Google calendars share one day, week and month view.
+      </p>
+      <p data-claim="plans-confirm">
+        When an email mentions a plan, Aplos can propose the event. It goes on your calendar only
+        after you confirm.
+      </p>
+      <p data-claim="several-accounts">
+        Connect several Google accounts at once and see them together.
+      </p>
+    </Feature>
   );
 }
 
 function Ask() {
   return (
-    <Feature id="b-ask" tag="Ask" title="Ask about your mail or calendar." flip aside={<AskMock />}>
+    <Feature id="b-ask" tag="Ask" title="Ask about your mail or calendar." aside={<AskMock />}>
       <p data-claim="ask-dictate">Type a question, or hold A and say it.</p>
       <p data-claim="ask-cites">
         Ask reads your mail and calendar, and cites the messages it used.
@@ -174,12 +163,13 @@ function Keyboard() {
     <Feature
       id="b-keys"
       tag="Keyboard"
-      title="Hands on the keys, first email to last."
+      title="Work through mail from the keyboard."
+      flip
       aside={<KeyGrid />}
     >
       <p data-claim="keyboard-first">
-        One key for the main action, two arrows to clear the way. Your hands stay on the keyboard
-        from the first email to the last.
+        Space does the main thing for the email in front of you. The left arrow sends it to Later,
+        the right arrow marks it Done, and Z undoes the last move.
       </p>
     </Feature>
   );

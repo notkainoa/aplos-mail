@@ -64,8 +64,8 @@
     --ink: #ececed;
     --ink-2: #c4c5c9;
     --dim: #b2b5bb;
-    --line: rgb(236 236 237 / 12%);
-    --line-strong: rgb(236 236 237 / 20%);
+    --line: rgb(236 236 237 / 16%);
+    --line-strong: rgb(236 236 237 / 24%);
 
     --green: #9cc4b3;
     --green-hover: #b1d2c5;
@@ -189,7 +189,6 @@ img {
 
 .b-brand .logo {
   border-radius: 22.5%;
-  box-shadow: 0 0 0 1px var(--band-line);
 }
 
 .b-nav-links {
@@ -258,7 +257,6 @@ img {
 
 .b-hero-logo .logo {
   border-radius: 22.5%;
-  box-shadow: 0 0 0 1px rgb(225 238 237 / 34%);
 }
 
 .b-hero h1 {
@@ -348,7 +346,7 @@ h2 {
   font-weight: 600;
   font-size: clamp(32px, 3.6vw, 46px);
   line-height: 1.1;
-  letter-spacing: -0.02em;
+  letter-spacing: -0.012em;
   text-wrap: balance;
 }
 
@@ -388,6 +386,21 @@ h2 {
 .b-close-body p {
   color: var(--ink-2);
   text-wrap: pretty;
+}
+
+.b-feature-text p.b-tag,
+.b-privacy-text p.b-tag {
+  color: var(--link);
+}
+
+.b-hero-card {
+  display: none;
+}
+
+.b-hero-shot .app-shot img {
+  aspect-ratio: 1240 / 600;
+  object-fit: cover;
+  object-position: top;
 }
 
 .b-small {
@@ -580,41 +593,78 @@ h2 {
 
 /* Calendar */
 
-.b-calendar {
-  padding-top: 144px;
-}
-
-.b-cal-head {
+.b-week {
   display: grid;
-  grid-template-columns: minmax(0, 4fr) minmax(0, 5fr);
-  gap: 56px;
-  align-items: start;
-  margin-bottom: 56px;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 12px;
+  min-height: 230px;
 }
 
-.b-cal-head h2 {
-  max-width: 11em;
+.b-day {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 14px 12px;
+  border-radius: 12px;
+  background: var(--paper);
+  box-shadow: 0 0 0 1px var(--line);
 }
 
-.b-cal-copy {
-  max-width: 36rem;
+.b-day-name {
+  padding-bottom: 8px;
+  color: var(--dim);
+  font-size: 15px;
 }
 
-/* Desktop: show the populated hours only. */
-.b-frame-cal .app-shot img {
-  aspect-ratio: 1240 / 450;
-  object-fit: cover;
-  object-position: top;
+.b-day-name strong {
+  margin-left: 4px;
+  color: var(--ink);
+  font-weight: 600;
 }
 
-.b-cal-mock,
-.b-hours {
-  display: none;
-}
-
-.b-summary-lg {
-  font-size: 26px;
+.b-event {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 10px 12px;
+  border-radius: 6px;
+  border-left: 3px solid;
+  color: var(--ink);
+  font-size: 15px;
+  font-weight: 500;
   line-height: 1.35;
+}
+
+.b-event .b-dim {
+  font-size: 13px;
+  font-weight: 400;
+}
+
+.b-event-blue {
+  border-color: #2f6f9f;
+  background: rgb(47 111 159 / 14%);
+}
+
+.b-event-gold {
+  border-color: #8a6a1f;
+  background: rgb(138 106 31 / 16%);
+}
+
+.b-event-proposed {
+  border: 1px dashed var(--line-strong);
+  border-left: 3px dashed var(--green);
+  background: transparent;
+}
+
+.b-confirm {
+  align-self: flex-start;
+  margin-top: 8px;
+  padding: 4px 10px;
+  border-radius: 6px;
+  background: var(--green);
+  color: var(--on-green);
+  font-size: 13px;
+  font-weight: 600;
 }
 
 /* Ask */
@@ -810,7 +860,7 @@ h2 {
 }
 
 .b-facts dt {
-  color: var(--dim);
+  color: var(--ink-2);
   font-size: 15px;
   padding-top: 3px;
 }
@@ -839,7 +889,6 @@ h2 {
 
 .b-close-body .logo {
   border-radius: 22.5%;
-  box-shadow: 0 0 0 1px var(--band-line);
 }
 
 .b-close-body h2 {
@@ -874,7 +923,7 @@ h2 {
   padding-top: 28px;
   padding-bottom: 40px;
   font-size: 14px;
-  color: var(--band-sub);
+  color: var(--band-ink);
 }
 
 .b-footer::before {
@@ -910,7 +959,6 @@ h2 {
 
 @media (max-width: 960px) {
   .b-feature,
-  .b-cal-head,
   .b-privacy-grid {
     grid-template-columns: minmax(0, 1fr);
     gap: 40px;
@@ -922,13 +970,8 @@ h2 {
     order: 0;
   }
 
-  .b-feature-text h2,
-  .b-cal-head h2 {
+  .b-feature-text h2 {
     max-width: 16ch;
-  }
-
-  .b-cal-head {
-    gap: 24px;
   }
 }
 
@@ -951,7 +994,7 @@ h2 {
   }
 
   .b-hero-body {
-    padding-top: 24px;
+    padding-top: 44px;
     padding-bottom: 56px;
   }
 
@@ -981,62 +1024,21 @@ h2 {
     align-self: stretch;
   }
 
-  /* On a phone the real window is too small to read: the Home card carries the product. */
-  .b-hero-shot {
+  /* On a phone the real window is too small to read: a crisp card bridges the band instead. */
+  .b-hero-shot .b-frame {
     display: none;
   }
 
-  .b-hero {
-    padding-bottom: 0;
-  }
-
-  .b-frame-cal {
-    display: none;
-  }
-
-  .b-mock.b-cal-mock {
-    display: block;
-    margin-inline: 0;
-  }
-
-  .b-cal-mock .b-hours {
+  .b-hero-card {
     display: block;
   }
 
-  .b-hours li {
-    display: grid;
-    grid-template-columns: 3.5rem minmax(0, 1fr);
-    gap: 12px;
-    min-height: 64px;
-    padding-top: 10px;
-    border-top: 1px solid var(--line-strong);
-    font-size: 15px;
+  .b-hero-card .b-focus {
+    box-shadow: var(--shadow-frame);
   }
 
-  .b-events {
-    display: flex;
-    gap: 8px;
-  }
-
-  .b-event {
-    flex: 1;
-    min-height: 52px;
-    padding: 8px 10px;
-    border-radius: 6px;
-    border-left: 3px solid;
-    color: var(--ink);
-    font-size: 15px;
-    font-weight: 500;
-  }
-
-  .b-event-blue {
-    border-color: #2f6f9f;
-    background: rgb(47 111 159 / 14%);
-  }
-
-  .b-event-gold {
-    border-color: #8a6a1f;
-    background: rgb(138 106 31 / 14%);
+  .b-hero-card .b-focus-subject {
+    font-size: 22px;
   }
 
   .b-rows li.b-row-extra {
@@ -1049,14 +1051,6 @@ h2 {
 
   .b-feature {
     padding-top: 112px;
-  }
-
-  .b-calendar {
-    padding-top: 112px;
-  }
-
-  .b-cal-head {
-    margin-bottom: 40px;
   }
 
   .b-mock {
@@ -1092,12 +1086,34 @@ h2 {
   }
 
   .b-keys-main {
-    grid-template-columns: minmax(0, 1fr);
-    gap: 4px;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 4px 12px;
+  }
+
+  .b-keys-main li {
+    gap: 10px;
+  }
+
+  .b-cap {
+    min-width: 48px;
   }
 
   .b-keys-main li:first-child .b-cap {
-    min-width: 96px;
+    min-width: 72px;
+  }
+
+  .b-week {
+    gap: 6px;
+    min-height: 240px;
+  }
+
+  .b-day {
+    padding: 10px 6px;
+  }
+
+  .b-event {
+    padding: 8px;
+    font-size: 14px;
   }
 
   .b-providers li:last-child {

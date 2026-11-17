@@ -1,15 +1,7 @@
 import type { ReactNode } from 'react';
 import { Logo } from '../../shared/brand';
 import { CalendarCrop, HomeCrop } from './Crop';
-import {
-  AskMock,
-  CalendarDayMock,
-  HomeMock,
-  KeyList,
-  ProviderMock,
-  homeRows,
-  summaryFocus,
-} from './Mocks';
+import { AskMock, CalendarDayMock, HomeMock, KeyList, ProviderMock, summaryFocus } from './Mocks';
 
 const DOWNLOAD = '../../download/';
 const PRIVACY = '../../privacy/';
@@ -31,7 +23,7 @@ function Nav() {
         <a className="text-link" href={PRIVACY}>
           Privacy
         </a>
-        <a className="button-quiet" href={DOWNLOAD}>
+        <a className="text-link text-link-strong" href={DOWNLOAD}>
           How to get it
         </a>
       </nav>
@@ -65,6 +57,9 @@ function Hero() {
       <div className="window">
         <HomeMock plain className="hero-mock" />
         <HomeCrop alt="Aplos Mail's Home on All accounts: Jordan Park's email in focus with Reply, Later and Done, and the rest of Do now below it." />
+        <p className="window-note" data-claim="mac-only">
+          Home in the Mac app.
+        </p>
       </div>
     </section>
   );
@@ -100,20 +95,20 @@ function HomePane() {
     <Pane
       id="home"
       label="Home"
-      title="One email in focus, the rest can wait."
+      title="Read the point, then decide."
       asideClass="aside-home"
       aside={
         <>
-          <HomeMock focus={summaryFocus} rows={homeRows} />
+          <HomeMock focus={summaryFocus} summaryOnly />
           <p className="aside-note" data-claim="summaries-with-ai">
             A summary in Aplos Mail, once you turn on AI.
           </p>
         </>
       }
     >
-      <p data-claim="home-focus">
-        Home puts the email that needs you at the top. Reply, Later or Done, and the next one takes
-        its place.
+      <p data-claim="summaries-with-ai home-focus">
+        Once AI is on, the email in focus carries a short summary of what it says and needs. Then
+        Reply, Later or Done, and the next one takes its place.
       </p>
     </Pane>
   );
@@ -130,7 +125,7 @@ function CalendarPane() {
         <figure className="window window-in-pane">
           <CalendarDayMock />
           <CalendarCrop alt="Aplos Mail's calendar week for November 15 to 21, with Design critique and Dentist on Thursday." />
-          <figcaption data-claim="mac-only">Calendar in the Mac app, week view.</figcaption>
+          <figcaption data-claim="mac-only">Calendar in the Mac app.</figcaption>
         </figure>
       }
     >
@@ -188,10 +183,13 @@ function AiPane() {
         Your keys stay on your Mac, and Ollama and LM Studio run on it too. No Aplos server ever
         sees your mail, calendar or sign&#8209;in details.
       </p>
-      <p className="fine" data-claim="ai-providers provider-per-feature ai-routers">
-        Providers: Groq, OpenAI, Claude, Gemini, OpenRouter, OpenCode Go, Ollama, LM Studio or your
-        own server. A feature&rsquo;s text goes only to its provider; OpenRouter and OpenCode Go
-        pass each request on to the company that runs the chosen model.
+      <p data-claim="provider-per-feature ai-routers">
+        A feature&rsquo;s text goes only to its own provider. OpenRouter and OpenCode Go pass each
+        request on to the company that runs the chosen model.
+      </p>
+      <p data-claim="ai-providers">
+        Choose Groq, OpenAI, Claude, Gemini, OpenRouter, OpenCode Go, Ollama, LM Studio or your own
+        server.
       </p>
     </Pane>
   );
@@ -209,7 +207,9 @@ function Close() {
           How to get it
         </a>
       </div>
-      <Logo size={128} />
+      <span className="close-chip">
+        <Logo size={112} />
+      </span>
     </section>
   );
 }
