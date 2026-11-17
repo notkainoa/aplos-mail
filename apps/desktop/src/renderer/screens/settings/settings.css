@@ -21,6 +21,12 @@
   width: var(--settings-nav);
 }
 
+/* The nav's icons sit on the label's optical centre: a 24 px icon box centred on a text line reads a pixel high, so
+   each is nudged down by 1 px (a 2 px margin, which --space-half allows for exactly this). */
+.settings-nav .ui-puck[data-kind='selection'] .ui-puck__item .ui-part-icon {
+  margin-top: var(--space-half);
+}
+
 .settings-content {
   flex: 0 1 var(--settings-content);
   min-width: 0;

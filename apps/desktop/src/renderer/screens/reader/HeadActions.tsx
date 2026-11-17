@@ -7,7 +7,7 @@
 import { useCallback, useId, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import type { Message, ThreadRow } from '../../data';
 import { useRegisterCommands, type CommandHandlerTable } from '../../shell';
-import { Button, Icon } from '../../ui/buttons-keys';
+import { Button, Icon, Tooltip } from '../../ui/buttons-keys';
 import type { MenuEntry, SuggestedAction } from '../../ui/props';
 import { Menu } from '../../ui/surfaces';
 import type { MovableLane } from '../home/homeModel';
@@ -97,6 +97,8 @@ function ImportanceMenu({ row, controls }: Pick<HeadActionsProps, 'row' | 'contr
         variant="text"
         size="sm"
         label={IMPORTANCE_LABEL[at]}
+        // The tooltip carries the key that moves the thread the other way: ⌥↓ from Important, ⌥↑ from Low importance.
+        commandId={at === 'important' ? 'mail.laneDown' : 'mail.laneUp'}
         ariaLabel={`${IMPORTANCE_LABEL[at]}, change importance`}
         trailingIcon="chevron-down"
         popup={{ kind: 'menu', expanded: menu.open, controls: menu.id }}
@@ -133,9 +135,11 @@ function NotificationBell({ state }: { readonly state: NotificationState }) {
   if (state === 'unknown') return null;
   const { icon, label } = BELL[state];
   return (
-    <span className="aplos-bell" role="img" aria-label={label} title={label} data-state={state}>
-      <Icon name={icon} />
-    </span>
+    <Tooltip label={label}>
+      <span className="aplos-bell" role="img" aria-label={label} data-state={state}>
+        <Icon name={icon} />
+      </span>
+    </Tooltip>
   );
 }
 
