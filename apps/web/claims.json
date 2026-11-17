@@ -52,7 +52,7 @@
       ],
       "status": "verified",
       "verifiedAt": "2026-10-27",
-      "note": "apps/desktop/package.json still sets minimumSystemVersion 12.0; the plat-release lane raises it to 13.0 (ARCH 2.5). The site states the supported floor, not the plist."
+      "note": "apps/desktop/package.json still sets minimumSystemVersion 12.0; the plat-release lane raises it to 13.0 (ARCH 2.5). The site states the supported floor, not the plist. Also carried by the meta and og descriptions in apps/web/index.html and apps/web/download/index.html (data-claim cannot go on a meta tag)."
     },
     {
       "id": "gmail-google-calendar",
@@ -130,7 +130,8 @@
         }
       ],
       "status": "verified",
-      "verifiedAt": "2026-10-27"
+      "verifiedAt": "2026-10-27",
+      "note": "Also carried by the meta and og descriptions in apps/web/index.html and apps/web/download/index.html (data-claim cannot go on a meta tag)."
     },
     {
       "id": "dmg-install",

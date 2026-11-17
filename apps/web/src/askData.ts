@@ -7,15 +7,15 @@ export const questions: [string, Answer][] = [
   [
     'What plans do I have this week?',
     {
-      text: 'Besides the 9 AM standups: design critique Monday at 1, dinner with Sam Tuesday at 7, a welcome lunch Wednesday at noon, yoga Thursday at 6 and team retro Friday at 10. The cabin weekend starts Friday.',
-      sources: ['Design critique', 'Dinner with Sam', 'Cabin weekend'],
+      text: 'Monday has standup and lunch with Maya at 12:00. Tuesday is pottery class, and Wednesday has the library holds. Thursday is design critique, and Friday has the review at 11 and cabin planning at 1.',
+      sources: ['Lunch with Maya', 'Design critique', 'Friday review', 'Cabin planning'],
     },
   ],
   [
     'Which emails still need a reply?',
     {
-      text: 'Three are waiting on you. Jordan Park wants your pick of two layout directions by tomorrow. Rowan Pottery is holding a seat in the Tuesday evening class. Drew’s October invoice is overdue for approval.',
-      sources: ['Jordan Park', 'Rowan Pottery', 'Drew'],
+      text: 'Three are waiting on you. Jordan Park wants your pick of two layout directions by tomorrow. Rowan Pottery is holding a seat in the Tuesday evening class. Theo Kim needs Friday’s review room confirmed, and that is overdue.',
+      sources: ['Jordan Park', 'Rowan Pottery', 'Theo Kim'],
     },
   ],
   [

@@ -33,7 +33,7 @@ function TalkButton({ listening, listen, release }: TalkProps) {
     <button
       type="button"
       className="ask-talk"
-      aria-label="Hold A to dictate"
+      title="Press and hold to dictate"
       onPointerDown={event => {
         event.currentTarget.setPointerCapture(event.pointerId);
         listen();
@@ -129,7 +129,7 @@ function ProposalCard({ proposal, shown, booking, onBook }: ProposalProps) {
       {booking === 'added' ? (
         <p className="ask-event-state" role="status">
           <CheckIcon />
-          Added to Friday
+          Added to {proposal.when.split(',')[0]}
         </p>
       ) : null}
       {booking === 'dismissed' ? (

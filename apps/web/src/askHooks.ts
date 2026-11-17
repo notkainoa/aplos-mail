@@ -66,24 +66,15 @@ function isDictateKey(event: KeyboardEvent) {
   return !target.closest('input, textarea, select, [role="group"]');
 }
 
-function useVisible(target: React.RefObject<HTMLElement | null>) {
-  const visible = useRef(false);
-  useEffect(() => {
-    const observer = new IntersectionObserver(
-      ([entry]) => {
-        visible.current = entry.isIntersecting;
-      },
-      { threshold: 0.5 },
-    );
-    observer.observe(target.current!);
-    return () => observer.disconnect();
-  }, [target]);
-  return visible;
+// A global A only counts once the visitor has engaged with the panel: focus is inside it, or the pointer is over it.
+function isEngaged(panel: HTMLElement | null) {
+  if (!panel) return false;
+  return panel.contains(document.activeElement) || panel.matches(':hover');
 }
 
 /**
- * Hold to dictate: while A (or the hint button) is held the panel listens; on release it "hears" the next sample
- * question. A tap shorter than HOLD_MS does nothing, like the app.
+ * Hold to dictate: while A (with the panel focused or hovered) or the hint button is held the panel listens; on
+ * release it "hears" the next sample question. A tap shorter than HOLD_MS does nothing, like the app.
  */
 export function useHoldToDictate(
   panel: React.RefObject<HTMLElement | null>,
@@ -91,7 +82,6 @@ export function useHoldToDictate(
 ) {
   const [listening, setListening] = useState(false);
   const hold = useRef({ on: false, since: 0, next: 0 });
-  const visible = useVisible(panel);
 
   const listen = () => {
     if (hold.current.on) return;
@@ -110,10 +100,12 @@ export function useHoldToDictate(
   };
 
   const latest = useRef({ listen, release });
-  latest.current = { listen, release };
+  useEffect(() => {
+    latest.current = { listen, release };
+  });
   useEffect(() => {
     const down = (event: KeyboardEvent) => {
-      if (visible.current && isDictateKey(event)) latest.current.listen();
+      if (isEngaged(panel.current) && isDictateKey(event)) latest.current.listen();
     };
     const up = (event: KeyboardEvent) => {
       if (event.key.toLowerCase() === 'a') latest.current.release();
@@ -127,7 +119,7 @@ export function useHoldToDictate(
       window.removeEventListener('keyup', up);
       window.removeEventListener('blur', blur);
     };
-  }, [visible]);
+  }, [panel]);
 
   return { listening, listen, release };
 }

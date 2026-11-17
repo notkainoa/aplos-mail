@@ -2,7 +2,11 @@ import { Logo } from './brand';
 
 // The header and footer every page shares. `home` is the path back to the site root from the current page.
 
-export function Header({ home }: { home: string }) {
+type Page = 'download' | 'privacy';
+
+const current = (page: Page | undefined, link: Page) => (page === link ? 'page' : undefined);
+
+export function Header({ home, page }: { home: string; page?: Page }) {
   return (
     <header className="nav">
       <a className="brand" href={home} aria-label="Aplos Mail, home">
@@ -10,10 +14,14 @@ export function Header({ home }: { home: string }) {
         <span aria-hidden="true">Aplos Mail</span>
       </a>
       <nav className="nav-links" aria-label="Site">
-        <a className="text-link" href={`${home}privacy/`}>
+        <a className="text-link" href={`${home}privacy/`} aria-current={current(page, 'privacy')}>
           Privacy
         </a>
-        <a className="text-link text-link-strong" href={`${home}download/`}>
+        <a
+          className="text-link text-link-strong"
+          href={`${home}download/`}
+          aria-current={current(page, 'download')}
+        >
           How to get it
         </a>
       </nav>

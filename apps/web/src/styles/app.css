@@ -356,6 +356,9 @@ button.app-icon {
   right: 3px;
   height: calc(var(--len) * var(--hour) - 4px);
   padding: 4px 6px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .cal-day {

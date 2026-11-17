@@ -5,12 +5,16 @@
 //   1. Build the app: npm run build -w @aplos/desktop
 //   2. From apps/desktop, start it with throwaway storage and a debugging port (never with real mail or accounts):
 //        D=$(mktemp -d -t aplos-web)
-//        env -u ELECTRON_RUN_AS_NODE APLOS_ENGINE=real APLOS_TEST=1 APLOS_DATA_DIR="$D" APLOS_TEST_CDP_PORT=9666 \
+//        env -u ELECTRON_RUN_AS_NODE -u GROQ_API_KEY -u OPENAI_API_KEY -u ANTHROPIC_API_KEY -u GEMINI_API_KEY \
+//          -u OPENROUTER_API_KEY -u OPENCODE_API_KEY -u OLLAMA_API_KEY -u LM_STUDIO_API_KEY -u CUSTOM_AI_API_KEY \
+//          APLOS_ENGINE=real APLOS_TEST=1 APLOS_DATA_DIR="$D" APLOS_TEST_CDP_PORT=9666 \
 //          ../../node_modules/.bin/electron . &
 //   3. From the repo root, with playwright and sharp in CAPTURE_DEPS (they are not dependencies of the repo):
 //        CAPTURE_DEPS=/path/to/node_modules node apps/web/scripts/capture-screenshots.mjs
 //   4. Stop only the Electron process you started.
 //
+// No provider key may reach the app, so AI is off and no summary can be painted on. The script also checks this
+// before saving and refuses to write the screenshots otherwise.
 // It clicks "Try demo mail" if the welcome window is showing, then shoots Home in both appearances. Nothing is sent.
 import { createRequire } from 'node:module';
 import { resolve } from 'node:path';
@@ -72,9 +76,27 @@ async function save(png, name, region) {
   console.log(`${name}.webp ${area.width} × ${area.height}`);
 }
 
+// AI must be off: no "Summarizing…" placeholder and no serif summary (a summary is the only serif text on Home's focus
+// card). Throws before anything is saved.
+async function assertAiOff(page) {
+  const problem = await page.evaluate(() => {
+    const card = document.querySelector('.ui-focus-letter');
+    if (!card) return 'no focus card';
+    if (/summariz/i.test(card.textContent ?? '')) return 'a summary is being written';
+    const serif = /newsreader|new york|georgia|(^|,\s*)serif\s*(,|$)/i;
+    const painted = [
+      ...card.querySelectorAll('.ui-focus-letter__summary, .ui-focus-letter__summary *'),
+    ].find(el => serif.test(getComputedStyle(el).fontFamily));
+    return painted ? 'a serif summary is showing' : '';
+  });
+  if (problem)
+    throw new Error(`AI is not off (${problem}). Restart the app without provider keys.`);
+}
+
 async function shoot(page, scheme) {
   await page.emulateMedia({ colorScheme: scheme, reducedMotion: 'reduce' });
   await page.waitForTimeout(600);
+  await assertAiOff(page);
   const png = await page.screenshot();
   const wide = { x: 0, y: 0, width: SIZE.width, height: WIDE_HEIGHT };
   await save(png, `home-wide-${scheme}`, wide);

@@ -1,4 +1,4 @@
-import { useCallback, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { CheckIcon, ClockIcon } from './Icons';
 import { TriageCard, type Move } from './TriageCard';
 import { laneLabel, leftInLane, mails, type Mail } from './triageData';
@@ -79,39 +79,56 @@ function useHints() {
   return { hints, show };
 }
 
-// A small working copy of Home: one email in focus, acted on with the same keys as the app. Each action sends a
-// ghost of the card off while the next one comes in, so quick presses never wait on an animation.
-export function Triage() {
+type TriageState = {
+  index: number;
+  mail: Mail | undefined;
+  ghosts: Ghost[];
+  status: string;
+  act: (move: Move, x?: number) => void;
+  undo: () => void;
+  restart: () => void;
+};
+
+// The demo's state: which email is in focus, the ghosts of cards on their way out, and the one-line status.
+function useTriage(): TriageState {
   const [index, setIndex] = useState(0);
   const [ghosts, setGhosts] = useState<Ghost[]>([]);
   const [history, setHistory] = useState<number[]>([]);
   const [status, setStatus] = useState('');
-  const [focused, setFocused] = useState(false);
   const ghostId = useRef(0);
-  const { hints, show } = useHints();
-  const mail = mails[index];
+  const timers = useRef(new Set<number>());
 
-  const act = useCallback(
-    (move: Move, x = 0) => {
-      const current = mails[index];
-      if (!current) return;
-      const id = ++ghostId.current;
-      setGhosts(list => [...list, { id, mail: current, move, x }]);
-      window.setTimeout(() => setGhosts(list => list.filter(g => g.id !== id)), GHOST_MS);
-      setHistory(list => [...list, index]);
-      setIndex(index + 1);
-      setStatus(statusFor(move, current));
-    },
-    [index],
-  );
+  useEffect(() => {
+    const pending = timers.current;
+    return () => pending.forEach(id => window.clearTimeout(id));
+  }, []);
 
-  const undo = useCallback(() => {
+  const removeLater = (id: number) => {
+    const timer = window.setTimeout(() => {
+      timers.current.delete(timer);
+      setGhosts(list => list.filter(g => g.id !== id));
+    }, GHOST_MS);
+    timers.current.add(timer);
+  };
+
+  const act = (move: Move, x = 0) => {
+    const current = mails[index];
+    if (!current) return;
+    const id = ++ghostId.current;
+    setGhosts(list => [...list, { id, mail: current, move, x }]);
+    removeLater(id);
+    setHistory(list => [...list, index]);
+    setIndex(index + 1);
+    setStatus(statusFor(move, current));
+  };
+
+  const undo = () => {
     const previous = history.at(-1);
     if (previous === undefined) return;
     setHistory(history.slice(0, -1));
     setIndex(previous);
     setStatus(`Undone: ${mails[previous].sender}`);
-  }, [history]);
+  };
 
   const restart = () => {
     setIndex(0);
@@ -119,13 +136,26 @@ export function Triage() {
     setStatus('');
   };
 
+  return { index, mail: mails[index], ghosts, status, act, undo, restart };
+}
+
+// A small working copy of Home: one email in focus, acted on with the same keys as the app. Each action sends a
+// ghost of the card off while the next one comes in, so quick presses never wait on an animation.
+export function Triage() {
+  const { index, mail, ghosts, status, act, undo, restart } = useTriage();
+  const [focused, setFocused] = useState(false);
+  const { hints, show } = useHints();
+
+  // Holding a key does not repeat: one press is one email. Keys that do nothing are left to the page.
   const onKeyDown = (event: React.KeyboardEvent) => {
     if (event.metaKey || event.ctrlKey || event.altKey) return;
     const move = keyMoves[event.key];
-    if (move) act(move);
-    else if (event.key.toLowerCase() === 'z') undo();
-    else return;
+    const isUndo = event.key.toLowerCase() === 'z';
+    if (!(move && mail) && !isUndo) return;
     event.preventDefault();
+    if (event.repeat) return;
+    if (move) act(move);
+    else undo();
   };
 
   const lane = mail?.lane ?? 'updates';

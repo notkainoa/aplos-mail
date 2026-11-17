@@ -114,14 +114,6 @@ export function DownloadIcon() {
   );
 }
 
-export function ChevronIcon() {
-  return (
-    <Glyph>
-      <path d="m5 6.5 3 3 3-3" />
-    </Glyph>
-  );
-}
-
 export type ActionIcon = 'reply' | 'paperclip' | 'link' | 'calendar' | 'check';
 
 const actionIcons: Record<ActionIcon, () => ReactNode> = {

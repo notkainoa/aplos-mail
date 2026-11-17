@@ -19,8 +19,8 @@ const DARK = '(prefers-color-scheme: dark)';
 export function HomeShot({ alt }: { alt: string }) {
   return (
     <picture className="shot">
-      <source srcSet={homeCardDark} media={`${NARROW} and ${DARK}`} />
-      <source srcSet={homeCardLight} media={NARROW} />
+      <source srcSet={homeCardDark} media={`${NARROW} and ${DARK}`} width={1488} height={398} />
+      <source srcSet={homeCardLight} media={NARROW} width={1488} height={398} />
       <source srcSet={homeWideDark} media={DARK} />
       <img
         src={homeWideLight}

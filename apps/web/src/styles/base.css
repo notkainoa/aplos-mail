@@ -78,6 +78,10 @@ button {
   border-radius: 6px;
 }
 
+.close :focus-visible {
+  outline-color: var(--brand-ink);
+}
+
 .sr {
   position: absolute;
   width: 1px;

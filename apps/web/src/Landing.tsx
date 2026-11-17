@@ -32,7 +32,7 @@ function Hero() {
           </div>
         </div>
       </div>
-      <figure className="window" data-reveal>
+      <figure className="window" data-reveal data-claim="home-focus several-accounts">
         <div className="window-frame">
           <HomeShot alt="Aplos Mail's Home on All accounts: Jordan Park's email in focus with Reply, Later and Done, and the rest of Do now below it." />
         </div>
@@ -52,11 +52,16 @@ type SectionProps = {
 
 /** One feature: the words and the thing they describe, straight on the page. */
 function Section({ id, title, children, aside, layout = 'split' }: SectionProps) {
+  const wide = layout === 'wide';
   return (
     <section className={`feature feature-${layout}`} id={id} aria-labelledby={`${id}-title`}>
-      <div className="feature-copy" data-reveal>
-        <h2 id={`${id}-title`}>{title}</h2>
-        <div className="feature-text">{children}</div>
+      <div className="feature-copy" data-reveal={wide ? undefined : true}>
+        <h2 id={`${id}-title`} data-reveal={wide ? true : undefined}>
+          {title}
+        </h2>
+        <div className="feature-text" data-reveal={wide ? true : undefined}>
+          {children}
+        </div>
       </div>
       <div className="feature-aside" data-reveal>
         {aside}
@@ -81,15 +86,22 @@ function SuggestedSection() {
   return (
     <Section
       id="next-step"
-      title="Space starts the next step."
+      title="One suggested step, one key."
       layout="wide"
-      aside={<SuggestionCards />}
+      aside={
+        <>
+          <SuggestionCards />
+          <p className="note" data-claim="suggested-action">
+            For links, attachments and plans, Space opens the email.
+          </p>
+        </>
+      }
     >
       <p data-claim="suggested-action">
         Once AI is on, Aplos reads each email and suggests one next step: reply, open a link or
         attachment, a plan for your calendar, or just Done. The main button names it with its own
-        icon, and Space starts it. A reply opens ready to write, and anything else opens the email.
-        Nothing is sent or added to your calendar on its own.
+        icon, and Space starts it. A reply opens, Done clears the email, and the rest open the
+        email. Nothing is sent or added to your calendar on its own.
       </p>
       <p data-claim="suggested-action-ai-off">
         With AI off, the button is Reply on Do now and Done on Important updates.
@@ -142,21 +154,26 @@ function AskSection() {
 
 function KeysSection() {
   return (
-    <Section id="keys" title="Made for the keyboard." layout="wide" aside={<KeyList />}>
+    <Section id="keys" title="Made for the keyboard." aside={<KeyList />}>
       <p data-claim="keyboard-first">
         Your hands stay on the keyboard from the first email to the last.
       </p>
-      <p className="note">Press any of these keys to try them.</p>
+      <p className="note">Press a key to see its cap press.</p>
     </Section>
   );
 }
 
 function AiSection() {
   return (
-    <Section id="ai" title="Your provider, your keys, your Mac." aside={<ProviderPicker />}>
+    <Section
+      id="ai"
+      title="Your provider, your keys, your Mac."
+      layout="flip"
+      aside={<ProviderPicker />}
+    >
       <p data-claim="keys-on-mac local-models no-aplos-server">
         No Aplos server ever sees your mail, calendar or sign&#8209;in details. Your keys stay on
-        your Mac, and Ollama and LM Studio run on it too.
+        your Mac. Ollama and LM Studio run on your Mac at their default addresses.
       </p>
       <p data-claim="groq-default provider-per-feature ai-routers">
         Groq is the default for every AI feature, and in Settings you pick a provider for each one.
@@ -199,7 +216,9 @@ export function Landing() {
     <div className="site">
       <div className="page">
         <Header home="./" />
-        <main>
+      </div>
+      <main>
+        <div className="page">
           <Hero />
           <HomeSection />
           <SuggestedSection />
@@ -207,9 +226,9 @@ export function Landing() {
           <AskSection />
           <KeysSection />
           <AiSection />
-        </main>
-      </div>
-      <Close />
+        </div>
+        <Close />
+      </main>
       <div className="page">
         <Footer home="./" />
       </div>

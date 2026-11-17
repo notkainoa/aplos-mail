@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { CheckIcon } from './Icons';
+import { observeVisible } from './reveal';
 
 // The shortcut list answers the real keyboard: while it is on screen, pressing one of its keys presses its cap.
 const keys: [string, string, string[]][] = [
@@ -17,13 +18,9 @@ function useKeyboardPress(list: React.RefObject<HTMLElement | null>) {
   const [pressed, setPressed] = useState<string | null>(null);
   useEffect(() => {
     let visible = false;
-    const observer = new IntersectionObserver(
-      ([entry]) => {
-        visible = entry.isIntersecting;
-      },
-      { threshold: 0.4 },
-    );
-    observer.observe(list.current!);
+    const stopWatching = observeVisible(list.current!, 0.4, isVisible => {
+      visible = isVisible;
+    });
     const down = (event: KeyboardEvent) => {
       if (!visible || event.metaKey || event.ctrlKey || event.altKey) return;
       if ((event.target as HTMLElement).closest('input, textarea, select')) return;
@@ -35,7 +32,7 @@ function useKeyboardPress(list: React.RefObject<HTMLElement | null>) {
     window.addEventListener('keyup', up);
     window.addEventListener('blur', up);
     return () => {
-      observer.disconnect();
+      stopWatching();
       window.removeEventListener('keydown', down);
       window.removeEventListener('keyup', up);
       window.removeEventListener('blur', up);
@@ -75,32 +72,12 @@ type SegmentedProps<T extends string> = {
   onChange: (v: T) => void;
 };
 
-// The thumb is one full-size layer clipped to the selected option, so it slides without resizing anything.
-function thumbClip(row: HTMLElement, button: HTMLElement) {
-  const top = button.offsetTop;
-  const right = row.clientWidth - button.offsetLeft - button.offsetWidth;
-  const bottom = row.clientHeight - top - button.offsetHeight;
-  return `inset(${top}px ${right}px ${bottom}px ${button.offsetLeft}px round 6px)`;
-}
-
-// The app's segmented control.
+// The app's segmented control. The thumb is one equal-width layer that slides by transform, so nothing resizes.
 function Segmented<T extends string>({ label, options, value, onChange }: SegmentedProps<T>) {
-  const row = useRef<HTMLDivElement>(null);
-  const [clip, setClip] = useState<string | null>(null);
-  useEffect(() => {
-    const measure = () => {
-      const button = row.current?.querySelector<HTMLElement>(`[data-value="${value}"]`);
-      if (row.current && button) setClip(thumbClip(row.current, button));
-    };
-    measure();
-    window.addEventListener('resize', measure);
-    return () => window.removeEventListener('resize', measure);
-  }, [value]);
+  const style = { '--n': options.length, '--i': options.indexOf(value) } as React.CSSProperties;
   return (
-    <div className="segmented" role="group" aria-label={label} ref={row}>
-      {clip ? (
-        <span className="segmented-thumb" aria-hidden="true" style={{ clipPath: clip }} />
-      ) : null}
+    <div className="segmented" role="group" aria-label={label} style={style}>
+      <span className="segmented-thumb" aria-hidden="true" />
       {options.map(option => (
         <button
           key={option}
@@ -159,7 +136,7 @@ function destination(provider: string) {
 
 function routeSentence(feature: Feature, provider: string) {
   const voice = feature === 'Voice' ? ' Only Groq and OpenAI turn speech into text.' : '';
-  const gemini = provider === 'Gemini' ? ' Mail goes to Gemini only with a paid key.' : '';
+  const gemini = provider === 'Gemini' ? ' A free Gemini key never gets mail.' : '';
   return `${subjectOf(feature)} go to ${destination(provider)}${voice}${gemini}`;
 }
 

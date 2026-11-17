@@ -16,6 +16,10 @@ type DragState = {
 };
 
 const THRESHOLD = 110;
+const MAX_TILT = 2; // degrees, the app's own flight tilt
+
+const still = () => window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+const tilt = (x: number) => (still() ? 0 : Math.max(-MAX_TILT, Math.min(MAX_TILT, x / 60)));
 
 function flung(drag: DragState) {
   if (Math.abs(drag.x) > THRESHOLD) return true;
@@ -31,8 +35,8 @@ function useDrag(onMove?: (move: Move, x: number) => void, onDrag?: (x: number) 
 
   const place = (x: number, animate: boolean) => {
     const el = ref.current!;
-    el.style.transition = animate ? 'transform 320ms var(--ease-out)' : 'none';
-    el.style.transform = x ? `translateX(${x}px) rotate(${x / 60}deg)` : '';
+    el.style.transition = animate && !still() ? 'transform 320ms var(--ease-out)' : 'none';
+    el.style.transform = x ? `translateX(${x}px) rotate(${tilt(x)}deg)` : '';
     onDrag?.(x);
   };
 
@@ -92,7 +96,7 @@ type CardProps = {
 };
 
 function ghostStyle(from: number) {
-  return { '--x': `${from}px`, '--r': `${from / 60}deg` } as React.CSSProperties;
+  return { '--x': `${from}px`, '--r': `${tilt(from)}deg` } as React.CSSProperties;
 }
 
 /** The focus card: sender and due date, the summary in the serif, and the action row. */

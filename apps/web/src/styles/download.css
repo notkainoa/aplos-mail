@@ -154,9 +154,6 @@
 .dl-art {
   --tile: var(--raised);
   --win: var(--paper);
-  --folder-back: #5d8fbf;
-  --folder-front: #7aaad6;
-  --mac-select: #2c6fd1;
 
   container-type: inline-size;
   aspect-ratio: 4 / 3;
@@ -164,14 +161,6 @@
   border-radius: 12px;
   background: var(--tile);
   box-shadow: inset 0 0 0 0.75px var(--line);
-}
-
-@media (prefers-color-scheme: dark) {
-  .dl-art {
-    --folder-back: #4c7aa6;
-    --folder-front: #6595c4;
-    --mac-select: #3b78d6;
-  }
 }
 
 .art {
@@ -183,15 +172,15 @@
 }
 
 .folder-back {
-  fill: var(--folder-back);
+  fill: var(--mac-folder-back);
 }
 
 .folder-front {
-  fill: var(--folder-front);
+  fill: var(--mac-folder-front);
 }
 
 .folder-glyph {
-  fill: #fff;
+  fill: var(--mac-select-ink);
   opacity: 0.85;
 }
 
@@ -407,7 +396,7 @@
 
 .art-list .is-ours {
   background: var(--mac-select);
-  color: #fff;
+  color: var(--mac-select-ink);
 }
 
 .art-pointer-finder {
@@ -424,4 +413,9 @@
   .dl-columns {
     grid-template-columns: minmax(0, 1fr);
   }
+}
+
+.art-pointer path {
+  fill: var(--mac-pointer-fill);
+  stroke: var(--mac-pointer-stroke);
 }

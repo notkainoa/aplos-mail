@@ -19,7 +19,7 @@ export function Privacy() {
   return (
     <div className="site">
       <div className="page">
-        <Header home="../" />
+        <Header home="../" page="privacy" />
         <main className="doc">
           <p className="draft">Last updated 27 October 2026</p>
           <h1>Privacy policy</h1>

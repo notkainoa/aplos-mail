@@ -8,8 +8,6 @@ function Pointer({ className }: { className: string }) {
     <svg className={className} viewBox="0 0 16 22" aria-hidden="true">
       <path
         d="M1.5 1.5v16l4-3.6 2.8 6.4 2.8-1.2-2.7-6.2h5.4Z"
-        fill="#fff"
-        stroke="#111"
         strokeWidth="1.5"
         strokeLinejoin="round"
       />

@@ -164,7 +164,7 @@ export function Download() {
   return (
     <div className="site">
       <div className="page">
-        <Header home="../" />
+        <Header home="../" page="download" />
         <main className="dl">
           <Intro />
           <Steps />

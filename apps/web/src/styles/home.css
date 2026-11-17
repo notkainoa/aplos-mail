@@ -126,6 +126,8 @@
   display: contents;
 }
 
+/* Wide sections have no copy wrapper to reveal, so the heading and text reveal on their own. */
+
 .feature-wide h2 {
   grid-column: 1;
 }
@@ -206,6 +208,11 @@
 }
 
 @media (max-width: 640px) {
+  /* The working Home demo right below shows the card at full size. */
+  .window {
+    display: none;
+  }
+
   .hero-cta .button {
     width: 100%;
   }
