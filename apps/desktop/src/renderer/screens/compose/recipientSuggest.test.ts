@@ -11,6 +11,7 @@ import {
   SUGGEST_LIMIT,
   suggestKey,
   toSuggestions,
+  withOtherAccounts,
   type SuggestEntry,
 } from './model/suggestions';
 
@@ -234,5 +235,17 @@ describe('Contact/suggest through the data layer on the stand-in', () => {
     } finally {
       h.close();
     }
+  });
+});
+
+describe('withOtherAccounts', () => {
+  test("a person only another account knows is still offered, after the From account's own, without repeats", () => {
+    const maya = person('maya@garden.example', 'Maya Chen');
+    const merged = withOtherAccounts([JORDAN], [JORDAN, maya, person('MAYA@garden.example')]);
+    assert.deepEqual(
+      merged.map(e => e.address),
+      ['jordan.lee@example.com', 'maya@garden.example'],
+    );
+    assert.deepEqual(withOtherAccounts([], [maya]), [maya]);
   });
 });

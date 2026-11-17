@@ -7,12 +7,23 @@ import {
   type SuggestAsked,
   type SuggestEntry,
   type SuggestFn,
+  withOtherAccounts,
 } from '../model/suggestions';
 import { createSuggestLoop } from './suggestLoop';
 
-/** `Contact/suggest` through the data layer: the engine's local correspondents table, never a provider call. */
-export const contactSuggest: SuggestFn = async (query, accountId) =>
-  (await api.contact.suggest({ query, accountId, limit: SUGGEST_LIMIT + 4 })).list;
+/**
+ * `Contact/suggest` through the data layer: the engine's local correspondents table, never a provider call. The From
+ * account's people come first; the owner's other accounts fill the rest, so a name found on one account is found
+ * whichever account the new message starts from.
+ */
+export const contactSuggest: SuggestFn = async (query, accountId) => {
+  const limit = SUGGEST_LIMIT + 4;
+  const [own, all] = await Promise.all([
+    api.contact.suggest({ query, accountId, limit }),
+    api.contact.suggest({ query, limit }),
+  ]);
+  return withOtherAccounts(own.list, all.list).slice(0, limit);
+};
 
 export function useRecipientSuggest(
   query: string,

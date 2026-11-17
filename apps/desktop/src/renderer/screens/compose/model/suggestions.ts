@@ -19,6 +19,24 @@ export interface SuggestEntry {
   readonly receivedFrom: number;
 }
 
+/**
+ * The From account's correspondents first, then anyone the owner's other accounts know that it does not. Typing a name
+ * must find the person whichever account the message happens to come from (the default From can be any account).
+ */
+export function withOtherAccounts(
+  own: readonly SuggestEntry[],
+  all: readonly SuggestEntry[],
+): readonly SuggestEntry[] {
+  const seen = new Set(own.map(e => e.address.toLowerCase()));
+  const rest = all.filter(e => {
+    const key = e.address.toLowerCase();
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
+  return [...own, ...rest];
+}
+
 /** What asks the engine: the typed text and the From account whose correspondents count. */
 export type SuggestFn = (query: string, accountId: string) => Promise<readonly SuggestEntry[]>;
 
