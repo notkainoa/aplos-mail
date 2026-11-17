@@ -71,6 +71,25 @@ export function blockedSend(fields: ComposeFields): BlockedSend | null {
   return null;
 }
 
+/** Text typed in each recipient row but not yet a chip. */
+export interface TypedText {
+  readonly to: string;
+  readonly cc: string;
+  readonly bcc: string;
+}
+
+export const NO_TYPED: TypedText = { to: '', cc: '', bcc: '' };
+
+/** The fields as a send would read them: each row's typed text taken as recipients first. */
+export function withTyped(fields: ComposeFields, typed: TypedText): ComposeFields {
+  return {
+    ...fields,
+    to: addRecipients(fields.to, typed.to),
+    cc: addRecipients(fields.cc, typed.cc),
+    bcc: addRecipients(fields.bcc, typed.bcc),
+  };
+}
+
 function firstName(name: string): string {
   const trimmed = name.trim();
   if (containsAt(trimmed)) return trimmed;
