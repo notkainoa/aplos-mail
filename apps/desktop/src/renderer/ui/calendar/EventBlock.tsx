@@ -49,7 +49,9 @@ export function EventBlock(props: EventBlockProps) {
   const { event, placement, selected, onSelect, onOpen } = props;
   const locked = props.locked ?? event.locked ?? false;
   const density = densityOf(event);
-  const showTime = density === 'full' || (density === 'one' && placement.wide);
+  // A wide day column has room beside the title, so a short tile (30 minutes or less included) says its time there.
+  const showTime =
+    density === 'full' || ((density === 'one' || density === 'tiny') && placement.wide);
   const time = rangeOf(event.start, event.end);
   const showPlace = placement.wide && !!event.place && density === 'full';
   const detail = showPlace ? `${time} · ${event.place}` : time;

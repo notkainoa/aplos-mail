@@ -83,7 +83,9 @@
 }
 
 .ui-cal-button[data-variant='filled']:disabled {
-  background: var(--sunken);
+  /* The primary, faded: the accent at 30 % reads as "not yet" on a light and a dark dialog alike (a --sunken well was
+     a pale chip by day and a black one at night). */
+  background: color-mix(in srgb, var(--accent) 30%, transparent);
   color: var(--dim);
   box-shadow: none;
 }
@@ -128,7 +130,7 @@
 }
 
 .ui-cal-button[data-variant='filled']:disabled .ui-cal-kbd {
-  background: var(--raised);
+  background: color-mix(in srgb, var(--accent) 18%, transparent);
   color: var(--dim);
 }
 
@@ -725,7 +727,8 @@
   padding-bottom: 0;
 }
 
-.ui-event-block[data-density='one'] .ui-event-block__time {
+.ui-event-block[data-density='one'] .ui-event-block__time,
+.ui-event-block[data-density='tiny'] .ui-event-block__time {
   flex: none;
 }
 

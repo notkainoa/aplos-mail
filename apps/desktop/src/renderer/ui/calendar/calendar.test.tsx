@@ -177,7 +177,7 @@ test('EventBlock: title and time, calendar colour as a custom property, label fo
   assertCleanCopy(out);
 });
 
-test('EventBlock: under 30 minutes is one line with the title only; selected and unanswered are marked', () => {
+test('EventBlock: 30 minutes or less is one line, the title alone in a column and with its time in a wide one; selected and unanswered are marked', () => {
   const tiny = html(
     <EventBlock
       kind="event"
@@ -190,6 +190,17 @@ test('EventBlock: under 30 minutes is one line with the title only; selected and
   );
   assert.match(tiny, /data-density="tiny"/);
   assert.doesNotMatch(tiny, /ui-event-block__time/);
+  const wideTiny = html(
+    <EventBlock
+      kind="event"
+      event={DEMO[2]}
+      placement={{ ...place, wide: true }}
+      selected={false}
+      onSelect={noop}
+      onOpen={noop}
+    />,
+  );
+  assert.match(wideTiny, /ui-event-block__time/);
   assert.match(tiny, /aria-pressed="true"/);
   assert.match(tiny, /data-selected="true"/);
   const invite = html(
@@ -303,7 +314,7 @@ test('EventBlock worst case: 300-character title, unbreakable 80-character name,
 
 /* ---------------------------------- MiniMonth ---------------------------------- */
 
-test('MiniMonth: six weeks, out-of-month days dim, today filled, the range marked, one tab stop', () => {
+test('MiniMonth: only the weeks of the month, out-of-month days dim, today filled, the range marked, one tab stop', () => {
   const out = html(
     <MiniMonth
       month="2026-10"
@@ -315,8 +326,10 @@ test('MiniMonth: six weeks, out-of-month days dim, today filled, the range marke
     />,
   );
   assert.match(out, />October 2026</);
-  assert.equal((out.match(/class="ui-mini-month__day"/g) ?? []).length, 42);
-  assert.equal((out.match(/data-out="true"/g) ?? []).length, 11); // 4 days of September, 7 of November
+  // October 2026 spans five Sunday-first weeks: no row of November, its room kept as one empty spare row.
+  assert.equal((out.match(/class="ui-mini-month__day"/g) ?? []).length, 35);
+  assert.equal((out.match(/data-out="true"/g) ?? []).length, 4); // the 4 days of September
+  assert.equal((out.match(/<tr aria-hidden="true">/g) ?? []).length, 1);
   assert.match(
     out,
     /data-today="true"[^>]*aria-label="Thursday, October 29, 2026"[^>]*aria-current="date"/,

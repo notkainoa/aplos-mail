@@ -30,10 +30,14 @@ export function MiniMonth({
   const headId = useId();
   const tableRef = useRef<HTMLTableElement>(null);
   const pendingFocus = useRef<string | null>(null);
-  const rows = monthMatrix(month, weekStartsOn);
+  const matrix = monthMatrix(month, weekStartsOn);
   const order = weekdayOrder(weekStartsOn);
   const m = Number(month.slice(5, 7));
   const inMonth = (date: string): boolean => parseDate(date).m === m;
+  // Only the weeks of the month draw; a month of five weeks leaves the sixth row's room empty so the sidebar below
+  // never moves when the month changes.
+  const rows = matrix.filter(row => row.some(inMonth));
+  const spare = matrix.length - rows.length;
   const title = monthTitle(month);
 
   // One tab stop: the start of the range, else today, else the first of the month.
@@ -149,6 +153,11 @@ export function MiniMonth({
                   </td>
                 );
               })}
+            </tr>
+          ))}
+          {Array.from({ length: spare }, (_, at) => (
+            <tr key={`spare-${at}`} aria-hidden="true">
+              <td colSpan={7} />
             </tr>
           ))}
         </tbody>
