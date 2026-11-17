@@ -334,9 +334,15 @@ function ListSlot({ which }: { readonly which: ListWhich }) {
 function ComposeSlot() {
   const request = useComposeRequest();
   const runCommand = useRunCommand();
+  const forwarding = request?.forward !== undefined;
   const part = useMemo(
-    () => composeHeader({ close: () => runCommand('compose.close'), saved: false }),
-    [runCommand],
+    () =>
+      composeHeader({
+        close: () => runCommand('compose.close'),
+        saved: false,
+        forward: forwarding,
+      }),
+    [runCommand, forwarding],
   );
   usePaneHeaderPart(part);
   if (!request) return null;

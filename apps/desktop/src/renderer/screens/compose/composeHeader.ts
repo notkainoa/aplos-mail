@@ -7,6 +7,8 @@
 import type { PaneHeaderPart } from '../../shell';
 
 export const COMPOSE_CRUMB = 'New message';
+/** A forward's crumb: the page says what it is. */
+export const FORWARD_CRUMB = 'Forward';
 
 /** The header ⋯'s command and label. */
 export const COMPOSE_MORE = { commandId: 'compose.more', label: 'More' } as const;
@@ -42,6 +44,8 @@ export function composeHeader(input: {
   readonly close: () => void;
   /** The subject once typed: "Reply to Studio Kettle" style crumbs are the reader's; the page keeps "New message". */
   readonly saved: boolean;
+  /** The page is a forward: the crumb says "Forward". */
+  readonly forward?: boolean;
 }): PaneHeaderPart {
   return {
     lead: {
@@ -50,7 +54,7 @@ export function composeHeader(input: {
       commandId: 'compose.close',
       onPress: input.close,
     },
-    crumb: { label: COMPOSE_CRUMB },
+    crumb: { label: input.forward ? FORWARD_CRUMB : COMPOSE_CRUMB },
     tools: [
       {
         commandId: COMPOSE_MORE.commandId,

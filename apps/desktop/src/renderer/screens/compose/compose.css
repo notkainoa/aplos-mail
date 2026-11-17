@@ -47,6 +47,33 @@
   color: var(--dim);
 }
 
+/* A forward: a short note area, one blank line (24 px at 26 px a line is the read rhythm; --space-4 reads as one), then
+   the original behind a left hairline in --dim, the reader's own quote style, without any ">". */
+.aplos-compose-body {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+  min-height: inherit;
+}
+.aplos-compose-body .aplos-compose-editor {
+  min-height: var(--space-7);
+}
+.aplos-compose-quote {
+  display: grid;
+  padding-left: var(--space-4);
+  box-shadow: inset var(--hairline) 0 0 var(--line-strong);
+  color: var(--dim);
+}
+.aplos-compose-quote .aplos-compose-editor__mirror,
+.aplos-compose-quote .aplos-compose-editor__input {
+  grid-area: 1 / 1;
+  min-height: 0;
+}
+.aplos-compose-quote .aplos-compose-editor__input {
+  color: var(--dim);
+  caret-color: var(--ink);
+}
+
 .aplos-compose-sent__body {
   margin: 0;
   color: var(--ink);
