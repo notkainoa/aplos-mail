@@ -35,6 +35,8 @@ export interface ReaderDeps {
   markGone(id: string, gone: boolean): void;
   /** Undo of Done, Later or Trash: brings the reader back to the thread, but only while the reader is still open. */
   reopen(id: string): void;
+  /** The thread on paper was read from Trash or Spam, so Restore applies (the ⋯ menu offers it, and so does the palette). */
+  restorable(): boolean;
   /** Esc, or no thread left: close the reader and show the screen it was opened from. */
   leave(): void;
   /** Closes find on the letter on paper when it is open; true when it was (Esc then has done its job). */
@@ -210,7 +212,7 @@ export function createReaderActions(deps: ReaderDeps): ReaderActions {
 
   function restore(): void {
     const row = current();
-    if (!row) return;
+    if (!row || !deps.restorable()) return;
     const message = deps.undoLabel('mail.restore', 'Restored');
     leaveList(row, { type: 'restore' }, { kind: 'info', message });
   }

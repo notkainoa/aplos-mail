@@ -52,3 +52,20 @@ test('Restore sends a thread read from Trash back, leaves like Done, and its Und
     world.connection.close();
   }
 });
+
+test('Restore does nothing on a thread that was not read from Trash or Spam', async () => {
+  resetToasts();
+  const world = await boot();
+  try {
+    const [first] = world.doIds();
+    const { deps, state } = depsOver(world, first!);
+    state.restorable = false;
+    createReaderActions(deps).restore();
+    assert.equal(state.open, first, 'the reader stayed on the thread');
+    assert.ok(!getToasts().some(t => t.message === 'Restored'));
+    assert.ok(world.home.snapshot().ids.includes(first!), 'its lane was not touched');
+    await world.flush();
+  } finally {
+    world.connection.close();
+  }
+});

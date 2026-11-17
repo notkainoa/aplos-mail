@@ -80,6 +80,8 @@ interface Live {
   readonly wanted: string;
   readonly ids: readonly string[];
   readonly row: ThreadRow | undefined;
+  /** The screen the reader was opened from. */
+  readonly origin: Screen | null;
   /** Opens the inline reply under the letter on paper. */
   readonly openReply: (request: ReplyRequest) => void;
   /** Closes find on the letter on paper when it is open; false when it was not. */
@@ -127,6 +129,7 @@ function useReaderActions(
       ids: () => live.current.ids,
       rowOf: id => (live.current.row?.id === id ? live.current.row : undefined),
       go: openThread,
+      restorable: () => restoreLabel(live.current.origin) !== null,
       markGone: (id, gone) => markGone({ id, gone }),
       reopen: whileOpen(open, openThread),
       // One call: a second `navigate(backTo)` after the close would be a screen shown other than through Esc and drop the saved places.
@@ -191,10 +194,15 @@ function useReaderHeader(input: {
 }
 
 /** What Restore says for a thread read from Trash or Spam; null from anywhere else. */
+function restoreLabel(from: Screen | null): string | null {
+  if (from === 'trash') return 'Restore';
+  if (from === 'spam') return 'Not spam';
+  return null;
+}
+
 function restoreFor(from: Screen | null, actions: ReaderActions): LetterControls['restore'] {
-  if (from === 'trash') return { label: 'Restore', run: actions.restore };
-  if (from === 'spam') return { label: 'Not spam', run: actions.restore };
-  return undefined;
+  const label = restoreLabel(from);
+  return label === null ? undefined : { label, run: actions.restore };
 }
 
 function controlsOf(actions: ReaderActions, from: Screen | null): LetterControls {
@@ -237,7 +245,7 @@ function OpenReader(props: OpenProps & { readonly source: readonly string[] }) {
   const [gone, markGone] = useReducer(goneReducer, NOBODY);
   const list = useReaderList(props.source, open, gone);
   const controller = useLetterController();
-  const buffer = useLetterBuffer(controller, open, gone);
+  const buffer = useLetterBuffer(controller, open, paper => gone.has(paper));
   const shown = buffer.letter;
   const row = useRow('Thread', shown ?? undefined);
   const wantedRow = useRow('Thread', open);
@@ -270,6 +278,7 @@ function OpenReader(props: OpenProps & { readonly source: readonly string[] }) {
     wanted: open,
     ids: list.walk,
     row,
+    origin: props.backTo ?? context.from,
     openReply,
     closeFind,
   });
@@ -287,8 +296,8 @@ function OpenReader(props: OpenProps & { readonly source: readonly string[] }) {
     back: actions.back,
   });
 
-  const origin = props.backTo ?? context.from;
-  const controls = useMemo(() => controlsOf(actions, origin), [actions, origin]);
+  const placedFrom = props.backTo ?? context.from;
+  const controls = useMemo(() => controlsOf(actions, placedFrom), [actions, placedFrom]);
   const root = useRef<HTMLDivElement>(null);
   const findOpen = shown !== null && uiFor(ui, shown).find !== null;
   // The element that held focus may be gone (find closed, the letter changed): the reader's root takes it.

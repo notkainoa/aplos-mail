@@ -4,7 +4,7 @@
  * around the cursor are asked for through the data layer's prefetch on intent (80 ms), which cancels when the cursor
  * moves on.
  */
-import { useEffect, useRef, useState, useSyncExternalStore } from 'react';
+import { useEffect, useState, useSyncExternalStore } from 'react';
 import { usePrefetchIntent } from '../../data';
 import { realTimers, type Timers } from '../../data/scheduler';
 import {
@@ -14,7 +14,7 @@ import {
 } from './letterController';
 import { PREFETCH_RADIUS, prefetchTargets } from './model/letterBuffer';
 
-const NOBODY: ReadonlySet<string> = new Set();
+const KEEP_PAPER = () => false;
 
 /** The buffer for the reader's lifetime. */
 export function useLetterController(timers: Timers = realTimers): LetterController {
@@ -24,21 +24,25 @@ export function useLetterController(timers: Timers = realTimers): LetterControll
 
 /**
  * Tells the buffer which letter is wanted and returns what is on paper. A letter on paper that this reading sent away
- * (`gone`: Done, Later, Trash), or no letter at all, is not kept while the next one loads: the next one is shown at
- * once, so what is on screen is always a thread the keys can act on.
+ * (`replaced` says so: Done, Later, Trash), or no letter at all, is not kept while the next one loads: the next one is
+ * shown at once, so what is on screen is always a thread the keys can act on. The wish is told again when the paper
+ * letter becomes one that was sent away (Done pressed while J's letter was still loading).
  */
 export function useLetterBuffer(
   controller: LetterController,
   wanted: string | null,
-  gone: ReadonlySet<string> = NOBODY,
+  replaced: (paper: string) => boolean = KEEP_PAPER,
 ): LetterSnapshot {
-  const away = useRef(gone);
-  away.current = gone;
+  const snapshot = useSyncExternalStore(
+    controller.subscribe,
+    controller.snapshot,
+    controller.snapshot,
+  );
+  const paperGone = snapshot.letter !== null && replaced(snapshot.letter);
   useEffect(() => {
-    const paper = controller.snapshot().letter;
-    controller.want(wanted, paper === null || away.current.has(paper));
-  }, [controller, wanted]);
-  return useSyncExternalStore(controller.subscribe, controller.snapshot, controller.snapshot);
+    controller.want(wanted, controller.snapshot().letter === null || paperGone);
+  }, [controller, wanted, paperGone]);
+  return snapshot;
 }
 
 /** Prefetch the neighbours' bodies once the cursor has rested (the data layer waits 80 ms and cancels on a move). */

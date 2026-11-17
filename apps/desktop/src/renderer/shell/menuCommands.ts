@@ -15,7 +15,10 @@ export interface MenuBridge {
 export const MENU_COMMANDS: Readonly<Record<string, string>> = {
   undo: 'app.undo',
   compose: 'mail.compose',
-  search: 'nav.search',
+  // The menu says "Search Mail ⌘K", and ⌘K is the shell's palette (which searches): a menu accelerator is taken before the page sees the key.
+  search: 'app.palette',
+  settings: 'app.settings',
+  ask: 'ask.toggleDock',
   home: 'nav.home',
   later: 'nav.later',
   all: 'nav.allMail',

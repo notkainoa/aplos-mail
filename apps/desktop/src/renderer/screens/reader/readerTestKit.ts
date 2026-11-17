@@ -97,6 +97,8 @@ export function depsOver(world: World, start: string, readyOnGo = true) {
     requests: [] as Array<ReplyRequest | undefined>,
     suggested: [] as string[],
     forwards: [] as string[],
+    /** The thread was read from Trash or Spam. */
+    restorable: true,
   };
   controller.want(start);
   controller.ready(start);
@@ -114,6 +116,7 @@ export function depsOver(world: World, start: string, readyOnGo = true) {
     rowOf: id => world.home.snapshot().rows.get(id) as ThreadRow | undefined,
     go,
     reopen: go,
+    restorable: () => state.restorable,
     markGone: (id, gone) => void (gone ? state.gone.add(id) : state.gone.delete(id)),
     leave: () => void state.left++,
     closeFind: () => {

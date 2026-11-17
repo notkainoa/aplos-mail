@@ -3,7 +3,7 @@
 // optional quiet text action. It keeps rendering at 0 while `held`, so emptying a section moves nothing.
 
 import type { SectionHeaderProps } from '../props';
-import { Action, useInListbox } from './internal/Action';
+import { Action, focusTargetFor, useInListbox } from './internal/Action';
 import { formatCount } from './internal/format';
 import { Icon } from './internal/Icon';
 import { literalKeycap, useKeycapOf, useTooltipText } from './internal/keys';
@@ -52,7 +52,11 @@ export function SectionHeader({
             icon={action.icon}
             tooltip={tip(action.label, action.commandId, action.keys)}
             hintKey={actionKey}
-            onPress={() => action.onSelect()}
+            onPress={anchor => {
+              action.onSelect();
+              // A pointer press must not leave the listbox's keys (Space, Enter) on this button.
+              if (inListbox) focusTargetFor(anchor)?.focus();
+            }}
           />
         </span>
       ) : null}
