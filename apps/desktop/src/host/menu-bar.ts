@@ -10,6 +10,8 @@
 export interface SyncFacts {
   readonly busy: boolean;
   readonly error?: string;
+  /** How many accounts the line covers, when known. */
+  readonly accounts?: number;
 }
 
 export const PAUSE_MS = 60 * 60 * 1000;
@@ -53,7 +55,30 @@ export function statusLine(sync: SyncFacts | undefined, pausedUntil: number | un
   if (pausedUntil !== undefined) return `Paused until ${formatClock(pausedUntil)}`;
   if (!sync) return 'Starting…';
   if (sync.error) return 'Sync needs attention';
-  return sync.busy ? 'Syncing…' : 'Caught up';
+  if (sync.busy) return 'Syncing…';
+  return sync.accounts
+    ? `Up to date · ${sync.accounts} ${sync.accounts === 1 ? 'account' : 'accounts'}`
+    : 'Caught up';
+}
+
+/**
+ * What the real engine path reports: `Account/get` health rolled into one facts line. `paused` and `offline`
+ * resume on their own (contract status.ts), so they read as busy; the named attention states read as the error.
+ */
+export function syncFactsOf(states: readonly string[]): SyncFacts {
+  const attention = new Set([
+    'needsReauth',
+    'needsPermission',
+    'needsAdmin',
+    'misconfigured',
+    'error',
+  ]);
+  const working = new Set(['starting', 'syncing', 'backfilling', 'paused', 'offline']);
+  return {
+    busy: states.some(state => working.has(state)),
+    ...(states.some(state => attention.has(state)) ? { error: 'account' } : {}),
+    accounts: states.length,
+  };
 }
 
 export type MenuEntryId = 'status' | 'open' | 'pause' | 'quit';
