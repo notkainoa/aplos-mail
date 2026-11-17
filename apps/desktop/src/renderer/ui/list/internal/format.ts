@@ -71,6 +71,11 @@ function monthDay(d: Date): string {
   );
 }
 
+/** "Jan 15", never the year: the short due chip must fit its slot; the tooltip carries the full date. */
+function monthDayShort(d: Date): string {
+  return d.toLocaleDateString(LOCALE, { month: 'short', day: 'numeric' });
+}
+
 function weekdayShort(d: Date): string {
   return d.toLocaleDateString(LOCALE, { weekday: 'short' });
 }
@@ -113,7 +118,7 @@ export function formatDue(iso: IsoDateTime, format: 'short' | 'withTime' | 'sent
     if (off === 1) return 'Due tomorrow';
     if (off === -1) return 'Due yesterday';
     if (laterThisWeek(off)) return `Due ${weekdayShort(d)}`;
-    return `Due ${monthDay(d)}`;
+    return `Due ${monthDayShort(d)}`;
   }
   if (format === 'withTime') {
     const day = relativeDay(d, 'short');

@@ -269,6 +269,17 @@ describe('Chip', () => {
       ),
       /^Due Nov 4$/,
     );
+    const farDue = { ...TOMORROW, at: '2027-01-15T00:00:00-08:00' };
+    assert.match(
+      text(render(<Chip kind="due" due={farDue} format="short" />)),
+      /^Due Jan 15$/,
+      'the short chip drops the year so it fits its slot',
+    );
+    assert.match(
+      render(<Chip kind="due" due={farDue} format="short" />),
+      /title="[^"]*2027[^"]*"/,
+      'the tooltip keeps the year',
+    );
     const overdue = render(<Chip kind="due" due={DUE_TODAY} format="short" />);
     assert.match(overdue, /data-overdue="true"/);
     assert.match(overdue, /data-icon="calendar"/);
