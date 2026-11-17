@@ -1,4 +1,4 @@
-import { useId, useRef } from 'react';
+import { useEffect, useId, useRef } from 'react';
 import type { KeyboardEvent, PointerEvent } from 'react';
 import type { CSSProperties } from 'react';
 import type { AskDockProps, AskEmptyData } from '../props';
@@ -222,12 +222,16 @@ function QueuedCard({
   );
 }
 
-/** With no provider the body says so once, with the one button that fixes it. */
+/** With no provider the body says so once, with the one button that fixes it. It takes focus when the panel opens. */
 function SetupLine({ onOpenSettings }: { onOpenSettings: () => void }) {
+  const button = useRef<HTMLButtonElement>(null);
+  useEffect(() => {
+    button.current?.focus();
+  }, []);
   return (
     <div className="ui-ask-dock__setup">
       <p className="ui-ask-dock__setup-text">Ask needs an AI key.</p>
-      <Btn variant="text" label="Add a key" onPress={() => onOpenSettings()} />
+      <Btn ref={button} variant="text" label="Add a key" onPress={() => onOpenSettings()} />
     </div>
   );
 }
@@ -253,11 +257,6 @@ function DockFoot(props: AskDockProps & { activeOption: string | undefined; empt
           onSendNow={props.onSendQueuedNow}
         />
       ))}
-      {providerReady ? null : (
-        <p className="ui-ask-dock__noprovider" role="status">
-          Add an AI key to ask.
-        </p>
-      )}
       <div
         className="ui-ask-dock__field"
         data-dictating={dictation ? 'true' : undefined}
@@ -270,7 +269,8 @@ function DockFoot(props: AskDockProps & { activeOption: string | undefined; empt
             rows={1}
             dir="auto"
             aria-label="Ask"
-            placeholder="Ask about your mail or calendar"
+            placeholder={providerReady ? 'Ask about your mail or calendar' : 'Add a key to ask'}
+            disabled={!providerReady}
             data-dictation="body"
             aria-controls={props.activeOption ? props.emptyId : undefined}
             aria-activedescendant={props.activeOption}

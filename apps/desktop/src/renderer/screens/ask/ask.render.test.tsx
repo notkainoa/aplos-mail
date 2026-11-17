@@ -188,7 +188,7 @@ test('stopped, failed, paused and no-provider states all render their plain line
   assert.ok(text(paused).includes('Paused for today. Resumes tomorrow.'));
   const noprov = panel(initialAsk, inputs({ askReady: false }));
   clean(noprov);
-  assert.ok(text(noprov).includes('Add an AI key to ask.'));
+  assert.ok(text(noprov).includes('Ask needs an AI key.'));
 });
 
 test('the proposal card shows its consequence and the consent line names provider and model', () => {

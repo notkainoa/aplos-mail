@@ -187,24 +187,18 @@
     -1 * var(--space-2)
   ); /* the button's own padding, so its word lines up with the sentence */
 }
+.ui-ask-dock__setup > .ui-compose-btn {
+  color: var(
+    --accent
+  ); /* an action that leaves for Settings, so it reads as one, not as more text */
+  font-weight: 600;
+}
 .ui-ask-dock__setup-text {
   margin: 0;
   color: var(--ink-2);
   font: var(--type-base);
   letter-spacing: var(--track-base);
 }
-.ui-ask-dock__noprovider {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: baseline;
-  gap: var(--space-1);
-  margin: 0 0 var(--space-2);
-  padding: 0 var(--space-1);
-  color: var(--ink-2);
-  font: var(--type-ui);
-  letter-spacing: var(--track-ui);
-}
-
 /* queued follow-ups and the field */
 .ui-ask-dock__queued {
   margin-bottom: var(--space-2);
@@ -263,6 +257,9 @@
 }
 .ui-ask-dock__input::placeholder {
   color: var(--dim);
+}
+.ui-ask-dock__input:disabled {
+  cursor: default; /* waiting for a key: disabled text is --dim, the placeholder already is */
 }
 /* The ring belongs to the rounded field card, not the bare textarea: it follows the container's
    --radius-lg with the same focus tokens and no layout shift. */
