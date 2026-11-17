@@ -1134,6 +1134,13 @@ html[data-real-key] .ui-part-tipwrap:has(> :focus-visible) > .ui-part-tip {
   background: var(--puck);
 }
 
+/* Dark: the options you are not on read one step above --dim on the near-black track. */
+:root[data-theme='dark']
+  .ui-puck[data-kind='segmented']
+  .ui-puck__item:not([data-selected='true']) {
+  color: var(--ink-2);
+}
+
 /* selection: rows with a --puck fill (sidebar, Settings nav) */
 .ui-puck[data-kind='selection'] > .ui-puck__thumb {
   border-radius: var(--radius-md);

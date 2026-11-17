@@ -217,6 +217,9 @@
 .ui-chip .ui-list-icon {
   color: var(--dim);
 }
+:root[data-theme='dark'] .ui-chip[data-kind='attachment'] .ui-list-icon {
+  color: var(--ink-2); /* the download mark and the file icon read on --raised at night */
+}
 .ui-chip__text {
   min-width: 0;
   overflow: hidden;
@@ -948,6 +951,8 @@
   display: flex;
   flex: none;
   align-items: center;
+  /* The date chip is 24 px tall: the row keeps that height without it, so the card never shifts by 2 px. */
+  min-height: var(--control-xs);
   gap: var(--space-2);
   min-width: 0;
 }
