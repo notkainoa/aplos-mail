@@ -3,7 +3,8 @@
 
 import assert from 'node:assert/strict';
 import { afterEach, describe, it } from 'node:test';
-import { spaceToken } from './parts';
+import { menuPlacementFor, spaceToken } from './parts';
+import type { Anchor } from '../props';
 
 const globals = globalThis as Record<string, unknown>;
 
@@ -36,5 +37,16 @@ describe('spaceToken', () => {
     stubRoot({ '--hairline': '1px' }, '16px');
     assert.equal(spaceToken('--hairline'), 1);
     assert.equal(spaceToken('--nope'), 0);
+  });
+});
+
+describe('menuPlacementFor', () => {
+  const anchorOf = (width: number) =>
+    ({ getBoundingClientRect: () => ({ width }) }) as unknown as NonNullable<Anchor>;
+
+  it('hangs a menu from the end edge of an icon trigger and the start edge of a text one', () => {
+    assert.equal(menuPlacementFor(anchorOf(28)), 'below-end');
+    assert.equal(menuPlacementFor(anchorOf(120)), 'below-start');
+    assert.equal(menuPlacementFor(null), 'below-start');
   });
 });

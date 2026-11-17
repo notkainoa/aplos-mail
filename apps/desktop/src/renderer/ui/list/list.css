@@ -1001,6 +1001,16 @@
   text-overflow: ellipsis;
   white-space: nowrap;
 }
+.ui-focus-letter__marks {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  gap: var(--space-1);
+  margin-left: auto;
+}
+.ui-focus-letter__marks + .ui-focus-letter__date {
+  margin-left: 0;
+}
 .ui-focus-letter__date {
   flex: none;
   margin-left: auto;

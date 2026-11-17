@@ -159,7 +159,7 @@ const MARKS = [
 ] as const;
 
 /** Replied, bookmarked and attachment marks, in that order, each only when set. */
-function RowMarks({ marks }: Pick<RowProps, 'marks'>) {
+export function RowMarks({ marks }: Pick<RowProps, 'marks'>) {
   return (
     <>
       {MARKS.map(({ key, title, icon, word }) =>

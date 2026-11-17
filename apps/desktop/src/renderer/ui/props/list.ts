@@ -199,6 +199,8 @@ export interface FocusLetterProps {
   due?: DueInfo;
   /** Relative date on the right. */
   date: IsoDateTime;
+  /** The row's own marks (bookmarked, attachment), kept when a row is promoted to the card. */
+  marks?: { replied?: boolean; bookmarked?: boolean; attachment?: boolean };
   /** Summary slot; clamped to two lines here. */
   summary: SummaryContent;
   /** The suggestion as the filled button with Space; Later and Done as text buttons; then ⋯. */

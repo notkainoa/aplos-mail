@@ -141,6 +141,7 @@ function LetterSlot(
         sender={senderOf(row)}
         due={dueOf(row)}
         date={dateOf(row)}
+        marks={{ bookmarked: row.workflow.bookmarked, attachment: row.hasAttachments }}
         summary={summary}
         suggestion={suggestionOf(row, section)}
         commands={{

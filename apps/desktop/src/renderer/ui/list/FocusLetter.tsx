@@ -11,6 +11,7 @@ import { Summary } from '../reader/Summary';
 import { SummaryPlaceholder } from './SummaryPlaceholder';
 import { Chip } from './Chip';
 import { ErrorLine } from './ErrorLine';
+import { RowMarks } from './ListRow';
 import { Action } from './internal/Action';
 import { Icon } from './internal/Icon';
 import { formatFull, formatListDate } from './internal/format';
@@ -50,6 +51,7 @@ export function FocusLetter({
   sender,
   due,
   date,
+  marks,
   summary,
   suggestion,
   commands,
@@ -130,6 +132,11 @@ export function FocusLetter({
           {sender}
         </span>
         {due ? <Chip kind="due" due={due} format="short" /> : null}
+        {marks && (marks.replied || marks.bookmarked || marks.attachment) ? (
+          <span className="ui-focus-letter__marks">
+            <RowMarks marks={marks} />
+          </span>
+        ) : null}
         <time className="ui-focus-letter__date" dateTime={date} title={formatFull(date)}>
           {formatListDate(date)}
         </time>

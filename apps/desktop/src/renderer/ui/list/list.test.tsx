@@ -340,6 +340,15 @@ describe('FocusSlot and FocusLetter', () => {
     }
   });
 
+  test('the card keeps the bookmark and paperclip marks before the date', () => {
+    const m = render(<FocusLetter {...letter()} marks={{ bookmarked: true, attachment: true }} />);
+    assert.match(
+      m,
+      /ui-focus-letter__marks[\s\S]*title="Bookmarked"[\s\S]*title="Has attachments"[\s\S]*<time class="ui-focus-letter__date"/,
+    );
+    assert.doesNotMatch(render(<FocusLetter {...letter()} />), /ui-focus-letter__marks/);
+  });
+
   test('meta line, serif summary clamped to two lines, filled suggestion with Space, Later, Done, More', () => {
     const m = render(<FocusLetter {...letter()} />);
     assert.match(
