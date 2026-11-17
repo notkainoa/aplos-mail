@@ -282,10 +282,11 @@ test('a spent cap settles a held placeholder backlog past one sweep', async () =
   const w = await world(stubTransport({}));
   seedMail(w);
   await consentNow(w);
-  // 255 pendings — past the 200-row sweep bound — across five threads; every one must collapse, not
-  // just the oldest 200 (the pause that force-closes may not fire again until tomorrow).
+  // 500 pendings — past TWO of the 200-row sweep bounds — across five threads; every one must collapse,
+  // not just the oldest 200 (the pause that force-closes may not fire again until tomorrow, so a backlog
+  // that outlives a single drain pass would keep cards spinning).
   const writes = ['T-a', 'T-b', 'T-c', 'T-d', 'T-e'].flatMap(remoteId =>
-    Array.from({ length: 51 }, (_, i) => ({
+    Array.from({ length: 100 }, (_, i) => ({
       kind: 'summary' as const,
       accountId: ACCOUNT,
       remoteThreadId: remoteId,
