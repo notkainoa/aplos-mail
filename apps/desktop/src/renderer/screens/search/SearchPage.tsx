@@ -55,11 +55,9 @@ export interface SearchPageProps {
   readonly listRef?: Ref<HTMLElement>;
 }
 
-const NO_MATCH_HINT = 'Try fewer words or remove a filter.';
-
 /** The quiet way out of a dead end: empty the search and type again. */
 const CLEAR_SEARCH = (onSelect: () => void) =>
-  ({ label: 'Clear search', emphasis: 'text', onSelect }) as const;
+  ({ label: 'Clear search', emphasis: 'quiet', onSelect }) as const;
 
 export const RESULTS_ID = 'search-results';
 
@@ -181,8 +179,9 @@ export function SearchPage(props: SearchPageProps) {
         ) : null}
         {model.noMatch ? (
           <EmptyLine
+            icon="search"
             text={model.noMatch}
-            detail={emptyDetail ?? NO_MATCH_HINT}
+            detail={emptyDetail}
             action={
               model.noMatchOffer
                 ? {

@@ -359,8 +359,8 @@ export interface EmptyLineProps {
   icon?: IconName;
   /** A second dim line, e.g. "Next: Design review at 2:00 PM" or the status slot's reason. */
   detail?: string;
-  /** The action, e.g. "Undo last" Z, "Search all mail on Google" Return, "New event" N, "Add an account" with `plus`. */
-  action?: CommandAction & { emphasis: 'filled' | 'text' };
+  /** The action, e.g. "Undo last" Z, "Search all mail on Google" Return, "New event" N, "Add an account" with `plus`. 'quiet' is a text button in the muted ink (--dim), for a way out under a no-match or empty line ("Clear search", "Write a message"; owner review of #548, 2026-11-17). */
+  action?: CommandAction & { emphasis: 'filled' | 'text' | 'quiet' };
   /** Second action for No accounts only ("Try demo mail"). */
   secondaryAction?: CommandAction;
 }

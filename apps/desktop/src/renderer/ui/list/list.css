@@ -459,6 +459,11 @@
   align-items: center;
   gap: var(--space-2);
 }
+/* A quiet way out ("Clear search", "Write a message"): a text button in the muted ink of either theme; hover still
+   brings it up to --ink like any text button (owner review of #548, 2026-11-17). */
+.ui-empty-line__actions[data-quiet='true'] .ui-list-btn[data-variant='text']:not(:hover) {
+  color: var(--dim);
+}
 /* The slot only has a min-height, so it becomes a column the pane line can grow in (the one-by-one slot does the
    same in screens/home/oneByOne.css). */
 .aplos-screen:has(> .ui-empty-line[data-placement='pane']) {

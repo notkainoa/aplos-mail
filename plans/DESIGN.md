@@ -793,7 +793,7 @@ One 640 px column, top to bottom, with no card and nothing beside it (superseded
   - The field sits in the `PageHead` row at `heading` size, with a 2 px accent underline while focused.
   - Recognised operators (`from:`, `to:`, `subject:`, `has:attachment`, `before:`, `after:`, `in:`, including `in:done`) become removable pill tokens under the field.
   - Local results appear as you type, as ordinary rows; the Lists keymap applies. "Search all mail on Google · Return" sits under them. Remote Gmail search runs **only on Return**, to protect quota (`protocols/proto-google.md`).
-  - **No match:** "No mail matches 'dentist'." plus "Search all mail on Google · Return".
+  - **No match:** "No mail matches 'dentist'." plus "Search all mail on Google · Return". Without the Google offer the one action is "Clear search", a quiet text button in `--dim`. The line keeps the earlier no-match layout (the magnifier above one sentence, no hint) with the sentence in `--ink` (owner review of #548, 2026-11-17).
 - **⌘K is the only overlay.** It is opaque `--float` with `--elev-float`, 600 px wide, centred on the window, with a light scrim, and it `settle`s. Typing `>` in Search switches to it.
   - The first line is a **context line** naming the target ("For: Drew Bell · October illustrations"), so commands know what they act on.
   - On first open it shows Suggested and Go to; everything else appears as you type, in Actions, Go to, Ask and Settings, each command with its keycap from the registry. Nested pages use breadcrumbs.
@@ -915,7 +915,7 @@ Each is one plain sentence plus at most one action. There is no icon in a circle
 | Bookmarks | "No bookmarks. Press B on any email." | none |
 | Done | "Nothing done yet." | none |
 | Drafts / Sent / Trash / Spam | "No drafts." / "Nothing sent yet." / "Trash is empty." / "Spam is empty." | none |
-| Search | "No mail matches 'dentist'." | Search all mail on Google · Return |
+| Search | "No mail matches 'dentist'." | Search all mail on Google · Return; without the offer, a quiet Clear search |
 | Ask | Suggestions + recent chats | n/a |
 | Calendar day | "Nothing scheduled." | New event · N |
 | Low importance | "No low-importance mail." | Back to Home |

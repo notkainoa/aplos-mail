@@ -96,3 +96,12 @@ test('an empty result with the Google offer has that one action; without it, Cle
   assert.ok(bare.includes('Clear search'));
   assert.ok(!bare.includes('Search all mail on Google'));
 });
+
+test('no match keeps the earlier layout: the magnifier over one line, no hint, and a quiet Clear search', () => {
+  const bare = emptyMarkup({ status: 'live', ids: [], total: 0 }, 'dentist', false);
+  assert.match(bare, /ui-empty-line__copy"><svg[^>]*data-icon="search"/);
+  assert.doesNotMatch(bare, /ui-empty-line__detail/, 'one line, no hint under it');
+  assert.match(bare, /ui-empty-line__actions" data-quiet="true"[\s\S]*Clear search/);
+  const offered = emptyMarkup({ status: 'live', ids: [], total: 0 }, 'dentist');
+  assert.doesNotMatch(offered, /data-quiet/, 'the Google offer keeps its own look');
+});
