@@ -13,7 +13,6 @@ import {
   SrOnly,
   useKeysFor,
   lowerFirst,
-  menuPlacementFor,
   useDismiss,
   useFloating,
   usePresence,
@@ -56,11 +55,7 @@ export function Menu(props: ComponentPropsMap['Menu']) {
   const baseId = useId();
   const keysOf = useKeysFor();
   const { mounted, leaving } = usePresence(open, motions.reveal.durations.out);
-  const { ref, style, placed } = useFloating(
-    mounted,
-    anchor,
-    mounted ? menuPlacementFor(anchor) : 'below-start',
-  );
+  const { ref, style, placed } = useFloating(mounted, anchor, 'below-start');
   useDismiss(open, ref, anchor, onClose);
 
   useEffect(() => {

@@ -396,15 +396,6 @@ export function PartButton(props: PartButtonProps) {
 
 /* ───────────── Floating placement and dismissal (Menu, Popover) ───────────── */
 
-/** A button this narrow is an icon trigger (⋯, a chevron): its menu hangs from the trigger's end edge, not its start. */
-const ICON_TRIGGER_MAX = 40;
-
-/** The menu's preferred side for its trigger: an icon trigger opens end-aligned, a text trigger start-aligned. */
-export function menuPlacementFor(anchor: Anchor): FloatPlacement {
-  if (!anchor) return 'below-start';
-  return anchor.getBoundingClientRect().width <= ICON_TRIGGER_MAX ? 'below-end' : 'below-start';
-}
-
 export type FloatPlacement = 'below-start' | 'below-end' | 'above-start' | 'left' | 'right';
 
 /** A space token in px. Tokens are emitted in rem (DESIGN 11.6), so a rem value is scaled by the root font size. */
@@ -438,8 +429,6 @@ export function useFloating(open: boolean, anchor: Anchor, placement: FloatPlace
     let x = a.left;
     let y = a.bottom + gap;
     if (placement === 'below-end') x = a.right - w;
-    // Out of room on the left: line up with the anchor's left edge instead.
-    if (placement === 'below-end' && x < pad && a.left + w <= vw - pad) x = a.left;
     // Out of room on the right: line up with the anchor's right edge instead of sitting flush against the window.
     if (placement === 'below-start' && x + w > vw - pad && a.right - w >= pad) x = a.right - w;
     if (placement === 'above-start') y = a.top - h - gap;
