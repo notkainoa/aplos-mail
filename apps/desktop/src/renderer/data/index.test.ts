@@ -122,9 +122,9 @@ const closedSetsMatch: [
 // Compile-time examples (never run past their first hook; they only need to type-check)
 // ---------------------------------------------------------------------------
 
-/** The serif summary when there is one, else the subject (DESIGN 7.2 No AI). */
+/** A row's main line is its subject; the summary follows it (owner decision 2026-11-16). */
 function primaryLine(row: ThreadRow): string {
-  return row.summary.state === 'ready' && row.summary.text ? row.summary.text : row.subject;
+  return row.subject;
 }
 
 /** One line per visible Home section and per row in it, with the due chip and the inline failure. */

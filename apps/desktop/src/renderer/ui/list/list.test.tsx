@@ -162,6 +162,11 @@ describe('ListRow', () => {
     assert.match(m, /class="ui-list-row__sender" dir="auto" title="[^"]+"/);
     assert.match(m, /class="ui-list-row__primary" dir="auto"/);
     assert.match(m, /class="ui-list-row__secondary" dir="auto"/);
+    assert.match(
+      m,
+      /ui-list-row__primary[^>]*>[^<]*<\/span><span class="ui-list-row__sep" aria-hidden="true">·<\/span><span class="ui-list-row__secondary"/,
+      'a dot (hidden from screen readers) sits between the subject and the summary',
+    );
   });
 
   test('search: secondary snippet and bold terms, marks with screen-reader words', () => {
