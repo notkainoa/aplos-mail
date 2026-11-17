@@ -139,6 +139,7 @@ function useReaderActions(
         return (entry?.kind === 'command' ? entry.spec.undo?.label : undefined) ?? fallback;
       },
       closeFind: () => live.current.closeFind(),
+      forward: threadId => openCompose({ forward: { threadId } }),
       reply: (_id, request) => live.current.openReply(request ?? PLAIN_REPLY),
       suggested: (id, action) => live.current.props.onSuggested?.(id, action),
     };
@@ -197,6 +198,8 @@ function controlsOf(actions: ReaderActions): LetterControls {
     done: actions.done,
     reply: actions.reply,
     replyAll: actions.replyAll,
+    forward: actions.forward,
+    toggleRead: actions.toggleRead,
     bookmark: actions.bookmark,
     trash: actions.trash,
     lane: actions.lane,

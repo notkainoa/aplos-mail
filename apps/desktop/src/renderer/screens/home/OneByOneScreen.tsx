@@ -77,6 +77,8 @@ function controlsOf(view: OneByOne): LetterControls {
     trash: () => actions.trash(),
     lane: view.laneTo,
     reply: () => actions.reply(),
+    forward: () => actions.forward(),
+    toggleRead: () => actions.toggleRead(),
     relayKey: relayToShell,
   };
 }

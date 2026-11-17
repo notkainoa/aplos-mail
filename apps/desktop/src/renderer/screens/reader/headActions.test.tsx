@@ -58,9 +58,41 @@ test('the bell, Importance and More are all there, in that order (owner sketch 2
 });
 
 test('the ⋯ menu lists Reply all only where the view has it', () => {
-  const ids = (canReplyAll: boolean) =>
-    moreEntries(row, suggestion, canReplyAll).flatMap(e => (e.kind === 'item' ? [e.id] : []));
+  const ids = (replyAll: boolean) =>
+    moreEntries(row, suggestion, { replyAll, forward: false, toggleRead: false }).flatMap(e =>
+      e.kind === 'item' ? [e.id] : [],
+    );
   assert.ok(ids(true).includes('replyAll'));
   assert.ok(!ids(false).includes('replyAll'));
   assert.deepEqual(ids(false), ['suggested', 'later', 'done', 'bookmark', 'trash']);
+});
+
+test('the ⋯ menu puts Forward and Mark unread right after Reply all, each with its command key', () => {
+  const all = { replyAll: true, forward: true, toggleRead: true };
+  const entries = moreEntries(row, suggestion, all);
+  const items = entries.flatMap(e => (e.kind === 'item' ? [e] : []));
+  assert.deepEqual(
+    items.map(e => e.id),
+    ['suggested', 'replyAll', 'forward', 'toggleRead', 'later', 'done', 'bookmark', 'trash'],
+  );
+  const byId = (id: string) => items.find(e => e.id === id)!;
+  assert.equal(byId('forward').label, 'Forward');
+  assert.equal(byId('forward').commandId, 'mail.forward');
+  assert.equal(byId('toggleRead').label, 'Mark unread');
+  assert.equal(byId('toggleRead').commandId, 'mail.toggleRead');
+});
+
+test('the ⋯ menu says Mark read on an unread thread, and leaves both rows out where the view has none', () => {
+  const unread = { ...row, unread: true } as unknown as ThreadRow;
+  const label = moreEntries(unread, suggestion, {
+    replyAll: false,
+    forward: true,
+    toggleRead: true,
+  })
+    .flatMap(e => (e.kind === 'item' && e.id === 'toggleRead' ? [e.label] : []))
+    .at(0);
+  assert.equal(label, 'Mark read');
+  const bare = moreEntries(row, suggestion, { replyAll: false, forward: false, toggleRead: false });
+  const ids = bare.flatMap(e => (e.kind === 'item' ? [e.id] : []));
+  assert.ok(!ids.includes('forward') && !ids.includes('toggleRead'));
 });

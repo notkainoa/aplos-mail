@@ -8,6 +8,7 @@ import type { Registry } from '../../commands';
 import { api, undoStack, type HoldController, type ThreadId } from '../../data';
 import {
   dismissToast,
+  openCompose,
   pushToast,
   useRegisterCommands,
   useShellRegistry,
@@ -118,6 +119,7 @@ export function useHomeActionState(inputs: HomeActionInputs): HomeActionState {
       openDatePicker: id => now().openDatePicker(id),
       reminderOffer: () => offer.current,
       openThread: (id, how) => now().openThread(id, how),
+      forward: id => openCompose({ forward: { threadId: id } }),
       openLow: () => now().openLow(),
       oneByOne: () => now().oneByOne(),
       openMore: () => now().openMore(),

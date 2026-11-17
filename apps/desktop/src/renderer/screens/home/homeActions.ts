@@ -81,6 +81,8 @@ export interface HomeDeps {
   openDatePicker(id: ThreadId): void;
   /** Opens the thread in the reader, or in its reply card (the reader lane owns both). */
   openThread(id: ThreadId, how: OpenHow): void;
+  /** Opens the compose page on a forward of this thread's latest message. */
+  forward(id: ThreadId): void;
   openLow(): void;
   oneByOne(): void;
   openMore(): void;
@@ -125,6 +127,8 @@ export interface HomeActions {
   more(): void;
   /** R, ⇧R, hold R: opens the row under the cursor in the reader with its reply card up. */
   reply(how?: ThreadReply): void;
+  /** F: opens the compose page on a forward of the row under the cursor's latest message. */
+  forward(): void;
   /** U: marks the row under the cursor read or unread. */
   toggleRead(): void;
   /** R, or "Remind me if no reply" on that thread's own Done toast. */
@@ -360,6 +364,11 @@ export function createHomeActions(deps: HomeDeps): HomeActions {
     if (target) deps.openThread(target.row.id, how);
   }
 
+  function forward(): void {
+    const target = targetOf(deps.snapshot());
+    if (target) deps.forward(target.row.id);
+  }
+
   function toggleRead(): void {
     const target = targetOf(deps.snapshot());
     if (!target) return;
@@ -444,6 +453,7 @@ export function createHomeActions(deps: HomeDeps): HomeActions {
     suggested,
     reply,
     toggleRead,
+    forward,
     open,
     clearFromHome,
     more: () => (bulk?.picks() && deps.openBulkMore ? deps.openBulkMore() : deps.openMore()),

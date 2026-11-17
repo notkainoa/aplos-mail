@@ -777,3 +777,62 @@ test('the summary head shows only in the card-less column (cards off); the defau
     world.connection.close();
   }
 });
+
+test('F goes through the registry to a forward of the thread on paper', async () => {
+  const world = await boot();
+  try {
+    const id = world.doIds()[0]!;
+    const { deps, state } = depsOver(world, id);
+    const registry = createAppRegistry();
+    const detach = shellRegistryFor(registry).register(
+      commandsForReader(createReaderActions(deps)),
+    );
+    const context: CommandContext = {
+      stack: ['global', 'list', 'reader'],
+      target: null,
+      selection: [],
+      conditions: {},
+      prefs: DEFAULT_KEY_PREFS,
+      focus: 'none',
+    };
+    const resolution = registry.resolve(
+      { key: 'f', metaKey: false, ctrlKey: false, altKey: false, shiftKey: false },
+      context,
+    );
+    assert.equal(resolution?.commandId, 'mail.forward', 'F is Forward in the reader');
+    assert.equal(registry.run('mail.forward', context).status, 'ran');
+    assert.deepEqual(state.forwards, [id]);
+    assert.equal(state.left, 0, 'the reader stays on the thread');
+    detach();
+  } finally {
+    world.connection.close();
+  }
+});
+
+test('Mark unread returns to the list with one toast; Mark read stays on the thread', async () => {
+  resetToasts();
+  const world = await boot();
+  try {
+    const id = world.doIds()[0]!;
+    const { deps, state } = depsOver(world, id);
+    // The demo thread starts either way: make it read, then walk both directions.
+    const row = () => deps.rowOf(id)!;
+    if (row().unread) {
+      createReaderActions(deps).toggleRead();
+      await world.flush();
+      assert.equal(state.left, 0, 'marking a thread read keeps the reader on it');
+    }
+    const actions = createReaderActions(deps);
+    actions.toggleRead();
+    assert.ok(getToasts().some(t => t.message === 'Marked unread'));
+    assert.equal(state.left, 1, 'marking a read thread unread goes back to the list');
+    await world.flush();
+    assert.equal(row().unread, true, 'the thread is unread');
+    actions.toggleRead();
+    assert.ok(getToasts().some(t => t.message === 'Marked read'));
+    assert.equal(state.left, 1, 'marking it read again does not leave');
+    await world.flush();
+  } finally {
+    world.connection.close();
+  }
+});

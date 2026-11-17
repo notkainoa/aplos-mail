@@ -155,6 +155,7 @@ function bulkHome(world: World, start: string | null = null) {
     openMore: () => void state.more.push('row'),
     openBulkMore: () => void state.more.push('bulk'),
     undoLabel: (_id, fallback) => fallback,
+    forward: () => undefined,
   };
   const picked = () => pickedInOrder(live(), idsNow());
   return { deps, state, cursor, picked, itemsNow, idsNow, actions: createHomeActions(deps) };

@@ -19,6 +19,8 @@ export interface ComposeTarget {
     readonly messageId: string;
     readonly replyAll?: boolean;
   };
+  /** A forward of this thread's latest message: the page seeds "Fwd:" and the quoted original once they load. */
+  readonly forward?: { readonly threadId: string };
 }
 
 /** A target plus the screen to go back to; `seq` is new for every open, so each open mounts a fresh page. */
@@ -42,7 +44,7 @@ subscribeScreen(() => {
 /** Shows the compose page. A bare open while the page is already showing keeps the page (and its text) as it is. */
 export function openCompose(target: ComposeTarget = {}): void {
   const open = onComposeScreen();
-  if (open && !target.draftId && !target.replyTo) return;
+  if (open && !target.draftId && !target.replyTo && !target.forward) return;
   const current = getScreen();
   const from = open ? (requestStore.get()?.from ?? null) : current;
   seq += 1;

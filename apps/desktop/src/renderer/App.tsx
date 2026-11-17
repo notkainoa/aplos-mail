@@ -345,6 +345,7 @@ function ComposeSlot() {
       key={request.seq}
       draftId={request.draftId}
       replyTo={request.replyTo}
+      forward={request.forward}
       onClose={closeCompose}
     />
   );
