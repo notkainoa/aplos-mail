@@ -1310,3 +1310,23 @@
   /* One line is always reserved, so a hovered row's preview never changes the bar's height. */
   min-height: 1lh;
 }
+
+/* ---------- Home cleared: Do now keeps its place with a calm line where the letter was ---------- */
+
+.aplos-home-cleared__line,
+.aplos-home-cleared__detail {
+  margin: 0;
+  padding-inline: var(--space-3);
+}
+.aplos-home-cleared__line {
+  margin-top: var(--space-4);
+  color: var(--ink);
+  font: var(--type-summary);
+  letter-spacing: var(--track-summary);
+}
+.aplos-home-cleared__detail {
+  margin-top: var(--space-1);
+  color: var(--dim);
+  font: var(--type-ui);
+  letter-spacing: var(--track-ui);
+}
