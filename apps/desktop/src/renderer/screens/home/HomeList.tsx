@@ -6,7 +6,6 @@
 import type { Account, HomeSectionView, HomeView, ThreadId, ThreadRow } from '../../data';
 import type { CommandAction, Density, ListboxBinding, SectionHeaderProps } from '../../ui/props';
 import { FocusLetter, FocusSlot, ListBox, ListGroup, ListRow, LowBand } from '../../ui/list';
-import { useSummaryGaveUp } from './summaryWait';
 import { LOW_KEY, showsLowBand, type HomeLayout, type SectionKey } from './homeModel';
 import {
   dateOf,
@@ -131,8 +130,7 @@ function LetterSlot(
   },
 ) {
   const { row, section, density, demoted, handlers, rejected } = props;
-  const gaveUp = useSummaryGaveUp(row.id, row.summary.state === 'pending');
-  const summary = summaryOf(row, gaveUp);
+  const summary = summaryOf(row);
   return (
     <FocusSlot density={density} fit={summary.state === 'absent' ? 'content' : 'fixed'}>
       <FocusLetter
