@@ -144,6 +144,10 @@
   ); /* the primary, faded, the same by day and at night */
   box-shadow: none;
 }
+.ui-compose-btn[data-variant='filled']:disabled .ui-compose-kbd {
+  /* the faded primary: the hint reads as a disabled keycap, like the list, onboarding and calendar buttons */
+  color: var(--dim);
+}
 .ui-compose-btn:focus-visible,
 .ui-suggestion__act:focus-visible,
 .ui-recipient-field__remove:focus-visible,
