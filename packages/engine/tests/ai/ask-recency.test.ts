@@ -7,7 +7,7 @@ import {
   topicWords,
   wantsNewest,
 } from '../../src/ai/impl/ask-recency';
-import { msg } from '../store/helpers';
+import { ACCOUNT, msg } from '../store/helpers';
 import { lastPrompt, seedMail, settle, stubTransport, world, type World } from './harness';
 
 /**
@@ -182,11 +182,23 @@ test('the newest mail never includes a thread in Trash or Spam', async () => {
   w.store.commit({
     opId: 'trashed',
     origin: 'sync',
-    writes: [msg('bin', 'T-bin', 90, { subject: 'Thrown away', folders: [{ folder: 'TRASH' }] })],
+    writes: [
+      {
+        kind: 'folder',
+        accountId: ACCOUNT,
+        remoteId: 'SPAM',
+        name: 'Spam',
+        role: 'spam',
+        folderKind: 'system',
+      },
+      msg('bin', 'T-bin', 90, { subject: 'Thrown away', folders: [{ folder: 'TRASH' }] }),
+      msg('junk', 'T-junk', 91, { subject: 'Filtered out', folders: [{ folder: 'SPAM' }] }),
+    ],
   });
   const run = await w.call('Ask/run', { question: 'What are my most recent emails about?' });
   await settle(w, run.runId);
   const prompt = lastPrompt(t);
   assert.ok(!prompt.includes('Thrown away'), 'the newest message is in Trash and stays out');
+  assert.ok(!prompt.includes('Filtered out'), 'a thread in Spam stays out');
   assert.match(prompt, /\[1\]\nFrom: [^\n]*\nSubject: Re: Lunch/);
 });
