@@ -4,7 +4,7 @@ import { ContractError } from '@aplos/contract/contract-error';
 import { OVERDUE_GRACE_MS } from '@aplos/contract/rules';
 import { SubmissionConflict } from '../../src/outbox/module';
 import type { CommitInput } from '../../src/store';
-import { fields, gate, inWorld, MIN, SEC, T0 } from './helpers';
+import { ACCOUNT, fields, gate, inWorld, MIN, SEC, T0 } from './helpers';
 
 /** Asserts a `Submission/set` refusal (a rejected promise) by contract error type, and returns its sentence. */
 async function rejected(fn: () => Promise<unknown>, type: string): Promise<string> {
@@ -124,6 +124,25 @@ test('send refuses a stale revision, a draft already sending, a missing draft an
     )!.n;
     assert.equal(count, 1);
   }));
+
+test('a settled send wakes the account sync so Sent and the thread refresh at once', () => {
+  const wakes: string[] = [];
+  return inWorld(
+    async w => {
+      w.draft('d1');
+      const { submission: s } = await w.act(w.first, {
+        type: 'send',
+        draftId: 'd1',
+        revision: 1,
+      });
+      await w.clock.advance(11 * SEC);
+      await w.settle();
+      assert.equal(w.get(s.id).state, 'sent');
+      assert.deepEqual(wakes, [ACCOUNT], 'the sending account, not another');
+    },
+    { afterSend: id => wakes.push(id) },
+  );
+});
 
 test('undo before notBefore cancels and nothing leaves; wrong states are refused with a sentence', () =>
   inWorld(async w => {
