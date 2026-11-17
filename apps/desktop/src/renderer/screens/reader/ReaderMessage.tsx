@@ -9,6 +9,7 @@ import { useState, type ReactNode } from 'react';
 import { toIsoDateTime, useMessageBody, type Message, type MessageBody } from '../../data';
 import {
   MailFrame,
+  foldsQuoted,
   quotedRangesFor,
   type MailFrameKey,
   type MailFrameReady,
@@ -70,7 +71,7 @@ function useDownloads(message: Message) {
 /** A plain-text body with quoted history in it. */
 function hasQuoted(body: MessageBody | undefined): boolean {
   if (!body || body.bodyKind !== 'text') return false;
-  return quotedRangesFor(body.text, body.quoted).length > 0;
+  return foldsQuoted(body.text, quotedRangesFor(body.text, body.quoted));
 }
 
 /** "Show quoted text": the message's own choice once made, else O's (on the latest message, where O means it). */

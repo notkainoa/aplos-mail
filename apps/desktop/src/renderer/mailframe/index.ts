@@ -2,7 +2,7 @@
 export { MailFrame } from './MailFrame';
 export { MailFrameView, type MailFrameViewProps } from './MailFrameView';
 export { KEY_LAYER_ATTRIBUTE } from './layers';
-export { quotedRangesFor, quotedRangesOf, type QuotedRange } from './quoted';
+export { foldsQuoted, quotedRangesFor, quotedRangesOf, type QuotedRange } from './quoted';
 export { sanitiseBody, type SanitisedBody } from './sanitise';
 export type {
   FrameSource,

@@ -275,6 +275,48 @@ for (const [name, html, plain] of PLAIN_CASES)
     }
   });
 
+/**
+ * Dark theme (hands-on test 2026-11-16): a letter with no colours of its own draws on the card's dark surface, and that
+ * includes a reply whose Gmail-style quote bar has an inline margin and border style (it used to read as "rich" and
+ * sat on a white sheet). A forward is not folded away: its text is open in the document.
+ */
+const DARK_CASES: [string, string, { plain: boolean; folded: boolean }][] = [
+  ['a plain letter', '<p>Hello there</p>', { plain: true, folded: false }],
+  [
+    'a reply with a quote bar',
+    `<div dir="ltr">Thanks</div><div class="gmail_quote"><blockquote class="gmail_quote" style="margin:0;border-left:1px solid ${FRAME_DARK.rule};padding-left:0">old text</blockquote></div>`,
+    { plain: true, folded: true },
+  ],
+  [
+    'a forward',
+    '<div dir="ltr"><br><div class="gmail_quote"><div class="gmail_attr">---------- Forwarded message ---------<br>From: A</div><div>The forwarded words</div></div></div>',
+    { plain: true, folded: false },
+  ],
+  [
+    'a letter with its own colours',
+    `<p style="color:${FRAME_PAPER.accent}">Hello</p>`,
+    { plain: false, folded: false },
+  ],
+];
+for (const [name, html, want] of DARK_CASES)
+  test(`dark theme: ${name} sits on the dark card or keeps its paper; quotes fold only after words`, async ({
+    page,
+  }) => {
+    await page.emulateMedia({ colorScheme: 'dark' });
+    const server = new SealedServer();
+    const document = sealedDocument(html);
+    const token = server.issue(document, {}, []);
+    await openHost(page, server, `real/${token}`);
+    expect(await settled(page)).toBe(true);
+    const state = await hostState(page);
+    const posts = state.posted as Record<string, unknown>[];
+    expect(posts.at(-1)?.plain).toBe(want.plain);
+    expect(state.background).toBe(
+      await cssColour(page, want.plain ? FRAME_DARK.surface : FRAME_PAPER.paper),
+    );
+    expect(document.includes('<details class="aplos-quote"')).toBe(want.folded);
+  });
+
 test('the real reporter sizes the host: height, bg and onReady once, from an opaque frame', async ({
   page,
 }) => {

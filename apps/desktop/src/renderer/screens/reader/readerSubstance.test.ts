@@ -8,7 +8,7 @@ import { createElement } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import type { Event } from '../../data';
 import { PlainText } from '../../mailframe/PlainText';
-import { quotedParts, quotedRangesFor, quotedRangesOf } from '../../mailframe/quoted';
+import { foldsQuoted, quotedParts, quotedRangesFor, quotedRangesOf } from '../../mailframe/quoted';
 import { attachmentIcon } from './attachmentIcon';
 import { inviteOf, inviteWhen } from './invite';
 import { InviteCard } from './InviteCard';
@@ -84,6 +84,17 @@ test('quoted parts: own and quoted in order, blank lines dropped, > marks off', 
     { kind: 'own', text: 'ab' },
     { kind: 'quoted', text: 'c\nd' },
   ]);
+});
+
+test('a body that is all quote (a forward) is shown whole and offers no fold; a reply still folds', () => {
+  const forward = '> Forwarded text\n> second line';
+  const ranges = quotedRangesOf(forward);
+  assert.equal(foldsQuoted(forward, ranges), false);
+  assert.equal(foldsQuoted(BODY, quotedRangesOf(BODY)), true);
+  assert.equal(foldsQuoted('no quotes', []), false);
+  const html = renderToStaticMarkup(createElement(PlainText, { text: forward, quoted: ranges }));
+  assert.match(html, /Forwarded text/);
+  assert.match(html, /aplos-mailframe__quote/);
 });
 
 test('PlainText: paragraphs; quoted history hidden until shown, then a quiet block; no ranges keeps the > lines', () => {
