@@ -67,6 +67,47 @@ export function FocusLetter({
   const done = useKeycapFor(commands.done);
   const more = useKeycapFor(commands.more);
   const tip = useTooltipText();
+  // Later stays left of Done in every lane (← Later, Done →); the lane's primary is the filled one and keeps Space.
+  const suggestAction = (
+    <span className="ui-focus-letter__suggest">
+      <Action
+        variant={demoted ? 'text' : 'filled'}
+        size="md"
+        label={suggestion.verb}
+        icon={suggestion.icon}
+        keycap={demoted ? undefined : space}
+        tooltip={tip(suggestion.verb, commands.suggest)}
+        duplicate
+        onPress={() => onSuggestion()}
+      />
+    </span>
+  );
+  const laterAction = (
+    <Action
+      variant="text"
+      size="md"
+      label="Later"
+      icon="clock"
+      labelHidden={narrow}
+      tooltip={tip('Later', commands.later)}
+      keycap={demoted ? undefined : later}
+      duplicate
+      onPress={anchor => onLater(anchor)}
+    />
+  );
+  const doneAction = (
+    <Action
+      variant="text"
+      size="md"
+      label="Done"
+      icon="check"
+      labelHidden={narrow}
+      tooltip={tip('Done', commands.done)}
+      keycap={demoted ? undefined : done}
+      duplicate
+      onPress={() => onDone()}
+    />
+  );
   return (
     <div
       id={id}
@@ -105,43 +146,13 @@ export function FocusLetter({
         />
       ) : null}
 
-      <div className="ui-focus-letter__actions">
-        <span className="ui-focus-letter__suggest">
-          <Action
-            variant={demoted ? 'text' : 'filled'}
-            size="md"
-            label={suggestion.verb}
-            icon={suggestion.icon}
-            keycap={demoted ? undefined : space}
-            tooltip={tip(suggestion.verb, commands.suggest)}
-            duplicate
-            onPress={() => onSuggestion()}
-          />
-        </span>
-        <Action
-          variant="text"
-          size="md"
-          label="Later"
-          icon="clock"
-          labelHidden={narrow}
-          tooltip={tip('Later', commands.later)}
-          keycap={demoted ? undefined : later}
-          duplicate
-          onPress={anchor => onLater(anchor)}
-        />
-        {suggestion.isDone ? null : (
-          <Action
-            variant="text"
-            size="md"
-            label="Done"
-            icon="check"
-            labelHidden={narrow}
-            tooltip={tip('Done', commands.done)}
-            keycap={demoted ? undefined : done}
-            duplicate
-            onPress={() => onDone()}
-          />
-        )}
+      <div
+        className="ui-focus-letter__actions"
+        data-primary={suggestion.isDone ? 'done' : undefined}
+      >
+        {suggestion.isDone ? laterAction : suggestAction}
+        {suggestion.isDone ? suggestAction : laterAction}
+        {suggestion.isDone ? null : doneAction}
         <Action
           variant="icon"
           size="md"

@@ -163,6 +163,11 @@ describe('ReaderActions', () => {
       <ReaderActions {...actions({ suggestion: { verb: 'Done', icon: 'check', isDone: true } })} />,
     );
     assert.equal((text(done).match(/Done/g) ?? []).length, 1);
+    assert.ok(
+      done.indexOf('Later') < done.indexOf('>Done<'),
+      'Later stays left of Done in a Done lane',
+    );
+    assert.match(done, /data-variant="filled"[^>]*>.*Done<\/span><kbd class="ui-list-kbd">Space/);
     const demoted = render(<ReaderActions {...actions({ demoted: true })} />);
     assert.doesNotMatch(demoted, /data-variant="filled"|<kbd/);
     assert.match(demoted, /data-demoted="true"/, 'the bar rests in the flow under the open reply');

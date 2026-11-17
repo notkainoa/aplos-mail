@@ -26,39 +26,47 @@ export function ReaderActions({
   const space = useKeycapFor(commands.suggest);
   const later = useKeycapFor(commands.later);
   const done = useKeycapFor(commands.done);
+  // Later stays left of Done in every lane (← Later, Done →); the lane's primary is the filled one and keeps Space.
+  const suggestAction = (
+    <Action
+      variant={demoted ? 'text' : 'filled'}
+      size="md"
+      label={replying ? 'Replying' : suggestion.verb}
+      icon={suggestion.icon}
+      keycap={demoted ? undefined : space}
+      pressed={replying ? true : undefined}
+      tooltip={suggestionTooltip}
+      onPress={() => onSuggestion()}
+    />
+  );
+  const laterAction = (
+    <Action
+      variant="text"
+      size="md"
+      label="Later"
+      icon="clock"
+      tooltip={tip('Later', commands.later)}
+      keycap={demoted ? undefined : later}
+      onPress={anchor => onLater(anchor)}
+    />
+  );
+  const doneAction = (
+    <Action
+      variant="text"
+      size="md"
+      label="Done"
+      icon="check"
+      tooltip={tip('Done', commands.done)}
+      keycap={demoted ? undefined : done}
+      onPress={() => onDone()}
+    />
+  );
   return (
     <div className="ui-reader-actions" data-demoted={demoted ? 'true' : undefined}>
       <div className="ui-reader-actions__bar" role="group" aria-label="Actions">
-        <Action
-          variant={demoted ? 'text' : 'filled'}
-          size="md"
-          label={replying ? 'Replying' : suggestion.verb}
-          icon={suggestion.icon}
-          keycap={demoted ? undefined : space}
-          pressed={replying ? true : undefined}
-          tooltip={suggestionTooltip}
-          onPress={() => onSuggestion()}
-        />
-        <Action
-          variant="text"
-          size="md"
-          label="Later"
-          icon="clock"
-          tooltip={tip('Later', commands.later)}
-          keycap={demoted ? undefined : later}
-          onPress={anchor => onLater(anchor)}
-        />
-        {suggestion.isDone ? null : (
-          <Action
-            variant="text"
-            size="md"
-            label="Done"
-            icon="check"
-            tooltip={tip('Done', commands.done)}
-            keycap={demoted ? undefined : done}
-            onPress={() => onDone()}
-          />
-        )}
+        {suggestion.isDone ? laterAction : suggestAction}
+        {suggestion.isDone ? suggestAction : laterAction}
+        {suggestion.isDone ? null : doneAction}
       </div>
     </div>
   );

@@ -1096,6 +1096,13 @@
   min-width: calc(2 * var(--control-md));
   margin-right: auto;
 }
+/* A Done lane puts Later first (← Later, Done →): the pair sits at the right, as Later and Done do on a Reply lane. */
+.ui-focus-letter__actions[data-primary='done'] > .ui-list-btn:first-child {
+  margin-left: auto;
+}
+.ui-focus-letter__actions[data-primary='done'] .ui-focus-letter__suggest {
+  margin-right: 0;
+}
 .ui-focus-letter__suggest .ui-list-btn {
   flex: 0 1 auto;
   min-width: 0;
