@@ -20,13 +20,6 @@ export function undated(message: string): string {
   return `${message} · no date`;
 }
 
-const TRIAGE_KINDS: ReadonlySet<string> = new Set(['done', 'later', 'trash']);
-
-/** `{ slot: 'triage' }` for a Done, Later or Trash toast, so a newer one takes its place; nothing for any other kind. */
-export function triageSlot(kind: string): { readonly slot?: 'triage' } {
-  return TRIAGE_KINDS.has(kind) ? { slot: 'triage' } : {};
-}
-
 /** Runs `after` once the undo's receipt is accepted; a rejected undo is the data layer's to report and runs nothing. */
 export function afterAccepted(result: ActResult, after?: () => void): void {
   result.receipt.then(

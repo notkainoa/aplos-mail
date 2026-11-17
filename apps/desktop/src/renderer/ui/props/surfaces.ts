@@ -376,8 +376,6 @@ export interface ToastData {
   actions?: readonly ToastAction[];
   /** True when one action is Undo: lives 8 s instead of 4 s, then fades over 400 ms. */
   undoable: boolean;
-  /** 'triage' puts a Done, Later or Trash toast in the one triage slot: a newer one replaces it (its operation stays on the undo stack, so Z still undoes it). */
-  slot?: 'triage';
   /** Stays until dismissed (e.g. a pending op until it confirms). An `error` toast is not persistent: it lives 8 s, can be closed with ×, and the shell keeps what needs the owner somewhere calmer. */
   persistent?: boolean;
 }

@@ -22,7 +22,7 @@ import { namedToast } from '../home/homeRows';
 import { stepKey, neighbourKeys } from './listModel';
 import { openKindOf, isThread, type ListRowData, type OpenKind } from './listRows';
 import type { ListKind } from './listKinds';
-import { UNDO_ACTION, triageSlot, undated, undoHandler } from '../undoOperation';
+import { UNDO_ACTION, undated, undoHandler } from '../undoOperation';
 
 /** The live state an action reads when its key arrives. */
 export interface ListSnapshot {
@@ -167,7 +167,6 @@ function createRowVerbs(deps: ListDeps) {
       actions: [UNDO_ACTION],
       onAction: undoHandler(opId),
       ...toast,
-      ...triageSlot(toast.kind),
       message: NAMED_KINDS.has(toast.kind) ? namedToast(toast.message, row) : toast.message,
     });
     receipt.catch(() => deps.dismiss(opId));

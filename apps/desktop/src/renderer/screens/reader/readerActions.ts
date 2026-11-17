@@ -7,7 +7,7 @@
  */
 import { undoStack, type DataApi, type ThreadAction, type ThreadRow } from '../../data';
 import type { PushedToast } from '../../shell';
-import { UNDO_ACTION, afterAccepted, triageSlot, undated, undoHandler } from '../undoOperation';
+import { UNDO_ACTION, afterAccepted, undated, undoHandler } from '../undoOperation';
 import { failurePhrase, namedToast, senderOf, suggestedLabel } from '../home/homeRows';
 import type { MovableLane } from '../home/homeModel';
 import { LANE_LABEL } from './readerLane';
@@ -165,7 +165,6 @@ export function createReaderActions(deps: ReaderDeps): ReaderActions {
       undoable: true,
       actions: [UNDO_ACTION],
       onAction: undoHandler(opId, undone(opId, restore?.undone)),
-      ...triageSlot(toast.kind),
       ...toast,
     });
     failOnReject(opId, action, receipt, restore?.rejected);

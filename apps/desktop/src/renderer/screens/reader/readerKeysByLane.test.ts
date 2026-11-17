@@ -43,7 +43,7 @@ for (const lane of ['do', 'update', 'follow'] as const) {
         assert.ok(resolution, `${k} resolves`);
         return registry.run(resolution.commandId, context).status;
       };
-      // One triage slot: a verb shows as a new toast taking the place of the last one.
+      // A verb adds its own toast to the stack (the ids it shows change).
       const toasted = (kind: string) =>
         getToasts()
           .filter(t => t.kind === kind)

@@ -496,7 +496,7 @@ for (const lane of LANE_CARDS) {
         return registry.run(resolution.commandId, context).status;
       };
       const opened = () => calls.filter(c => c.startsWith('open:'));
-      // One triage slot: a verb shows as a new toast taking the place of the last one.
+      // A verb adds its own toast to the stack (the ids it shows change).
       const toasted = (kind: string) =>
         getToasts()
           .filter(t => t.kind === kind)
@@ -546,7 +546,7 @@ for (const lane of LANE_CARDS) {
   });
 }
 
-test('a newer Done takes the triage slot, and Z still undoes the newest then the one before', async () => {
+test('two Dones stack two toasts naming their senders; a toast Undo undoes its own, Z the newest', async () => {
   resetToasts();
   const world = await boot();
   try {
@@ -561,13 +561,14 @@ test('a newer Done takes the triage slot, and Z still undoes the newest then the
     key.current = second;
     actions.done();
     const shown = getToasts().filter(t => t.kind === 'done');
-    assert.equal(shown.length, 1, 'one toast for triage');
-    assert.notEqual(shown[0]?.id, older.id, 'the newest Done replaced the older toast');
+    assert.equal(shown.length, 2, 'the toasts stack, one per Done (owner review of #548)');
+    assert.equal(shown[0]?.id, older.id, 'the older toast stays, behind the newer one');
+    for (const toast of shown) assert.match(toast.message, /^Done · \S/, 'each names its sender');
+    runToastAction(older.id, 'undo');
+    assert.ok(world.home.snapshot().ids.includes(first), 'the older toast restored its own thread');
+    assert.ok(!world.home.snapshot().ids.includes(second), 'and left the newer one done');
     undoStack.undoLast();
     assert.ok(world.home.snapshot().ids.includes(second), 'Z undid the newest');
-    assert.ok(!world.home.snapshot().ids.includes(first), 'and left the older one done');
-    undoStack.undoLast();
-    assert.ok(world.home.snapshot().ids.includes(first), 'the next Z undid the older one');
     await world.flush();
   } finally {
     world.connection.close();

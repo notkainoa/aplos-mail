@@ -22,7 +22,7 @@ import { LowSheet } from '../../ui/list';
 import { absoluteIndex, neighbourKeys, stepKey } from '../lists/listModel';
 import { useRestoreWindow, windowReaches } from '../lists/restoreWindow';
 import { useIdCursor } from '../lists/useIdCursor';
-import { UNDO_ACTION, triageSlot, undoHandler } from '../undoOperation';
+import { UNDO_ACTION, undoHandler } from '../undoOperation';
 import { listRowProps, primaryOf, secondaryOf } from './homeRows';
 import { useFollowWindow } from './useFollowHomeCursor';
 
@@ -134,7 +134,6 @@ export function LowSheetHost(props: LowSheetHostProps) {
     pushToast({
       id: opId,
       kind: 'done',
-      ...triageSlot('done'),
       message: 'Done',
       undoable: true,
       actions: [UNDO_ACTION],
@@ -152,7 +151,6 @@ export function LowSheetHost(props: LowSheetHostProps) {
     pushToast({
       id: opId,
       kind: 'done',
-      ...triageSlot('done'),
       message: 'Done',
       undoable: true,
       actions: [UNDO_ACTION],

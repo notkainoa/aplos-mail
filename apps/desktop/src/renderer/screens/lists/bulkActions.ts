@@ -8,7 +8,7 @@
 import type { DataApi, ThreadActArgs } from '../../data';
 import type { PushedToast } from '../../shell';
 import type { CommitKind } from '../../ui/props';
-import { UNDO_ACTION, triageSlot, undoHandler } from '../undoOperation';
+import { UNDO_ACTION, undoHandler } from '../undoOperation';
 import {
   bulkCount,
   bulkMessage,
@@ -124,7 +124,6 @@ export function commitBulk(side: BulkSide, commit: BulkCommit): void {
     actions: [UNDO_ACTION],
     onAction: undoHandler(opId),
     kind: verb.kind,
-    ...triageSlot(verb.kind),
     message: verb.message(commit.count),
   });
   receipt.catch(() => side.dismiss(opId));

@@ -885,6 +885,7 @@ This is the screen shown after setup, before the inbox (the last step of the onb
 *Mockup: `toasts.html` (stack, pending, remind, offline).*
 
 - **Stack.** Toasts stack bottom-centre of the *main pane*, never under the dock, up to three. They are opaque `--float` with `--elev-float`, radius 12, `ui` text, 440 px wide and growing to fit their words up to 560 px (a sender's name is never cut while it fits). Hover or focus pauses them. Plain toasts last 4 s; Undo toasts last 8 s, then fade over 400 ms.
+- **Deck** (owner review of #548, 2026-11-17). The stack is a deck: the newest toast in front at the bottom, the older ones peeking 12 px above it each, a little smaller (5 % a step), at most two peeking; their words show only when the deck opens. Pointer over the deck or keyboard focus inside it fans it out into the full list (the `close` motion; under reduced motion it switches between the folded and open states with no animation) and holds every toast's clock while it is open. Each toast otherwise leaves on its own timer, measured from when it appeared, one by one; the cards behind close up as it goes. The fan is the one place hover moves something: an owner exception to §3 principle 11 and §5 rule 17, and it moves only the toasts (transform and opacity), never the pane under them.
 - **Wording follows the op queue:**
   - Pending: "Archiving…"
   - Confirmed: "Done · Undo Z"
@@ -893,7 +894,7 @@ This is the screen shown after setup, before the inbox (the last step of the onb
   - Offline: "Saved here · will sync"
 - **Rules.**
   - One operation, one notice.
-  - An Undo toast is never silently replaced; new toasts stack. Triage (Done, Later, Trash on a thread) is the one exception (council 2, 2026-11-16): it is one slot, a newer triage toast takes the place of the older one and names the sender ("Done · Jordan Park"); the older operation stays on the undo stack, so Z undoes the newest and then the one before.
+  - An Undo toast is never silently replaced; new toasts stack, Done, Later and Trash included (the one-slot triage toast tried in UI council 2 was rejected in the owner review of #548, 2026-11-17). Triage toasts name the sender ("Done · Jordan Park"), and Z undoes the newest operation first, then the one before.
   - Toasts never appear for navigation, successful saves or sync ticks.
   - They are announced politely and never steal focus.
 - **First launch** shows one toast, once: "Hold ⌘ to see keys." It makes up for key hints living in tooltips.

@@ -2,9 +2,7 @@
  * The toast stack's state (DESIGN 7.13; F9).
  *
  * Rules the store keeps: one operation, one notice (a push with a live id updates that toast in
- * place); triage feedback is one slot (a new Done, Later or Trash toast replaces the previous triage toast, whose
- * operation stays on the undo stack, so Z still undoes it);
- * the stack holds three; when a fourth arrives the oldest toast that is neither an Undo
+ * place); the stack holds three; when a fourth arrives the oldest toast that is neither an Undo
  * toast, an `error` toast nor `persistent` goes. An Undo toast is never replaced or evicted: a toast is an Undo toast
  * when `undoable` is true or one of its actions runs `app.undo`. A persistent toast (a held send or a
  * pending operation) is never evicted either. If nothing else can go the stack exceeds the cap and
@@ -56,11 +54,6 @@ function dismissToastNow(id: string): void {
   publish();
 }
 
-/** A mail triage toast (Done, Later, Trash) with an Undo: the toasts that share the one triage slot. */
-export function isTriageToast(toast: ToastData): boolean {
-  return toast.slot === 'triage' && isUndoToast(toast);
-}
-
 function evictable(toast: PushedToast): boolean {
   return !toast.persistent && toast.kind !== 'error' && !isUndoToast(toast);
 }
@@ -74,18 +67,10 @@ function evictOldest(keep: string): void {
   }
 }
 
-/** The new triage toast takes the slot: earlier ones go; their operations stay on the undo stack. */
-function dropOtherTriage(keep: string): void {
-  for (const [id, toast] of [...live]) {
-    if (id !== keep && isTriageToast(viewOf(toast))) live.delete(id);
-  }
-}
-
 /** Pushes a toast, or updates the live one with the same id in place; returns the id. A live Undo toast is never replaced by a plain one: the push is refused and the Undo stays. */
 export function addToast(toast: PushedToast): string {
   const existing = live.get(toast.id);
   if (existing && isUndoToast(existing) && !isUndoToast(toast)) return toast.id;
-  if (isTriageToast(viewOf(toast))) dropOtherTriage(toast.id);
   live.set(toast.id, toast);
   evictOldest(toast.id);
   publish();

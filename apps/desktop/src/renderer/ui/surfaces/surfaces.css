@@ -1262,17 +1262,51 @@ html[data-real-key] .ui-part-tipwrap:has(> :focus-visible) > .ui-part-tip {
   bottom: var(--space-6);
   z-index: var(--z-toast);
   display: flex;
-  flex-direction: column-reverse;
+  /* Oldest first, the newest at the bottom: the front card of the deck sits nearest the pane edge. */
+  flex-direction: column;
   /* One column, one width: the stack is at least --toast-max wide and grows to fit its longest toast up to --toast-grow-max
      (less in a narrow pane), and every toast fills it, so a stack of three is one width; a sender's name is never cut
      while it fits. */
   align-items: stretch;
-  gap: var(--space-2);
   width: max-content;
   min-width: min(var(--toast-max), calc(100% - var(--space-6) * 2));
   max-width: min(var(--toast-grow-max), calc(100% - var(--space-6) * 2));
   transform: translateX(-50%);
   pointer-events: none;
+}
+/* The deck (owner review of #548, 2026-11-17). Every card keeps its place in the list (so the stack keeps one width and
+   the fanned-out list is plain layout); folded, a transform brings each older card down onto the front one
+   (--toast-lift, measured by ToastStack), peeks it up by its depth and scales it back a little. The 8 px gap above each
+   card is part of the card, so the pointer never falls between two cards of the open list. Hover and focus fan it out
+   with the named `close` motion (the FLIP of things that move apart); under reduced motion it is 0 ms, so the deck
+   just switches between its two states. The newest card is last in the DOM, so it paints over the ones behind it. */
+.ui-toast-card {
+  --toast-peek: var(--space-3);
+  --toast-step: 0.05;
+  padding-top: var(--space-2);
+  transform-origin: 50% 100%;
+  transform: translateY(calc(var(--toast-lift, 0px) - var(--toast-depth) * var(--toast-peek)))
+    scale(calc(1 - var(--toast-depth) * var(--toast-step)));
+  transition:
+    transform var(--dur-close) var(--ease-out),
+    opacity var(--dur-close) var(--ease-out);
+  pointer-events: auto;
+}
+/* Folded, the cards behind show only their edge: their words would print through the front card's shadow. */
+.ui-toast-stack:not([data-expanded]) .ui-toast-card:not([data-depth='0']) .ui-toast > * {
+  opacity: 0;
+}
+.ui-toast-card .ui-toast > * {
+  transition: opacity var(--dur-close) var(--ease-out);
+}
+/* Only two cards peek; deeper ones wait unseen until the deck fans out or the cards in front of them leave. */
+.ui-toast-stack:not([data-expanded])
+  .ui-toast-card:not([data-depth='0'], [data-depth='1'], [data-depth='2']) {
+  opacity: 0;
+  pointer-events: none;
+}
+.ui-toast-stack[data-expanded] .ui-toast-card {
+  transform: none;
 }
 .ui-toast {
   box-sizing: content-box; /* the sizes below are the content; the padding sits outside them */

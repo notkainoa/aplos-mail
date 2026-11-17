@@ -6,10 +6,11 @@
  * Announced politely by the stack's persistent live region (a region inserted with its text already inside is
  * often not read); it never takes focus.
  */
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
 import { themeHooks, timing, timingReduced } from '../generated/motion';
 import type { ComponentPropsMap, IconName, ToastData, ToastKind } from '../props';
 import { ToastMessage } from './ToastMessage';
+import { ToastStackHeld } from './toastHeld';
 import { PartButton, PartIcon, PartKeys, prefersReducedMotion, useKeysFor } from './parts';
 
 const KIND: Record<ToastKind, { icon: IconName; tone?: 'hill' | 'dusk' | 'stamp' }> = {
@@ -27,7 +28,7 @@ const KIND: Record<ToastKind, { icon: IconName; tone?: 'hill' | 'dusk' | 'stamp'
   error: { icon: 'alert', tone: 'stamp' },
 };
 
-type PauseReason = 'hover' | 'focus' | 'hidden';
+type PauseReason = 'hover' | 'focus' | 'hidden' | 'stack';
 
 /** A countdown that pauses for any reason and resumes with the time that was left. Null life = never expires. */
 function useLifetime(life: number | null, onExpire: () => void) {
@@ -75,16 +76,19 @@ function useLifetime(life: number | null, onExpire: () => void) {
     };
   }, [life, start, stop]);
 
-  return {
-    pause(reason: PauseReason) {
-      reasons.current.add(reason);
-      stop();
-    },
-    resume(reason: PauseReason) {
-      reasons.current.delete(reason);
-      start();
-    },
-  };
+  return useMemo(
+    () => ({
+      pause(reason: PauseReason) {
+        reasons.current.add(reason);
+        stop();
+      },
+      resume(reason: PauseReason) {
+        reasons.current.delete(reason);
+        start();
+      },
+    }),
+    [start, stop],
+  );
 }
 
 /** How long a toast stays before it fades: plain 4 s, Undo and error 8 s, a persistent one (a held send) until it is replaced. */
@@ -110,6 +114,12 @@ export function Toast({
   const closable = kind === 'error';
   const life = toastLife({ kind, undoable, persistent });
   const clock = useLifetime(leaving ? null : life, () => setLeaving(true));
+  // The deck is fanned out (pointer over it or focus inside): every toast's clock holds, not only the one under the pointer.
+  const held = useContext(ToastStackHeld);
+  useEffect(() => {
+    if (held) clock.pause('stack');
+    else clock.resume('stack');
+  }, [held, clock]);
 
   useEffect(() => {
     if (!leaving) return;

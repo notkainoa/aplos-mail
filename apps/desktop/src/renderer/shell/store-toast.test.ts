@@ -53,28 +53,13 @@ test('with three undo toasts open, a plain newcomer still shows, and is the firs
 const triage = (id: string, kind: 'done' | 'later' | 'trash' = 'done'): PushedToast => ({
   ...undo(id),
   kind,
-  slot: 'triage',
 });
 
-test('triage feedback is one slot: a new Done, Later or Trash toast replaces the previous one', () => {
+test('Done, Later and Trash toasts stack, one per operation, oldest first (owner review of #548)', () => {
   pushToast(triage('a'));
   pushToast(triage('b', 'later'));
   pushToast(triage('c', 'trash'));
-  assert.deepEqual(ids(), ['c']);
-});
-
-test('the triage slot leaves every other toast alone, Undo ones included', () => {
-  pushToast(undo('bookmark'));
-  pushToast(plain('note'));
-  pushToast(triage('a'));
-  pushToast(triage('b'));
-  assert.deepEqual(ids(), ['bookmark', 'note', 'b']);
-});
-
-test('an Undo toast that is not triage is never replaced by a triage one', () => {
-  pushToast(undo('u'));
-  pushToast(triage('t'));
-  assert.deepEqual(ids(), ['u', 't']);
+  assert.deepEqual(ids(), ['a', 'b', 'c']);
 });
 
 test('an action with the undo command makes a toast undo even if undoable is false', () => {

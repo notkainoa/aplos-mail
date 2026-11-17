@@ -541,6 +541,41 @@ describe('ToastStack', () => {
     assert.equal(count(html, 'class="ui-toast"'), 6);
   });
 
+  it('draws a deck: the newest card in front (depth 0), older ones behind it, folded until hover or focus', () => {
+    const html = render(
+      <ToastStack
+        toasts={[
+          t('a', { kind: 'done', message: 'Done · Jordan Park', undoable: true }),
+          t('b', { kind: 'later', message: 'Moved to Later · Maya Chen', undoable: true }),
+          t('c', { kind: 'trash', message: 'Moved to Trash · Theo Kim', undoable: true }),
+        ]}
+        onAction={noop}
+        onDismiss={noop}
+      />,
+    );
+    const depths = [...html.matchAll(/class="ui-toast-card" data-depth="(\d)"/g)].map(m => m[1]);
+    assert.deepEqual(
+      depths,
+      ['2', '1', '0'],
+      'oldest first in the DOM, the newest is the front card',
+    );
+    assert.ok(!html.includes('data-expanded'), 'folded until the pointer or focus arrives');
+    assert.equal(
+      count(html, 'class="ui-toast"'),
+      3,
+      'every toast keeps its own card (no one-slot triage)',
+    );
+    const css = readFileSync(new URL('./surfaces.css', import.meta.url), 'utf8');
+    const card = css.match(/\.ui-toast-card \{[^}]*\}/)?.[0] ?? '';
+    assert.match(
+      card,
+      /transition:[\s\S]*transform var\(--dur-close\)/,
+      'the fan rides the named close motion',
+    );
+    assert.match(card, /scale\(/);
+    assert.match(css, /\.ui-toast-stack\[data-expanded\] \.ui-toast-card \{\s*transform: none;/);
+  });
+
   it('renders a polite stack and the undo-send notice inside it, counted in the three', () => {
     const html = render(
       <ToastStack
