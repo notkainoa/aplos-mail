@@ -112,11 +112,23 @@ export interface MeteredCall {
 }
 
 /**
- * One provider call's whole budget — headers AND the streamed body. The transport's own timeout stops at the
- * response headers, so a provider that opens a stream and then stalls would otherwise hold a `background` job
- * (and, through `runJobs`' `Promise.all`, the whole `jobs` deadline source) open for the rest of the session.
+ * One provider call's whole budget — headers AND the streamed body, for a `background` job against a hosted
+ * provider. The transport's own timeout stops at the response headers, so a provider that opens a stream and
+ * then stalls would otherwise hold the job (and, through `runJobs`' `Promise.all`, the whole `jobs` deadline
+ * source) open for the rest of the session.
  */
 export const CHAT_TIMEOUT_MS = 120_000;
+
+/**
+ * The longer leash for everything else: interactive calls, and any provider running on this Mac. Ask, drafts,
+ * plans and polish are interactive — the owner watches them stream and can cancel, so the bound is only a
+ * hang-guard; and a slow local model (Ollama, LM Studio, a custom server) must get to finish in ANY lane —
+ * 120 s made one never succeed. Still bounded, so a stalled stream lets go instead of wedging the queue.
+ */
+export const LONG_CHAT_TIMEOUT_MS = 10 * 60_000;
+
+/** Providers that run on this Mac (or the owner's own server): no remote latency floor, often much slower. */
+const LOCAL_PROVIDERS: ReadonlySet<string> = new Set(['ollama', 'lmstudio', 'custom']);
 
 /** One provider chat call with usage accounting; a capped day refuses `background` calls only. */
 export async function meteredChat(
@@ -132,10 +144,15 @@ export async function meteredChat(
   const tracked = call.trackId ? services.ai.track(call.trackId) : undefined;
   const timedOut = new AbortController();
   const signal = combine(req.signal, tracked, timedOut.signal);
+  // The tight bound guards the background queue; an interactive call or a local provider gets the long one.
+  const bound =
+    call.lane === 'background' && !LOCAL_PROVIDERS.has(call.model.provider)
+      ? CHAT_TIMEOUT_MS
+      : LONG_CHAT_TIMEOUT_MS;
   try {
     // Both arms open inside the try: a transport or clock that throws synchronously still reaches the
     // finally, retiring the timer and the tracking slot instead of leaving them armed.
-    const sleeping = services.clock.sleep(CHAT_TIMEOUT_MS, timedOut.signal);
+    const sleeping = services.clock.sleep(bound, timedOut.signal);
     const work = transport.chat({ ...req, model: call.model, signal });
     // The clock's sleep aborts in `finally`, so a settled call leaves no timer behind; the race observes the
     // sleeping promise even after `work` wins, so the cleanup abort never surfaces as an unhandled rejection.

@@ -217,6 +217,12 @@ function settleSent(ctx: OutboxCtx, a: Attempt, receipt: SendReceipt | undefined
     attachments: meta.attachments,
     bytes: a.row.mime?.length ?? 0,
   });
+  // The row is already `sent`; a wake that throws must never read as a failed send.
+  try {
+    ctx.afterSend?.(a.row.account_id);
+  } catch {
+    // The next poll catches the message.
+  }
 }
 
 function settleFailed(ctx: OutboxCtx, a: Attempt, error: ClassifiedError) {

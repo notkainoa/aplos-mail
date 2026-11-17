@@ -8,7 +8,7 @@ import { openStore } from '../../src/store';
 import { AiCallError, type AiChatRequest, type AiTransport } from '../../src/ai/host';
 import { runJobs } from '../../src/ai/impl/runner';
 import { queueSummary } from '../../src/ai/impl/jobs';
-import { CHAT_TIMEOUT_MS } from '../../src/ai/impl/runtime';
+import { CHAT_TIMEOUT_MS, LONG_CHAT_TIMEOUT_MS, meteredChat } from '../../src/ai/impl/runtime';
 import { ACCOUNT, accountWrite, folderWrites, msg, tempDb } from '../store/helpers';
 import { manualClock, silentDeadlines } from '../runtime.helpers';
 
@@ -161,6 +161,238 @@ test('AI switched off collapses every pending placeholder instead of parking it'
   // the placeholder settles to 'failed' rather than showing "Summarizing…" for as long as AI stays off.
   await w.call('Settings/set', { opId: 'off', patch: { ai: { background: false } } });
   await runJobs(w.engine.services, w.clock.now());
+  assert.equal((await threadSummary(w)).state, 'failed');
+});
+
+test('the metered bound is a literal 120 s, aborts the transport signal, and retires its own timer', async () => {
+  assert.equal(
+    CHAT_TIMEOUT_MS,
+    120_000,
+    'the background bound is the literal 120 s the stall test relies on',
+  );
+  const transport = stubTransport({ hang: true });
+  const w = await world(transport);
+  seedMail(w);
+  await consentNow(w);
+  const base = w.clock.pending();
+  const hanging = meteredChat(
+    w.engine.services,
+    { feature: 'summaries', model: { provider: 'groq', model: 'm' }, lane: 'background' },
+    { messages: [{ role: 'user', content: 'sum' }] },
+  );
+  assert.equal(
+    w.clock.pending(),
+    base + 1,
+    'exactly one timer — the bound — arms behind an open call',
+  );
+  w.clock.advance(CHAT_TIMEOUT_MS);
+  await assert.rejects(hanging, (e: unknown) => (e as AiCallError).code === 'unreachable');
+  // The abort reached the transport's own signal, and the engine's timer retired with the call — nothing
+  // stays armed (the advance may have fired timers the engine itself armed, so only the bound's +1 matters).
+  assert.ok(transport.calls[0].signal?.aborted, 'the timed-out call aborts its transport signal');
+  assert.ok(w.clock.pending() <= base, 'the bound retires instead of leaking a timer');
+});
+
+test('a call that settles before the bound retires the timer — nothing stays armed', async () => {
+  const w = await world(stubTransport({}));
+  seedMail(w);
+  await consentNow(w);
+  const base = w.clock.pending();
+  const turn = await meteredChat(
+    w.engine.services,
+    { feature: 'summaries', model: { provider: 'groq', model: 'm' }, lane: 'background' },
+    { messages: [{ role: 'user', content: 'sum' }] },
+  );
+  assert.ok(turn.content);
+  assert.equal(w.clock.pending(), base, 'a landed call leaves no bound timer behind');
+});
+
+test('interactive calls and local providers run on the longer bound', async () => {
+  const transport = stubTransport({ hang: true });
+  const w = await world(transport);
+  const flush = () => new Promise<void>(r => setTimeout(r, 0));
+  const hanging = (call: Parameters<typeof meteredChat>[1]) => {
+    const p = meteredChat(w.engine.services, call, { messages: [{ role: 'user', content: 'x' }] });
+    let settled = false;
+    void p.then(
+      () => (settled = true),
+      () => (settled = true),
+    );
+    return { p, settled: () => settled };
+  };
+  // An interactive call is not cut at 120 s: the owner watches it stream and can cancel it.
+  const ask = hanging({
+    feature: 'ask',
+    model: { provider: 'groq', model: 'm' },
+    lane: 'interactive',
+  });
+  w.clock.advance(CHAT_TIMEOUT_MS);
+  await flush();
+  assert.equal(ask.settled(), false, 'an interactive call outlives the background bound');
+  w.clock.advance(LONG_CHAT_TIMEOUT_MS - CHAT_TIMEOUT_MS);
+  await assert.rejects(ask.p, (e: unknown) => (e as AiCallError).code === 'unreachable');
+  // A local provider on the background lane gets the same leash — a slow local model must get to finish.
+  const local = hanging({
+    feature: 'summaries',
+    model: { provider: 'ollama', model: 'm' },
+    lane: 'background',
+  });
+  w.clock.advance(CHAT_TIMEOUT_MS);
+  await flush();
+  assert.equal(local.settled(), false, 'a local provider outlives the remote bound');
+  w.clock.advance(LONG_CHAT_TIMEOUT_MS - CHAT_TIMEOUT_MS);
+  await assert.rejects(local.p, (e: unknown) => (e as AiCallError).code === 'unreachable');
+});
+
+test('a dailyLimit release settles the placeholder — the card does not spin for the rest of the day', async () => {
+  const w = await world(stubTransport({ fail: new AiCallError('dailyLimit', 'cap') }));
+  seedMail(w);
+  await consentNow(w);
+  queueSummary(w.engine.services, ACCOUNT, 'T-thread');
+  await runJobs(w.engine.services, w.clock.now());
+  // The job keeps its queue slot for tomorrow, but the card's "nothing is coming" is already true.
+  assert.equal(jobsOf(w, 'summary')[0].state, 'queued');
+  assert.equal((await threadSummary(w)).state, 'failed');
+});
+
+test('the daily-cap pause settles every held placeholder', async () => {
+  const w = await world(stubTransport({}));
+  seedMail(w);
+  w.engine.services.store.commit({
+    opId: 'seed2',
+    origin: 'sync',
+    writes: [msg('m3', 'T-two', 7, { subject: 'Second thread' })],
+  });
+  await consentNow(w);
+  // A cap the first summary's recorded usage puts the day over: T-thread's job runs, the catch-up armed by
+  // the settings patch queues T-two, and the spent budget then holds that work past the card's patience.
+  await w.call('Settings/set', {
+    opId: 'cap',
+    patch: { ai: { dailyCap: { enabled: true, tokens: 1 } } },
+  });
+  queueSummary(w.engine.services, ACCOUNT, 'T-thread');
+  await runJobs(w.engine.services, w.clock.now());
+  assert.equal((await threadSummary(w)).state, 'ready');
+  assert.equal((await threadSummary(w, 'T-two')).state, 'failed');
+  const job = jobsOf(w, 'summary').find(j => j.key.includes('T-two'))!;
+  assert.equal(job.state, 'queued', 'the job waits for tomorrow — only the placeholder collapsed');
+});
+
+test('a spent cap settles a held placeholder backlog past one sweep', async () => {
+  const w = await world(stubTransport({}));
+  seedMail(w);
+  await consentNow(w);
+  // 500 pendings — past TWO of the 200-row sweep bounds — across five threads; every one must collapse,
+  // not just the oldest 200 (the pause that force-closes may not fire again until tomorrow, so a backlog
+  // that outlives a single drain pass would keep cards spinning).
+  const writes = ['T-a', 'T-b', 'T-c', 'T-d', 'T-e'].flatMap(remoteId =>
+    Array.from({ length: 100 }, (_, i) => ({
+      kind: 'summary' as const,
+      accountId: ACCOUNT,
+      remoteThreadId: remoteId,
+      inputHash: `orphan-${i}`,
+      model: 'openai/gpt-oss-120b',
+      text: '',
+      action: null,
+      state: 'pending' as const,
+    })),
+  );
+  w.engine.services.store.commit({
+    opId: 'backlog',
+    origin: 'sync',
+    writes: ['T-a', 'T-b', 'T-c', 'T-d', 'T-e'].map((t, i) => msg(`bm${i}`, t, 8 + i)),
+  });
+  w.engine.services.store.commit({ opId: 'pendings', origin: 'system', writes });
+  // A spent day: the next pass pauses the queue instead of running the seeded work.
+  w.engine.services.store.commit({
+    opId: 'spent',
+    origin: 'system',
+    writes: [
+      {
+        kind: 'aiUsage',
+        day: new Date(w.clock.now()).toISOString().slice(0, 10),
+        provider: 'groq',
+        model: 'm',
+        lane: 'background',
+        requests: 1,
+        tokensIn: 150_000,
+        tokensOut: 1,
+      },
+    ],
+  });
+  await runJobs(w.engine.services, w.clock.now());
+  const left = w.engine.services.store.read(q =>
+    q.get<{ c: number }>("SELECT count(*) AS c FROM summaries WHERE state = 'pending'"),
+  );
+  assert.equal(
+    left?.c,
+    0,
+    'every held placeholder settles — no spinning card past the sweep bound',
+  );
+});
+
+test('an open setup session settles held placeholders while it pauses the queue', async () => {
+  const w = await world(stubTransport({}));
+  seedMail(w);
+  await consentNow(w);
+  queueSummary(w.engine.services, ACCOUNT, 'T-thread');
+  assert.equal((await threadSummary(w)).state, 'pending');
+  const { setupId } = await w.call('Setup/begin', { origin: 'onboarding' });
+  try {
+    await runJobs(w.engine.services, w.clock.now());
+    assert.equal((await threadSummary(w)).state, 'failed');
+    assert.equal(jobsOf(w, 'summary')[0].state, 'queued', 'the job waits out the session');
+  } finally {
+    // The session flag is module-global — every other test's runJobs must see it closed.
+    await w.call('Setup/end', { setupId, reason: 'closed' });
+  }
+});
+
+test('a pending placeholder with no live job behind it settles on the next pass', async () => {
+  const w = await world(stubTransport({}));
+  seedMail(w);
+  await consentNow(w);
+  // A placeholder whose job row vanished — an older version's row, a deleted job — must not pin the card.
+  w.engine.services.store.commit({
+    opId: 'orphan',
+    origin: 'system',
+    writes: [
+      {
+        kind: 'summary',
+        accountId: ACCOUNT,
+        remoteThreadId: 'T-thread',
+        inputHash: 'lost',
+        model: 'openai/gpt-oss-120b',
+        text: '',
+        action: null,
+        state: 'pending',
+      },
+    ],
+  });
+  await runJobs(w.engine.services, w.clock.now());
+  // The orphaned row settled; the live pipeline's own summary for the thread still landed.
+  const row = w.engine.services.store.read(q =>
+    q.get<{ state: string }>(
+      `SELECT s.state FROM summaries s JOIN threads t ON t.id = s.thread_id
+       WHERE t.remote_id = ? AND s.input_hash = ?`,
+      'T-thread',
+      'lost',
+    ),
+  );
+  assert.equal(row?.state, 'failed');
+});
+
+test('a classify job that dies settles the placeholder like a summary job', async () => {
+  const w = await world(stubTransport({ fail: new AiCallError('gatePermanent', 'off') }));
+  seedMail(w);
+  await consentNow(w);
+  // `classify` shares the summary singleton key: Ai/request parks the job, queueSummary arms the card.
+  await w.call('Ai/request', { opId: 'r', kind: 'classify', threadId: `${ACCOUNT}:T-thread` });
+  queueSummary(w.engine.services, ACCOUNT, 'T-thread');
+  assert.equal(jobsOf(w, 'classify').length, 1);
+  assert.equal((await threadSummary(w)).state, 'pending');
+  await runJobs(w.engine.services, w.clock.now());
+  assert.equal(jobsOf(w, 'classify')[0].state, 'skipped');
   assert.equal((await threadSummary(w)).state, 'failed');
 });
 

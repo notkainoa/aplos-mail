@@ -62,7 +62,7 @@
   justify-content: center;
 }
 
-/* Search rows show the subject as the row's first cell and the matched snippet beside it in --dim, so the two cells
+/* Search rows show the subject as the row's first cell and the muted snippet (or summary) beside it in --dim, so the two cells
    read as two things; each cell ellipsises only its own end. The subject keeps the list's weight (400 read, 500 unread)
    and the snippet shares what the subject leaves: it starts near the first match, so the cell's ellipsis cuts the end. */
 .search-screen .ui-list-row__primary[data-has-secondary='true'] {

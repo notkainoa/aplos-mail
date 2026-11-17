@@ -12,7 +12,7 @@
 import { toIsoDateTime } from '../../data';
 import type { ErrorBody, ProgressFrame, SearchQuery, ThreadRow } from '../../data';
 import type { SearchOperator } from '../../ui/props';
-import { senderOf } from '../home/homeRows';
+import { secondaryOf, senderOf } from '../home/homeRows';
 import {
   absorbTokens,
   currentSearch,
@@ -593,7 +593,7 @@ export function resultRow(
     | 'workflow'
     | 'accountId'
   > &
-    Partial<Pick<ThreadRow, 'participants' | 'recipients'>>,
+    Partial<Pick<ThreadRow, 'participants' | 'recipients' | 'summary'>>,
   query: SearchQuery,
   remote: boolean,
   account?: { label: string },
@@ -606,7 +606,9 @@ export function resultRow(
     sender: senderOf(thread),
     // The subject is shown whole (the cell ellipsises its own end); only the snippet is windowed to the match.
     primary: thread.subject || '(no subject)',
-    secondary: snippetOf(thread, highlight),
+    // The muted phrase after the subject: the summary when one is written (owner decision 2026-11-16), else the
+    // snippet windowed to the match, past what the subject already says.
+    secondary: secondaryOf(thread) ?? snippetOf(thread, highlight),
     highlight,
     unread: thread.unread,
     date: toIsoDateTime(thread.lastDate),

@@ -196,7 +196,7 @@ All tokens live in one source file, `apps/desktop/src/renderer/ui/tokens.json`, 
 - **No raw colour in components.** Lint enforces this (§12.2).
 - **Colour is rare.** The accent appears only in the roles above. Hill, dusk and stamp appear only where they mean Done, Later or danger. Everything else is gray, black or white.
 - **Hover and press** are ink at 4 % and 8 % (dark 5 % and 10 %), mixed with `color-mix` from tokens.
-- **Rows.** A read row is a 400 `--ink-2` sender and a `--dim` summary. An unread row is a 600 `--ink` sender and a 500 `--ink-2` summary, with no dot (owner decision 2026-11-13: rows carry no unread dot and no account dot; screen readers still hear "Unread"). There is no distance fade; hierarchy comes from read and unread weight and colour. Opacity is never used for text.
+- **Rows.** Every list row shows the email's subject, then, when an AI summary exists (ready or stale), the summary after it in `--dim` as a muted " · summary" that ends in an ellipsis; the summary never replaces the subject (owner decision 2026-11-16, DECISIONS). A read row is a 400 `--ink-2` sender and a 400 subject; an unread row is a 600 `--ink` sender and a 500 subject, with no dot (owner decision 2026-11-13: rows carry no unread dot and no account dot; screen readers still hear "Unread"). There is no distance fade; hierarchy comes from read and unread weight and colour. Opacity is never used for text.
 - **The keyboard cursor is neutral:** a `--puck` fill plus a 2 px accent bar on the row's leading edge. `--accent-wash` is only for bulk-picked rows.
 - **Disabled** text is `--dim` and disabled icons are `--faint`.
 - **Dark commit fills.** Small fills (the commit chip) are solid. Large fills (the swipe underlay) are capped at a 70 % mix over paper, which keeps text at 4.70:1 or better. A full-saturation flood at night is a known failure (`ui/avec.md` §6) [V].
@@ -471,7 +471,7 @@ Every screen is built from these components in `src/renderer/ui/`. Screens never
 | `Menu`, `Popover` | Rework | Opaque `--float`, `--elev-float`, radius 12, 32 px items, at least 220 px wide. Number keys 1–9 pick in short menus. The double-blink on the chosen item is removed. |
 | `Dialog` / `Confirm` | Rework | `--elev-dialog`, `settle`. Confirmations are two key rows; destructive ones default to Cancel (§7.9). |
 | `Puck` (segmented / selection) | New | One shared indicator per group, moved by `slide`. Used by the sidebar, D/W/M, Ask/Today, Settings nav and Later \| Bookmarks. Replaces the tab indicator that animates width and height (baseline §4). |
-| `ListRow` | Rework | Fixed height per density. Sender, summary or subject, due chip, date; unread is weight alone (no dot) and no account dot (owner decision 2026-11-13). No avatar. Hosts the cursor layer, bulk-pick wash, swipe underlay and hover actions that overlay the date column. Option: a fixed stamp column ("Done 9:41 AM") with the hover action to its left. |
+| `ListRow` | Rework | Fixed height per density. Sender, subject with the muted summary after it when one exists, due chip, date; unread is weight alone (no dot) and no account dot (owner decision 2026-11-13). No avatar. Hosts the cursor layer, bulk-pick wash, swipe underlay and hover actions that overlay the date column. Option: a fixed stamp column ("Done 9:41 AM") with the hover action to its left. |
 | `SectionHeader` | Rework | `ui` 600 `--ink` label + `--dim` count + one optional quiet text action. A sub-label variant (`small` 500 `--dim`) for "Back from Later". Tab / ⇧Tab target. Stays, showing 0, until `hold` releases. |
 | `FocusSlot` / `FocusLetter` | New | A fixed-height card on Home (`--elev-card`): meta line, a two-line summary or its placeholder and an action row; fits its content when no summary is coming; supports `deal` |
 | `LowBand` | Rework | The low-importance band on `--raised` (§7.2) |
@@ -639,7 +639,7 @@ The Back from Later block uses the same order, below the new items. Rows in Do n
   - Loading (local): never a skeleton; the cached list paints.
   - First sync: §7.12. While an account is backfilling or paused, an empty Home shows "Your first mail is on its way." with the status slot's reason, never inbox zero.
   - Empty: the inbox-zero block (§7.14).
-  - No AI provider: rows show the subject in place of the summary, the focus letter shows the subject at `summary` size in SF (not serif), lanes come from the heuristics alone, and there is no error.
+  - No AI provider: rows show the subject alone (no summary after it), the focus letter shows the subject at `summary` size in SF (not serif), lanes come from the heuristics alone, and there is no error.
   - Offline: the status slot only.
   - Narrow (under 700 px of pane): the action row drops its labels, keeping the Space verb.
 

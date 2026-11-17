@@ -5,14 +5,7 @@
  */
 import { toIsoDateTime, type Draft, type Submission, type ThreadRow } from '../../data';
 import type { LaterUntil, ListRowProps } from '../../ui/props';
-import {
-  cleanName,
-  joinNames,
-  listRowProps,
-  primaryOf,
-  senderOf,
-  type RowContext,
-} from '../home/homeRows';
+import { cleanName, joinNames, listRowProps, senderOf, type RowContext } from '../home/homeRows';
 import type { ListConfig } from './listKinds';
 
 /** A row a mail list can hold. */
@@ -261,7 +254,6 @@ function threadProps(row: ThreadRow, context: ListRowContext): UnpickedProps {
     ...base,
     sender: (sent?.text ?? base.sender).trim() || 'No sender',
     senderTitle: sent?.title,
-    primary: primaryOf(row),
     hoverActions: config.hoverActions,
     doneAt: config.layout === 'done' ? doneStampOf(row) : undefined,
     doneEstimated: config.layout === 'done' ? doneIsEstimated(row) : undefined,

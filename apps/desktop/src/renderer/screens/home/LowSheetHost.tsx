@@ -23,7 +23,7 @@ import { absoluteIndex, neighbourKeys, stepKey } from '../lists/listModel';
 import { useRestoreWindow, windowReaches } from '../lists/restoreWindow';
 import { useIdCursor } from '../lists/useIdCursor';
 import { UNDO_ACTION, triageSlot, undoHandler } from '../undoOperation';
-import { listRowProps, primaryOf } from './homeRows';
+import { listRowProps, primaryOf, secondaryOf } from './homeRows';
 import { useFollowWindow } from './useFollowHomeCursor';
 
 const BINDING_ID = 'home-low-list';
@@ -175,7 +175,12 @@ export function LowSheetHost(props: LowSheetHostProps) {
       total={view.total}
       markAllCommandId="lowImportance.markAllDone"
       preview={
-        hovered ? { rowId: hover ?? '', text: hovered.snippet || primaryOf(hovered) } : undefined
+        hovered
+          ? {
+              rowId: hover ?? '',
+              text: hovered.snippet || secondaryOf(hovered) || primaryOf(hovered),
+            }
+          : undefined
       }
       onPreview={setHover}
       onDoneCursor={doneCursor}
