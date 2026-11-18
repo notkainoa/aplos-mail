@@ -12,15 +12,9 @@ import {
 } from 'electron';
 import os from 'node:os';
 import { join } from 'node:path';
-import {
-  HostEvent,
-  NotificationItem,
-  parseArgs,
-  type Account,
-  type MethodName,
-} from '@aplos/contract';
+import { HostEvent, NotificationItem, parseArgs, type MethodName } from '@aplos/contract';
 import type { PendingWork, SessionFacts } from '../host/lifecycle';
-import { syncFactsOf, type SyncFacts } from '../host/menu-bar';
+import { engineSyncFacts, type SyncFacts } from '../host/menu-bar';
 import {
   createEngineLink,
   createEngineSupervisor,
@@ -339,8 +333,7 @@ const realEngine = {
   sync: async (): Promise<SyncFacts | undefined> => {
     const current = link();
     if (!current) return undefined;
-    const { list } = (await current.call('Account/get', {}, 3000)) as { list: Account[] };
-    return syncFactsOf(list.map(account => account.health.status.state));
+    return engineSyncFacts((method, args, timeoutMs) => current.call(method, args, timeoutMs));
   },
   /** `Session/get` on main's control connection: the first-run facts the window choice needs. */
   session: async (): Promise<SessionFacts> => {

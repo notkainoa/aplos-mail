@@ -1,24 +1,18 @@
-import test, { type TestContext } from 'node:test';
+import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { windowCaller } from '@aplos/engine';
-import type { ComposedHost } from '../../src/host/compose';
 import { closeThenRelease, createProcessState, QUIT_DRAIN_MS } from '../../src/host/lifecycle';
 import {
   ENGINE_EXIT_AFTER_KILL_MS,
   ENGINE_QUIT_MS,
-  createEngineLink,
   createEngineSupervisor,
-  createPortBroker,
   draftOpenable,
   realEngineRequested,
-  type DesktopFrame,
   type EngineLink,
-  type Timers,
-  type UtilityRequest,
 } from '../../src/host/transports/port';
-import { dataDir, fakeClock, fakeWindow, inProcessUtility, portTracker, T0, until } from './rig';
+import { fakeWindow, mainSide, T0, until } from './rig';
 
 /** The modules of the real engine path. Phase 2 widens this to all of `src/main` when the legacy code goes. */
 const realPathModules = [
@@ -47,76 +41,6 @@ test('APLOS_ENGINE=real is opt-in and never in a release build', () => {
   assert.equal(realEngineRequested({ APLOS_ENGINE: 'real' }, false), true);
   assert.equal(realEngineRequested({ APLOS_ENGINE: 'real' }, true), false);
 });
-
-const timers: Timers = {
-  set: (run, ms) => setTimeout(run, ms),
-  clear: handle => clearTimeout(handle as NodeJS.Timeout),
-};
-
-/** Main's side over in-process engine "processes" on one data folder: supervisor, broker, link, host-channel log. */
-function mainSide(t: TestContext, options: { now?: () => number } = {}) {
-  const dir = dataDir(t);
-  const clock = fakeClock(T0);
-  const hosts: ComposedHost[] = [];
-  const utilities: ReturnType<typeof inProcessUtility>[] = [];
-  const requests: UtilityRequest[] = [];
-  const desktop: DesktopFrame[] = [];
-  const hostEvents: unknown[] = [];
-  const ups: boolean[] = [];
-  const processState = createProcessState();
-  const ports = portTracker(t);
-  // The broker reads the supervisor's current engine, and the supervisor's hooks use the broker.
-  const box: { supervisor?: ReturnType<typeof createEngineSupervisor> } = {};
-  const broker = createPortBroker({
-    channel: ports.channel,
-    link: () => box.supervisor?.current(),
-  });
-  const supervisor = createEngineSupervisor({
-    spawn: (): EngineLink => {
-      const utility = inProcessUtility({ dir, clock, hosts });
-      utilities.push(utility);
-      return createEngineLink(
-        utility.child,
-        { dataDir: dir, appVersion: '0.3.0-test' },
-        {
-          hostEvent: event => hostEvents.push(event),
-          request: async request => (requests.push(request), 'posted'),
-        },
-        timers,
-      );
-    },
-    noteExit: () => processState.noteEngineExit((options.now ?? Date.now)()),
-    onUp: (_link, restarted) => {
-      ups.push(restarted);
-      if (restarted) broker.reissue();
-    },
-    onDown: parked => {
-      const frame: DesktopFrame = {
-        frame: 'desktop',
-        event: { type: 'engine', state: parked ? 'parked' : 'connecting', at: Date.now() },
-      };
-      desktop.push(frame);
-      broker.desktop(frame);
-    },
-    timers,
-    restartDelayMs: 10,
-  });
-  box.supervisor = supervisor;
-  t.after(() => supervisor.close());
-  return {
-    dir,
-    clock,
-    hosts,
-    utilities,
-    requests,
-    desktop,
-    hostEvents,
-    ups,
-    broker,
-    supervisor,
-    processState,
-  };
-}
 
 test('real path: a window gets its own port, Session/get answers, main validates compose through Draft/get', async t => {
   const main = mainSide(t);

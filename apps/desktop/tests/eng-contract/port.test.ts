@@ -351,6 +351,10 @@ test('main may read a blob on its control connection, and nothing else of the bl
   assert.equal(controlMethods.has('Blob/release'), false);
 });
 
+test('the menu-bar status poll is a control method: without it the tray is stuck on "Starting…"', () => {
+  assert.ok(controlMethods.has('Account/get'));
+});
+
 test('the engine may only ask main to open a provider sign-in page', () => {
   assert.equal(
     signInURL('https://accounts.google.com/o/oauth2/v2/auth?client_id=x'),
