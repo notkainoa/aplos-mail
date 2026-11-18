@@ -6,6 +6,8 @@ import type { EngineServices } from '../../runtime/services';
 import { splitId } from '../../views/compile';
 import { hexId } from '../../sync/connect-sessions';
 import { aiSettings, backgroundGate } from './gate';
+// Registers the lazy `job` write handlers (enqueue stays core; the rest dispatch through them).
+import './ai-writes';
 
 /**
  * Job queue helpers (ARCH 8.1). Singleton keys `summary:<thread>:<input_hash>` make a second enqueue of the same

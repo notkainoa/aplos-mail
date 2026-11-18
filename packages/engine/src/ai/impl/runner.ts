@@ -17,6 +17,8 @@ import {
   type FeatureName,
   type JobRow,
 } from './jobs';
+// Registers the lazy `job` write handlers before any claim/settle/defer commit runs.
+import './ai-writes';
 
 /**
  * The `jobs` deadline source's fire (ARCH 8.1): drains due queued jobs in priority order, 1-2 concurrent, behind the

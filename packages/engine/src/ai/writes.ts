@@ -108,10 +108,11 @@ export interface ConversationWrite {
   remove?: boolean;
 }
 
-/** Write kinds only `ai/impl` commits (plan, summary, aiUsage, conversation) live in `ai/impl/ai-writes`
- * — the core budget's seam. They register at module load; `job` stays here because `Queue/*` methods
- * write it without ai loaded. */
+/** Write kinds only `ai/impl` commits (plan, summary, aiUsage, conversation, every `job` action but
+ * `enqueue`) live in `ai/impl/ai-writes` — the core budget's seam. They register at module load; the
+ * `job` enqueue stays here because `requestAiCatchUp` and the ingest hook arm it without ai loaded. */
 export interface AiWriteImpls {
+  job: (write: JobWrite, tx: CommitExtensionTx) => void;
   plan: (write: PlanWrite, tx: CommitExtensionTx) => void;
   summary: (write: SummaryWrite, tx: CommitExtensionTx) => void;
   aiUsage: (write: AiUsageWrite, tx: CommitExtensionTx) => void;
@@ -130,11 +131,6 @@ const bad = (): never => {
   throw new StoreError('invalid', 'ai write');
 };
 
-/** Mark an `AiJob` change when the update landed. */
-const ok = (tx: CommitExtensionTx, r: { changes: number }, label: string) => {
-  if (r.changes) tx.mark('AiJob', label, 'u');
-};
-
 function jobEnqueue(write: JobWrite, tx: CommitExtensionTx): void {
   const j = write.job;
   if (
@@ -148,8 +144,7 @@ function jobEnqueue(write: JobWrite, tx: CommitExtensionTx): void {
     !Number.isFinite(j.nextAt)
   )
     bad();
-  ok(
-    tx,
+  if (
     tx.run(
       "INSERT OR IGNORE INTO jobs(kind, key, priority, payload, state, next_at) VALUES(?, ?, ?, ?, 'queued', ?)",
       j!.kind,
@@ -157,126 +152,18 @@ function jobEnqueue(write: JobWrite, tx: CommitExtensionTx): void {
       j!.priority,
       j!.payload,
       j!.nextAt,
-    ),
-    j!.key,
-  );
-}
-
-function jobClaim(write: JobWrite, id: number, sid: string, tx: CommitExtensionTx): void {
-  if (!Number.isFinite(write.at)) bad();
-  ok(
-    tx,
-    tx.run(
-      "UPDATE jobs SET state = 'running', attempts = attempts + 1 WHERE id = ? AND state IN ('queued','failed') AND next_at <= ?",
-      id,
-      write.at!,
-    ),
-    sid,
-  );
-}
-
-function jobSettle(write: JobWrite, id: number, sid: string, tx: CommitExtensionTx): void {
-  if (
-    write.state !== 'done' &&
-    write.state !== 'failed' &&
-    write.state !== 'dead' &&
-    write.state !== 'skipped'
+    ).changes
   )
-    bad();
-  ok(
-    tx,
-    tx.run(
-      "UPDATE jobs SET state = ?, last_error = ?, next_at = ? WHERE id = ? AND state = 'running'",
-      write.state!,
-      write.lastError === undefined ? null : (write.lastError?.slice(0, 1_000) ?? null),
-      write.nextAt ?? tx.now(),
-      id,
-    ),
-    sid,
-  );
-}
-
-function jobMove(write: JobWrite, id: number, sid: string, tx: CommitExtensionTx): void {
-  switch (write.action) {
-    case 'requeue':
-      // A fresh retry budget: manual retry, a forced refresh, a settled row a catch-up re-arms (queueSummary
-      // requeues `dead`/`skipped`/`done`), or a paused `running` row the gate released.
-      return ok(
-        tx,
-        tx.run(
-          "UPDATE jobs SET state = 'queued', attempts = ?, next_at = ? WHERE id = ? AND state IN ('queued','running','failed','dead','done','skipped')",
-          write.attempts ?? 0,
-          write.nextAt ?? tx.now(),
-          id,
-        ),
-        sid,
-      );
-    case 'defer':
-      if (!Number.isFinite(write.nextAt)) bad();
-      if (Number.isInteger(write.id))
-        return ok(
-          tx,
-          tx.run(
-            "UPDATE jobs SET next_at = ? WHERE id = ? AND state IN ('queued','failed')",
-            write.nextAt!,
-            id,
-          ),
-          sid,
-        );
-      // The pause: every due row moves so `next()` sleeps until the horizon — whole-queue, or one feature's
-      // kinds — marked so a later `wake` pulls back only rows the pause deferred — provider backoffs keep
-      // their schedule.
-      if (!Number.isFinite(write.at)) bad();
-      return ok(
-        tx,
-        tx.run(
-          `UPDATE jobs SET next_at = ?, last_error = 'ai.paused' WHERE state IN ('queued','failed') AND next_at <= ?${write.kinds?.length ? ` AND kind IN(${write.kinds.map(() => '?').join()})` : ''}`,
-          write.nextAt!,
-          write.at!,
-          ...(write.kinds ?? []),
-        ),
-        '*',
-      );
-    case 'delete':
-      if (tx.run('DELETE FROM jobs WHERE id = ?', id).changes) tx.mark('AiJob', sid, 'd');
-      return;
-    case 'wake': {
-      const at = write.at ?? tx.now();
-      return ok(
-        tx,
-        tx.run(
-          "UPDATE jobs SET next_at = ? WHERE state IN ('queued','failed') AND next_at > ?",
-          at,
-          at,
-        ),
-        '*',
-      );
-    }
-    case 'reset':
-      return ok(tx, tx.run("UPDATE jobs SET state = 'queued' WHERE state = 'running'"), '*');
-  }
-}
-
-function job(write: JobWrite, tx: CommitExtensionTx): void {
-  if (write.action === 'enqueue') return jobEnqueue(write, tx);
-  if (
-    write.action === 'wake' ||
-    write.action === 'reset' ||
-    (write.action === 'defer' && write.id === undefined)
-  )
-    return jobMove(write, 0, '*', tx);
-  if (!Number.isInteger(write.id)) bad();
-  const id = write.id!;
-  const sid = String(id);
-  if (write.action === 'claim') return jobClaim(write, id, sid, tx);
-  if (write.action === 'settle') return jobSettle(write, id, sid, tx);
-  return jobMove(write, id, sid, tx);
+    tx.mark('AiJob', j!.key, 'u');
 }
 
 function apply(write: { kind: string }, tx: CommitExtensionTx): void {
   switch (write.kind) {
-    case 'job':
-      return job(write as JobWrite, tx);
+    case 'job': {
+      const w = write as JobWrite;
+      if (w.action === 'enqueue') return jobEnqueue(w, tx);
+      return aiWrite('job', w as never, tx);
+    }
     case 'summary':
       return aiWrite('summary', write as never, tx);
     case 'aiUsage':
