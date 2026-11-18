@@ -3,7 +3,7 @@ import { command } from './windows';
 import { checkManually } from './updater';
 import { releaseBuild } from './oauth-config';
 import {
-  buildMenuModel,
+  createMenuRefresh,
   MENU_BAR_TITLE,
   type MenuEntry,
   type MenuEntryId,
@@ -116,7 +116,6 @@ const REFRESH_MS = 2000;
 // A reference is kept so the item is not garbage collected, which would remove it from the menu bar.
 let tray: Tray | undefined;
 let refreshTimer: NodeJS.Timeout | undefined;
-let shown = '';
 
 function toTemplate(
   entries: MenuEntry[],
@@ -131,7 +130,7 @@ function toTemplate(
 
 /**
  * The menu-bar item (never created in test mode; the caller checks `isTest`). A 1x1 transparent image plus the
- * title letter keeps the glyph a plain `A`. The menu is rebuilt only when its entries change.
+ * title letter keeps the glyph a plain `A`. `createMenuRefresh` (host/menu-bar.ts) owns the rebuild rule.
  */
 function startMenuBar(deps: MenuBarDeps) {
   if (tray) return;
@@ -151,13 +150,10 @@ function startMenuBar(deps: MenuBarDeps) {
     },
     quit: deps.quit,
   };
-  function refresh() {
-    const entries = buildMenuModel(deps.sync(), deps.pause.until());
-    const key = JSON.stringify(entries);
-    if (key === shown) return;
-    shown = key;
-    tray?.setContextMenu(Menu.buildFromTemplate(toTemplate(entries, actions)));
-  }
+  const refresh = createMenuRefresh(
+    { sync: deps.sync, pausedUntil: () => deps.pause.until() },
+    entries => tray?.setContextMenu(Menu.buildFromTemplate(toTemplate(entries, actions))),
+  );
   refresh();
   refreshTimer = setInterval(refresh, REFRESH_MS);
   refreshTimer.unref();
@@ -168,7 +164,6 @@ function stopMenuBar() {
   refreshTimer = undefined;
   tray?.destroy();
   tray = undefined;
-  shown = '';
 }
 
 export { menus, startMenuBar, stopMenuBar };

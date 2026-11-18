@@ -2,11 +2,13 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {
   buildMenuModel,
+  createMenuRefresh,
   createPause,
   formatClock,
   MENU_BAR_TITLE,
   PAUSE_MS,
   syncFactsOf,
+  type SyncFacts,
 } from '../../src/host/menu-bar';
 
 /** Sparkle, star, wand and magic-sparkle code points: none may appear anywhere in the menu-bar item. */
@@ -74,6 +76,33 @@ test('real-engine account health rolls up into the tray facts', () => {
   assert.equal(syncFactsOf(['starting', 'error']).error, 'account');
   // No accounts yet: the count stays honest at zero.
   assert.deepEqual(syncFactsOf([]), { busy: false, accounts: 0 });
+});
+
+test('the refresh rebuilds the menu when the facts change and skips a tick that changes nothing', () => {
+  // The real path: `sync` reads a cache that fills late, and each rebuild replaces the whole menu.
+  let sync: SyncFacts | undefined;
+  const pause = { until: undefined as number | undefined };
+  const built: string[][] = [];
+  const refresh = createMenuRefresh({ sync: () => sync, pausedUntil: () => pause.until }, entries =>
+    built.push(items(entries).map(item => item.label)),
+  );
+  refresh();
+  assert.deepEqual(built, [
+    ['Starting…', 'Open Aplos', 'Pause sync for 1 hour', 'Quit Aplos completely'],
+  ]);
+  refresh();
+  assert.equal(built.length, 1, 'unchanged facts: no rebuild');
+  sync = { busy: true, accounts: 2 };
+  refresh();
+  assert.equal(built.at(-1)?.[0], 'Syncing…');
+  sync = { busy: false, accounts: 2 };
+  refresh();
+  assert.equal(built.at(-1)?.[0], 'Up to date · 2 accounts');
+  pause.until = new Date(2026, 10, 17, 9, 30).getTime();
+  refresh();
+  assert.equal(built.at(-1)?.[0], 'Paused until 09:30');
+  assert.equal(built.at(-1)?.[2], 'Resume sync');
+  assert.equal(built.length, 4);
 });
 
 test('a pause lasts an hour and Resume ends it early', () => {

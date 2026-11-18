@@ -81,6 +81,23 @@ export function syncFactsOf(states: readonly string[]): SyncFacts {
   };
 }
 
+/** The `Account/get` answer's shape as the status line needs it; the engine may list more per account. */
+interface AccountHealthLine {
+  health: { status: { state: string } };
+}
+
+/**
+ * `Account/get` on main's control connection rolled into the tray's facts — the body of `main/engine-real.ts`'s
+ * `sync`. A rejected `call` (a down, slow or restarting engine) stays the caller's; nothing here turns it into
+ * facts, so the menu keeps its last answer instead of lying.
+ */
+export async function engineSyncFacts(
+  call: (method: string, args?: unknown, timeoutMs?: number) => Promise<unknown>,
+): Promise<SyncFacts> {
+  const { list } = (await call('Account/get', {}, 3000)) as { list: AccountHealthLine[] };
+  return syncFactsOf(list.map(account => account.health.status.state));
+}
+
 export type MenuEntryId = 'status' | 'open' | 'pause' | 'quit';
 
 export type MenuEntry =
@@ -110,6 +127,25 @@ export function buildMenuModel(
     { type: 'separator' },
     { type: 'item', id: 'quit', label: 'Quit Aplos completely', enabled: true },
   ];
+}
+
+/**
+ * The tray's refresh loop (`main/menu-bar.ts`): the model is rebuilt from the live sources on every tick and
+ * `apply` swaps in a whole new menu — Electron menu items are immutable once set — but only when the entries
+ * actually changed.
+ */
+export function createMenuRefresh(
+  source: { sync(): SyncFacts | undefined; pausedUntil(): number | undefined },
+  apply: (entries: MenuEntry[]) => void,
+): () => void {
+  let shown = '';
+  return () => {
+    const entries = buildMenuModel(source.sync(), source.pausedUntil());
+    const key = JSON.stringify(entries);
+    if (key === shown) return;
+    shown = key;
+    apply(entries);
+  };
 }
 
 /** The letter shown in the menu bar until the design system supplies a glyph. */

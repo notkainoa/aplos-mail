@@ -11,13 +11,20 @@ import { MessageChannel, type MessagePort } from 'node:worker_threads';
 import type { Frame } from '@aplos/contract';
 import { fakeClock, type FakeClock } from '../../../../packages/engine/src/clock/fake';
 import { composeEngineHost, type ComposedHost, type ComposeOptions } from '../../src/host/compose';
+import { createProcessState } from '../../src/host/lifecycle';
 import type { GoogleTokenBundle } from '../../src/host/providers/oauth/token-source';
 import {
+  createEngineLink,
+  createEngineSupervisor,
+  createPortBroker,
   createPortClient,
   type DesktopFrame,
+  type EngineLink,
   type EnginePortEnd,
   type PortWindow,
+  type Timers,
   type UtilityChild,
+  type UtilityRequest,
   type WindowPortEnd,
 } from '../../src/host/transports/port';
 import { runEngineUtility, type HostBridge } from '../../src/main/engine-utility';
@@ -186,6 +193,76 @@ export function inProcessUtility(options: {
 }
 
 export { fakeClock };
+
+const realTimers: Timers = {
+  set: (run, ms) => setTimeout(run, ms),
+  clear: handle => clearTimeout(handle as NodeJS.Timeout),
+};
+
+/** Main's side over in-process engine "processes" on one data folder: supervisor, broker, link, host-channel log. */
+export function mainSide(t: TestContext, options: { now?: () => number } = {}) {
+  const dir = dataDir(t);
+  const clock = fakeClock(T0);
+  const hosts: ComposedHost[] = [];
+  const utilities: ReturnType<typeof inProcessUtility>[] = [];
+  const requests: UtilityRequest[] = [];
+  const desktop: DesktopFrame[] = [];
+  const hostEvents: unknown[] = [];
+  const ups: boolean[] = [];
+  const processState = createProcessState();
+  const ports = portTracker(t);
+  // The broker reads the supervisor's current engine, and the supervisor's hooks use the broker.
+  const box: { supervisor?: ReturnType<typeof createEngineSupervisor> } = {};
+  const broker = createPortBroker({
+    channel: ports.channel,
+    link: () => box.supervisor?.current(),
+  });
+  const supervisor = createEngineSupervisor({
+    spawn: (): EngineLink => {
+      const utility = inProcessUtility({ dir, clock, hosts });
+      utilities.push(utility);
+      return createEngineLink(
+        utility.child,
+        { dataDir: dir, appVersion: '0.3.0-test' },
+        {
+          hostEvent: event => hostEvents.push(event),
+          request: async request => (requests.push(request), 'posted'),
+        },
+        realTimers,
+      );
+    },
+    noteExit: () => processState.noteEngineExit((options.now ?? Date.now)()),
+    onUp: (_link, restarted) => {
+      ups.push(restarted);
+      if (restarted) broker.reissue();
+    },
+    onDown: parked => {
+      const frame: DesktopFrame = {
+        frame: 'desktop',
+        event: { type: 'engine', state: parked ? 'parked' : 'connecting', at: Date.now() },
+      };
+      desktop.push(frame);
+      broker.desktop(frame);
+    },
+    timers: realTimers,
+    restartDelayMs: 10,
+  });
+  box.supervisor = supervisor;
+  t.after(() => supervisor.close());
+  return {
+    dir,
+    clock,
+    hosts,
+    utilities,
+    requests,
+    desktop,
+    hostEvents,
+    ups,
+    broker,
+    supervisor,
+    processState,
+  };
+}
 
 /** Waits until `done` holds, letting messages and timers run; fails after `ms` of real time. */
 export async function until(done: () => boolean, what: string, ms = 5000): Promise<void> {
