@@ -626,7 +626,7 @@ test('restoring a backup suspends its waiting sends for review in the Outbox', t
   db.close();
   corruptPages(path);
   setAside(dir, T0);
-  assert.deepEqual(restoreBackup(dir, 'mail.db.pre-7', T0 + 5), { suspended: 2 });
+  assert.deepEqual(restoreBackup(dir, 'mail.db.pre-7', T0 + 5), { suspended: 2, dropped: 1 });
   const restored = new DatabaseSync(path, { readOnly: true });
   const rows = restored.prepare('SELECT id, state, error FROM submissions ORDER BY id').all() as {
     id: string;
@@ -648,6 +648,40 @@ test('restoring a backup suspends its waiting sends for review in the Outbox', t
     at: T0 + 5,
   });
   assert.equal(existsSync(`${path}.restoring`), false);
+});
+
+test('restoring a backup drops the changes still waiting in it, so it never undoes newer ones', t => {
+  const dir = folder(t);
+  const path = seededDb(dir); // op1: an archive still queued
+  const seed = new DatabaseSync(path);
+  seed.exec(`INSERT INTO ops(op_id, account_id, kind, target, payload, state, created_seq, scope)
+    VALUES('op2', 'acct-1', 'markRead', '[]', '{}', 'inflight', 2, 'triage'),
+          ('op3', 'acct-1', 'archive', '[]', '{}', 'failed', 3, 'triage')`);
+  seed.close();
+  const db = openSqlite(path);
+  writeBackup(db, dir, 7);
+  db.close();
+  corruptPages(path);
+  setAside(dir, T0);
+  assert.deepEqual(restoreBackup(dir, 'mail.db.pre-7', T0 + 5), { suspended: 1, dropped: 2 });
+  const restored = new DatabaseSync(path, { readOnly: true });
+  const ops = restored.prepare('SELECT op_id, state FROM ops ORDER BY op_id').all();
+  const sends = restored.prepare('SELECT id, state FROM submissions').all();
+  restored.close();
+  // A failed change never goes out on its own: it stays for Retry, as it was.
+  assert.deepEqual(
+    ops.map(o => [o.op_id, o.state]),
+    [['op3', 'failed']],
+  );
+  assert.deepEqual(
+    sends.map(r => [r.id, r.state]),
+    [['s1', 'suspended']],
+    'waiting sends are still paused',
+  );
+  // The backup itself is unchanged: only the restored copy loses them.
+  const backup = new DatabaseSync(join(dir, 'mail.db.pre-7'), { readOnly: true });
+  assert.equal(backup.prepare('SELECT count(*) AS n FROM ops').get()?.n, 3);
+  backup.close();
 });
 
 test('after a healthy start, backups go after 14 days (only the newest stays) and damaged copies after 30', t => {

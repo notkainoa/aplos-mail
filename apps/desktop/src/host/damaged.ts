@@ -419,14 +419,33 @@ function suspendWaitingSends(path: string, now: number): number {
 }
 
 /**
- * Puts a backup in place of the damaged file and suspends its waiting sends. The damaged copy is already aside; a
- * backup that is itself damaged is refused. Returns how many sends were suspended.
+ * A restored backup's changes still waiting for the provider (archive, read, labels: `ops` queued or in flight) are
+ * dropped, never sent again: each may undo a newer change made after the backup was taken, here or on another device.
+ * The provider stays the source of truth, and the next sync brings each thread's current state.
+ */
+function dropWaitingChanges(path: string): number {
+  const db = new DatabaseSync(path);
+  try {
+    return Number(
+      db.prepare("DELETE FROM ops WHERE state IN ('queued', 'inflight')").run().changes,
+    );
+  } catch {
+    // A backup without the ops table has nothing waiting.
+    return 0;
+  } finally {
+    db.close();
+  }
+}
+
+/**
+ * Puts a backup in place of the damaged file, suspends its waiting sends and drops its waiting changes. The damaged
+ * copy is already aside; a backup that is itself damaged is refused. Returns how many of each.
  */
 export function restoreBackup(
   dataDir: string,
   name: string,
   now = Date.now(),
-): { suspended: number } {
+): { suspended: number; dropped: number } {
   if (!BACKUP.test(name) || !listBackups(dataDir).some(b => b.name === name))
     throw new Error('That backup is not on this Mac any more.');
   const source = join(dataDir, name);
@@ -436,15 +455,17 @@ export function restoreBackup(
   copyFileSync(source, temp);
   chmodSync(temp, 0o600);
   let suspended: number;
+  let dropped: number;
   try {
     suspended = suspendWaitingSends(temp, now);
+    dropped = dropWaitingChanges(temp);
   } finally {
     for (const side of SIDECARS) rmSync(temp + side, { force: true });
   }
   for (const side of SIDECARS) rmSync(target + side, { force: true });
   renameSync(temp, target);
   markClosed(dataDir);
-  return { suspended };
+  return { suspended, dropped };
 }
 
 /** When a damaged copy was made, from its name; undefined for any other file. */
