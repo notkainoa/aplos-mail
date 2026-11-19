@@ -1,0 +1,478 @@
+/* The status family (DESIGN 5 rule 12, 6, 7.1, 7.12, 7.15). Tokens only. Builds on ../surfaces/surfaces.css for the
+   internal button, keycap and dialog. Progress is neutral: done --ink-2, paused --dusk, failed --stamp. Loops use
+   --dur-status. Under reduced motion the Spinner glyph KEEPS turning (DESIGN 11.5: "spinners stay"), while the
+   indeterminate runner is static (DESIGN 4.8 `status` Reduced column): a centred 30 % bar inside its track. DESIGN 4.8
+   and 11.5 read together (clarified in DESIGN 11.5): 4.8 for the runner and the checklist marker, 11.5 for the Spinner. */
+
+/* ───────────── Spinner (only after 150 ms) ───────────── */
+
+.ui-spinner {
+  display: inline-flex;
+  width: var(--icon);
+  height: var(--icon);
+  flex: none;
+  color: var(--dim);
+}
+.ui-spinner[data-size='sm'] {
+  width: var(--icon-xs);
+  height: var(--icon-xs);
+}
+.ui-spinner[data-state='waiting'] {
+  visibility: hidden;
+}
+.ui-spinner__glyph {
+  width: 100%;
+  height: 100%;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: var(--icon-stroke);
+  stroke-linecap: round;
+  animation: ui-spin var(--dur-status) var(--ease-linear) infinite;
+}
+.ui-spinner__track {
+  stroke: var(--line-strong);
+}
+@keyframes ui-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+/* ───────────── StatusSlot: two short lines in the sidebar footer, never a banner ───────────── */
+
+.ui-status-slot {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--space-2);
+  padding: var(--space-2);
+  color: var(--dim);
+  font: var(--type-small);
+  letter-spacing: var(--track-small);
+}
+.ui-status-slot[data-state='empty'] {
+  padding: 0;
+}
+.ui-status-slot[data-state='waiting'] {
+  visibility: hidden;
+}
+.ui-status-slot > .ui-part-icon {
+  margin-top: var(--space-half);
+}
+.ui-status-slot__body {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  align-items: flex-start;
+  min-width: 0;
+}
+.ui-status-slot__body > * {
+  max-width: 100%;
+}
+.ui-status-slot__body > [aria-live='off'] {
+  width: 100%;
+}
+.ui-status-slot__text {
+  overflow-wrap: anywhere;
+}
+/* The demo note is one line and one control: it opens Settings → Accounts, where the demo mail is removed. */
+.ui-status-slot__link {
+  padding: 0;
+  border: 0;
+  background: none;
+  color: inherit;
+  font: inherit;
+  letter-spacing: inherit;
+  text-align: left;
+  white-space: nowrap;
+}
+@media (hover: hover) {
+  .ui-status-slot__link:hover {
+    color: var(--ink);
+  }
+}
+/* The action is a quiet text button in the accent (a link-like control), not a second red mark beside the red icon. */
+.ui-status-slot__action .ui-part-button,
+.ui-status-slot__action .ui-part-button .ui-part-icon {
+  color: var(--accent);
+  font-weight: 500;
+}
+.ui-status-slot__action {
+  /* The 28 px text button's label lines up with the sentence above it. */
+  margin: var(--space-1) 0 0 calc(-1 * var(--space-3));
+}
+.ui-status-slot[data-tone='attention'] {
+  color: var(--stamp-ink);
+}
+.ui-status-slot[data-tone='attention'] .ui-status-slot__text {
+  font-weight: 500;
+}
+
+/* ───────────── ProgressSegments ───────────── */
+
+.ui-progress-segments {
+  width: 100%;
+  min-width: 0;
+}
+.ui-progress-segments__importing {
+  display: block;
+  overflow-wrap: anywhere;
+}
+.ui-progress-segments__importing b {
+  color: var(--ink-2);
+  font-weight: 400;
+}
+.ui-progress-segments__track {
+  position: relative;
+  display: block;
+  width: 100%;
+  height: var(--track);
+  margin-top: var(--space-2);
+  overflow: hidden;
+  border-radius: var(--radius-xs);
+  background: var(
+    --line-strong
+  ); /* --line vanishes on the white pane; the ring token reads as a track */
+}
+/* At the very start the fill would be a hairline: the track keeps a 6 px mark at its left end, so it reads as begun. */
+.ui-progress-segments[data-variant='importing'] .ui-progress-segments__track::before {
+  content: '';
+  position: absolute;
+  inset: 0 auto 0 0;
+  width: calc(var(--space-1) + var(--space-half));
+  background: var(--ink-2);
+}
+.ui-progress-segments[data-variant='waiting'] .ui-progress-segments__track {
+  margin-top: 0;
+}
+.ui-progress-segments__fill {
+  position: absolute;
+  inset: 0;
+  display: block;
+  border-radius: inherit;
+  background: var(--ink-2);
+  transform: scaleX(var(--fill));
+  transform-origin: 0 50%;
+}
+.ui-progress-segments__runner {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: 0;
+  display: block;
+  /* DESIGN 4.8 `status`: a 30 % segment. */
+  width: calc(100% * 0.3);
+  border-radius: inherit;
+  background: var(--ink-2);
+  animation: ui-status-run var(--dur-status) var(--ease-inout) infinite;
+  animation-play-state: var(--play-status);
+}
+@keyframes ui-status-run {
+  from {
+    transform: translateX(-100%);
+  }
+  to {
+    transform: translateX(340%);
+  }
+}
+/* Reduced motion (DESIGN 4.8 static): no loop. Pausing it parked the runner at the keyframe's start, off the track
+   (translateX(-100%)), so it rests as a centred 30 % bar instead. */
+@media (prefers-reduced-motion: reduce) {
+  .ui-progress-segments__runner {
+    left: calc(50% - 100% * 0.15);
+    animation: none;
+  }
+}
+:root[data-motion='reduced'] .ui-progress-segments__runner {
+  left: calc(50% - 100% * 0.15);
+  animation: none;
+}
+
+.ui-progress-segments[data-variant='checkpoints'] {
+  display: flex;
+  flex-direction: column;
+}
+.ui-progress-segments__top {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  min-height: var(--control-sm);
+  margin-bottom: var(--space-1);
+  font: var(--type-ui);
+  letter-spacing: var(--track-ui);
+}
+.ui-progress-segments__dot {
+  display: block;
+  width: var(--mark-dot);
+  height: var(--mark-dot);
+  flex: none;
+  border-radius: var(--radius-pill);
+}
+.ui-progress-segments__address {
+  min-width: 0;
+  overflow: hidden;
+  color: var(--ink);
+  font-weight: 500;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.ui-progress-segments__status {
+  flex: none;
+  margin-left: auto;
+  color: var(--dim);
+  font: var(--type-small);
+  letter-spacing: var(--track-small);
+}
+.ui-progress-segments__retry {
+  display: flex;
+  flex: none;
+  align-items: center;
+  gap: var(--space-2);
+  margin: 0 calc(-1 * var(--space-2)) 0 auto;
+}
+.ui-progress-segments__retry .ui-progress-segments__status {
+  margin-left: 0;
+}
+.ui-progress-segments__bar {
+  display: flex;
+  gap: var(--space-1);
+}
+.ui-progress-segments__seg {
+  position: relative;
+  display: block;
+  flex: 1;
+  height: var(--seg-h);
+  overflow: hidden;
+  border-radius: var(--radius-xs);
+  background: var(--line-strong);
+}
+.ui-progress-segments__seg[data-state='done'] {
+  background: var(--ink-2);
+}
+.ui-progress-segments__seg[data-state='paused'] {
+  background: var(--dusk);
+}
+.ui-progress-segments__seg[data-state='failed'] {
+  background: var(--stamp);
+}
+.ui-progress-segments__checklist {
+  display: flex;
+  flex-direction: column;
+  margin: var(--space-2) 0 0;
+}
+.ui-progress-segments__line {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  min-height: var(--space-5);
+  color: var(--dim);
+  font: var(--type-ui);
+  letter-spacing: var(--track-ui);
+}
+.ui-progress-segments__line[data-state='current'] {
+  color: var(--ink);
+  font-weight: 500;
+}
+.ui-progress-segments__line[data-state='paused'],
+.ui-progress-segments__line[data-state='partial'] {
+  color: var(--ink-2);
+}
+.ui-progress-segments__line[data-state='failed'] {
+  align-items: flex-start;
+  min-height: var(--space-6);
+  color: var(--ink);
+}
+.ui-progress-segments__text {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.ui-progress-segments__marker {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: var(--icon);
+  height: var(--icon);
+  flex: none;
+  color: var(--dim);
+}
+.ui-progress-segments__line[data-state='current'] .ui-progress-segments__marker {
+  color: var(--ink);
+}
+.ui-progress-segments__line[data-state='pending'] .ui-progress-segments__marker {
+  color: var(--faint);
+}
+.ui-progress-segments__line[data-state='failed'] .ui-progress-segments__marker {
+  margin-top: var(--space-half);
+  color: var(--stamp-ink);
+}
+.ui-progress-segments__marker .ui-spinner__glyph {
+  animation-play-state: var(--play-status);
+}
+.ui-progress-segments__failure {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--space-2);
+  margin: var(--space-2) 0 0;
+  color: var(--ink);
+  font: var(--type-ui);
+  letter-spacing: var(--track-ui);
+  overflow-wrap: anywhere;
+}
+.ui-progress-segments__failure > .ui-part-icon {
+  margin-top: var(--space-half);
+  color: var(--stamp-ink);
+}
+
+.ui-progress-segments__check {
+  display: block;
+  width: var(--control-lg);
+  height: var(--control-lg);
+  fill: none;
+  stroke: var(--ink);
+  stroke-width: var(--icon-stroke);
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  animation: ui-check-in var(--dur-settle-in) var(--ease-out) both;
+}
+@keyframes ui-check-in {
+  from {
+    opacity: 0;
+    transform: scale(var(--scale-settle));
+  }
+}
+.ui-progress-segments__ready-label {
+  margin: var(--space-4) 0 0;
+  color: var(--ink);
+  font: var(--type-title);
+  letter-spacing: var(--track-title);
+}
+.ui-progress-segments__accounts {
+  margin: var(--space-4) 0 0;
+}
+.ui-progress-segments__account {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  min-height: var(--control-lg);
+  font: var(--type-ui);
+  letter-spacing: var(--track-ui);
+}
+.ui-progress-segments__account .ui-progress-segments__address {
+  flex: 0 1 auto;
+}
+.ui-progress-segments__account .ui-progress-segments__status {
+  flex: 0 1 auto;
+  min-width: 0;
+  text-align: right;
+}
+.ui-progress-segments__account + .ui-progress-segments__account {
+  box-shadow: 0 calc(-1 * var(--hairline)) 0 var(--line);
+}
+
+.ui-progress-segments__dot[data-color='sky'] {
+  background: var(--tag-sky);
+}
+.ui-progress-segments__dot[data-color='hill'] {
+  background: var(--tag-hill);
+}
+.ui-progress-segments__dot[data-color='stamp'] {
+  background: var(--tag-stamp);
+}
+.ui-progress-segments__dot[data-color='dusk'] {
+  background: var(--tag-dusk);
+}
+.ui-progress-segments__dot[data-color='sand'] {
+  background: var(--tag-sand);
+}
+.ui-progress-segments__dot[data-color='ember'] {
+  background: var(--tag-ember);
+}
+
+/* ───────────── ReconnectSheet ───────────── */
+
+.ui-reconnect-sheet__line {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  color: var(--ink-2);
+  font: var(--type-ui);
+  letter-spacing: var(--track-ui);
+  overflow-wrap: anywhere;
+}
+.ui-reconnect-sheet[data-state='failed'] .ui-reconnect-sheet__line {
+  align-items: flex-start;
+  color: var(--ink);
+}
+.ui-reconnect-sheet[data-state='failed'] .ui-part-icon {
+  margin-top: var(--space-half);
+  color: var(--stamp-ink);
+}
+.ui-reconnect-sheet__spinner {
+  display: inline-flex;
+}
+
+/* ───────────── FatalScreen: the whole pane, sans display ───────────── */
+
+.ui-fatal-screen {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  min-height: 100%;
+  padding: 0 var(--space-8) var(--space-10);
+  background: var(--canvas);
+  text-align: center;
+}
+.ui-fatal-screen__title {
+  max-width: var(--reader-w);
+  color: var(--ink);
+  font: var(--type-display);
+  letter-spacing: var(--track-display);
+  text-wrap: balance;
+}
+.ui-fatal-screen__safe {
+  margin: var(--space-3) 0 0;
+  color: var(--dim);
+  font: var(--type-base);
+  letter-spacing: var(--track-base);
+}
+.ui-fatal-screen__actions {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  margin-top: var(--space-7);
+}
+/* The damaged mail database: what is only on this Mac, a quiet list above the three ways out. */
+.ui-fatal-screen__local {
+  width: min(100%, 26rem);
+  margin-top: var(--space-6);
+  padding: var(--space-4) var(--space-5);
+  border: var(--hairline) solid var(--line);
+  border-radius: var(--radius-md);
+  text-align: left;
+}
+.ui-fatal-screen__local-title {
+  margin: 0;
+  color: var(--dim);
+  font: var(--type-small);
+  letter-spacing: var(--track-small);
+}
+.ui-fatal-screen__local-list {
+  margin: var(--space-2) 0 0;
+  padding: 0;
+  list-style: none;
+}
+.ui-fatal-screen__local-list li,
+.ui-fatal-screen__local-none {
+  margin: var(--space-1) 0 0;
+  color: var(--ink);
+  font: var(--type-ui);
+  letter-spacing: var(--track-ui);
+}
+.ui-fatal-screen__confirm {
+  max-width: 30rem;
+  margin: var(--space-6) 0 0;
+  color: var(--ink-2);
+  font: var(--type-base);
+  letter-spacing: var(--track-base);
+  text-wrap: pretty;
+}

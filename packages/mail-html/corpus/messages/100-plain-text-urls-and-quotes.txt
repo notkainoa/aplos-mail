@@ -1,0 +1,14 @@
+Reply from the road: I will be late.
+
+On Wed, Oct 21, 2026 at 8:00 AM, Lena Park <lena@shop.example> wrote:
+> Are you still coming?
+>> The table is booked for seven.
+>> See https://shop.example/menu for the menu.
+> 
+> Tell me what you decide.
+
+Links in text: <{{CANARY}}/{{ID}}/text-link-angle> and {{CANARY}}/{{ID}}/text-link-bare and mailto:desk@shop.example
+Line endings: one	two  three
+Right-to-left override: filename‮gpj.exe
+Trailing spaces and tabs   	 
+Form feed:  and vertical tab  and bell 

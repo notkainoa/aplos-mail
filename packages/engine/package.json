@@ -1,0 +1,40 @@
+{
+  "name": "@aplos/engine",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Aplos Mail engine: the platform-neutral core, with no Node or Electron imports",
+  "license": "MIT",
+  "exports": {
+    ".": "./src/index.ts",
+    "./store": "./src/store/index.ts",
+    "./store/*": "./src/store/*.ts",
+    "./diag/*": "./src/diag/*.ts",
+    "./ai/lanes": "./src/ai/lanes.ts",
+    "./clock/loop": "./src/clock/loop.ts",
+    "./clock/system": "./src/clock/system.ts",
+    "./sync/account-read": "./src/sync/account-read.ts",
+    "./sync/account-remove": "./src/sync/account-remove.ts",
+    "./sync/connect-sessions": "./src/sync/connect-sessions.ts",
+    "./sync/governor": "./src/sync/governor.ts",
+    "./sync/host": "./src/sync/host.ts",
+    "./sync/lookup": "./src/sync/lookup.ts",
+    "./ports": "./src/ports.ts",
+    "./legacy/*": "./src/legacy/*.ts"
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit",
+    "test": "tsx --test \"tests/**/*.test.ts\""
+  },
+  "dependencies": {
+    "@aplos/contract": "*",
+    "@aplos/mail-html": "*",
+    "fast-xml-parser": "^5.11.2"
+  },
+  "devDependencies": {
+    "@types/node": "^24.0.0",
+    "esbuild": "^0.27.0",
+    "tsx": "^4.20.0",
+    "typescript": "^5.9.0"
+  }
+}

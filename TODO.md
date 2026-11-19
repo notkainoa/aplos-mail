@@ -47,3 +47,8 @@ Read SPEC.md, DECISIONS.md, PROGRESS.md and this checklist at the start of each 
 - [x] Release builds carry Aplos's own Google (and optional Microsoft) OAuth client from repository secrets, so a downloaded app can sign in without a `.env`; CI release fails without the Google pair.
 - [ ] Downloaded release connects Google on a second Mac with the built-in client (next tag build).
 - [ ] Signed and notarized release verified on a second Mac (needs the owner's Developer ID certificate and the five repository secrets in RELEASING.md).
+- [ ] ui-onboard stage 2 (after REQUESTs land): wire `main/windows.ts` to `windows/onboarding.ts` (eng-host), mount the onboarding route and zero-accounts/"Add account" hosts in `main.tsx`/`App.tsx`/`screens` (ui-shell), serve `Account/discover` on the data surface (ui-shell), add `apps/desktop/tests/ui-onboard/**` to the ui-onboard OWNERS row (Integrator).
+- [ ] ui-onboard DOM/electron acceptance: 51 todo tests want the Playwright DOM base on the stand-in engine (close-at-any-moment in the window, F12 focus, F13 clipping, multi-live-region check after the ProgressSegments R2 request).
+- [ ] ui-onboard live acceptance (owner-run): real Google account through onboarding; first real weekly reconnect inside the daily-use week; traffic-light/drag-region hands-on check.
+
+- [ ] ui-onboard: after ui-shell routes `window=onboarding` in `main.tsx`, eng-host removes the `APLOS_ONBOARDING_WINDOW` gate in `windows.ts`; then check the window numbers and the close-at-any-moment matrix against the real controller (eng-host owns it).

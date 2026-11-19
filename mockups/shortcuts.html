@@ -1,0 +1,199 @@
+<!doctype html>
+<html lang="en" data-window="main" data-states="default,filtered" data-esc="home.html">
+<head>
+<meta charset="utf-8">
+<title>Keyboard shortcuts · Aplos mockup</title>
+<link rel="stylesheet" href="tokens.css">
+<link rel="stylesheet" href="shell.css">
+<script src="shell.js"></script>
+<script src="home-view.js"></script>
+<style>
+  /* INVENTED (composed from tokens): DESIGN gives no size for the ? sheet. Wide enough for three columns of the registry
+     (window minus the sidebar), tall enough to nearly fill the window; fixed so filtering never makes the dialog jump. */
+  :root { --sheet-w: calc(var(--win-main-w) - var(--sidebar-w)); --sheet-h: calc(var(--win-main-h) - var(--space-6) * 2); --keys-w: calc(var(--space-10) * 2 + var(--space-4)); }
+  .scrim { align-items: center; }
+  .sheet { width: var(--sheet-w); height: var(--sheet-h); display: flex; flex-direction: column; overflow: hidden; }
+  .sh-head { display: flex; align-items: center; gap: var(--space-4); height: var(--space-10); padding: 0 var(--space-3) 0 var(--space-8); flex: none; }
+  .sh-head .t { font: var(--type-title); letter-spacing: var(--track-title); color: var(--ink); }
+  .sh-head .sub { font: var(--type-small); color: var(--dim); }
+  .sh-head .field { margin-left: auto; width: calc(var(--space-10) * 4); }
+  .sh-body { flex: 1; min-height: 0; overflow: auto; padding: var(--space-2) var(--space-8) var(--space-7); scrollbar-width: thin; scrollbar-color: var(--line-strong) transparent; }
+  .cols { display: grid; grid-template-columns: repeat(var(--n, 3), minmax(0, 1fr)); column-gap: var(--space-9); align-items: start; }
+  .ctx + .ctx { margin-top: var(--space-6); }
+  .ctx h3 { font: var(--type-small); font-weight: 500; color: var(--dim); height: var(--control-sm); display: flex; align-items: center; }
+  .sc { display: grid; grid-template-columns: minmax(0, 1fr) var(--keys-w); align-items: center; column-gap: var(--space-3); min-height: var(--control-sm); font: var(--type-ui); letter-spacing: var(--track-ui); color: var(--ink-2); }
+  .sc .lbl { min-width: 0; }
+  .sc .keys { display: inline-flex; align-items: center; justify-content: flex-end; gap: var(--space-1); color: var(--dim); font: var(--type-small); white-space: nowrap; }
+  .sc .keys .kbd { margin-left: 0; }
+  .sc .keys .w { color: var(--dim); padding: 0 var(--space-half); }
+  mark { background: var(--accent-wash); color: var(--ink); font-weight: 500; border-radius: var(--radius-xs); padding: 0 var(--space-half); margin: 0 calc(-1 * var(--space-half)); }
+  .nomatch { padding: var(--space-8) 0; font: var(--type-base); color: var(--dim); }
+</style>
+</head>
+<body>
+<div class="window">
+  <span class="traffic"></span>
+  <div class="app">
+    <aside class="sidebar" data-active="home"></aside>
+    <main class="main">
+      <header class="toolbar">
+        <div class="tools">
+          <a class="btn btn-icon labelled" href="ask.html" data-tip="Ask about your mail" data-key="A"><svg class="ic"><use href="#i-bubble"/></svg>Ask</a>
+        </div>
+      </header>
+      <div class="workspace">
+        <div class="column">
+          <div class="page-head">
+            <div>
+              <h1 class="page-title">Home</h1>
+              <p class="page-sub">Thursday, October 29 · 9 to handle</p>
+            </div>
+          </div>
+          <div id="home" role="listbox" aria-label="Home" aria-hidden="true"></div>
+        </div>
+      </div>
+      <p class="sr-only" role="status" id="live"></p>
+    </main>
+  </div>
+
+  <div class="scrim" id="scrim">
+    <section class="dialog sheet settle" role="dialog" aria-modal="true" aria-label="Keyboard shortcuts">
+      <header class="sh-head">
+        <div>
+          <h2 class="t">Keyboard shortcuts</h2>
+          <p class="sub" id="sub"></p>
+        </div>
+        <label class="field">
+          <svg class="ic"><use href="#i-search"/></svg>
+          <input id="f" placeholder="Filter shortcuts" autocomplete="off" spellcheck="false" aria-label="Filter shortcuts">
+        </label>
+        <button class="btn btn-icon" id="x" data-tip="Close" data-key="Esc" aria-label="Close"><svg class="ic"><use href="#i-x"/></svg></button>
+      </header>
+      <div class="sh-body"><div class="cols" id="cols"></div></div>
+    </section>
+  </div>
+</div>
+
+<script>
+/* The registry. In the app this is generated from CommandRegistry, so the sheet can never go stale.
+   keys: alternatives are separated by " | " and shown joined with "or"; a leading ~ marks a plain word (~hold). */
+const CONTEXTS = ['Global', 'Lists', 'Home and one-by-one', 'Reader', 'Compose', 'Ask', 'Calendar', 'Palette'];
+const LAYOUT = [['Global', 'Home and one-by-one', 'Reader'], ['Lists', 'Palette'], ['Compose', 'Ask', 'Calendar']];   // three balanced columns
+const REG = [
+  { context: 'Global', keys: '⌘K', label: 'Command palette' },
+  { context: 'Global', keys: '/', label: 'Search' },
+  { context: 'Global', keys: 'C', label: 'Compose' },
+  { context: 'Global', keys: 'A', label: 'Ask' },
+  { context: 'Global', keys: '~hold A', label: 'Dictate to Ask' },
+  { context: 'Global', keys: '⌘J', label: 'Show or hide the Ask dock' },
+  { context: 'Global', keys: '⇧A', label: 'Today' },
+  { context: 'Global', keys: '⌘,', label: 'Settings' },
+  { context: 'Global', keys: '[', label: 'Sidebar or minimised menu' },
+  { context: 'Global', keys: '?', label: 'This sheet' },
+  { context: 'Global', keys: 'Z', label: 'Undo' },
+  { context: 'Global', keys: '⌃1–8', label: 'Go to a place in the sidebar' },
+  { context: 'Global', keys: '⌘⌥L', label: 'Skip to the list' },
+  { context: 'Global', keys: '⌘⌥R', label: 'Skip to the reader' },
+  { context: 'Global', keys: 'Esc', label: 'Close, clear, or go back' },
+
+  { context: 'Lists', keys: 'J | ↓', label: 'Next row' },
+  { context: 'Lists', keys: 'K | ↑', label: 'Previous row' },
+  { context: 'Lists', keys: 'Return | O', label: 'Open' },
+  { context: 'Lists', keys: 'Space', label: 'Run the suggested action' },
+  { context: 'Lists', keys: 'E', label: 'Done' },
+  { context: 'Lists', keys: 'L', label: 'Later' },
+  { context: 'Lists', keys: 'D', label: 'Set a due date' },
+  { context: 'Lists', keys: 'B', label: 'Bookmark' },
+  { context: 'Lists', keys: 'U', label: 'Mark read or unread' },
+  { context: 'Lists', keys: '#', label: 'Trash' },
+  { context: 'Lists', keys: 'R', label: 'Reply' },
+  { context: 'Lists', keys: '⇧R', label: 'Reply all' },
+  { context: 'Lists', keys: 'F', label: 'Forward' },
+  { context: 'Lists', keys: '~hold R', label: 'Dictate a reply' },
+  { context: 'Lists', keys: 'X', label: 'Select' },
+  { context: 'Lists', keys: '⇧X | ⌘A', label: 'Select all' },
+  { context: 'Lists', keys: '.', label: 'More' },
+  { context: 'Lists', keys: 'I', label: 'Why it’s here' },
+  { context: 'Lists', keys: '⌥↓', label: 'Not important' },
+  { context: 'Lists', keys: '⌥↑', label: 'Always Home' },
+  { context: 'Lists', keys: 'Tab | ⇧Tab', label: 'Next or previous section' },
+  { context: 'Lists', keys: 'S', label: 'Go one by one' },
+
+  { context: 'Home and one-by-one', keys: '→', label: 'Done' },
+  { context: 'Home and one-by-one', keys: '←', label: 'Later' },
+
+  { context: 'Reader', keys: '→ | ←', label: 'Done or Later' },
+  { context: 'Reader', keys: 'J | K', label: 'Next or previous thread' },
+  { context: 'Reader', keys: '↑ | ↓', label: 'Previous or next message' },
+  { context: 'Reader', keys: 'O', label: 'Show quoted text' },
+  { context: 'Reader', keys: '⌘F', label: 'Find in this email' },
+  { context: 'Reader', keys: 'Esc', label: 'Back' },
+
+  { context: 'Compose', keys: '⌘Return', label: 'Send' },
+  { context: 'Compose', keys: '⌘⇧Return', label: 'Send and mark Done' },
+  { context: 'Compose', keys: '~hold Space', label: 'Dictate in an empty body' },
+  { context: 'Compose', keys: 'Tab', label: 'Keep the drafted text' },
+  { context: 'Compose', keys: 'Esc', label: 'Dismiss the draft, then close' },
+  { context: 'Compose', keys: '⌘B | ⌘I | ⌘U', label: 'Bold, italic or underline' },
+  { context: 'Compose', keys: '⌘⇧C', label: 'Show Cc and Bcc' },
+  { context: 'Compose', keys: '⌘⇧A', label: 'Attach a file' },
+  { context: 'Compose', keys: '⌘/', label: 'Format menu' },
+
+  { context: 'Ask', keys: 'Return', label: 'Ask' },
+  { context: 'Ask', keys: '⌘Return', label: 'Search all mail' },
+  { context: 'Ask', keys: '↑ | ↓', label: 'Suggestions and history' },
+  { context: 'Ask', keys: '⌘N', label: 'New chat' },
+  { context: 'Ask', keys: 'Return | Esc', label: 'Accept or decline a proposal' },
+  { context: 'Ask', keys: 'Esc', label: 'Stop, then clear, then close' },
+
+  { context: 'Calendar', keys: 'T', label: 'Today' },
+  { context: 'Calendar', keys: 'D | W | M', label: 'Day, week or month' },
+  { context: 'Calendar', keys: 'J | →', label: 'Next period' },
+  { context: 'Calendar', keys: 'K | ←', label: 'Previous period' },
+  { context: 'Calendar', keys: 'N', label: 'New event' },
+  { context: 'Calendar', keys: 'Return', label: 'Open' },
+  { context: 'Calendar', keys: 'E', label: 'Edit' },
+  { context: 'Calendar', keys: '⌫', label: 'Delete, with 8 s to undo' },
+  { context: 'Calendar', keys: '⌥ ~click', label: 'Show only this calendar' },
+  { context: 'Calendar', keys: '~pinch | ⌘ ~scroll', label: 'Zoom' },
+
+  { context: 'Palette', keys: '↑ | ↓', label: 'Move' },
+  { context: 'Palette', keys: 'Return', label: 'Choose' },
+  { context: 'Palette', keys: '1–9', label: 'Pick the Nth result' },
+  { context: 'Palette', keys: 'Esc', label: 'Up a level, then close' },
+  { context: 'Palette', keys: '1–5', label: 'Date presets' },
+];
+
+const esc = s => s.replace(/[&<>]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;' }[c]));
+const keysHtml = k => k.split(' | ').map(alt => alt.split(' ').map(t => t.startsWith('~') ? `<span class="w">${t.slice(1)}</span>` : `<span class="kbd">${esc(t)}</span>`).join('')).join('<span class="w">or</span>');
+const plain = k => k.replace(/~/g, '').replace(/ \| /g, ' or ');
+function hl(text, q) {
+  if (!q) return esc(text);
+  const i = text.toLowerCase().indexOf(q); if (i < 0) return esc(text);
+  return esc(text.slice(0, i)) + '<mark>' + esc(text.slice(i, i + q.length)) + '</mark>' + esc(text.slice(i + q.length));
+}
+const cols = document.getElementById('cols'), f = document.getElementById('f'), sub = document.getElementById('sub');
+function render() {
+  const q = f.value.trim().toLowerCase();
+  const rows = REG.filter(r => !q || r.label.toLowerCase().includes(q) || plain(r.keys).toLowerCase().includes(q));
+  const block = c => `<section class="ctx"><h3>${c}</h3>${rows.filter(r => r.context === c).map(r => `<div class="sc"><span class="lbl">${hl(r.label, q)}</span><span class="keys">${keysHtml(r.keys)}</span></div>`).join('')}</section>`;
+  // the three columns keep their places while you filter, so nothing jumps
+  const colsOut = LAYOUT.map(g => g.filter(c => rows.some(r => r.context === c)));
+  cols.style.setProperty('--n', 3);
+  cols.innerHTML = rows.length ? colsOut.map(g => `<div class="col">${g.map(block).join('')}</div>`).join('')
+    : `<p class="nomatch">No shortcut matches ‘${esc(f.value.trim())}’.</p>`;
+  sub.textContent = q ? `${rows.length} of ${REG.length} shortcuts` : 'Hold ⌘ on any screen to show its keys.';
+}
+f.addEventListener('input', render);
+document.getElementById('x').onclick = () => Mock.go('home.html');
+document.getElementById('scrim').addEventListener('mousedown', e => { if (e.target.id === 'scrim') Mock.go('home.html'); });
+Mock.onKey(e => {
+  if (e.key === 'Escape') { if (f.value) { f.value = ''; render(); return true; } Mock.go('home.html'); return true; }
+  if (e.key === '?' && e.target !== f) { Mock.go('home.html'); return true; }   // ? again closes
+});
+HomeBackdrop.mount(document.getElementById('home'), { focus: 1, keys: false, quiet: true });
+if (Mock.state === 'filtered') f.value = 'later';
+render(); f.focus();
+</script>
+</body>
+</html>

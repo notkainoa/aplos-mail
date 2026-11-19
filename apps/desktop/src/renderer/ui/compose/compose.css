@@ -1,0 +1,775 @@
+/* compose family: Composer, InlineReply, RecipientField, DraftState, Suggestion, LevelMeter (DESIGN §6, §7.6).
+   Tokens only. Hover is colour, fill and shadow under (hover: hover). Mockups: reply.html, compose.html. */
+
+/* Native control reset at zero specificity, so every rule below wins and no browser chrome shows through. */
+:where(
+  .ui-compose-btn,
+  .ui-suggestion__act,
+  .ui-recipient-field__remove,
+  .ui-recipient-field__input,
+  .ui-composer__subject
+) {
+  appearance: none;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: inherit;
+  font: inherit;
+  letter-spacing: inherit;
+  cursor: default;
+}
+
+/* ---------- shared parts: icon, keycap, the three button idioms ---------- */
+.ui-compose-icon {
+  width: var(--icon);
+  height: var(--icon);
+  flex: none;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: var(--icon-stroke);
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+.ui-compose-icon[data-size='sm'] {
+  width: var(--icon-sm);
+  height: var(--icon-sm);
+}
+.ui-compose-icon[data-size='xs'] {
+  width: var(--icon-xs);
+  height: var(--icon-xs);
+}
+
+.ui-compose-kbd {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: none;
+  min-width: var(--kbd);
+  height: var(--kbd);
+  padding: 0 var(--space-1);
+  border-radius: var(--radius-xs);
+  background: var(--keycap);
+  box-shadow: inset 0 0 0 var(--hairline) var(--line);
+  color: var(--keycap-ink);
+  font: var(--type-caption);
+  letter-spacing: var(--track-caption);
+}
+.ui-compose-kbd + .ui-compose-kbd {
+  margin-left: var(--space-half);
+}
+
+.ui-compose-btn {
+  --btn-h: var(--control-sm);
+  position: relative;
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-1);
+  height: var(--btn-h);
+  padding: 0 var(--space-3);
+  border-radius: var(--radius-md);
+  color: var(--ink-2);
+  font: var(--type-ui);
+  font-weight: 500;
+  letter-spacing: var(--track-ui);
+  white-space: nowrap;
+  transition:
+    transform var(--dur-press-up) var(--ease-out),
+    background-color var(--dur-hover) var(--ease-std),
+    color var(--dur-hover) var(--ease-std);
+}
+.ui-compose-btn[data-size='md'] {
+  --btn-h: var(--control-md);
+}
+.ui-compose-btn[data-variant='text'] {
+  padding: 0 var(--space-2);
+}
+.ui-compose-btn[data-variant='text'] .ui-compose-icon {
+  color: var(--dim);
+}
+.ui-compose-btn[data-variant='icon'] {
+  width: var(--btn-h);
+  padding: 0;
+  color: var(--dim);
+}
+.ui-compose-btn[data-variant='filled'] {
+  background: var(--accent);
+  color: var(--accent-ink);
+  box-shadow:
+    inset 0 var(--hairline) 0 var(--press-hi),
+    inset 0 calc(-1 * var(--hairline)) 0 var(--press-lo);
+}
+.ui-compose-btn[data-variant='filled'] .ui-compose-kbd {
+  /* A hint, not part of the label: a faint plate with a hairline edge on the fill, the label's own colour. */
+  background: color-mix(in srgb, var(--accent-ink) 12%, transparent);
+  box-shadow: inset 0 0 0 var(--hairline) color-mix(in srgb, var(--accent-ink) 32%, transparent);
+  color: var(--accent-ink);
+}
+.ui-compose-btn[data-tone='danger'],
+.ui-compose-btn[data-tone='danger'] .ui-compose-icon {
+  color: var(--stamp-ink);
+}
+.ui-compose-btn[aria-pressed='true'] {
+  background: var(--press);
+  color: var(--ink);
+}
+.ui-compose-btn:active {
+  transform: scale(var(--press-scale));
+  transition-duration: var(--dur-press-down);
+}
+.ui-compose-btn[data-variant='icon']:active {
+  transform: scale(var(--press-scale-icon));
+}
+.ui-compose-btn[data-variant='text']:active,
+.ui-compose-btn[data-variant='icon']:active {
+  background: var(--press);
+}
+.ui-compose-btn[data-variant='filled']:active {
+  box-shadow: inset 0 var(--hairline) 0 var(--press-lo);
+}
+.ui-compose-btn:disabled {
+  color: var(--dim);
+  pointer-events: none;
+}
+.ui-compose-btn:disabled .ui-compose-icon {
+  color: var(--faint);
+}
+.ui-compose-btn[data-variant='filled']:disabled {
+  background: color-mix(
+    in srgb,
+    var(--accent) 30%,
+    transparent
+  ); /* the primary, faded, the same by day and at night */
+  box-shadow: none;
+}
+.ui-compose-btn[data-variant='filled']:disabled .ui-compose-kbd {
+  /* the faded primary: the hint reads as a disabled keycap, like the list, onboarding and calendar buttons */
+  color: var(--dim);
+}
+.ui-compose-btn:focus-visible,
+.ui-suggestion__act:focus-visible,
+.ui-recipient-field__remove:focus-visible,
+.ui-recipient-field__input:focus-visible {
+  outline: var(--focus-width) solid var(--accent);
+  outline-offset: var(--focus-gap);
+}
+@media (hover: hover) {
+  .ui-compose-btn[data-variant='text']:hover,
+  .ui-compose-btn[data-variant='icon']:hover {
+    background: var(--hover);
+    color: var(--ink);
+  }
+  .ui-compose-btn[data-variant='text']:hover .ui-compose-icon {
+    color: var(--ink);
+  }
+  .ui-compose-btn[data-variant='filled']:hover {
+    background: color-mix(in srgb, var(--accent) 90%, var(--ink));
+  }
+}
+
+/* ---------- LevelMeter: five stamp bars, no ring ---------- */
+.ui-level-meter {
+  --level: 0;
+  display: inline-flex;
+  flex: none;
+  align-items: flex-end;
+  gap: var(--space-half);
+  height: var(--icon);
+}
+.ui-level-meter > i {
+  --weight: 0.4;
+  display: block;
+  width: var(--space-half);
+  height: 100%;
+  border-radius: var(--radius-xs);
+  background: var(--stamp);
+  transform-origin: bottom;
+  transform: scaleY(max(0.2, calc(var(--level) * var(--weight))));
+}
+.ui-level-meter > i:nth-child(2) {
+  --weight: 0.8;
+}
+.ui-level-meter > i:nth-child(3) {
+  --weight: 1;
+}
+.ui-level-meter > i:nth-child(4) {
+  --weight: 0.6;
+}
+.ui-level-meter > i:nth-child(5) {
+  --weight: 0.3;
+}
+/* No idle rule: `max(0.2, …)` above is the floor, so writing --level through `ref` per frame always shows. */
+
+.ui-dictation-line {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  min-width: 0;
+  color: var(--dim);
+  font: var(--type-small);
+  letter-spacing: var(--track-small);
+}
+.ui-dictation-line__text {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* ---------- DraftState ---------- */
+.ui-draft-state {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+  min-width: 0;
+  color: var(--dim);
+  font: var(--type-small);
+  letter-spacing: var(--track-small);
+  white-space: nowrap;
+}
+/* A long "Couldn't save" gives way with an ellipsis; the icon, the dot and Retry never shrink, so Retry stays visible. */
+.ui-draft-state__text {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.ui-draft-state > .ui-compose-icon,
+.ui-draft-state > .ui-draft-state__dot,
+.ui-draft-state > .ui-compose-btn {
+  flex: none;
+}
+.ui-draft-state[data-state='failed'] {
+  color: var(--stamp-ink);
+}
+.ui-draft-state[data-state='failed'] .ui-compose-icon {
+  color: var(--stamp-ink);
+}
+.ui-draft-state[data-state='failed'] .ui-compose-btn {
+  color: var(--stamp-ink);
+  font-weight: 500;
+}
+
+/* ---------- Suggestion: the draft strip ----------
+   Its own card hanging off the bottom edge of the reply card (or of the compose page's card), which keeps its full
+   border and rounded corners and wraps nothing: the strip is inset 16 px each side, tucked a hairline under the card,
+   square at the top, rounded at the bottom, with its own ring and soft elevation (--elev-pane) on a different surface
+   (--raised; --sunken in dark, where --paper and --raised are one step apart). It appears in place with a fade
+   (reserving nothing) and moves nothing on hover. The buttons are real buttons on --paper with a ring; the keys sit
+   inside them as keycaps. */
+.ui-suggestion {
+  box-sizing: border-box;
+  position: relative;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-2) var(--space-4);
+  margin: calc(-1 * var(--hairline)) var(--space-4) 0;
+  padding: var(--space-3) var(--space-3) var(--space-3) var(--space-4);
+  border-radius: 0 0 var(--radius-lg) var(--radius-lg);
+  background: var(--raised);
+  box-shadow: var(--elev-pane);
+  color: var(--ink-2);
+  font: var(--type-small);
+  letter-spacing: var(--track-small);
+  animation: ui-suggestion-in var(--dur-arrive) var(--ease-out) both;
+}
+:root[data-theme='dark'] .ui-suggestion {
+  background: var(--sunken);
+}
+@keyframes ui-suggestion-in {
+  from {
+    opacity: 0;
+  }
+}
+/* Reduced motion: it simply appears. */
+@media (prefers-reduced-motion: reduce) {
+  .ui-suggestion {
+    animation: none;
+  }
+}
+:root[data-motion='reduced'] .ui-suggestion {
+  animation: none;
+}
+/* The card above paints over the strip's tucked top edge. */
+.ui-inline-reply:has(+ .ui-suggestion) {
+  position: relative;
+  z-index: var(--z-sticky);
+}
+.ui-suggestion__lead {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.ui-suggestion__acts {
+  display: inline-flex;
+  flex: none;
+  gap: var(--space-2);
+  margin-left: auto;
+}
+.ui-suggestion__act {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  height: var(--control-md);
+  padding: 0 var(--space-2) 0 var(--space-3);
+  border-radius: var(--radius-md);
+  background: var(--paper);
+  box-shadow: inset 0 0 0 var(--hairline) var(--line-strong);
+  color: var(--ink);
+  font: var(--type-ui);
+  font-weight: 500;
+  letter-spacing: var(--track-ui);
+  white-space: nowrap;
+  transition:
+    transform var(--dur-press-up) var(--ease-out),
+    background-color var(--dur-hover) var(--ease-std);
+}
+.ui-suggestion__act:active {
+  transform: scale(var(--press-scale));
+  transition-duration: var(--dur-press-down);
+  background: var(--press);
+}
+@media (hover: hover) {
+  .ui-suggestion__act:hover {
+    background: var(--raised);
+  }
+}
+
+/* ---------- RecipientField ---------- */
+.ui-recipient-field {
+  position: relative;
+  display: flex;
+  align-items: flex-start;
+  gap: var(--space-2);
+  min-height: var(--control-lg);
+  color: var(--dim);
+  font: var(--type-base);
+  letter-spacing: var(--track-base);
+}
+.ui-recipient-field__label {
+  flex: none;
+  min-width: var(--space-6);
+  padding-top: calc(var(--control-lg) / 2 - var(--space-3));
+  line-height: var(--space-6);
+}
+.ui-recipient-field__more {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  align-self: center;
+}
+.ui-recipient-field__people {
+  /* Not the list's anchor: the suggestions hang from the whole field (label included), so their left edge sits on it. */
+  display: flex;
+  flex: 1;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-1);
+  min-width: 0;
+  padding: calc((var(--control-lg) - var(--control-xs)) / 2) 0;
+}
+.ui-recipient-field__chip {
+  display: inline-flex;
+  align-items: center;
+  max-width: 100%;
+  height: var(--control-xs);
+  padding: 0 var(--space-half) 0 var(--space-2);
+  border-radius: var(--radius-sm);
+  background: var(--raised);
+  color: var(--ink);
+  font: var(--type-ui);
+  letter-spacing: var(--track-ui);
+}
+.ui-recipient-field__chip[data-invalid='true'] {
+  background: var(--stamp-tint);
+  color: var(--stamp-ink);
+  box-shadow: inset 0 0 0 var(--hairline) var(--stamp-ink);
+}
+.ui-recipient-field__name {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.ui-recipient-field__sr {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+.ui-recipient-field__remove {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  justify-content: center;
+  width: var(--control-xs);
+  height: var(--control-xs);
+  border-radius: var(--radius-sm);
+  color: var(--dim);
+  transition:
+    background-color var(--dur-hover) var(--ease-std),
+    color var(--dur-hover) var(--ease-std);
+}
+@media (hover: hover) {
+  .ui-recipient-field__remove:hover {
+    background: var(--hover);
+    color: var(--ink);
+  }
+}
+.ui-recipient-field__input {
+  flex: 1;
+  min-width: var(--space-10);
+  height: var(--control-xs);
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--ink);
+  font: var(--type-base);
+  letter-spacing: var(--track-base);
+}
+.ui-recipient-field__input::placeholder {
+  color: var(--dim);
+}
+.ui-recipient-field > .ui-compose-btn {
+  margin-top: calc((var(--control-lg) - var(--control-sm)) / 2);
+}
+.ui-recipient-field__list {
+  position: absolute;
+  /* 4 px under the field's underline, its left edge on the field's (council 2, round 5: opened over the Subject row,
+     starting at the typed text, it cut "Subject" in half), at least the field's width, opaque --float. */
+  top: calc(100% + var(--space-1));
+  left: 0;
+  z-index: var(--z-menu);
+  box-sizing: border-box;
+  width: max(var(--menu-min), 100%);
+  max-width: none;
+  margin: 0;
+  padding: var(--space-1);
+  list-style: none;
+  background: var(--float);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--elev-float);
+}
+.ui-recipient-field__list[hidden] {
+  display: none;
+}
+.ui-recipient-field__option {
+  display: flex;
+  align-items: baseline;
+  gap: var(--space-2);
+  min-height: var(--control-md);
+  padding: var(--space-1) var(--space-2);
+  border-radius: var(--radius-sm);
+  color: var(--ink);
+  font: var(--type-ui);
+  letter-spacing: var(--track-ui);
+}
+.ui-recipient-field__option[data-active='true'] {
+  background: var(--puck);
+}
+.ui-recipient-field__option-name {
+  flex: 0 1 auto;
+  min-width: 0;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.ui-recipient-field__option-enter {
+  display: inline-flex;
+  align-self: center;
+  margin-left: auto;
+  color: var(--dim);
+}
+.ui-recipient-field__option-address {
+  flex: none;
+  max-width: 100%;
+  overflow: hidden;
+  color: var(--ink-2);
+  font: var(--type-small);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+@media (hover: hover) {
+  .ui-recipient-field__option:hover {
+    background: var(--hover);
+  }
+}
+
+/* ---------- notices shared by the composer and the inline reply ---------- */
+.ui-compose-blocked {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  margin: var(--space-2) 0 0;
+  color: var(--stamp-ink);
+  font: var(--type-ui);
+  letter-spacing: var(--track-ui);
+}
+.ui-compose-conflict {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-1) var(--space-3);
+  margin-top: var(--space-4);
+  padding: var(--space-2) var(--space-2) var(--space-2) var(--space-3);
+  border-radius: var(--radius-md);
+  background: var(--raised);
+  color: var(--ink-2);
+  font: var(--type-ui);
+  letter-spacing: var(--track-ui);
+}
+.ui-compose-conflict__acts {
+  display: inline-flex;
+  flex-wrap: wrap;
+  gap: var(--space-half);
+  margin-left: auto;
+}
+
+/* The footer row: Send, the draft line, trailing icon buttons. */
+.ui-compose-footer {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  min-width: 0;
+}
+.ui-compose-footer__right {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  gap: var(--space-half);
+  margin-left: auto;
+}
+.ui-compose-footer__close {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+  margin-right: var(--space-2);
+  color: var(--dim);
+  font: var(--type-small);
+  font-variant-numeric: var(--num-small);
+  letter-spacing: var(--track-small);
+  white-space: nowrap;
+}
+/* In a narrow pane (the 900 px window with the dock open) the draft or dictation line drops to its own row under
+   Send and the icons, so nothing is clipped and nothing overlaps. Width is the container's, not the window's. */
+.ui-composer__foot,
+.ui-inline-reply {
+  container-type: inline-size;
+}
+@container (max-width: 420px) {
+  .ui-composer__foot .ui-compose-footer {
+    flex-wrap: wrap;
+    gap: var(--space-1) var(--space-3);
+    height: auto;
+    min-height: var(--space-10);
+    padding: var(--space-3) 0;
+  }
+  .ui-composer__foot .ui-compose-footer > .ui-draft-state,
+  .ui-composer__foot .ui-compose-footer > .ui-dictation-line {
+    order: 3;
+    flex: 1 0 100%;
+  }
+  .ui-composer__foot .ui-dictation-line__text {
+    overflow: visible;
+    white-space: normal;
+  }
+}
+@container (max-width: 380px) {
+  .ui-inline-reply > .ui-compose-footer {
+    flex-wrap: wrap;
+    gap: var(--space-1) var(--space-3);
+  }
+  .ui-inline-reply > .ui-compose-footer > .ui-draft-state,
+  .ui-inline-reply > .ui-compose-footer > .ui-dictation-line {
+    order: 3;
+    flex: 1 0 100%;
+  }
+  .ui-inline-reply .ui-dictation-line__text {
+    overflow: visible;
+    white-space: normal;
+  }
+}
+/* The middle slot is the one that shrinks: it takes the free space and truncates, so the footer never overlaps or grows. */
+.ui-compose-footer > .ui-draft-state,
+.ui-compose-footer > .ui-dictation-line {
+  flex: 1 1 0;
+  min-width: 0;
+  overflow: hidden;
+}
+
+/* A blocked field is outlined, once, in the stamp ink, standing off the text. An outline takes no space, so nothing moves. */
+:where(
+    .ui-composer__to,
+    .ui-composer__subject,
+    .ui-composer__editor,
+    .ui-inline-reply__to,
+    .ui-inline-reply__editor
+  )[data-blocked='true']:not(:focus-visible) {
+  border-radius: var(--radius-md);
+  outline: var(--hairline) solid var(--stamp-ink);
+  outline-offset: var(--space-1);
+}
+
+/* ---------- Composer: a page in the pane ---------- */
+.ui-composer {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  min-height: 0;
+}
+.ui-composer__scroll {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+}
+.ui-composer__page {
+  width: min(var(--composer-w), 100% - 2 * var(--gutter));
+  margin: 0 auto;
+  padding: var(--space-7) 0 var(--space-8);
+}
+/* On the page the draft strip is the page's sibling, inset 16 px inside the page's width. */
+.ui-composer__scroll > .ui-suggestion {
+  width: calc(min(var(--composer-w), 100% - 2 * var(--gutter)) - 2 * var(--space-4));
+  margin: calc(-1 * var(--hairline)) auto var(--space-8);
+}
+.ui-composer__page:has(+ .ui-suggestion) {
+  position: relative;
+  z-index: var(--z-sticky);
+}
+.ui-composer__to .ui-recipient-field__label,
+.ui-composer__subject-label {
+  /* One label column for From, To and Subject, wide enough for "Subject" at the base size, so the values share one edge. */
+  min-width: calc(var(--space-9) + var(--space-2));
+}
+/* The Subject row: in the card it is a labelled row like From and To; in the plain layout the label is not drawn and the
+   row adds no box. */
+.ui-composer__subject-row {
+  display: contents;
+}
+.ui-composer__subject-label {
+  display: none;
+  flex: none;
+  color: var(--dim);
+  font: var(--type-base);
+  letter-spacing: var(--track-base);
+  line-height: var(--space-6);
+}
+/* The subject is a calm single line, not a heading (owner review 2026-10-31): `title` size at 500, no box. Focus shows
+   as a hairline in the accent along the field's full width (owner review 2026-11-03: the 2 px underline was loud),
+   drawn as a shadow, so nothing moves. The To row shows its focus the same way, from its left edge, so the page never
+   opens on a boxed field or a line that starts after the chip. */
+.ui-composer__subject {
+  box-sizing: border-box;
+  display: block;
+  width: 100%;
+  margin-top: var(--space-5);
+  padding: var(--space-2) 0;
+  border: 0;
+  background: none;
+  color: var(--ink);
+  font: var(--type-title);
+  font-weight: 500;
+  letter-spacing: var(--track-title);
+  outline: 0;
+}
+.ui-composer__subject::placeholder {
+  color: var(--dim);
+  /* Weight 400 like the other placeholders: at 500 the empty field read as a filled-in gray word. */
+  font-weight: 400;
+}
+.ui-composer__subject:focus-visible,
+.ui-composer__to .ui-recipient-field__input:focus-visible {
+  outline: 0;
+}
+.ui-composer__to:focus-within,
+.ui-composer__subject:focus-visible {
+  box-shadow: 0 var(--hairline) 0 var(--accent);
+}
+.ui-composer__polish {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2);
+  margin-top: var(--space-5);
+  padding: var(--space-2) var(--space-2) var(--space-2) var(--space-3);
+  border-radius: var(--radius-md);
+  background: var(--raised);
+  color: var(--ink-2);
+  font: var(--type-ui);
+  letter-spacing: var(--track-ui);
+}
+.ui-composer__polish .ui-compose-icon {
+  color: var(--dim);
+}
+.ui-composer__polish-acts {
+  display: inline-flex;
+  gap: var(--space-half);
+  margin-left: auto;
+}
+.ui-composer__editor {
+  max-width: var(--measure-read);
+  min-height: calc(var(--space-10) * 2);
+  margin-top: var(--space-5);
+  color: var(--ink);
+  font: var(--type-read);
+  letter-spacing: var(--track-read);
+}
+/* The footer is the card's last row, under its own hairline, in the card's 640 px column. It rests under the text and,
+   when the text outgrows the pane, stays at the pane's bottom edge on the card's own fill. */
+.ui-composer__foot {
+  position: sticky;
+  bottom: 0;
+  margin-inline: 0;
+  border-radius: 0 0 var(--radius-lg) var(--radius-lg);
+  background: inherit;
+  box-shadow: 0 calc(-1 * var(--hairline)) 0 var(--line);
+}
+.ui-composer__foot .ui-compose-footer {
+  height: var(--space-10);
+}
+
+/* ---------- InlineReply: one card under the message ---------- */
+.ui-inline-reply {
+  margin-top: var(--space-8);
+  border-radius: var(--radius-lg);
+  background: var(--paper);
+  box-shadow: var(--elev-card);
+}
+.ui-inline-reply__head {
+  position: relative;
+  display: flex;
+  align-items: flex-start;
+  gap: var(--space-2);
+  /* The 24 px gutter of the card's text: Cc and Bcc end where the reply text does. */
+  padding: 0 var(--space-4) 0 var(--space-4);
+  box-shadow: 0 var(--hairline) 0 var(--line);
+}
+.ui-inline-reply__to {
+  flex: 1;
+  min-width: 0;
+}
+.ui-inline-reply__to .ui-recipient-field {
+  font: var(--type-ui);
+  letter-spacing: var(--track-ui);
+}
+.ui-inline-reply > .ui-compose-blocked {
+  padding: 0 var(--space-4);
+}
+.ui-inline-reply__body {
+  padding: var(--space-4);
+}
+.ui-inline-reply__editor {
+  min-height: calc(var(--space-10) * 2);
+  color: var(--ink);
+  font: var(--type-read);
+  letter-spacing: var(--track-read);
+}
+.ui-inline-reply > .ui-compose-footer {
+  padding: 0 var(--space-3) var(--space-3);
+}

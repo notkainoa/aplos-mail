@@ -1,0 +1,277 @@
+/* Aplos design tokens, revision 2 ("quiet paper").
+   Revision 1 transcribed plans/DESIGN.md §4; revision 2 applies the owner's beauty pass:
+   neutral surfaces, no sky gradient, no post edge, a roomier type scale, quieter chrome.
+   Every change from DESIGN.md is listed in DESIGN-CHANGES.md. This is the ONLY file with raw values. */
+
+@import url("https://fonts.googleapis.com/css2?family=Newsreader:ital,opsz,wght@0,6..72,200..800;1,6..72,200..800&display=block");
+
+:root {
+  color-scheme: light;
+
+  /* ---- Surfaces: one gray shell, one white pane, cards on the pane ---- */
+  --shell: #f5f5f6;         /* window background; the sidebar sits directly on it */
+  --canvas: #ffffff;        /* the pane: lists, the reader, settings sit here */
+  --paper: #ffffff;         /* cards on the pane: focus letter, dialogs, menus */
+  --raised: #f6f6f7;        /* quiet fills: low-importance band, wells, chips */
+  --sunken: #efeff1;        /* keycaps, fields */
+  --ink: #1d1e21;
+  --ink-2: #46484d;
+  --dim: #63666c;           /* metadata; at least 5.0:1 on every surface */
+  --faint: #8f9298;         /* non-text only: disabled icons, dividers */
+  --line: color-mix(in srgb, var(--ink) 9%, transparent);          /* hairlines */
+  --line-strong: color-mix(in srgb, var(--ink) 14%, transparent);  /* card and field rings */
+  --control-edge: color-mix(in srgb, var(--ink) 48%, transparent); /* checkbox, radio, switch-off: 3:1 */
+  --accent: #0b5394;
+  --accent-ink: #ffffff;
+  --accent-wash: color-mix(in srgb, var(--accent) 8%, transparent);
+  --hill: #2f6f2a;
+  --dusk: #3e5878;
+  --stamp: #c4302b;
+  --stamp-ink: #a3221e;
+  --stamp-tint: color-mix(in srgb, var(--stamp) 8%, transparent);
+  --fill-ink: #ffffff;
+  --scrim: color-mix(in srgb, var(--ink) 18%, transparent);
+  --shadow-ink: #1d1e21;
+  --sheen: transparent;
+  --hover: color-mix(in srgb, var(--ink) 4%, transparent);
+  --press: color-mix(in srgb, var(--ink) 8%, transparent);
+  --puck: color-mix(in srgb, var(--ink) 6%, transparent);
+  --today-tint: color-mix(in srgb, var(--accent) 4%, transparent);
+
+  /* Accounts, labels, calendars (DESIGN §4.2 colours, unchanged) */
+  --tag-sky: #2f6fa3;
+  --tag-hill: #2f6f2a;
+  --tag-stamp: #c4302b;
+  --tag-dusk: #3e5878;
+  --tag-sand: #8a6320;
+  --tag-ember: #b4531f;
+  --event-fill: 12%;
+
+  /* ---- Type: nine roles, three sans weights, one serif for AI text ---- */
+  --font-sans: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Helvetica Neue", sans-serif;
+  --font-serif: "Newsreader", "New York", Georgia, serif;
+  --font-mono: ui-monospace, "SF Mono", Menlo, monospace;
+
+  --type-caption: 500 11px/16px var(--font-sans);   --track-caption: 0.04px;   /* keycaps, chips */
+  --type-small: 400 12px/18px var(--font-sans);     --track-small: 0px;        /* metadata, section labels */
+  --type-ui: 400 13px/20px var(--font-sans);        --track-ui: -0.04px;       /* sidebar, buttons, menus */
+  --type-base: 400 14px/22px var(--font-sans);      --track-base: -0.1px;      /* rows, settings, fields */
+  --type-read: 400 15px/26px var(--font-sans);      --track-read: -0.12px;     /* message bodies */
+  --type-title: 600 15px/22px var(--font-sans);     --track-title: -0.16px;    /* card and dialog titles, reader sender */
+  --type-heading: 600 24px/32px var(--font-sans);   --track-heading: -0.5px;   /* page titles */
+  --type-display: 600 30px/38px var(--font-sans);   --track-display: -0.7px;   /* onboarding, empty moments */
+  --w-summary: 430;
+  --type-summary: var(--w-summary) 21px/31px var(--font-serif); --track-summary: -0.1px; --opsz-summary: 21;
+  --w-answer: 400;
+  --type-answer: var(--w-answer) 16px/27px var(--font-serif);   --track-answer: -0.05px; --opsz-answer: 16;
+  --opsz-display: 30;
+  --measure-read: 64ch;
+
+  /* ---- Spacing (4 px grid) ---- */
+  --space-half: 2px;
+  --space-1: 4px;
+  --space-2: 8px;
+  --space-3: 12px;
+  --space-4: 16px;
+  --space-5: 20px;
+  --space-6: 24px;
+  --space-7: 32px;
+  --space-8: 40px;
+  --space-9: 48px;
+  --space-10: 64px;
+  --gutter: var(--space-8);
+  --group-gap: var(--space-7);   /* between list sections and settings groups */
+
+  --control-xs: 24px;
+  --control-sm: 28px;
+  --control-md: 32px;
+  --control-lg: 40px;
+  --kbd: 18px;
+
+  --row: 40px;
+  --focus-letter: 180px;
+  --row-roomy: 48px;  --focus-letter-roomy: 196px;
+  --row-compact: 34px; --focus-letter-compact: 164px;
+  --message-collapsed: 36px;
+
+  /* ---- Layout ---- */
+  --shell-pad: 8px;              /* the pane floats 8 px inside the window */
+  --sidebar-w: 232px;
+  --pane-head: 48px;
+  --list-w: 720px;
+  --page-top: var(--space-6);    /* space above a page title, under the pane header */
+  --reader-w: 640px;
+  --composer-w: 640px;
+  --dock-w: 360px;
+  --palette-w: 600px;
+  --palette-top: 16vh;
+  --settings-nav: 180px;
+  --settings-content: 600px;
+  --toast-max: 440px;
+  --unread-dot: 6px;
+  --mark-dot: 8px;
+  --avatar: 24px;
+  --icon: 16px;
+  --icon-sm: 14px;
+  --icon-xs: 12px;
+  --icon-stroke: 1.5px;
+  --commit-edge: 3px;
+  --commit-chip: 26px;
+  --select-bar: 2px;
+  --thread-rail: 2px;
+  --hairline: 0.75px;
+  --focus-width: 2px;
+  --focus-gap: 2px;
+  --sender-w: 152px;
+  --sender-w-home: 148px;
+  --menu-min: 220px;
+  --palette-max: 420px;
+  --track: 2px;
+  --seg-h: 3px;
+  --app-icon: 64px;
+  --switch-w: 30px; --switch-h: 18px; --switch-thumb: 14px; --switch-pad: 2px;
+  --radio-dot: 4px;
+  --sidebar-top: 48px;
+  --traffic-top: 18px; --traffic-left: 18px; --traffic-size: 12px;
+
+  --win-main-w: 1440px;  --win-main-h: 900px;
+  --win-onb-w: 640px;    --win-onb-h: 600px;
+
+  /* ---- Radius: five steps ---- */
+  --radius-xs: 4px;
+  --radius-sm: 6px;
+  --radius-md: 8px;
+  --radius-lg: 12px;
+  --radius-xl: 16px;
+  --radius-pill: 999px;
+  --radius-window: 12px;
+
+  /* ---- Elevation: rings and soft light, no glass ---- */
+  --ring: 0 0 0 var(--hairline) var(--line);
+  --elev-pane: 0 0 0 var(--hairline) var(--line), 0 1px 2px color-mix(in srgb, var(--shadow-ink) 3%, transparent);
+  --elev-card: 0 0 0 var(--hairline) var(--line-strong), 0 1px 2px color-mix(in srgb, var(--shadow-ink) 4%, transparent), 0 6px 20px color-mix(in srgb, var(--shadow-ink) 5%, transparent);
+  --elev-float: 0 0 0 var(--hairline) var(--line-strong), 0 4px 12px color-mix(in srgb, var(--shadow-ink) 6%, transparent), 0 16px 40px color-mix(in srgb, var(--shadow-ink) 10%, transparent);
+  --elev-dialog: 0 0 0 var(--hairline) var(--line-strong), 0 8px 24px color-mix(in srgb, var(--shadow-ink) 8%, transparent), 0 32px 72px color-mix(in srgb, var(--shadow-ink) 14%, transparent);
+  --elev-lift: var(--elev-card), 0 12px 32px color-mix(in srgb, var(--shadow-ink) 10%, transparent);
+  --elev-puck: 0 0 0 var(--hairline) var(--line-strong), 0 1px 2px color-mix(in srgb, var(--shadow-ink) 6%, transparent);
+  --elev-thumb: 0 1px 2px color-mix(in srgb, var(--shadow-ink) 25%, transparent);
+  --press-hi: color-mix(in srgb, #ffffff 16%, transparent);
+  --press-lo: color-mix(in srgb, var(--shadow-ink) 14%, transparent);
+  /* names kept so older markup resolves; revision 2 has no glass */
+  --float-bg: var(--paper);
+  --float-filter: none;
+  --elev-paper: var(--elev-card);
+
+  /* ---- Motion (DESIGN §4.8; post and drain removed with the post edge) ---- */
+  --ease-out: cubic-bezier(.16, 1, .3, 1);
+  --ease-std: cubic-bezier(.2, .8, .2, 1);
+  --ease-in: cubic-bezier(.5, 0, .75, 0);
+  --ease-carry: cubic-bezier(.4, 0, 1, 1);
+  --ease-inout: cubic-bezier(.65, 0, .35, 1);
+  --ease-linear: linear;
+  --spring-slide: linear(0, 0.059, 0.189, 0.343, 0.492, 0.624, 0.732, 0.816, 0.88, 0.925, 0.957, 0.978, 0.991, 0.999, 1.003, 1.005, 1.005, 1);
+  --spring-snap: linear(0, 0.038, 0.126, 0.239, 0.358, 0.473, 0.577, 0.668, 0.745, 0.808, 0.858, 0.898, 0.928, 0.951, 0.968, 0.981, 0.989, 1);
+  --spring-lift: linear(0, 0.041, 0.137, 0.257, 0.381, 0.498, 0.603, 0.692, 0.766, 0.826, 0.873, 0.91, 0.937, 0.958, 0.972, 0.983, 0.99, 1);
+  --spring-thumb: linear(0, 0.067, 0.221, 0.407, 0.588, 0.745, 0.868, 0.955, 1.012, 1.044, 1.057, 1.057, 1.051, 1.041, 1.03, 1.02, 1.011, 1);
+  --dur-press-down: 80ms;  --dur-press-up: 140ms;
+  --dur-hover: 100ms;
+  --dur-cursor: 120ms;
+  --dur-reveal-in: 140ms;  --dur-reveal-out: 100ms;
+  --dur-settle-in: 180ms;  --dur-settle-out: 120ms;
+  --dur-slide: 270ms;
+  --dur-commit: 60ms;
+  --dur-carry: 120ms;
+  --dur-flight: 220ms;
+  --dur-deal: 140ms;
+  --dur-close: 180ms;
+  --dur-swap: 120ms;
+  --dur-arrive: 200ms;
+  --dur-dock-in: 200ms;    --dur-dock-out: 140ms;
+  --dur-send: 260ms;
+  --dur-undo-send: 8s;
+  --dur-snap: 250ms;  --dur-lift: 240ms;  --dur-thumb: 310ms;
+  --dur-breathe: 1600ms;
+  --dur-status: 1500ms;
+  --dur-toast: 4s;  --dur-toast-undo: 8s;  --dur-toast-fade: 400ms;
+  --dur-reduced: 120ms;
+  --breathe-lo: .75; --breathe-hi: 1; --breathe-static: .85;
+  --press-scale: .97;
+  --press-scale-icon: .94;
+  --move-reveal: 4px; --move-settle: 8px; --move-deal: 6px; --move-arrive: 6px;
+  --move-swap: 12px; --move-carry: 28px; --move-dock: 24px;
+  --flight-x: 96px; --flight-y: 12px; --flight-rot: 2deg;
+
+  /* App icon asset colours (an image, so they don't change with the theme; the icon is an open owner decision) */
+  --icon-sky-top: #2a9afd;
+  --icon-sky-bottom: #8fdcff;
+  --icon-hill: #3f9a3a;
+  --icon-hill-far: #6cbf5a;
+  --icon-paper: #fefefc;
+  --icon-lines: #b8c4cf;
+  --icon-post-red: #d83237;
+  --icon-post-blue: #1f4fc8;
+  --icon-wind: color-mix(in srgb, #ffffff 55%, transparent);
+
+  /* macOS chrome (OS-drawn, not app tokens) */
+  --os-close: #ff5f57;
+  --os-min: #febc2e;
+  --os-zoom: #28c840;
+  --os-light-edge: color-mix(in srgb, #000000 12%, transparent);
+  --os-desktop: #c9cbce;
+  --os-window-shadow: 0 0 0 0.5px rgb(0 0 0 / .22), 0 22px 70px rgb(0 0 0 / .28);
+}
+
+:root[data-theme="dark"] {
+  color-scheme: dark;
+  --shell: #121314;
+  --canvas: #191a1c;
+  --paper: #1f2023;
+  --raised: #212225;
+  --sunken: #0e0f10;
+  --ink: #ececed;
+  --ink-2: #c4c5c9;
+  --dim: #9a9da4;
+  --faint: #6f7278;
+  --line: color-mix(in srgb, var(--ink) 8%, transparent);
+  --line-strong: color-mix(in srgb, var(--ink) 12%, transparent);
+  --control-edge: color-mix(in srgb, var(--ink) 40%, transparent);
+  --accent: #88aee0;
+  --accent-ink: #08111a;
+  --accent-wash: color-mix(in srgb, var(--accent) 12%, transparent);
+  --hill: #86b86a;
+  --dusk: #8fa9cc;
+  --stamp: #ff7a6e;
+  --stamp-ink: #ff8d82;
+  --stamp-tint: color-mix(in srgb, var(--stamp) 12%, transparent);
+  --fill-ink: #08111a;
+  --scrim: color-mix(in srgb, #000000 50%, transparent);
+  --shadow-ink: #000000;
+  --sheen: color-mix(in srgb, #ffffff 4%, transparent);
+  --hover: color-mix(in srgb, var(--ink) 5%, transparent);
+  --press: color-mix(in srgb, var(--ink) 10%, transparent);
+  --puck: color-mix(in srgb, var(--ink) 8%, transparent);
+  --today-tint: color-mix(in srgb, var(--accent) 6%, transparent);
+  --tag-sky: #6aa5d6;
+  --tag-hill: #86b86a;
+  --tag-stamp: #ff7a6e;
+  --tag-dusk: #8fa9cc;
+  --tag-sand: #d9a65a;
+  --tag-ember: #e08a5a;
+  --event-fill: 20%;
+  --w-summary: 410;
+  --w-answer: 390;
+  --elev-pane: 0 0 0 var(--hairline) var(--line), inset 0 1px 0 var(--sheen);
+  --elev-card: 0 0 0 var(--hairline) var(--line-strong), inset 0 1px 0 var(--sheen), 0 8px 24px color-mix(in srgb, #000000 30%, transparent);
+  --elev-float: 0 0 0 var(--hairline) var(--line-strong), inset 0 1px 0 var(--sheen), 0 4px 12px color-mix(in srgb, #000000 30%, transparent), 0 16px 40px color-mix(in srgb, #000000 40%, transparent);
+  --elev-dialog: 0 0 0 var(--hairline) var(--line-strong), inset 0 1px 0 var(--sheen), 0 8px 24px color-mix(in srgb, #000000 40%, transparent), 0 32px 72px color-mix(in srgb, #000000 50%, transparent);
+  --elev-lift: var(--elev-card), 0 12px 32px color-mix(in srgb, #000000 45%, transparent);
+  --elev-puck: 0 0 0 var(--hairline) var(--line-strong), inset 0 1px 0 var(--sheen);
+  --press-lo: color-mix(in srgb, #000000 22%, transparent);
+  --os-desktop: #1d1f22;
+  --os-light-edge: color-mix(in srgb, #000000 30%, transparent);
+  --os-window-shadow: 0 0 0 0.5px rgb(255 255 255 / .14), 0 22px 70px rgb(0 0 0 / .6);
+}
+
+@media (prefers-contrast: more) {
+  :root { --line: var(--control-edge); --line-strong: var(--control-edge); --faint: var(--dim); --focus-width: 3px; }
+}

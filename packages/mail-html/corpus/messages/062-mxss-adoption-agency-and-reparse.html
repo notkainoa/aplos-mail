@@ -1,0 +1,16 @@
+<p>Notice about the fence repair.</p>
+<p>The text &lt;img src=x onerror=alert(1)&gt; should be shown as plain text.</p>
+<p>Double encoded: &amp;lt;img src='{{CANARY}}/{{ID}}/double-encoded'&amp;gt;</p>
+<p>Triple encoded: &amp;amp;lt;img src='{{CANARY}}/{{ID}}/triple-encoded'&amp;amp;gt;</p>
+<textarea>&lt;/textarea&gt;&lt;img src='{{CANARY}}/{{ID}}/textarea-entities'&gt;</textarea>
+<a href="x"><table><a href="y"><img src='{{CANARY}}/{{ID}}/a-table-a'></a></table></a>
+<b><div></b><img src='{{CANARY}}/{{ID}}/b-div'></div>
+<nobr><nobr><img src='{{CANARY}}/{{ID}}/nobr'></nobr></nobr>
+<form><div><form><img src='{{CANARY}}/{{ID}}/form-div-form'></form></div></form>
+<p><b><i><u>a</b>b</i>c</u><img src='{{CANARY}}/{{ID}}/formatting-misnest'></p>
+<ul><li><ul><li></ul><img src='{{CANARY}}/{{ID}}/ul-li'></li></ul>
+<h1><h2><h3>stacked headings</h3></h2></h1><img src='{{CANARY}}/{{ID}}/stacked-headings'>
+<p>a<br/ >b<img/ src='{{CANARY}}/{{ID}}/self-closing-space'></p>
+<button><button><img src='{{CANARY}}/{{ID}}/button-button'></button></button>
+<p>An ampersand without a semicolon: &ampx=1 &lt &gt and &notit; &amp</p>
+<a href="{{CANARY}}/{{ID}}/q?a=1&b=2&copy=3&amp;reg=4">entities in a query string</a>

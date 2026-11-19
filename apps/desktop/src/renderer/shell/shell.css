@@ -1,0 +1,351 @@
+/* The shell's layout (DESIGN 7.1): a gray window, the sidebar on it, one white pane. Every control is a ui component;
+   this file only places them, and uses tokens for every value. */
+
+.aplos-shell {
+  display: flex;
+  width: 100%;
+  height: 100vh;
+  min-height: 0;
+  position: relative;
+  --shell-left: var(--sidebar-w);
+  --main-min: 20rem;
+  --dock-cap: max(
+    var(--dock-min),
+    calc(100vw - var(--shell-left) - var(--shell-pad) * 3 - var(--main-min))
+  );
+  background: var(--shell);
+  color: var(--ink);
+  /* Window dragging (macOS hidden title bar): the gray shell gutter, the sidebar's empty areas, the collapsed
+     strip and the pane header drag the window. Interactive controls and content regions opt out below. */
+  -webkit-app-region: drag;
+}
+
+/* macOS windowed geometry. The window buttons are 16 px boxes whose first sits at (15, 13) for the window's
+   trafficLightPosition {x: 16, y: 14} (main/windows.ts; read from the native frames), so the dots' centre line is
+   y = 21 and the last dot ends at x = 75. Everything in the top row centres on that line. */
+.aplos-shell[data-mac='true']:not([data-fullscreen='true']) {
+  --traffic-center: 21px;
+  --traffic-end: 75px;
+  /* The notch spans the dots, the toggle and New message (a --space-1 gap after the last dot, two 28 px buttons 4 px
+     apart) and the same right margin as before. */
+  --notch-w: 157px;
+}
+
+/* Collapsed: the chrome strip sits across the top and the panes drop below it. */
+.aplos-shell[data-collapsed='true'] {
+  --shell-left: 0px;
+  flex-direction: column;
+}
+
+/* The Ask dock never takes the main pane below 20rem: the list and the letter have no layout under it. The dock
+   shrinks first (the cap is its largest width for this window and sidebar), never below its own minimum. The
+   sidebar's share is the sidebar, nothing when collapsed, or the minimised rail; the pad is the three pane margins
+   (main left and right, dock right). The dock's own resize range (300 to 440) still applies inside the cap. */
+.aplos-shell[data-minimised='true'] {
+  --shell-left: calc(var(--control-lg) + var(--space-3));
+}
+.aplos-shell__row > .ui-pane[data-kind='dock'],
+.aplos-shell__row > .ui-pane[data-kind='dock'] .ui-ask-dock {
+  max-width: var(--dock-cap);
+}
+
+/* The panes' row; with no sidebar beside it (collapsed) it still fills the shell. */
+.aplos-shell__row {
+  display: flex;
+  flex: 1;
+  min-height: 0;
+  min-width: 0;
+}
+
+/* Collapsed sidebar: a traffic-light-high strip across the top holds just the toggle; it is a drag region. */
+.aplos-shell__strip {
+  display: flex;
+  flex: none;
+  align-items: center;
+  height: var(--control-lg);
+  padding: 0 var(--space-3);
+  -webkit-app-region: drag;
+}
+/* Windowed on macOS the collapsed sidebar has no strip above the pane: the pane rises to the top edge and wraps
+   the window buttons and the toggle with a notch (ChromeNotch), drawn over the pane's top-left corner. */
+.aplos-shell[data-mac='true']:not([data-fullscreen='true'])[data-collapsed='true'] {
+  flex-direction: row;
+}
+.aplos-shell__notch {
+  display: none;
+}
+.aplos-shell[data-mac='true']:not([data-fullscreen='true']) .aplos-shell__strip {
+  position: absolute;
+  top: 0;
+  left: 0;
+  /* One layer above the pane header (also --z-sticky), which spans this corner and would otherwise take its clicks. */
+  z-index: calc(var(--z-sticky) + 1);
+  width: var(--notch-w);
+  /* The notch's depth: the pane's inset plus its header (the path's 56). */
+  height: calc(var(--shell-pad) + var(--pane-head));
+  padding: 0;
+}
+.aplos-shell[data-mac='true']:not([data-fullscreen='true']) .aplos-shell__notch {
+  position: absolute;
+  top: 0;
+  left: 0;
+  display: block;
+  pointer-events: none;
+}
+.aplos-shell__notch-fill {
+  fill: var(--shell);
+}
+.aplos-shell__notch-edge {
+  fill: none;
+  stroke: var(--line);
+  stroke-width: var(--hairline);
+}
+/* The toggle sits just after the last dot, on the dots' centre line: no blank space before it beyond what clears the
+   window buttons (owner review of #548, 2026-11-17), a 4 px step so its hover fill never touches the last dot. */
+.aplos-shell[data-mac='true']:not([data-fullscreen='true']) .aplos-shell__strip > :not(svg) {
+  position: absolute;
+  top: calc(var(--traffic-center) - var(--control-sm) / 2);
+  left: calc(var(--traffic-end) + var(--space-1));
+}
+/* The pane's header starts past the notch so a back button or crumb is never under it. */
+.aplos-shell[data-mac='true']:not([data-fullscreen='true'])[data-collapsed='true']
+  .ui-pane[data-kind='main']
+  .ui-pane__head {
+  padding-left: calc(var(--notch-w) - var(--shell-pad) + var(--space-2));
+}
+.aplos-shell__strip > :not(svg) {
+  -webkit-app-region: no-drag;
+}
+/* The toggle and New message sit together; the strip's absolute rule above places the pair, not each button. */
+.aplos-shell__strip-tools {
+  display: flex;
+  align-items: center;
+  gap: var(--space-1);
+}
+
+.aplos-sidebar {
+  position: relative;
+  display: flex;
+  flex: none;
+  flex-direction: column;
+  width: var(--sidebar-w);
+  padding: var(--space-3) var(--space-2) var(--space-2) var(--space-3);
+  /* Not a scroll container: the places' tooltips open to the right of their row (placement 'end') and a clip here cut them
+     off at the sidebar's edge, leaving only a 1 px ring and a soft patch of their shadow beside the selected row. Only the
+     screen's slot gives up height, and it scrolls on its own. */
+  overflow: visible;
+  -webkit-app-region: drag;
+}
+
+/* The sidebar holds still: nothing but the screen's slot gives up height, so the places, their label and the footer sit
+   at the same place on every screen. */
+.aplos-sidebar > * {
+  flex-shrink: 0;
+}
+
+/* Rows are 28 px with no gaps; groups sit 20 px apart (NavHead carries its own margin). */
+.aplos-sidebar > .ui-puck + .ui-puck {
+  margin-top: var(--space-5);
+}
+
+.aplos-sidebar__top {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-1);
+  margin-bottom: var(--space-3);
+}
+
+/* Windowed on macOS the top is two rows: a traffic-light-high chrome row (toggle + compose at its right end)
+   over the account switcher. Fullscreen and other platforms keep one row. */
+.aplos-sidebar__account {
+  order: 0;
+  flex: 1;
+  min-width: 0;
+  display: flex;
+}
+.aplos-sidebar__chrome {
+  order: 1;
+  display: flex;
+  align-items: center;
+  gap: var(--space-1);
+  margin-left: auto;
+}
+.aplos-shell[data-mac='true']:not([data-fullscreen='true']) .aplos-sidebar {
+  padding-top: 0;
+}
+.aplos-shell[data-mac='true']:not([data-fullscreen='true']) .aplos-sidebar__chrome {
+  order: 0;
+  flex: 0 0 100%;
+  height: calc(var(--traffic-center) * 2);
+  justify-content: flex-end;
+  -webkit-app-region: drag;
+}
+.aplos-shell[data-mac='true']:not([data-fullscreen='true']) .aplos-sidebar__account {
+  order: 1;
+  flex: 0 0 100%;
+}
+.aplos-sidebar__chrome > * {
+  -webkit-app-region: no-drag;
+}
+
+/* The screen's slot (Calendar's MiniMonth and Calendars list) sits under the groups and above the footer. It shrinks
+   and scrolls before the places or the footer move; the floor keeps it from collapsing to nothing. */
+.aplos-sidebar__slot {
+  display: flex;
+  flex: 0 1 auto;
+  flex-direction: column;
+  gap: var(--space-4);
+  min-height: var(--control-md);
+  /* A 4 px inset on every side, taken back with the negative margin, so keyboard focus rings are not clipped by the
+     scroll container (the controls inside span the full width and the first and last rows touch its edges). */
+  padding: var(--space-1);
+  margin: calc(var(--space-5) - var(--space-1)) calc(-1 * var(--space-1)) calc(-1 * var(--space-1));
+  overflow-x: hidden;
+  overflow-y: auto;
+}
+/* While the Calendars list runs on below the visible part, a hairline at the bottom edge says it scrolls. */
+.aplos-sidebar__slot[data-more='below'] {
+  box-shadow: inset 0 calc(-1 * var(--hairline)) 0 var(--line);
+}
+
+.aplos-sidebar__foot {
+  display: flex;
+  flex-direction: column;
+  margin-top: auto;
+  padding-top: var(--space-5);
+}
+
+.aplos-rail {
+  display: flex;
+  flex: none;
+  flex-direction: column;
+  padding: var(--space-3) var(--space-2) 0 var(--space-3);
+}
+
+/* The ☰ clears the macOS traffic lights while the window is not fullscreen. */
+.aplos-shell[data-mac='true']:not([data-fullscreen='true']) .aplos-rail {
+  padding-top: calc(var(--control-lg) + var(--space-2));
+}
+
+.aplos-shell > .ui-pane:first-child,
+.aplos-shell__row > .ui-pane:first-child {
+  margin-left: var(--shell-pad);
+}
+
+/* The drag opt-outs for .aplos-shell's drag region (declared at the top of this file): every interactive control
+   and content region. */
+.aplos-shell
+  :is(
+    button,
+    a,
+    input,
+    select,
+    textarea,
+    [contenteditable='true'],
+    [role='button'],
+    [role='menuitem'],
+    [role='option'],
+    [role='tab'],
+    [role='link'],
+    [role='switch'],
+    [role='checkbox'],
+    [role='radio'],
+    [role='combobox'],
+    [role='listbox'],
+    [role='slider'],
+    [role='dialog'],
+    [role='menu'],
+    [role='tooltip'],
+    .ui-puck,
+    .ui-pane,
+    .ui-menu,
+    .ui-popover,
+    .ui-dialog,
+    .ui-dialog__scrim,
+    .ui-toast,
+    .ui-palette,
+    .aplos-sidebar__slot,
+    .aplos-sidebar__foot
+  ) {
+  -webkit-app-region: no-drag;
+}
+/* The pane re-enters the drag region only at its header; its own controls opt out. */
+.aplos-shell .ui-pane__head {
+  -webkit-app-region: drag;
+}
+.aplos-shell
+  .ui-pane__head
+  :is(
+    button,
+    a,
+    input,
+    select,
+    textarea,
+    [contenteditable='true'],
+    [role='button'],
+    [role='menuitem'],
+    [role='option'],
+    [role='tab'],
+    [role='link'],
+    .ui-part-tipwrap
+  ) {
+  -webkit-app-region: no-drag;
+}
+
+/* The screen slot fills the pane body. */
+.aplos-screen {
+  min-height: 100%;
+}
+
+/* Settings' mount: a focus landing for plain arrival (⌘, or the sidebar row), so focus is not lost to the page. It is
+   a region, not a control, so it draws no ring. */
+.aplos-settings-mount {
+  min-height: 100%;
+}
+.aplos-settings-mount:focus {
+  outline: none;
+}
+
+/* The sidebar is a region, not a control: when it holds focus for the keys it draws no ring. */
+.aplos-sidebar:focus-visible,
+.aplos-rail:focus-visible {
+  outline: none;
+}
+
+/* The Add account dialog's body (shell/AddAccountHost): the field and the one line that belongs to it, or the wait. */
+.aplos-add-account__block {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  width: 100%;
+  min-width: 0;
+}
+.aplos-add-account__wait {
+  margin: 0;
+  color: var(--ink-2);
+  font: var(--type-ui);
+  letter-spacing: var(--track-ui);
+}
+/* The body's provider group carries the step's own margin and tighter gap; in the dialog the block's rhythm
+   rules, as the copy it replaced did. */
+.aplos-add-account__block > .onb-group {
+  margin-top: 0;
+  gap: var(--space-3);
+}
+
+/* The account menu opens under the switcher and stays inside the sidebar: 12 px in from the pane's edge (not flush), so the
+   pane's rounded corner and shadow never touch it. */
+.ui-menu[aria-label='Accounts'] {
+  min-width: calc(var(--menu-min) - var(--space-3));
+}
+/* A long address ends in an ellipsis 12 px short of the row's edge, never touching it; the label's inset is the rows'. */
+.ui-menu[aria-label='Accounts'] .ui-menu__item {
+  padding-right: var(--space-3);
+}
+.ui-menu[aria-label='Accounts'] .ui-menu__item-label {
+  min-width: 0;
+}
+.ui-menu[aria-label='Accounts'] .ui-menu__label {
+  padding-inline: var(--space-2) var(--space-3);
+}

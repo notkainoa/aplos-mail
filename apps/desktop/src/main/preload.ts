@@ -1,29 +1,32 @@
-import {contextBridge,ipcRenderer} from 'electron';
-import type {Bridge,Listener} from '../shared/types';
+import { contextBridge, ipcRenderer } from 'electron';
+import type { Bridge, Listener } from '@aplos/contract/legacy/types';
+import { legacyMethods } from '@aplos/contract/allowlists';
+import { exposeEngineBridge } from '../host/transports/port';
+import { createEventHub } from '../shared/event-hub';
+import { MAIL_KEY_CHANNEL, mailKeyEvent } from '../shared/mail-keys';
 
-const allowed = new Set([
-  'state.get','threads.page','capabilities.get','settings.update','account.select','account.connect','account.discover','domain.check','account.disconnect','sync','demo.reset',
-  'thread.update','thread.undo','home.hide','search','draft.save','draft.delete','draft.send','draft.undoSend',
-  'ai.summarize','ai.summarizing','ai.polish','ai.draft','ai.ask','ai.models','ai.test','ai.keys','ai.key.set','ai.key.delete','ai.key.test','ai.key.paste','ai.cancel','ai.transcribe','conversation.delete','workflow.status','workflow.enable','workflow.code','workflow.disable',
-  'calendar.list','calendar.extract','calendar.save','calendar.delete','attachment.get','sender.block','sender.unblock','thread.unsubscribe','data.export',
-  'window.compose','window.thread','window.claim','window.release','window.closeReady','window.closeCancel','shell.open','file.save','file.open','notification.test',
-  'system.login','system.defaultMail','system.microphone','app.info','symbols.render','update.status','update.check','update.restart','update.later',
-]);
-const listeners=new Set<Listener>();
-const queued:Parameters<Listener>[0][]=[];
-ipcRenderer.on('aplos:event',(_event:Electron.IpcRendererEvent,event:Parameters<Listener>[0])=>{
-  if(!listeners.size&&(event.type==='deep-link'||event.type==='command'||event.type==='prepare-close')){queued.push(event);if(queued.length>50)queued.shift();}
-  for(const listener of listeners)listener(event);
+const allowed = new Set<string>(legacyMethods);
+const hub = createEventHub();
+ipcRenderer.on('aplos:event', (_event: Electron.IpcRendererEvent, event: Parameters<Listener>[0]) =>
+  hub.emit(event),
+);
+// A key main relayed from the sealed mail frame: one narrow message, validated again here, anything else dropped.
+// Never queued: a key nobody is listening for is stale.
+ipcRenderer.on(MAIL_KEY_CHANNEL, (_event: Electron.IpcRendererEvent, message: unknown) => {
+  const event = mailKeyEvent(message);
+  if (event) hub.deliver(event);
 });
-const bridge:Bridge = {
-  invoke: async <T>(method:string,payload?:unknown):Promise<T> => {
-    if(!allowed.has(method)) throw new Error('Unsupported application method.');
-    return ipcRenderer.invoke('aplos:invoke',method,payload) as Promise<T>;
+const bridge: Bridge = {
+  invoke: async <T>(method: string, payload?: unknown): Promise<T> => {
+    if (!allowed.has(method)) throw new Error('Unsupported application method.');
+    return ipcRenderer.invoke('aplos:invoke', method, payload) as Promise<T>;
   },
-  subscribe: (listener:Listener) => {
-    listeners.add(listener);
-    for(const event of queued.splice(0))listener(event);
-    return ()=>{listeners.delete(listener);};
-  },
+  subscribe: (listener: Listener, options?: { only?: readonly string[] }) =>
+    hub.subscribe(listener, options),
 };
-contextBridge.exposeInMainWorld('aplos',bridge);
+contextBridge.exposeInMainWorld('aplos', bridge);
+
+// ---- The real engine's direct port (the default engine, contract-4) ---------------------------------------------
+// Only when main passed `ENGINE_PORT_ARG` (the real path): the default path exposes nothing and listens on nothing new.
+// The bridge itself lives in host/transports/port.ts, where it runs under node:test with fakes.
+exposeEngineBridge({ contextBridge, ipcRenderer }, process.argv);

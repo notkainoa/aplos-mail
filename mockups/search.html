@@ -1,0 +1,180 @@
+<!doctype html>
+<html lang="en" data-window="main" data-states="results,no-match" data-esc="home.html">
+<head>
+<meta charset="utf-8">
+<title>Search · Aplos mockup</title>
+<link rel="stylesheet" href="tokens.css">
+<link rel="stylesheet" href="shell.css">
+<script src="shell.js"></script>
+<style>
+  /* DECISION: search is a list view, not an overlay. The page title is the field, so the query is the first thing
+     you see; operator tokens sit under it; results are ordinary rows (j/k, E, L, X and Return behave as everywhere).
+     The palette (⌘K) is the only overlay. */
+  .search-head { display: block; }
+  .search-title { display: flex; align-items: center; gap: var(--space-3); min-height: var(--space-8); border-radius: var(--radius-md); }
+  .search-title .ic { color: var(--dim); flex: none; }
+  .search-title input { flex: 1; min-width: 0; border: 0; background: none; padding: 0; font: var(--type-heading); letter-spacing: var(--track-heading); color: var(--ink); outline: none; }
+  .search-title input::placeholder { color: var(--faint); }
+  .search-meta { display: flex; align-items: center; gap: var(--space-2); min-height: var(--control-sm); margin-top: var(--space-3); padding-left: calc(var(--icon) + var(--space-3)); font: var(--type-small); color: var(--dim); }
+  .search-meta .scope { margin-left: auto; display: inline-flex; align-items: center; gap: var(--space-1); }
+  .token { cursor: default; gap: 0; }
+  .token .x { margin-left: var(--space-1); border: 0; }
+  .token .x:hover { background: var(--hover); color: var(--ink); }
+  #tokens { display: contents; }
+
+  .row .line .subj { color: var(--ink); font-weight: 500; }
+  .row.unread .line .subj { font-weight: 600; }
+  .row .line b { font-weight: 600; color: var(--ink); }
+  .remote { display: flex; align-items: center; gap: var(--space-2); height: var(--row); padding: 0 var(--space-3); margin-top: var(--space-4); border-radius: var(--radius-md); color: var(--dim); font: var(--type-base); letter-spacing: var(--track-base); width: 100%; text-align: left; }
+  .remote:hover { background: var(--hover); color: var(--ink); }
+  .remote .kbd { margin-left: auto; }
+  .remote .ic { color: var(--dim); }
+  .remote.is-busy { pointer-events: none; }
+  .empty-line { padding-top: var(--space-2); }
+  .empty-line .btn { margin-left: calc(-1 * var(--space-2)); }
+  .remote-note { padding: var(--space-3); font: var(--type-base); color: var(--dim); }
+</style>
+</head>
+<body>
+<div class="window">
+  <span class="traffic"></span>
+  <div class="app">
+    <aside class="sidebar" data-active="search"></aside>
+    <main class="main">
+      <header class="toolbar">
+        <div class="tools">
+          <a class="btn btn-icon labelled" href="ask.html" data-tip="Ask about your mail" data-key="A"><svg class="ic"><use href="#i-bubble"/></svg>Ask</a>
+        </div>
+      </header>
+      <div class="workspace">
+        <div class="column">
+          <div class="page-head search-head" role="search">
+            <label class="search-title">
+              <svg class="ic"><use href="#i-search"/></svg>
+              <input id="q" placeholder="Search mail" autocomplete="off" spellcheck="false" aria-label="Search mail">
+            </label>
+            <div class="search-meta"><span id="tokens"></span><span class="scope" id="scope" data-tip="Search scope">All accounts</span></div>
+          </div>
+          <div class="list" id="list" data-list data-no-initial role="listbox" aria-label="Search results"></div>
+        </div>
+      </div>
+      <p class="sr-only" role="status" id="live"></p>
+    </main>
+  </div>
+</div>
+
+<script>
+// {who, subj, snip, date, ts (sort), flags: u unread, a attachment, r replied, b bookmark}, acct hill = work, sky = personal
+const LOCAL = [
+  { who: 'Jordan Park', subj: 'A quieter home for the Hollow Creek site', snip: 'Two layout directions are ready, and Jordan wants your pick by tomorrow', date: '10:00 AM', ts: 29.10, f: 'ua', acct: 'hill' },
+  { who: 'Mina Cho', subj: 'Hollow Creek type samples', snip: 'Shared the type samples. The layout is unchanged, nothing needed from you yet', date: '8:40 AM', ts: 29.08, f: 'a', acct: 'hill' },
+  { who: 'Drew Bell', subj: 'Invoice #0412 · October illustrations', snip: 'October illustrations are finished. Approve the $1,840 invoice', date: 'Wed', ts: 28.1, f: 'ua', acct: 'hill' },
+  { who: 'Northwind Dental', subj: 'Appointment reminder', snip: 'Cleaning on Thursday at 9:30 AM. Confirm or reschedule', date: 'Oct 22', ts: 22.1, f: '', acct: 'sky' },
+  { who: 'Jordan Park', subj: 'Kicking off Hollow Creek', snip: 'Here is the brief we agreed on Friday, plus the layout of the three sites you liked', date: 'Oct 20', ts: 20.1, f: 'ar', acct: 'hill' },
+  { who: 'Jordan Park', subj: 'Sitemap v2', snip: 'Updated site map with the booking form on the first screen. Layout notes inside', date: 'Oct 14', ts: 14.1, f: 'a', acct: 'hill' },
+  { who: 'Jordan Park', subj: 'Re: Trail photos', snip: 'Thanks, the new trail photos work well in the layout', date: 'Oct 12', ts: 12.1, f: 'r', acct: 'hill' },
+  { who: 'Jordan Park', subj: 'Logo files', snip: 'The layout grid and logo files for the trail map, as promised', date: 'Oct 8', ts: 8.1, f: 'a', acct: 'hill' },
+  { who: 'Jordan Park', subj: 'Booking form copy', snip: 'Short copy for the booking form, no layout changes needed', date: 'Oct 3', ts: 3.1, f: '', acct: 'hill' },
+  { who: 'Priya Raman', subj: 'Re: Q4 review deck', snip: 'Needs the revised deck today, before Friday’s review', date: 'Oct 23', ts: 23.1, f: 'b', acct: 'hill' },
+];
+const REMOTE = [
+  { who: 'Jordan Park', subj: 'Hollow Creek proposal', snip: 'Scope, layout options and the November timeline, as a PDF', date: 'Mar 14', ts: 3.14, f: 'a', acct: 'hill' },
+  { who: 'Jordan Park', subj: 'Site visit notes', snip: 'Photos from the walk-through and a first layout sketch', date: 'Mar 2', ts: 3.02, f: 'a', acct: 'hill' },
+];
+const ic = Mock.icon, list = document.getElementById('list'), q = document.getElementById('q'), tokensEl = document.getElementById('tokens');
+let tokens = [], remoteDone = false;
+
+const esc = s => s.replace(/[&<>]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;' }[c]));
+function matches(m, text) {
+  for (const t of tokens) {
+    const v = t.v.toLowerCase();
+    if (t.k === 'from' && !m.who.toLowerCase().includes(v)) return false;
+    if (t.k === 'subject' && !m.subj.toLowerCase().includes(v)) return false;
+    if (t.k === 'has' && v === 'attachment' && !m.f.includes('a')) return false;
+  }
+  const hay = (m.who + ' ' + m.subj + ' ' + m.snip).toLowerCase();
+  return text.toLowerCase().split(/\s+/).filter(Boolean).every(w => hay.includes(w));
+}
+function hl(s, text) {
+  let out = esc(s);
+  text.split(/\s+/).filter(Boolean).forEach(w => { out = out.replace(new RegExp('(' + w.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + ')', 'ig'), '<b>$1</b>'); });
+  return out;
+}
+const row = (m, text, i, remote) => `<div class="row ${m.f.includes('u') ? 'unread' : ''}" data-row data-href="reader.html" role="option">
+  <span class="dot"></span>
+  <span class="sender ellipsis">${m.who}</span>
+  <span class="line"><span class="subj ellipsis">${hl(m.subj, text)}</span><span class="snip ellipsis">${hl(m.snip, text)}</span></span>
+  <span class="meta">${m.f.includes('r') ? ic('reply') : ''}${m.f.includes('b') ? ic('bookmark') : ''}${m.f.includes('a') ? ic('paperclip') : ''}<span class="mark" style="background:var(--tag-${m.acct})" title="${m.acct === 'hill' ? 'alex@fernworks.studio' : 'alex.moreno@gmail.com'}"></span><span>${m.date}</span></span>
+  ${remote ? '' : `<span class="row-actions">
+    <button class="btn btn-icon" data-act="done" data-tip="Done" data-key="E" aria-label="Done">${ic('check')}</button>
+    <button class="btn btn-icon" data-act="later" data-tip="Later" data-key="L" aria-label="Later">${ic('clock')}</button>
+    <button class="btn btn-icon" data-act="trash" data-tip="Trash" data-key="#" aria-label="Trash">${ic('trash')}</button>
+  </span>`}</div>`;
+
+const remoteBtn = label => `<button class="${list.dataset.empty ? 'btn btn-text md' : 'remote'}" id="remote">${ic('globe')}${label}<span class="kbd">Return</span></button>`;
+
+function renderTokens() {
+  if (!tokens.length) { tokensEl.innerHTML = 'Narrow with from:, to:, subject:, has:attachment, before:, in:done'; return; }
+  tokensEl.innerHTML = tokens.map((t, i) => `<span class="token"><b>${t.k}:</b>${esc(t.v)}<button class="x" data-i="${i}" aria-label="Remove ${t.k}:${esc(t.v)}">${ic('x')}</button></span>`).join('');
+}
+function render() {
+  const text = q.value.trim();
+  const hits = LOCAL.filter(m => matches(m, text)).sort((a, b) => b.ts - a.ts);
+  remoteDone = false;
+  if (!hits.length) {
+    list.dataset.empty = '1';
+    list.innerHTML = `<div class="empty-line"><p>No mail matches ‘${esc(text || tokens.map(t => t.k + ':' + t.v).join(' '))}’.</p>${remoteBtn('Search all mail on Google')}</div>`;
+    document.getElementById('live').textContent = 'No results.';
+  } else {
+    delete list.dataset.empty;
+    list.innerHTML = `<div class="section-head"><span class="label">In your mail</span><span class="n">${hits.length}</span></div>` + hits.map((m, i) => row(m, text, i)).join('') + remoteBtn('Search all mail on Google');
+    document.getElementById('live').textContent = `${hits.length} results in your mail.`;
+  }
+}
+
+/* Remote search runs only on Return, to protect Google quota. */
+function remote() {
+  const b = document.getElementById('remote'); if (!b || remoteDone) return;
+  remoteDone = true; b.classList.add('is-busy'); b.innerHTML = `${ic('refresh')}Searching Google…`;
+  const text = q.value.trim();
+  setTimeout(() => {
+    const hits = REMOTE.filter(m => matches(m, text));
+    if (!hits.length) { b.outerHTML = `<p class="remote-note">Nothing on Google either. Try fewer words.</p>`; return; }
+    b.outerHTML = `<div class="section-head"><span class="label">From Google</span><span class="n">${hits.length}</span></div>` + hits.map((m, i) => row(m, text, i, true)).join('');
+  }, 900);
+}
+list.addEventListener('click', e => { if (e.target.closest('#remote')) remote(); });
+
+/* operators become removable pills when you type a space after them */
+const OP = /(^|\s)(from|to|subject|has|before|after|in):(\S+)$/i;
+q.addEventListener('input', () => {
+  if (/\s$/.test(q.value)) {
+    const m = q.value.trimEnd().match(OP);
+    if (m) { tokens.push({ k: m[2].toLowerCase(), v: m[3] }); q.value = q.value.trimEnd().replace(OP, '').trimStart(); renderTokens(); }
+  }
+  render();
+});
+tokensEl.addEventListener('click', e => { const x = e.target.closest('.x'); if (!x) return; tokens.splice(+x.dataset.i, 1); renderTokens(); render(); q.focus(); });
+
+Mock.onKey(e => {
+  const k = e.key, inQ = e.target === q;
+  if (k === '/' && !inQ) { q.focus(); q.select(); return true; }
+  if (inQ) {
+    if (k === 'Enter') { remote(); return true; }
+    if (k === 'Backspace' && !q.value && tokens.length) { tokens.pop(); renderTokens(); render(); return true; }
+    if (k === 'ArrowDown' || k === 'ArrowUp') {          // hand the keyboard to the list; j/k, E, L then work as everywhere
+      const rows = Mock.rows(list); if (!rows.length) return true;
+      q.blur(); Mock.setCursor(list, k === 'ArrowDown' ? rows[0] : rows[rows.length - 1]); return true;
+    }
+    return;
+  }
+  if (k === 'Enter' && !list.querySelector('.is-cursor')) { remote(); return true; }
+});
+
+const s = Mock.state;
+if (s === 'no-match') { q.value = 'dentist'; }
+else { tokens = [{ k: 'from', v: 'jordan' }, { k: 'has', v: 'attachment' }]; q.value = 'layout'; }
+renderTokens(); render(); q.focus();
+</script>
+</body>
+</html>

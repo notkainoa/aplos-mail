@@ -1,0 +1,22 @@
+<style>
+  .a { width: expression(fetch('{{CANARY}}/{{ID}}/expression')); }
+  .b { behavior: url({{CANARY}}/{{ID}}/behavior.htc); }
+  .c { -moz-binding: url({{CANARY}}/{{ID}}/binding.xml#x); }
+  .d { -ms-filter: "progid:DXImageTransform.Microsoft.AlphaImageLoader(src='{{CANARY}}/{{ID}}/alpha-loader.png')"; }
+  .e { filter: progid:DXImageTransform.Microsoft.AlphaImageLoader(src='{{CANARY}}/{{ID}}/alpha-loader-2.png'); }
+  .f { zoom: expression(fetch('{{CANARY}}/{{ID}}/expression-zoom')); }
+  .g { background: url(javascript:fetch('{{CANARY}}/{{ID}}/css-javascript')); }
+  .h { background: url(vbscript:msgbox(1)); }
+  .i { background-image: -moz-element(#x); }
+  .j { -webkit-box-reflect: below 0 url({{CANARY}}/{{ID}}/box-reflect); }
+  .k { -webkit-mask-box-image: url({{CANARY}}/{{ID}}/mask-box-image); }
+  .l { background: image({{CANARY}}/{{ID}}/image-function); }
+  .m { background: src({{CANARY}}/{{ID}}/src-function); }
+  .n { background: -webkit-image-set(url({{CANARY}}/{{ID}}/legacy-image-set) 1x); }
+  @namespace svg url({{CANARY}}/{{ID}}/namespace);
+  @-moz-document url-prefix({{CANARY}}/{{ID}}/moz-document) { .z { color: red } }
+  @document url({{CANARY}}/{{ID}}/document) { .y { color: red } }
+  @charset "{{CANARY}}/{{ID}}/charset";
+</style>
+<p>Costume hire list: pirates, bakers and one very tall giraffe.</p>
+<div class="a b c d e f g h i j k l m n">legacy</div>

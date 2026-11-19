@@ -1,0 +1,203 @@
+<!doctype html>
+<html lang="en" data-window="onboarding" data-states="progress,paused,ready,partial,failed" data-esc="home.html">
+<head>
+<meta charset="utf-8">
+<title>Onboarding · Getting your mail · Aplos mockup</title>
+<link rel="stylesheet" href="tokens.css">
+<link rel="stylesheet" href="shell.css">
+<script src="shell.js"></script>
+<style>
+  /* INVENTED: size of the one drawn check on the ready state (two space steps). */
+  :root { --check-size: calc(var(--space-9) - var(--space-2)); }
+
+  .onb .onb-body { justify-content: flex-start; padding-top: var(--space-6); }
+  .sync { display: flex; flex-direction: column; align-items: stretch; width: 100%; }
+  .sync .lede { margin-bottom: var(--space-6); text-wrap: balance; }
+
+  /* one account: address, quiet segments, a checklist */
+  .acct + .acct { margin-top: var(--space-6); }
+  .acct .top { display: flex; align-items: center; gap: var(--space-2); margin-bottom: var(--space-2); font: var(--type-ui); letter-spacing: var(--track-ui); }
+  .acct .top .dot { width: var(--mark-dot); height: var(--mark-dot); border-radius: 50%; flex: none; }
+  .acct .top b { font-weight: 500; color: var(--ink); }
+  .acct .top .st { margin-left: auto; font: var(--type-small); color: var(--dim); }
+  .acct .top .btn { margin: calc(-1 * var(--space-half)) calc(-1 * var(--space-2)) calc(-1 * var(--space-half)) auto; }
+  .check { margin-top: var(--space-2); display: flex; flex-direction: column; }
+  .check li { display: flex; align-items: center; gap: var(--space-2); min-height: var(--space-5); font: var(--type-ui); letter-spacing: var(--track-ui); color: var(--dim); }
+  .check li.now { color: var(--ink); font-weight: 500; }
+  .check li.pause, .check li.part { color: var(--ink-2); }
+  .check li.pend { color: var(--dim); }
+  .check li.fail { color: var(--ink); align-items: flex-start; min-height: var(--space-6); }
+  .mk { width: var(--icon); height: var(--icon); flex: none; display: flex; align-items: center; justify-content: center; }
+  .check li.fail .mk { margin-top: var(--space-half); color: var(--stamp-ink); }
+  .check li.pend .mk { color: var(--faint); }
+  .check li.pause .mk, .check li.part .mk { color: var(--dim); }
+  .check li.now .mk { color: var(--ink); }
+
+  /* the motion lives on the marker, never on the bar */
+  .spin { animation: spin var(--dur-status) var(--ease-linear) infinite; }
+  .spin .trk { stroke: var(--line-strong); }
+  @keyframes spin { to { transform: rotate(360deg); } }
+  @media (prefers-reduced-motion: reduce) { .spin { animation: none; } }
+
+  /* ready: one calm drawn check, nothing else moves */
+  svg.ready-check { width: var(--check-size); height: var(--check-size); color: var(--ink); margin-bottom: var(--space-6); display: block; }
+  .ready-check path { stroke-dasharray: 1; stroke-dashoffset: 0; animation: draw var(--dur-slide) var(--ease-out) both; }
+  @keyframes draw { from { stroke-dashoffset: 1; } }
+  @media (prefers-reduced-motion: reduce) { .ready-check path { animation: none; } }
+  .is-ready { display: flex; align-items: center; gap: var(--space-2); font: var(--type-ui); letter-spacing: var(--track-ui); min-height: var(--control-lg); }
+  .is-ready + .is-ready { box-shadow: 0 calc(-1 * var(--hairline)) 0 var(--line); }
+  .is-ready .dot { width: var(--mark-dot); height: var(--mark-dot); border-radius: 50%; flex: none; }
+  .is-ready b { font-weight: 500; color: var(--ink); }
+  .is-ready .st { margin-left: auto; font: var(--type-small); color: var(--dim); }
+
+  .btn-filled[disabled] .kbd { background: none; color: var(--dim); box-shadow: inset 0 0 0 var(--hairline) var(--control-edge); }
+  .extra { margin-top: var(--space-4); display: flex; }
+  .extra .btn { margin-left: calc(-1 * var(--space-3)); }
+  .esc-line { display: inline-flex; align-items: center; gap: var(--space-2); }
+</style>
+</head>
+<body>
+<div class="window">
+  <div class="onb">
+    <div class="drag">
+      <span class="traffic"></span>
+      <a class="btn btn-text xs" href="demo.html" data-tip="Load sample mail to look around. Remove it any time in Settings.">Try demo mail</a>
+    </div>
+    <p class="sr-only" role="status" id="status"></p>
+    <main class="onb-body" aria-labelledby="h">
+      <div class="sync" id="sync"></div>
+    </main>
+    <footer class="onb-foot">
+      <span class="note esc-line"><span class="kbd">Esc</span>opens Aplos</span>
+      <div class="btns" id="btns"></div>
+    </footer>
+  </div>
+</div>
+<script>
+(function () {
+  const html = document.documentElement;
+  const $ = id => document.getElementById(id);
+  const ic = Mock.icon;
+  const GM = { addr: 'alex.moreno@gmail.com', color: '--tag-sky' };
+  const FW = { addr: 'alex@fernworks.studio', color: '--tag-hill' };
+
+  const spinner = '<svg class="ic spin" viewBox="0 0 24 24" aria-hidden="true"><circle class="trk" cx="12" cy="12" r="8.5"/><circle cx="12" cy="12" r="8.5" pathLength="100" stroke-dasharray="26 74"/></svg>';
+  const mark = {
+    done: () => ic('check'),
+    now: () => spinner,
+    pend: () => ic('circle'),
+    pause: () => ic('pause'),
+    part: () => ic('clock'),
+    fail: () => ic('alert'),
+  };
+  const li = (k, t, key) => `<li class="${k}"><span class="mk">${mark[k]()}</span><span${key ? ` data-k="${key}"` : ''}>${t}</span></li>`;
+  // segs: 'done' | 'paused' | 'fail' | 'part:NN' | ''   (static: the bar never animates)
+  const seg = (s, key) => s.startsWith('part') ? `<i class="part" data-k="${key}" style="--p:${s.split(':')[1]}%"></i>` : `<i class="${s}"></i>`;
+  function acct(a, i, { status, segs, lines, valuetext, retry }) {
+    return `<div class="acct">
+      <div class="top"><i class="dot" style="background:var(${a.color})"></i><b>${a.addr}</b>${retry ? `<button class="btn btn-text xs" data-retry>Try again</button>` : `<span class="st" data-k="st${i}">${status}</span>`}</div>
+      <div class="progress-seg" role="progressbar" aria-label="${a.addr} sync" aria-valuetext="${valuetext}">${segs.map(s => seg(s, 'b' + i)).join('')}</div>
+      <ul class="check">${lines.map(l => li(l[0], l[1], l[2] && l[2] + i)).join('')}</ul>
+    </div>`;
+  }
+  const ready = (a, text) => `<div class="is-ready"><i class="dot" style="background:var(${a.color})"></i><b>${a.addr}</b><span class="st">${text}</span></div>`;
+  const keysLink = `<div class="extra"><a class="btn btn-text" href="onboarding-drill.html">${ic('keyboard')}Try the keys while you wait</a></div>`;
+
+  const btn = {
+    cont: `<a class="btn btn-text" href="home.html" id="cont">Continue anyway</a>`,
+    openOff: `<button class="btn btn-filled" id="primary" disabled>Open Aplos<span class="kbd">Return</span></button>`,
+    open: `<a class="btn btn-filled" href="home.html" id="primary">Open Aplos<span class="kbd">Return</span></a>`,
+    now: `<a class="btn btn-filled" href="home.html" id="primary">Open now<span class="kbd">Return</span></a>`,
+    toAplos: `<a class="btn btn-filled" href="home.html" id="primary">Continue to Aplos<span class="kbd">Return</span></a>`,
+  };
+
+  function model(state, n) {
+    n = n || 24;
+    const n2 = Math.min(50, Math.round(n * 1.6));
+    switch (state) {
+      case 'paused': return {
+        title: 'Getting your mail',
+        lede: 'Google asked us to slow down. Resuming at 2:14 PM. Your newest mail will appear first.',
+        body: acct(GM, 1, { status: 'Paused until 2:14 PM', segs: ['done', 'done', 'paused', ''], valuetext: 'Paused at 24 of 50. Resuming at 2:14 PM.', lines: [['done', 'Connected'], ['done', 'Found about 214 recent emails'], ['pause', 'Reading your newest mail · paused at 24 of 50'], ['pend', 'Sort what matters']] }) +
+          acct(FW, 2, { status: 'Sorting', segs: ['done', 'done', 'done', 'part:20'], valuetext: 'Sorting what matters, 8 of 40', lines: [['done', 'Connected'], ['done', 'Found recent mail'], ['done', 'Read your newest mail · 50 of 50'], ['now', 'Sort what matters · 8 of 40']] }),
+        btns: btn.cont + btn.open,
+      };
+      case 'ready': return {
+        title: 'Your mail is ready',
+        lede: 'Aplos opens by itself in a moment.',
+        lead: `<svg class="ic ready-check" viewBox="0 0 24 24" aria-hidden="true"><path d="M5 12.5l4.5 4.5L19 7.5" pathLength="1"/></svg>`,
+        body: `<div>` + ready(GM, 'Newest 50 read · sorted 40 of 40') + ready(FW, 'Newest 50 read · sorted 20 of 20') + `</div>`,
+        btns: btn.now,
+      };
+      case 'partial': return {
+        title: 'Your newest mail is in',
+        lede: 'Aplos waits for you. Older mail follows after you open it.',
+        body: acct(GM, 1, { status: 'Sorting continues', segs: ['done', 'done', 'done', 'part:30'], valuetext: 'Sorted 12 of 40. The rest continue in the background.', lines: [['done', 'Connected'], ['done', 'Found about 214 recent emails'], ['done', 'Read your newest mail · 50 of 50'], ['part', 'Sorted 12 of 40. The rest continue in the background.']] }) +
+          acct(FW, 2, { status: 'Ready', segs: ['done', 'done', 'done', 'done'], valuetext: 'Sorted 20 of 20', lines: [['done', 'Connected'], ['done', 'Found recent mail'], ['done', 'Read your newest mail · 50 of 50'], ['done', 'Sorted 20 of 20']] }),
+        btns: btn.open,
+      };
+      case 'failed': return {
+        title: 'Some mail didn’t come through',
+        lede: 'Nothing was lost. Aplos keeps trying in the background.',
+        body: acct(GM, 1, { retry: true, segs: ['done', 'done', 'fail', ''], valuetext: 'Stopped while reading your newest mail', lines: [['done', 'Connected'], ['done', 'Found about 214 recent emails'], ['fail', 'Google did not answer after three tries. Your mail is safe.']] }) +
+          acct(FW, 2, { retry: true, segs: ['fail', '', '', ''], valuetext: 'Could not connect', lines: [['fail', 'Fastmail refused the app password. Replace it in Settings → Accounts.']] }),
+        btns: btn.toAplos,
+      };
+      default: return {
+        title: 'Getting your mail',
+        lede: 'Your newest mail comes first. Older mail follows once you are in.',
+        body: acct(GM, 1, { status: `Reading ${n} of 50`, segs: ['done', 'done', 'part:' + n * 2, ''], valuetext: `Reading your newest mail, ${n} of 50`, lines: [['done', 'Connected'], ['done', 'Found about 214 recent emails'], ['now', `Reading your newest mail · ${n} of 50`, 'l'], ['pend', 'Sort what matters']] }) +
+          acct(FW, 2, { status: `Reading ${n2} of 50`, segs: ['done', 'done', 'part:' + n2 * 2, ''], valuetext: `Reading your newest mail, ${n2} of 50`, lines: [['done', 'Connected'], ['done', 'Found recent mail'], ['now', `Reading your newest mail · ${n2} of 50`, 'l'], ['pend', 'Sort what matters']] }) + keysLink,
+        btns: btn.cont + btn.openOff,
+      };
+    }
+  }
+  const STATUS = { progress: 'Reading your newest mail.', paused: 'Google asked us to slow down.', ready: 'Your mail is ready. Opening Aplos.', partial: 'Your newest mail is in. Sorting continues in the background.', failed: 'Some mail didn’t come through.' };
+
+  let curState = null, timer;
+  function render(state, n) {
+    const m = model(state, n);
+    if (curState === state && state === 'progress' && n) {   // patch in place so the marker keeps spinning
+      const tmp = document.createElement('div'); tmp.innerHTML = m.body;
+      document.querySelectorAll('#sync [data-k]').forEach(el => {
+        const nu = tmp.querySelector(`[data-k="${el.dataset.k}"]`); if (!nu) return;
+        el.style.cssText = nu.style.cssText; if (!el.children.length) el.textContent = nu.textContent;
+      });
+      return;
+    }
+    curState = state; html.dataset.state = state;
+    $('sync').innerHTML = (m.lead || '') + `<h1 class="t-heading" id="h">${m.title}</h1><p class="lede">${m.lede}</p>` + m.body;
+    $('btns').innerHTML = m.btns;
+    const live = $('status'); if (live.textContent !== STATUS[state]) live.textContent = STATUS[state];
+    const p = $('primary'); if (p && !p.disabled) p.focus({ preventScroll: true }); else { const c = $('cont'); if (c) c.focus({ preventScroll: true }); }
+    document.querySelectorAll('[data-retry]').forEach(b => b.addEventListener('click', () => render('progress')));
+  }
+
+  const state = Mock.state || 'progress';
+  addEventListener('DOMContentLoaded', () => {
+    render(state);
+    const flow = new URLSearchParams(location.search).has('flow') && !html.classList.contains('shot');
+    if (flow && state === 'progress') {
+      // Walk the whole path: the newest mail is read, then a clean finish opens Aplos by itself.
+      let n = 24;
+      timer = setInterval(() => {
+        n = Math.min(50, n + 3);
+        if (n === 50) { clearInterval(timer); render('ready'); timer = setTimeout(() => Mock.go('home.html'), 3200); return; }
+        render('progress', n);
+      }, 350);
+    }
+    if (state === 'ready' && !html.classList.contains('shot')) timer = setTimeout(() => Mock.go('home.html'), 3200);
+  });
+
+  Mock.onKey(e => {
+    if (e.key === 'Escape') { Mock.go('home.html'); return true; }   // this screen owns Esc, in every state
+    if (e.key === 'Enter') {
+      if (e.target.closest('a, button')) return false;
+      const p = $('primary'); if (p && !p.disabled) { Mock.go('home.html'); return true; }
+      return true;
+    }
+  });
+})();
+</script>
+</body>
+</html>

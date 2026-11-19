@@ -1,0 +1,35 @@
+import assert from 'node:assert/strict';
+import test from 'node:test';
+import type { StorePort } from '../../src/ports';
+import { storedMailSettings } from '../../src/outbox/module';
+
+const storedUndoSeconds = (store: StorePort) => storedMailSettings(store).undoSendSeconds;
+
+/** A store whose settings row holds `data` (or no row at all). */
+function storeWith(data: string | undefined): StorePort {
+  const store = {
+    read: <T>(fn: (q: { get: () => unknown }) => T): T =>
+      fn({ get: () => (data === undefined ? undefined : { data }) }),
+  };
+  return store as unknown as StorePort;
+}
+
+test('the countdown uses the Undo send setting, and the setting default (8) when none was saved', () => {
+  assert.equal(storedUndoSeconds(storeWith(JSON.stringify({ mail: { undoSendSeconds: 20 } }))), 20);
+  assert.equal(storedUndoSeconds(storeWith(JSON.stringify({ mail: { undoSendSeconds: 0 } }))), 0);
+  assert.equal(storedUndoSeconds(storeWith(undefined)), 8, 'Settings → Mail shows 8 seconds');
+  assert.equal(storedUndoSeconds(storeWith('not json')), 8);
+});
+
+test('a damaged Undo send setting never makes a bad window', () => {
+  const damaged = [
+    '',
+    '[]',
+    'null',
+    '5',
+    JSON.stringify({ mail: null }),
+    JSON.stringify({ mail: { undoSendSeconds: '20' } }),
+    JSON.stringify({ mail: { undoSendSeconds: null } }),
+  ];
+  for (const data of damaged) assert.equal(storedUndoSeconds(storeWith(data)), 8, data);
+});

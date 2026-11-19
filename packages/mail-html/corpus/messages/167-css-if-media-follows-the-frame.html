@@ -1,0 +1,9 @@
+<style>
+  .a { padding-top: if(media(max-height: 300px): 600px; else: 0px) }
+  .b { height: if(media(orientation: landscape): 700px; else: 10px) }
+  .c { margin-bottom: if(media((min-aspect-ratio: 1/1) and (height > 50px)): 400px; else: 0) }
+  @container (min-block-size: 100px) { .a { color: red } }
+  @container (max-block-size: 900px) { .b { color: red } }
+</style>
+<div class="a" style="height:if(media(max-height:300px):532px;else:132px)">Flips with the frame's height.</div>
+<div class="b c" style="padding:if(media(orientation:portrait):20px;else:0px)">And with its orientation.</div>

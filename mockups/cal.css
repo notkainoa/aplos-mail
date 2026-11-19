@@ -1,0 +1,149 @@
+/* Calendar screens (week, day, event), revision 2. Shared by calendar-week.html, calendar-day.html, calendar-event.html.
+   Tokens only. INVENTED values: --hour (grid scale). The others are derived from tokens. */
+:root {
+  --hour: 56px;                                      /* INVENTED: one hour of grid; 8 AM to 8 PM fits the pane without scrolling */
+  --gt: var(--space-3);                              /* room above the first hour line so its label is not clipped */
+  --lane-min: calc(var(--space-8) + var(--space-1)); /* overlapping events keep a 44 px column for the "+N" stack */
+  --cap: calc(var(--space-1) + 1px);                 /* the now-line cap is 5 px */
+  --hours-w: var(--space-10);
+  --ev-gap: var(--space-half);
+}
+
+/* ---------- The page: heading row, then the grid ---------- */
+.workspace.cal-ws { padding: 0 var(--space-6); overflow: hidden; display: flex; flex-direction: column; }
+.cal-ws .page-head { flex: none; padding: var(--page-top) 0 var(--space-4); }
+.cal-ws .page-head .actions { align-self: flex-end; gap: var(--space-1); }
+.cal-ws .page-head .actions .seg { margin-left: var(--space-2); }
+.cal-ws .page-head .actions .seg button { min-width: var(--control-md); padding: 0 var(--space-2); font-weight: 500; }
+.cal-ws .page-head .actions .btn-text { margin-right: var(--space-1); }
+
+.cal { flex: 1; min-height: 0; display: flex; flex-direction: column; position: relative; }
+.cal-head, .cal-body { display: grid; grid-template-columns: var(--hours-w) repeat(var(--ncols, 7), minmax(0, 1fr)); }
+.cal-head { flex: none; }
+.cal-scroll { flex: 1; min-height: 0; overflow: auto; scrollbar-width: none; padding-bottom: var(--space-6); }
+.cal-body { position: relative; height: calc(var(--gt) + var(--hour) * var(--nhours, 12)); }
+
+/* Day headers: "Thu" quiet, the date a number; today gets a filled accent badge */
+.dh { display: flex; align-items: center; gap: var(--space-2); height: var(--control-lg); padding: 0 var(--space-2); color: var(--dim); font: var(--type-small); letter-spacing: var(--track-small); }
+.dh .num { display: inline-flex; align-items: center; justify-content: center; min-width: var(--control-xs); height: var(--control-xs); border-radius: var(--radius-sm); font: var(--type-ui); font-weight: 500; letter-spacing: var(--track-ui); color: var(--ink-2); }
+.dh.today { background: var(--today-tint); border-radius: var(--radius-md) var(--radius-md) 0 0; }
+.dh.today .dow { color: var(--ink); font-weight: 500; }
+.dh.today .num { background: var(--accent); color: var(--accent-ink); font-weight: 600; }
+
+/* Hour labels and the grid: very light hairlines, nothing else */
+.hours { position: relative; }
+.hl { position: absolute; right: var(--space-3); transform: translateY(-50%); font: var(--type-caption); letter-spacing: var(--track-caption); color: var(--dim); white-space: nowrap; top: calc(var(--gt) + var(--hour) * var(--h)); }
+.col {
+  position: relative; box-shadow: inset var(--hairline) 0 0 var(--line);
+  background-image: linear-gradient(to bottom, var(--line) var(--hairline), transparent var(--hairline));
+  background-size: 100% var(--hour); background-position: 0 var(--gt);
+}
+.col.today { background-color: var(--today-tint); }
+.col:last-child { box-shadow: inset var(--hairline) 0 0 var(--line), inset calc(-1 * var(--hairline)) 0 0 var(--line); }
+
+/* Now-line: 1 px stamp with a cap */
+.now { position: absolute; left: 0; right: 0; height: 1px; background: var(--stamp); top: calc(var(--gt) + var(--hour) * var(--now)); z-index: 3; pointer-events: none; }
+.now::before { content: ""; position: absolute; left: calc(-1 * var(--cap) / 2); top: calc(-1 * var(--cap) / 2 + var(--hairline) / 2); width: var(--cap); height: var(--cap); border-radius: 50%; background: var(--stamp); }
+
+/* ---------- Events: radius 6, a 2 px rule in the calendar colour, an opaque tint of it ---------- */
+.ev {
+  --ev-fill: color-mix(in srgb, var(--cal) var(--event-fill), var(--canvas));   /* composited over the canvas: grid lines never cross text */
+  position: absolute; z-index: 1; text-align: left; display: flex; flex-direction: column; overflow: hidden;
+  top: calc(var(--gt) + var(--hour) * var(--s) + var(--hairline));
+  height: max(var(--space-5), calc(var(--hour) * var(--d) - var(--ev-gap) * 2));
+  left: calc(100% * var(--lane, 0) / var(--lanes, 1) + var(--ev-gap));
+  width: calc(100% / var(--lanes, 1) - var(--ev-gap) * 2);
+  padding: var(--space-half) var(--space-2) var(--space-half) calc(var(--space-2) + var(--select-bar));
+  border-radius: var(--radius-sm);
+  background: var(--ev-fill);
+  box-shadow: inset var(--select-bar) 0 0 var(--cal);
+  color: var(--ink); cursor: default;
+  transition: background-color var(--dur-hover) var(--ease-std);
+}
+.ev.beside { width: calc(100% - var(--lane-min) - var(--ev-gap) * 3); }
+.ev:hover { background: color-mix(in srgb, var(--ev-fill), var(--ink) 4%); }
+.ev .t, .ev .w { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; font: var(--type-small); letter-spacing: var(--track-small); }
+.ev .t { font-weight: 500; color: var(--ink); }
+.ev .w { color: var(--dim); }
+:root[data-theme="dark"] .ev .w { color: var(--ink-2); }   /* --dim is 4.4:1 on a 20 % dark tint; one step up passes */
+.ev.one { flex-direction: row; align-items: center; gap: var(--space-2); padding-top: 0; padding-bottom: 0; }
+.ev.one .w { flex: none; }
+.ev.is-selected, .ev:focus-visible { outline: var(--focus-width) solid var(--accent); outline-offset: 0; z-index: 2; }
+
+/* A plan found in mail: dashed outline and a "From mail" label, not yet on the calendar */
+.ev.is-plan { background: var(--canvas); box-shadow: none; outline: 1px dashed var(--control-edge); outline-offset: -1px; padding-left: var(--space-2); }
+.ev.is-plan:hover { background: color-mix(in srgb, var(--canvas), var(--ink) 4%); }
+.ev.is-plan.is-selected, .ev.is-plan:focus-visible { outline: var(--focus-width) solid var(--accent); }
+.ev .from { display: inline-flex; align-items: center; gap: var(--space-1); font: var(--type-small); letter-spacing: var(--track-small); color: var(--dim); }
+.ev .from .ic { width: var(--icon-sm); height: var(--icon-sm); }
+
+/* "+2": a quiet stack that opens the overlapped events */
+.ev-stack {
+  position: absolute; z-index: 1; right: var(--ev-gap); width: var(--lane-min);
+  top: calc(var(--gt) + var(--hour) * var(--s) + var(--hairline));
+  height: max(var(--space-5), calc(var(--hour) * var(--d) - var(--ev-gap) * 2));
+  border-radius: var(--radius-sm); background: var(--raised); box-shadow: inset 0 0 0 1px var(--line-strong);
+  display: flex; align-items: flex-start; justify-content: center; padding-top: var(--space-half);
+  font: var(--type-small); font-weight: 500; letter-spacing: var(--track-small); color: var(--ink-2);
+  transition: background-color var(--dur-hover) var(--ease-std);
+}
+.ev-stack:hover { background: color-mix(in srgb, var(--raised), var(--ink) 4%); color: var(--ink); }
+.ev-stack[aria-expanded="true"] { outline: var(--focus-width) solid var(--accent); outline-offset: 0; z-index: 2; }
+.stack-menu { position: absolute; z-index: 20; min-width: var(--menu-min); }
+.stack-menu .menu-item .mk { width: var(--mark-dot); height: var(--mark-dot); border-radius: 50%; flex: none; }
+.stack-menu .menu-item .aside { margin-left: auto; padding-left: var(--space-3); }
+
+/* ---------- Details: the day rail and the popover share these rows ---------- */
+.detail { display: flex; flex-direction: column; color: var(--ink-2); font: var(--type-ui); letter-spacing: var(--track-ui); }
+.d-head { display: flex; align-items: flex-start; gap: var(--space-1); }
+.d-head h2 { font: var(--type-title); letter-spacing: var(--track-title); color: var(--ink); flex: 1; min-width: 0; padding-top: var(--space-half); }
+.d-head .btn-icon { margin-top: calc(-1 * var(--space-half)); }
+.d-head .btn-icon:last-child { margin-right: calc(-1 * var(--space-2)); }
+.d-when { margin-top: var(--space-half); color: var(--dim); font: var(--type-small); letter-spacing: var(--track-small); }
+.d-rows { margin-top: var(--space-3); display: flex; flex-direction: column; }
+.d-rows li { display: flex; align-items: center; gap: var(--space-2); min-height: var(--control-sm); color: var(--ink); min-width: 0; }
+.d-rows li .ic { color: var(--dim); }
+.d-rows li .mk { width: var(--icon); display: flex; justify-content: center; flex: none; }
+.d-rows li .mk i { width: var(--mark-dot); height: var(--mark-dot); border-radius: 50%; display: block; }
+.d-rows li a { min-width: 0; }
+.d-label { font: var(--type-small); font-weight: 500; color: var(--dim); margin: var(--space-4) 0 var(--space-1); }
+.guests li { display: flex; align-items: center; gap: var(--space-2); min-height: var(--control-sm); color: var(--ink); }
+.guests li .role { font: var(--type-small); color: var(--dim); margin-left: var(--space-1); }
+.guests .st { margin-left: auto; display: inline-flex; align-items: center; gap: var(--space-1); font: var(--type-small); color: var(--dim); }
+.guests .st .ic { width: var(--icon-sm); height: var(--icon-sm); }
+.guests .st.is-open { color: var(--ink-2); }
+.d-desc { margin-top: var(--space-4); color: var(--ink-2); max-width: 46ch; }
+
+/* RSVP: a label, then Yes | Maybe | No with nothing preselected and the one filled button */
+.d-rsvp { margin-top: var(--space-4); padding-top: var(--space-1); box-shadow: 0 calc(-1 * var(--hairline)) 0 var(--line); }
+.d-rsvp .d-label { margin-top: var(--space-3); }
+.d-rsvp .row-flex { justify-content: space-between; gap: var(--space-3); }
+.d-rsvp .seg button { min-width: var(--space-8); }
+
+/* Popover anchored to an event: an opaque float card */
+.pop { position: absolute; z-index: 30; width: var(--dock-w); padding: var(--space-4); }
+
+/* ---------- Day view: one column and a quiet detail rail ---------- */
+.day-wrap { flex: 1; min-height: 0; display: flex; gap: var(--space-6); }
+.day-wrap .cal { flex: 1; min-width: 0; }
+.day-rail { width: var(--dock-w); flex: none; padding: var(--space-2) 0 var(--space-6) var(--space-6); box-shadow: inset var(--hairline) 0 0 var(--line); overflow: auto; scrollbar-width: none; }
+.day-wrap.is-empty .day-rail { display: none; }
+.day-empty { position: absolute; left: var(--hours-w); top: calc(var(--gt) + var(--hour)); height: var(--hour); z-index: 2; display: flex; align-items: center; padding: 0 var(--space-4); }
+.day-empty .empty-line { padding: 0; flex-direction: row; align-items: center; gap: var(--space-3); }
+.day-empty .btn .kbd { margin-left: var(--space-1); }
+
+/* ---------- Month view ---------- */
+.month { flex: 1; min-height: 0; padding-bottom: var(--space-6); display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); grid-template-rows: auto repeat(6, minmax(0, 1fr)); }
+.month .mh { padding: var(--space-2) var(--space-2); font: var(--type-small); color: var(--dim); }
+.mcell { box-shadow: inset var(--hairline) 0 0 var(--line), inset 0 var(--hairline) 0 var(--line); padding: var(--space-1) var(--space-1) 0; overflow: hidden; min-width: 0; }
+.mcell .n { display: inline-flex; align-items: center; justify-content: center; min-width: var(--control-xs); height: var(--control-xs); margin-bottom: var(--space-half); border-radius: var(--radius-sm); font: var(--type-small); color: var(--ink-2); }
+.mcell.out .n { color: var(--dim); }
+.mcell.today { background: var(--today-tint); }
+.mcell.today .n { background: var(--accent); color: var(--accent-ink); font-weight: 600; }
+.mev { display: flex; align-items: center; gap: var(--space-2); height: var(--control-xs); padding: 0 var(--space-1); border-radius: var(--radius-sm); font: var(--type-small); color: var(--ink); min-width: 0; }
+.mev i { width: var(--mark-dot); height: var(--mark-dot); border-radius: 50%; background: var(--cal); flex: none; }
+.mev span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
+.mev.more { color: var(--dim); padding-left: var(--space-1); }
+
+/* The sidebar's mini month (drawn by the shell): out-of-month days stay readable */
+.mini-month td.out { color: var(--dim); }

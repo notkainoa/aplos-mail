@@ -1,0 +1,18 @@
+<style>
+  :root { color-scheme: light dark; --brand: #0b5fff; --pad: 16px; }
+  body { font: 16px/1.5 system-ui, sans-serif; margin: 0; }
+  .card { padding: var(--pad); border: 1px solid color-mix(in srgb, var(--brand) 40%, white); border-radius: 8px; }
+  .card:hover { box-shadow: 0 2px 8px rgba(0,0,0,.2); }
+  a[href^="mailto:"] { color: var(--brand); }
+  .ExternalClass, .ExternalClass p { line-height: 100%; }
+  u + .body .gmail-fix { display: none; }
+  [data-ogsc] .dark-text { color: #fff !important; }
+  @media (max-width: 480px) { .card { padding: 8px; } .hide-mobile { display: none !important; } }
+  @media (prefers-color-scheme: dark) { body { background: #111; color: #eee; } .card { border-color: #444; } }
+  @media (prefers-reduced-motion: reduce) { * { animation: none !important; } }
+  @supports (display: grid) { .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; } }
+</style>
+<div class="card"><h1>Responsive layout test</h1><p>Dark mode is supported by the rules above.</p></div>
+<div class="grid"><div>one</div><div>two</div></div>
+<p class="hide-mobile">Hidden on small screens only.</p>
+<a href="mailto:hello@shop.example">hello@shop.example</a>

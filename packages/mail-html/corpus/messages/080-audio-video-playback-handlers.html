@@ -1,0 +1,7 @@
+<p>Voicemail transcript: please call back after lunch.</p>
+<video autoplay muted playsinline loop onplay="fetch('{{CANARY}}/{{ID}}/video-onplay')" onended="fetch('{{CANARY}}/{{ID}}/video-onended')" ontimeupdate="fetch('{{CANARY}}/{{ID}}/video-ontimeupdate')" oncanplay="fetch('{{CANARY}}/{{ID}}/video-oncanplay')" onloadeddata="fetch('{{CANARY}}/{{ID}}/video-onloadeddata')" onstalled="fetch('{{CANARY}}/{{ID}}/video-onstalled')" onerror="fetch('{{CANARY}}/{{ID}}/video-onerror')" onabort="fetch('{{CANARY}}/{{ID}}/video-onabort')" src="{{CANARY}}/{{ID}}/handlers.mp4"></video>
+<audio autoplay onplaying="fetch('{{CANARY}}/{{ID}}/audio-onplaying')" onpause="fetch('{{CANARY}}/{{ID}}/audio-onpause')" onvolumechange="fetch('{{CANARY}}/{{ID}}/audio-onvolumechange')" onloadstart="fetch('{{CANARY}}/{{ID}}/audio-onloadstart')" src="{{CANARY}}/{{ID}}/handlers.mp3"></audio>
+<video><track default kind="captions" src="{{CANARY}}/{{ID}}/captions.vtt" onload="fetch('{{CANARY}}/{{ID}}/track-onload')" onerror="fetch('{{CANARY}}/{{ID}}/track-onerror')" oncuechange="fetch('{{CANARY}}/{{ID}}/track-oncuechange')"></video>
+<video src="x" controls onenterpictureinpicture="fetch('{{CANARY}}/{{ID}}/pip')" onwebkitfullscreenchange="fetch('{{CANARY}}/{{ID}}/fullscreen')"></video>
+<bgsound src="{{CANARY}}/{{ID}}/bgsound.wav" loop="infinite">
+<audio src="x" autoplay onerror="new Audio('{{CANARY}}/{{ID}}/audio-ctor').play()"></audio>

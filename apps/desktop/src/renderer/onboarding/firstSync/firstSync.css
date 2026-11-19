@@ -1,0 +1,89 @@
+/* First-sync screen and the key drill (DESIGN 7.12; onboarding-sync.html, onboarding-drill.html).
+   Layout of this screen's own wrappers only: every control and every line of type is drawn by renderer/ui.
+   Tokens only; nothing animates here. */
+
+.fs {
+  display: contents;
+}
+
+/* The step content column aligns its children to the start; these wrappers take the full width. */
+.fs-rows,
+.fs-extra,
+.fs-drill {
+  width: 100%;
+  min-width: 0;
+}
+
+.fs-rows {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-6);
+}
+.fs-rows[data-compact='true'] {
+  gap: var(--space-3);
+}
+
+.fs-account__action {
+  display: flex;
+  margin-top: var(--space-1);
+  margin-left: calc(var(--icon) + var(--space-2) - var(--space-3));
+}
+
+/* "Try the keys while you wait" sits close under the rows, its text lined up with theirs. */
+.fs-extra {
+  display: flex;
+  margin-top: calc(-1 * var(--space-2));
+  margin-left: calc(-1 * var(--space-3));
+}
+
+/* The drill: one hairline above it, then its head, the practice letters and the current step. */
+.fs-drill {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  padding-top: var(--space-5);
+  box-shadow: 0 calc(-1 * var(--hairline)) 0 var(--line);
+}
+.fs-drill__head {
+  display: flex;
+  align-items: baseline;
+  gap: var(--space-3);
+  min-width: 0;
+}
+.fs-drill__head > :last-child {
+  margin-left: auto;
+}
+.fs-drill__list {
+  min-width: 0;
+}
+.fs-drill__prompt {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  min-height: var(--control-md);
+}
+.fs-drill__keys {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  gap: var(--space-1);
+}
+.fs-drill__say {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  column-gap: var(--space-2);
+  min-width: 0;
+}
+.fs-drill__count {
+  flex: none;
+  margin-left: auto;
+}
+
+/* The practice letter's Later and ⋯ buttons have no drill step: FocusLetter always draws them (its props
+   require the handlers), so the drill hides them rather than showing buttons that do nothing. Later is the
+   action right after the suggestion; ⋯ is the row's only icon-variant action. */
+.fs-drill .ui-focus-letter__suggest + .ui-list-btn,
+.fs-drill .ui-focus-letter__actions > .ui-list-btn[data-variant='icon'] {
+  display: none;
+}

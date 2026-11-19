@@ -1,1 +1,20 @@
-{"compilerOptions":{"target":"ES2023","lib":["ES2023","DOM","DOM.Iterable"],"module":"ESNext","moduleResolution":"Bundler","jsx":"react-jsx","strict":true,"esModuleInterop":true,"skipLibCheck":true,"resolveJsonModule":true,"noEmit":true,"types":["node","vite/client"]},"include":["src","tests","vite.config.ts"]}
+{
+  "compilerOptions": {
+    "target": "ES2023",
+    "lib": ["ES2023", "ES2024.String", "DOM", "DOM.Iterable"],
+    "module": "ESNext",
+    "moduleResolution": "Bundler",
+    "jsx": "react-jsx",
+    "strict": true,
+    "esModuleInterop": true,
+    "skipLibCheck": true,
+    "resolveJsonModule": true,
+    "noEmit": true,
+    "types": ["node", "vite/client"],
+    "paths": {
+      "@aplos/engine/*": ["../../packages/engine/src/*"],
+      "@aplos/contract/*": ["../../packages/contract/src/*"]
+    }
+  },
+  "include": ["src", "tests", "vite.config.ts"]
+}

@@ -1,0 +1,1740 @@
+[
+  {
+    "id": "001-tracking-three-pixels",
+    "title": "A message that tries to track you",
+    "classes": ["tracking-pixel", "remote-image"],
+    "html": "messages/001-tracking-three-pixels.html",
+    "expect": {
+      "trackersRemovedMin": 3,
+      "remoteImages": 3,
+      "mustKeepText": [
+        "Harbor Market autumn catalogue",
+        "Free shipping on orders over 40",
+        "Visit the shop"
+      ],
+      "notes": "Owner demo. Exactly three tracking pixels (1x1 attributes, 0x0 attributes, CSS 1px with opacity 0) and three ordinary sized images that must remain as remote images."
+    }
+  },
+  {
+    "id": "002-runs-code-everywhere",
+    "title": "A message that tries to run code",
+    "classes": [
+      "script-inline",
+      "event-handler",
+      "javascript-url",
+      "form-autosubmit",
+      "svg-script",
+      "iframe-nested"
+    ],
+    "html": "messages/002-runs-code-everywhere.html",
+    "expect": {
+      "mustKeepText": [
+        "Your parcel is waiting",
+        "Please confirm the delivery window",
+        "Thank you for choosing Quayside Couriers"
+      ],
+      "notes": "Owner demo. Scripts, handlers, javascript: URLs, an auto-submitting form, SVG script and iframes around ordinary prose. The prose must survive and nothing may run or connect."
+    }
+  },
+  {
+    "id": "003-script-beacons",
+    "title": "Scripts that phone home in every way they can",
+    "classes": ["script-inline", "storage-cookie"],
+    "html": "messages/003-script-beacons.html",
+    "expect": {
+      "mustKeepText": ["Monthly allotment report", "Water usage was lower than last month"]
+    }
+  },
+  {
+    "id": "004-script-external-sources",
+    "title": "Scripts loaded from outside",
+    "classes": ["script-inline"],
+    "html": "messages/004-script-external-sources.html",
+    "expect": {
+      "mustKeepText": ["Reminder: choir rehearsal moves to Thursday"]
+    }
+  },
+  {
+    "id": "005-script-obfuscated-tags",
+    "title": "Script tags written to confuse a filter",
+    "classes": ["script-inline", "mxss"],
+    "html": "messages/005-script-obfuscated-tags.html",
+    "expect": {
+      "mustKeepText": ["Notes from the garden club"]
+    }
+  },
+  {
+    "id": "006-script-types-and-speculation",
+    "title": "Script blocks that are not scripts, until a browser feature reads them",
+    "classes": ["script-inline", "link-prefetch"],
+    "html": "messages/006-script-types-and-speculation.html",
+    "expect": {
+      "mustKeepText": ["Spring fair volunteer list"]
+    }
+  },
+  {
+    "id": "007-script-workers-and-eval",
+    "title": "Workers, eval and string timers",
+    "classes": ["script-inline", "storage-cookie"],
+    "html": "messages/007-script-workers-and-eval.html",
+    "expect": {
+      "mustKeepText": ["Library opening hours"]
+    }
+  },
+  {
+    "id": "008-handlers-img-and-body",
+    "title": "Image and body event handlers",
+    "classes": ["event-handler", "script-inline"],
+    "html": "messages/008-handlers-img-and-body.html",
+    "expect": {
+      "mustKeepText": ["Your table is booked", "See you on Saturday evening"]
+    }
+  },
+  {
+    "id": "009-handlers-focus-and-autofocus",
+    "title": "Handlers that fire without a click",
+    "classes": ["event-handler"],
+    "html": "messages/009-handlers-focus-and-autofocus.html",
+    "expect": {
+      "mustKeepText": ["Poll results are in"]
+    }
+  },
+  {
+    "id": "010-handlers-animation-and-popover",
+    "title": "Handlers triggered by CSS animation, transitions and popovers",
+    "classes": ["event-handler"],
+    "html": "messages/010-handlers-animation-and-popover.html",
+    "expect": {
+      "mustKeepText": ["Garage sale this weekend"]
+    }
+  },
+  {
+    "id": "011-handlers-svg-media-forms",
+    "title": "Handlers on SVG, audio, video and form controls",
+    "classes": ["event-handler", "svg-script", "audio-video"],
+    "html": "messages/011-handlers-svg-media-forms.html",
+    "expect": {
+      "mustKeepText": ["Bake sale totals"]
+    }
+  },
+  {
+    "id": "012-handlers-obfuscated-syntax",
+    "title": "Event handlers hidden behind odd syntax",
+    "classes": ["event-handler", "mxss"],
+    "html": "messages/012-handlers-obfuscated-syntax.html",
+    "expect": {
+      "mustKeepText": ["Concert tickets go on sale at noon"]
+    }
+  },
+  {
+    "id": "013-js-url-href-plain",
+    "title": "Links that run code when clicked",
+    "classes": ["javascript-url"],
+    "html": "messages/013-js-url-href-plain.html",
+    "expect": {
+      "mustKeepText": ["Renew your library card"]
+    }
+  },
+  {
+    "id": "014-js-url-obfuscated-schemes",
+    "title": "javascript URLs disguised with entities, whitespace and control characters",
+    "classes": ["javascript-url", "mxss"],
+    "html": "messages/014-js-url-obfuscated-schemes.html",
+    "expect": {
+      "mustKeepText": ["Neighbourhood watch update"]
+    }
+  },
+  {
+    "id": "015-js-url-other-attributes",
+    "title": "javascript URLs in attributes other than href",
+    "classes": ["javascript-url", "form-autosubmit", "iframe-nested", "object-embed", "svg-other"],
+    "html": "messages/015-js-url-other-attributes.html",
+    "expect": {
+      "mustKeepText": ["Annual general meeting notice"]
+    }
+  },
+  {
+    "id": "016-link-schemes-other-than-web",
+    "title": "Links using other URL schemes",
+    "classes": ["link-scheme", "javascript-url", "data-url"],
+    "html": "messages/016-link-schemes-other-than-web.html",
+    "expect": {
+      "mustKeepText": ["Contact the committee"]
+    }
+  },
+  {
+    "id": "017-data-url-links",
+    "title": "Links to data URLs",
+    "classes": ["data-url", "javascript-url"],
+    "html": "messages/017-data-url-links.html",
+    "expect": {
+      "mustKeepText": ["Download the attached form"]
+    }
+  },
+  {
+    "id": "018-data-url-embedded-documents",
+    "title": "Data URLs used to embed active documents",
+    "classes": ["data-url", "iframe-nested", "object-embed"],
+    "html": "messages/018-data-url-embedded-documents.html",
+    "expect": {
+      "mustKeepText": ["Meeting minutes attached below"]
+    }
+  },
+  {
+    "id": "019-data-url-svg-and-images",
+    "title": "Data URL images, some benign and some not",
+    "classes": ["data-url", "svg-other", "cid-inline"],
+    "html": "messages/019-data-url-svg-and-images.html",
+    "expect": {
+      "mustKeepText": ["Our new logo is below"]
+    }
+  },
+  {
+    "id": "020-data-url-in-css",
+    "title": "Data URLs inside CSS",
+    "classes": ["data-url", "css-url", "css-import", "css-font-face"],
+    "html": "messages/020-data-url-in-css.html",
+    "expect": {
+      "mustKeepText": ["Style notes for the newsletter"]
+    }
+  },
+  {
+    "id": "021-meta-refresh-redirects",
+    "title": "A message that redirects the viewer",
+    "classes": ["meta-refresh"],
+    "html": "messages/021-meta-refresh-redirects.html",
+    "expect": {
+      "mustKeepText": ["This message has moved"]
+    }
+  },
+  {
+    "id": "022-meta-refresh-obfuscated",
+    "title": "Refresh redirects written in unusual ways",
+    "classes": ["meta-refresh", "javascript-url", "data-url"],
+    "html": "messages/022-meta-refresh-obfuscated.html",
+    "expect": {
+      "mustKeepText": ["Please wait while we update your preferences"]
+    }
+  },
+  {
+    "id": "023-link-dns-prefetch-preconnect",
+    "title": "Hints that make the browser contact a server before anything is clicked",
+    "classes": ["link-prefetch"],
+    "html": "messages/023-link-dns-prefetch-preconnect.html",
+    "expect": {
+      "mustKeepText": ["Conference schedule for next week"]
+    }
+  },
+  {
+    "id": "024-link-prefetch-preload-prerender",
+    "title": "Resources fetched ahead of time",
+    "classes": ["link-prefetch", "remote-font"],
+    "html": "messages/024-link-prefetch-preload-prerender.html",
+    "expect": {
+      "mustKeepText": ["Reading list for the long weekend"]
+    }
+  },
+  {
+    "id": "025-link-stylesheet-icon-manifest",
+    "title": "Linked stylesheets, icons and manifests",
+    "classes": ["link-prefetch"],
+    "html": "messages/025-link-stylesheet-icon-manifest.html",
+    "expect": {
+      "mustKeepText": ["Welcome to the allotment society newsletter"]
+    }
+  },
+  {
+    "id": "026-link-tag-variants-and-confusion",
+    "title": "Link tags hidden in unusual places",
+    "classes": ["link-prefetch", "mxss", "svg-other"],
+    "html": "messages/026-link-tag-variants-and-confusion.html",
+    "expect": {
+      "mustKeepText": ["Parking permits are due for renewal"]
+    }
+  },
+  {
+    "id": "027-css-url-style-attribute",
+    "title": "Style attributes that load things",
+    "classes": ["css-url", "remote-image"],
+    "html": "messages/027-css-url-style-attribute.html",
+    "expect": {
+      "mustKeepText": ["Seasonal price list"]
+    }
+  },
+  {
+    "id": "028-css-url-style-element",
+    "title": "A style block with URLs in many properties and contexts",
+    "classes": ["css-url", "remote-image"],
+    "html": "messages/028-css-url-style-element.html",
+    "expect": {
+      "mustKeepText": ["Opening hours"]
+    }
+  },
+  {
+    "id": "029-css-url-escaped-forms",
+    "title": "CSS url() written with escapes",
+    "classes": ["css-url", "mxss"],
+    "html": "messages/029-css-url-escaped-forms.html",
+    "expect": {
+      "mustKeepText": ["Garden tool library"]
+    }
+  },
+  {
+    "id": "030-css-url-comments-and-whitespace",
+    "title": "CSS comments and whitespace splitting url() and at-rules",
+    "classes": ["css-url", "mxss"],
+    "html": "messages/030-css-url-comments-and-whitespace.html",
+    "expect": {
+      "mustKeepText": ["Recycling calendar"]
+    }
+  },
+  {
+    "id": "031-css-legacy-vectors",
+    "title": "Old browser features inside CSS",
+    "classes": ["css-legacy", "css-url"],
+    "html": "messages/031-css-legacy-vectors.html",
+    "expect": {
+      "mustKeepText": ["Costume hire list"]
+    }
+  },
+  {
+    "id": "032-css-variables-and-attr",
+    "title": "URLs smuggled through CSS variables, attr() and registered properties",
+    "classes": ["css-url", "css-image-set"],
+    "html": "messages/032-css-variables-and-attr.html",
+    "expect": {
+      "mustKeepText": ["Volunteer rota for November"]
+    }
+  },
+  {
+    "id": "033-css-attribute-selector-exfiltration",
+    "title": "Style rules that report which fields or links exist",
+    "classes": ["css-url", "css-exfil"],
+    "html": "messages/033-css-attribute-selector-exfiltration.html",
+    "expect": {
+      "mustKeepText": ["Your recovery code is below"]
+    }
+  },
+  {
+    "id": "034-css-import",
+    "title": "Stylesheets imported from a style block",
+    "classes": ["css-import"],
+    "html": "messages/034-css-import.html",
+    "expect": {
+      "mustKeepText": ["Club newsletter, issue forty"]
+    }
+  },
+  {
+    "id": "035-css-import-obfuscated",
+    "title": "Imports hidden from a simple scanner",
+    "classes": ["css-import", "mxss"],
+    "html": "messages/035-css-import-obfuscated.html",
+    "expect": {
+      "mustKeepText": ["Treasurer's report"]
+    }
+  },
+  {
+    "id": "036-css-font-face-remote",
+    "title": "Web fonts loaded from outside",
+    "classes": ["css-font-face", "remote-font"],
+    "html": "messages/036-css-font-face-remote.html",
+    "expect": {
+      "mustKeepText": ["New typeface for the village newsletter"]
+    }
+  },
+  {
+    "id": "037-css-font-face-local-and-data",
+    "title": "Font rules that should be kept or dropped safely",
+    "classes": ["css-font-face", "remote-font", "benign-newsletter", "data-url"],
+    "html": "messages/037-css-font-face-local-and-data.html",
+    "expect": {
+      "mustKeepText": ["Local fonts are fine"]
+    }
+  },
+  {
+    "id": "038-css-image-set",
+    "title": "Images chosen by image-set and friends",
+    "classes": ["css-image-set", "css-url", "remote-image"],
+    "html": "messages/038-css-image-set.html",
+    "expect": {
+      "mustKeepText": ["Retina ready"]
+    }
+  },
+  {
+    "id": "039-base-tag-relative-urls",
+    "title": "A base tag that redirects every relative URL",
+    "classes": ["base-tag", "remote-image"],
+    "html": "messages/039-base-tag-relative-urls.html",
+    "expect": {
+      "mustKeepText": ["Welcome to the community noticeboard"]
+    }
+  },
+  {
+    "id": "040-base-tag-variants",
+    "title": "Base tags in strange forms",
+    "classes": ["base-tag", "javascript-url", "data-url", "mxss"],
+    "html": "messages/040-base-tag-variants.html",
+    "expect": {
+      "mustKeepText": ["Notice of the next committee meeting"]
+    }
+  },
+  {
+    "id": "041-svg-script-elements",
+    "title": "Script elements inside SVG",
+    "classes": ["svg-script", "script-inline"],
+    "html": "messages/041-svg-script-elements.html",
+    "expect": {
+      "mustKeepText": ["Holiday parade route"]
+    }
+  },
+  {
+    "id": "042-svg-foreignobject",
+    "title": "Foreign objects carrying HTML inside SVG",
+    "classes": ["svg-foreignobject", "iframe-nested", "form-autosubmit"],
+    "html": "messages/042-svg-foreignobject.html",
+    "expect": {
+      "mustKeepText": ["Raffle winners"]
+    }
+  },
+  {
+    "id": "043-svg-use-image-feimage",
+    "title": "SVG elements that reference external files",
+    "classes": ["svg-other", "remote-image"],
+    "html": "messages/043-svg-use-image-feimage.html",
+    "expect": {
+      "mustKeepText": ["Icon pack announcement"]
+    }
+  },
+  {
+    "id": "044-svg-animate-changes-href",
+    "title": "SVG animation that swaps in a dangerous link",
+    "classes": ["svg-other", "javascript-url", "event-handler"],
+    "html": "messages/044-svg-animate-changes-href.html",
+    "expect": {
+      "mustKeepText": ["Choir concert programme"]
+    }
+  },
+  {
+    "id": "045-svg-links-and-benign-graphics",
+    "title": "SVG links, plus ordinary SVG art that may stay",
+    "classes": ["svg-other", "benign-newsletter"],
+    "html": "messages/045-svg-links-and-benign-graphics.html",
+    "expect": {
+      "mustKeepText": ["Our logo is drawn as a vector"]
+    }
+  },
+  {
+    "id": "046-form-autosubmit-script",
+    "title": "A form that submits itself",
+    "classes": ["form-autosubmit", "script-inline"],
+    "html": "messages/046-form-autosubmit-script.html",
+    "expect": {
+      "mustKeepText": ["Complete your registration"]
+    }
+  },
+  {
+    "id": "047-form-buttons-and-formaction",
+    "title": "Buttons and inputs that override where a form goes",
+    "classes": ["form-autosubmit"],
+    "html": "messages/047-form-buttons-and-formaction.html",
+    "expect": {
+      "mustKeepText": ["Reply to confirm your seat"]
+    }
+  },
+  {
+    "id": "048-form-autofocus-phishing",
+    "title": "A fake sign-in form",
+    "classes": ["form-autosubmit", "event-handler", "hidden-content"],
+    "html": "messages/048-form-autofocus-phishing.html",
+    "expect": {
+      "mustKeepText": ["Your mailbox is almost full", "Sign in to keep your messages"]
+    }
+  },
+  {
+    "id": "049-iframe-basic",
+    "title": "Frames pointing at outside pages",
+    "classes": ["iframe-nested"],
+    "html": "messages/049-iframe-basic.html",
+    "expect": {
+      "mustKeepText": ["Embedded status page"]
+    }
+  },
+  {
+    "id": "050-frameset-frames",
+    "title": "Frameset documents",
+    "classes": ["iframe-nested", "mxss"],
+    "html": "messages/050-frameset-frames.html",
+    "expect": {
+      "mustKeepText": ["Frameset test message"]
+    }
+  },
+  {
+    "id": "051-iframe-srcdoc-nested",
+    "title": "Frames inside frames, with their own documents",
+    "classes": ["iframe-nested", "script-inline", "mxss"],
+    "html": "messages/051-iframe-srcdoc-nested.html",
+    "expect": {
+      "mustKeepText": ["Quarterly figures are attached"]
+    }
+  },
+  {
+    "id": "052-object-embed-applet",
+    "title": "Plugins and embedded objects",
+    "classes": ["object-embed"],
+    "html": "messages/052-object-embed-applet.html",
+    "expect": {
+      "mustKeepText": ["Interactive map of the walking trail"]
+    }
+  },
+  {
+    "id": "053-object-fallback-and-data-uri",
+    "title": "Objects whose fallback content or data is the payload",
+    "classes": ["object-embed", "data-url", "mxss"],
+    "html": "messages/053-object-fallback-and-data-uri.html",
+    "expect": {
+      "mustKeepText": ["Document viewer fallback"]
+    }
+  },
+  {
+    "id": "054-mxss-svg-style-namespace",
+    "title": "Markup that changes meaning when SVG and HTML rules meet",
+    "classes": ["mxss", "svg-other"],
+    "html": "messages/054-mxss-svg-style-namespace.html",
+    "expect": {
+      "mustKeepText": ["Spring bulb order form"]
+    }
+  },
+  {
+    "id": "055-mxss-math-mtext-mglyph",
+    "title": "MathML namespace confusion",
+    "classes": ["mxss"],
+    "html": "messages/055-mxss-math-mtext-mglyph.html",
+    "expect": {
+      "mustKeepText": ["Equation of the week"]
+    }
+  },
+  {
+    "id": "056-mxss-raw-text-elements",
+    "title": "Elements whose content is not parsed as markup",
+    "classes": ["mxss"],
+    "html": "messages/056-mxss-raw-text-elements.html",
+    "expect": {
+      "mustKeepText": ["Notes on the pond restoration"]
+    }
+  },
+  {
+    "id": "057-mxss-comment-tricks",
+    "title": "Comments that hide or reveal markup",
+    "classes": ["mxss"],
+    "html": "messages/057-mxss-comment-tricks.html",
+    "expect": {
+      "mustKeepText": ["Minutes of the previous meeting"]
+    }
+  },
+  {
+    "id": "058-mxss-foreign-content-breakout",
+    "title": "Tags that pull the parser out of SVG or MathML",
+    "classes": ["mxss", "svg-other"],
+    "html": "messages/058-mxss-foreign-content-breakout.html",
+    "expect": {
+      "mustKeepText": ["Planning permission update"]
+    }
+  },
+  {
+    "id": "059-mxss-select-form-table-nesting",
+    "title": "Nesting rules that move content around",
+    "classes": ["mxss", "form-autosubmit"],
+    "html": "messages/059-mxss-select-form-table-nesting.html",
+    "expect": {
+      "mustKeepText": ["Questionnaire for new members"]
+    }
+  },
+  {
+    "id": "060-mxss-attribute-breaking",
+    "title": "Attribute values and names crafted to break serialization",
+    "classes": ["mxss", "event-handler"],
+    "html": "messages/060-mxss-attribute-breaking.html",
+    "expect": {
+      "mustKeepText": ["Raffle ticket numbers"]
+    }
+  },
+  {
+    "id": "061-mxss-table-foster-parenting",
+    "title": "Content that tables push out of place",
+    "classes": ["mxss"],
+    "html": "messages/061-mxss-table-foster-parenting.html",
+    "expect": {
+      "mustKeepText": ["Allotment plot sizes"]
+    }
+  },
+  {
+    "id": "062-mxss-adoption-agency-and-reparse",
+    "title": "Misnested tags and text that becomes markup when re-parsed",
+    "classes": ["mxss"],
+    "html": "messages/062-mxss-adoption-agency-and-reparse.html",
+    "expect": {
+      "mustKeepText": [
+        "Notice about the fence repair",
+        "<img src=x onerror=alert(1)> should be shown as plain text"
+      ]
+    }
+  },
+  {
+    "id": "063-mxss-style-and-script-text-escape",
+    "title": "Style content that closes itself early",
+    "classes": ["mxss", "css-url"],
+    "html": "messages/063-mxss-style-and-script-text-escape.html",
+    "expect": {
+      "mustKeepText": ["Meal plan for the week"]
+    }
+  },
+  {
+    "id": "064-dom-clobbering",
+    "title": "Names and ids that overwrite page properties",
+    "classes": ["dom-clobbering", "postmessage-spoof"],
+    "html": "messages/064-dom-clobbering.html",
+    "expect": {
+      "mustKeepText": ["Please review the attached agenda"]
+    }
+  },
+  {
+    "id": "065-reporter-spoof-and-script-lookalikes",
+    "title": "Content that imitates the frame's own height-reporting script",
+    "classes": ["postmessage-spoof", "script-inline", "event-handler"],
+    "html": "messages/065-reporter-spoof-and-script-lookalikes.html",
+    "expect": {
+      "mustKeepText": ["Message size report"]
+    }
+  },
+  {
+    "id": "066-pixel-sizes-and-hiding-styles",
+    "title": "Tracking pixels hidden by size and style",
+    "classes": ["tracking-pixel", "hidden-content"],
+    "html": "messages/066-pixel-sizes-and-hiding-styles.html",
+    "expect": {
+      "trackersRemovedMin": 8,
+      "mustKeepText": ["Your weekly digest is ready", "Read the full story online"]
+    }
+  },
+  {
+    "id": "067-pixel-known-path-shapes",
+    "title": "Images whose address looks like a tracker",
+    "classes": ["tracking-pixel", "remote-image"],
+    "html": "messages/067-pixel-known-path-shapes.html",
+    "expect": {
+      "trackersRemovedMin": 11,
+      "mustKeepText": ["Order status update"],
+      "notes": "These carry sizes of 1x1 where the shape is not enough on its own; those that declare no size are listed in the second group and a URL-shape heuristic may or may not catch them, so trackersRemovedMin counts only the sized ones."
+    }
+  },
+  {
+    "id": "068-pixel-in-table-cells",
+    "title": "Tiny images in layout cells",
+    "classes": ["tracking-pixel", "benign-newsletter"],
+    "html": "messages/068-pixel-in-table-cells.html",
+    "expect": {
+      "mustKeepText": ["Table layout with spacer cells"],
+      "notes": "Spacer images in table layouts are common and ambiguous. The three beacon-path images are trackers; the two spacers on the shop host are layout and a sanitizer may reasonably drop or keep them, but neither may be fetched."
+    }
+  },
+  {
+    "id": "069-pixel-css-and-other-carriers",
+    "title": "Tracking without an img tag",
+    "classes": ["tracking-pixel", "css-url", "audio-video"],
+    "html": "messages/069-pixel-css-and-other-carriers.html",
+    "expect": {
+      "mustKeepText": ["Thanks for reading"]
+    }
+  },
+  {
+    "id": "070-hidden-preheader-and-text",
+    "title": "Hidden text that must stay text",
+    "classes": ["hidden-content", "benign-newsletter"],
+    "html": "messages/070-hidden-preheader-and-text.html",
+    "expect": {
+      "mustKeepText": [
+        "Preview: your autumn savings inside",
+        "Everything you need for the cold season",
+        "Unsubscribe"
+      ],
+      "notes": "Hidden text is not a leak. It must be kept as text (invisible), and a sanitizer must not turn it into visible content or into a URL fetch."
+    }
+  },
+  {
+    "id": "071-hidden-offscreen-and-instructions",
+    "title": "Text hidden off screen, including instructions aimed at AI helpers",
+    "classes": ["hidden-content", "find-text"],
+    "html": "messages/071-hidden-offscreen-and-instructions.html",
+    "expect": {
+      "mustKeepText": ["Lunch menu for Friday"],
+      "notes": "The off-screen text is an instruction aimed at an AI helper. It is not a leak, but it is hostile to the AI features: Ask and Summaries must treat message text as data. Reviewers should see it kept as text and never executed."
+    }
+  },
+  {
+    "id": "072-open-redirect-images",
+    "title": "Image links that bounce through a redirect",
+    "classes": ["open-redirect-image", "remote-image"],
+    "html": "messages/072-open-redirect-images.html",
+    "expect": {
+      "mustKeepText": ["Photos from the village fete"]
+    }
+  },
+  {
+    "id": "073-ssrf-image-address-forms",
+    "title": "Images addressed to this very machine in unusual notations",
+    "classes": ["ssrf-image", "remote-image"],
+    "html": "messages/073-ssrf-image-address-forms.html",
+    "expect": {
+      "mustKeepText": ["Where the photos live"],
+      "notes": "The canary listens on 127.0.0.1 only. Every address below resolves to loopback, so with images on the proxy must refuse each one and the canary must see nothing."
+    }
+  },
+  {
+    "id": "074-ssrf-image-ports-and-credentials",
+    "title": "Images with unusual ports, credentials and host spellings",
+    "classes": ["ssrf-image", "remote-image"],
+    "html": "messages/074-ssrf-image-ports-and-credentials.html",
+    "expect": {
+      "mustKeepText": ["Mirror list for the photo archive"]
+    }
+  },
+  {
+    "id": "075-remote-newsletter-images",
+    "title": "Ordinary remote images in a newsletter",
+    "classes": ["remote-image", "benign-newsletter"],
+    "html": "messages/075-remote-newsletter-images.html",
+    "expect": {
+      "remoteImages": 5,
+      "trackersRemovedMin": 0,
+      "mustKeepText": ["Autumn recipe special", "Roasted squash soup"],
+      "notes": "Five ordinary sized images. A sanitizer should keep all five as remote images (sized placeholders with images off) and count none as trackers."
+    }
+  },
+  {
+    "id": "076-remote-srcset-and-picture",
+    "title": "Responsive image attributes",
+    "classes": ["remote-image", "tracking-pixel"],
+    "html": "messages/076-remote-srcset-and-picture.html",
+    "expect": {
+      "mustKeepText": ["Responsive images in a short note"]
+    }
+  },
+  {
+    "id": "077-remote-background-attributes",
+    "title": "Background images from old-style attributes",
+    "classes": ["remote-image", "css-url"],
+    "html": "messages/077-remote-background-attributes.html",
+    "expect": {
+      "mustKeepText": ["Old style letterhead"]
+    }
+  },
+  {
+    "id": "078-remote-image-other-carriers",
+    "title": "Poster, input image, image maps and legacy image attributes",
+    "classes": ["remote-image", "audio-video", "form-autosubmit"],
+    "html": "messages/078-remote-image-other-carriers.html",
+    "expect": {
+      "mustKeepText": ["Map of the market grounds"]
+    }
+  },
+  {
+    "id": "079-audio-video-sources",
+    "title": "Audio and video elements",
+    "classes": ["audio-video", "remote-image"],
+    "html": "messages/079-audio-video-sources.html",
+    "expect": {
+      "mustKeepText": ["Recording of the lecture"]
+    }
+  },
+  {
+    "id": "080-audio-video-playback-handlers",
+    "title": "Media that plays on its own and reports back",
+    "classes": ["audio-video", "event-handler"],
+    "html": "messages/080-audio-video-playback-handlers.html",
+    "expect": {
+      "mustKeepText": ["Voicemail transcript"]
+    }
+  },
+  {
+    "id": "081-ping-and-link-attributes",
+    "title": "Link attributes that report clicks or leak the referrer",
+    "classes": ["ping-attr", "popup-navigation"],
+    "html": "messages/081-ping-and-link-attributes.html",
+    "expect": {
+      "mustKeepText": ["Click the link to read more"]
+    }
+  },
+  {
+    "id": "082-meta-http-equiv-misc",
+    "title": "Meta tags that try to set cookies, loosen policy or switch encoding",
+    "classes": ["meta-misc", "storage-cookie"],
+    "html": "messages/082-meta-http-equiv-misc.html",
+    "expect": {
+      "mustKeepText": ["Settings confirmation"]
+    }
+  },
+  {
+    "id": "083-meta-charset-utf7-payload",
+    "title": "A UTF-7 payload under a charset switch",
+    "classes": ["meta-misc", "mxss", "malformed-encoding"],
+    "html": "messages/083-meta-charset-utf7-payload.html",
+    "expect": {
+      "mustKeepText": ["Greetings from the allotment"]
+    }
+  },
+  {
+    "id": "084-relative-url-probing",
+    "title": "Relative addresses that resolve inside the frame's own origin",
+    "classes": ["relative-url", "remote-image"],
+    "html": "messages/084-relative-url-probing.html",
+    "expect": {
+      "mustKeepText": ["Notes on relative addresses"],
+      "notes": "These never name the canary; they test that the protocol handler and the sanitizer treat relative URLs as untrusted. Only cid/<n> and img/<n> rewritten by the sanitizer may survive; any other relative address must be dropped, and the handler must answer 404 for anything it did not issue. Network leaks are not expected, so the check is on the sanitized output."
+    }
+  },
+  {
+    "id": "085-storage-and-cookie-scripts",
+    "title": "Scripts that try to remember things",
+    "classes": ["storage-cookie", "script-inline"],
+    "html": "messages/085-storage-and-cookie-scripts.html",
+    "expect": {
+      "mustKeepText": ["Cookie preferences"]
+    }
+  },
+  {
+    "id": "086-storage-via-handlers-and-urls",
+    "title": "Storage writes smuggled through handlers and links",
+    "classes": ["storage-cookie", "event-handler", "javascript-url"],
+    "html": "messages/086-storage-via-handlers-and-urls.html",
+    "expect": {
+      "mustKeepText": ["Reader survey"]
+    }
+  },
+  {
+    "id": "087-popup-links-and-targets",
+    "title": "Links that try to leave the frame",
+    "classes": ["popup-navigation"],
+    "html": "messages/087-popup-links-and-targets.html",
+    "expect": {
+      "mustKeepText": ["Open the link to see the offer"]
+    }
+  },
+  {
+    "id": "088-popup-script-navigation",
+    "title": "Scripts that open windows, navigate the page above or reach the opener",
+    "classes": ["popup-navigation", "script-inline", "postmessage-spoof"],
+    "html": "messages/088-popup-script-navigation.html",
+    "expect": {
+      "mustKeepText": ["Please wait for the page to load"]
+    }
+  },
+  {
+    "id": "089-popup-click-overlay",
+    "title": "A page-sized link laid over the whole message",
+    "classes": ["popup-navigation", "css-layout-abuse"],
+    "html": "messages/089-popup-click-overlay.html",
+    "expect": {
+      "mustKeepText": ["Click anywhere to continue", "Important notice from the office"]
+    }
+  },
+  {
+    "id": "090-css-layout-abuse-and-dos",
+    "title": "Style rules that stretch, spin and blur the page",
+    "classes": ["css-layout-abuse", "resource-exhaustion"],
+    "html": "messages/090-css-layout-abuse-and-dos.html",
+    "expect": {
+      "mustKeepText": ["Layout stress test"]
+    }
+  },
+  {
+    "id": "091-quoted-gmail-style",
+    "title": "A reply with Gmail-style quoted history",
+    "classes": ["quoted-history", "benign-newsletter"],
+    "html": "messages/091-quoted-gmail-style.html",
+    "expect": {
+      "quotedCountMin": 1,
+      "mustKeepText": [
+        "Thanks, Saturday works for me",
+        "The plan for Saturday is to meet at the lake at ten"
+      ]
+    }
+  },
+  {
+    "id": "092-quoted-apple-mail-style",
+    "title": "A reply with Apple Mail-style quoted history",
+    "classes": ["quoted-history"],
+    "html": "messages/092-quoted-apple-mail-style.html",
+    "expect": {
+      "quotedCountMin": 1,
+      "mustKeepText": ["Sounds good to me", "The invoice is attached"]
+    }
+  },
+  {
+    "id": "093-quoted-outlook-style",
+    "title": "A reply with Outlook-style quoted history",
+    "classes": ["quoted-history", "benign-newsletter"],
+    "html": "messages/093-quoted-outlook-style.html",
+    "expect": {
+      "quotedCountMin": 1,
+      "mustKeepText": ["I have updated the schedule", "Please review the draft schedule"]
+    }
+  },
+  {
+    "id": "094-quoted-nested-and-hostile",
+    "title": "Deeply quoted history that carries its own tricks",
+    "classes": ["quoted-history", "tracking-pixel", "mxss"],
+    "html": "messages/094-quoted-nested-and-hostile.html",
+    "expect": {
+      "quotedCountMin": 3,
+      "trackersRemovedMin": 1,
+      "mustKeepText": ["Top level reply text", "Second level text", "Third level text"]
+    }
+  },
+  {
+    "id": "095-quoted-header-lines-only",
+    "title": "Reply headers in several languages and layouts",
+    "classes": ["quoted-history", "find-text"],
+    "html": "messages/095-quoted-header-lines-only.html",
+    "expect": {
+      "mustKeepText": ["Short answer on top"]
+    }
+  },
+  {
+    "id": "096-find-repeated-and-split-words",
+    "title": "Prose built to test the search highlighter",
+    "classes": ["find-text"],
+    "html": "messages/096-find-repeated-and-split-words.html",
+    "findQuery": "invoice",
+    "expect": {
+      "marksMin": 8,
+      "mustKeepText": ["The invoice was sent twice"]
+    }
+  },
+  {
+    "id": "097-find-unicode-and-case",
+    "title": "Search terms with accents, case folding and unusual characters",
+    "classes": ["find-text", "unicode-bidi"],
+    "html": "messages/097-find-unicode-and-case.html",
+    "findQuery": "café",
+    "expect": {
+      "marksMin": 4,
+      "mustKeepText": ["Café menu for the week"]
+    }
+  },
+  {
+    "id": "098-plain-text-message",
+    "title": "A plain text message with no HTML at all",
+    "classes": ["plain-text"],
+    "text": "messages/098-plain-text-message.txt",
+    "expect": {
+      "bodyKind": "text",
+      "mustKeepText": ["Hello Sam", "The key is under the green pot"]
+    }
+  },
+  {
+    "id": "099-plain-text-with-markup-lookalikes",
+    "title": "Plain text that contains HTML and script as literal characters",
+    "classes": ["plain-text", "mxss"],
+    "text": "messages/099-plain-text-with-markup-lookalikes.txt",
+    "expect": {
+      "bodyKind": "text",
+      "mustKeepText": [
+        "<script>alert(1)</script>",
+        "<img src=x onerror=alert(1)>",
+        "This must stay text"
+      ]
+    }
+  },
+  {
+    "id": "100-plain-text-urls-and-quotes",
+    "title": "Plain text with links, quoted lines and odd line endings",
+    "classes": ["plain-text", "quoted-history", "unicode-bidi"],
+    "text": "messages/100-plain-text-urls-and-quotes.txt",
+    "expect": {
+      "bodyKind": "text",
+      "quotedCountMin": 1,
+      "mustKeepText": ["Reply from the road"]
+    }
+  },
+  {
+    "id": "101-plain-text-alternative-with-html",
+    "title": "A multipart message whose text and HTML parts disagree",
+    "classes": ["plain-text", "benign-newsletter"],
+    "html": "messages/101-plain-text-alternative-with-html.html",
+    "text": "messages/101-plain-text-alternative-with-html.txt",
+    "expect": {
+      "bodyKind": "html",
+      "mustKeepText": ["The HTML part says hello", "Both parts carry the greeting"]
+    }
+  },
+  {
+    "id": "102-cid-inline-images",
+    "title": "Pictures attached inside the message",
+    "classes": ["cid-inline", "benign-newsletter"],
+    "html": "messages/102-cid-inline-images.html",
+    "cids": ["logo@mail.example", "photo1@mail.example", "photo2@mail.example"],
+    "expect": {
+      "remoteImages": 0,
+      "trackersRemovedMin": 0,
+      "mustKeepText": ["Photos from the open day"],
+      "notes": "Known cids rewrite to relative cid/<n> in the cids order (0, 1, 2). Unknown cids must not become network requests; they may be dropped or kept as a placeholder."
+    }
+  },
+  {
+    "id": "103-cid-in-css-and-svg",
+    "title": "Inline attachments referenced from CSS and SVG",
+    "classes": ["cid-inline", "css-url", "svg-other"],
+    "html": "messages/103-cid-in-css-and-svg.html",
+    "cids": ["hero@mail.example", "bg@mail.example"],
+    "expect": {
+      "mustKeepText": ["Inline attachments in styles"]
+    }
+  },
+  {
+    "id": "104-cid-weird-identifiers",
+    "title": "Content-IDs that look like paths, indexes or markup",
+    "classes": ["cid-inline", "relative-url"],
+    "html": "messages/104-cid-weird-identifiers.html",
+    "cids": [
+      "../../etc/passwd",
+      "1/../0",
+      "img/0",
+      "<angle@mail.example>",
+      "a b@mail.example",
+      "x\"onerror=\"fetch('{{CANARY}}/{{ID}}/cid-attr-break')"
+    ],
+    "expect": {
+      "mustKeepText": ["Odd content identifiers"],
+      "notes": "The cids list itself is hostile. The relative output must still be exactly cid/<n> for an index n; no cid text may reach an attribute or path unescaped."
+    }
+  },
+  {
+    "id": "105-benign-table-newsletter",
+    "title": "A classic table-based newsletter that must survive intact",
+    "classes": ["benign-newsletter", "remote-image"],
+    "html": "messages/105-benign-table-newsletter.html",
+    "expect": {
+      "remoteImages": 2,
+      "trackersRemovedMin": 0,
+      "mustKeepText": [
+        "The Lakeside Gazette",
+        "Winter swim club opens",
+        "Read more",
+        "Printed on recycled paper"
+      ],
+      "notes": "Typical bulletproof layout: centred wrapper table, font tags, bgcolor, inline styles, media queries and MSO conditional comments. The style block, tables, colours and text must survive; two sized images are ordinary remote images."
+    }
+  },
+  {
+    "id": "106-benign-receipt-with-table",
+    "title": "A receipt with a table of prices and buttons",
+    "classes": ["benign-newsletter"],
+    "html": "messages/106-benign-receipt-with-table.html",
+    "expect": {
+      "remoteImages": 0,
+      "trackersRemovedMin": 0,
+      "mustKeepText": ["Receipt 2026-1042", "Wool blanket", "Total", "View your order"]
+    }
+  },
+  {
+    "id": "107-benign-simple-letter",
+    "title": "A simple formatted letter",
+    "classes": ["benign-newsletter", "quoted-history"],
+    "html": "messages/107-benign-simple-letter.html",
+    "expect": {
+      "bodyKind": "html",
+      "trackersRemovedMin": 0,
+      "quotedCountMin": 0,
+      "mustKeepText": ["Dear neighbours", "Thank you for your patience", "Warm regards"]
+    }
+  },
+  {
+    "id": "108-benign-responsive-dark-mode",
+    "title": "Responsive and dark mode style rules",
+    "classes": ["benign-newsletter"],
+    "html": "messages/108-benign-responsive-dark-mode.html",
+    "expect": {
+      "remoteImages": 0,
+      "mustKeepText": ["Responsive layout test", "Dark mode is supported"],
+      "notes": "Plain CSS must survive: media queries, custom properties without url(), attribute selectors, :root colour scheme, pseudo classes. Only url() values are at issue."
+    }
+  },
+  {
+    "id": "109-benign-mso-vml-conditional",
+    "title": "Outlook conditional comments and VML buttons",
+    "classes": ["benign-newsletter", "mxss", "remote-image"],
+    "html": "messages/109-benign-mso-vml-conditional.html",
+    "expect": {
+      "remoteImages": 0,
+      "mustKeepText": ["Outlook friendly button", "Plain fallback text"],
+      "notes": "The VML image src inside the conditional comment is a comment to browsers and must never be fetched. Visible text outside the comments must survive."
+    }
+  },
+  {
+    "id": "110-benign-link-footer",
+    "title": "A footer full of ordinary links and contact details",
+    "classes": ["benign-newsletter", "unicode-bidi"],
+    "html": "messages/110-benign-link-footer.html",
+    "expect": {
+      "mustKeepText": ["Visit us at 12 Quay Lane", "Opening hours", "Follow us"]
+    }
+  },
+  {
+    "id": "111-bidi-link-text-and-override",
+    "title": "Links whose displayed text lies about the real address",
+    "classes": ["unicode-bidi"],
+    "html": "messages/111-bidi-link-text-and-override.html",
+    "expect": {
+      "mustKeepText": ["Statement of account"]
+    }
+  },
+  {
+    "id": "112-homoglyph-and-idn-links",
+    "title": "Look-alike characters in link text and addresses",
+    "classes": ["unicode-bidi", "ssrf-image"],
+    "html": "messages/112-homoglyph-and-idn-links.html",
+    "expect": {
+      "mustKeepText": ["Please confirm your shop account"]
+    }
+  },
+  {
+    "id": "113-bidi-controls-and-rtl-prose",
+    "title": "Right to left prose that is legitimate, next to control characters that are not",
+    "classes": ["unicode-bidi", "benign-newsletter", "find-text"],
+    "html": "messages/113-bidi-controls-and-rtl-prose.html",
+    "findQuery": "paragraph",
+    "expect": {
+      "marksMin": 1,
+      "mustKeepText": ["שלום עולם", "مرحبا بالعالم", "Plain English line"]
+    }
+  },
+  {
+    "id": "114-doctype-xml-and-document-wrappers",
+    "title": "Document-level wrappers with external references",
+    "classes": ["base-tag", "meta-misc", "mxss", "remote-image"],
+    "html": "messages/114-doctype-xml-and-document-wrappers.html",
+    "expect": {
+      "mustKeepText": ["Document wrapper test"]
+    }
+  },
+  {
+    "id": "115-nesting-moderate",
+    "title": "Two thousand nested containers around one paragraph",
+    "classes": ["deep-nesting", "benign-newsletter"],
+    "html": "messages/115-nesting-moderate.html",
+    "expect": {
+      "mustKeepText": ["Innermost paragraph of the nested message"],
+      "notes": "Small enough to ship as a file. The synthetic entries push the same shape to 100,000. A sanitizer with a depth cap may flatten, but the text must survive."
+    }
+  },
+  {
+    "id": "116-encoding-entity-edge-cases",
+    "title": "Numeric and named entities at their limits",
+    "classes": ["malformed-encoding"],
+    "html": "messages/116-encoding-entity-edge-cases.html",
+    "expect": {
+      "mustKeepText": ["Entity edge cases"]
+    }
+  },
+  {
+    "id": "117-encoding-control-characters",
+    "title": "Control characters in tags, attributes and text",
+    "classes": ["malformed-encoding", "mxss"],
+    "html": "messages/117-encoding-control-characters.html",
+    "expect": {
+      "mustKeepText": ["Control character message"]
+    }
+  },
+  {
+    "id": "118-encoding-bom-and-line-endings",
+    "title": "Byte order marks and every kind of line break",
+    "classes": ["malformed-encoding"],
+    "html": "messages/118-encoding-bom-and-line-endings.html",
+    "expect": {
+      "mustKeepText": ["Line ending message"]
+    }
+  },
+  {
+    "id": "119-svg-foreignobject-mutation",
+    "title": "Foreign objects used to change how the parser reads what follows",
+    "classes": ["svg-foreignobject", "mxss", "iframe-nested"],
+    "html": "messages/119-svg-foreignobject-mutation.html",
+    "expect": {
+      "mustKeepText": ["Annual report summary"]
+    }
+  },
+  {
+    "id": "120-legacy-elements-and-accesskeys",
+    "title": "Obsolete elements and keyboard tricks",
+    "classes": ["object-embed", "event-handler", "remote-image", "popup-navigation"],
+    "html": "messages/120-legacy-elements-and-accesskeys.html",
+    "expect": {
+      "mustKeepText": ["Notice board from a very old web page"]
+    }
+  },
+  {
+    "id": "121-css-rare-at-rules-and-properties",
+    "title": "Seldom-used style features that can still load a picture",
+    "classes": ["css-url", "css-image-set", "css-legacy"],
+    "html": "messages/121-css-rare-at-rules-and-properties.html",
+    "expect": {
+      "mustKeepText": ["Rare style features"]
+    }
+  },
+  {
+    "id": "122-form-action-schemes-and-self-post",
+    "title": "Forms that post to odd places, including the frame itself",
+    "classes": ["form-autosubmit", "link-scheme", "relative-url"],
+    "html": "messages/122-form-action-schemes-and-self-post.html",
+    "expect": {
+      "mustKeepText": ["Feedback form"]
+    }
+  },
+  {
+    "id": "123-css-media-query-fingerprint",
+    "title": "Style rules that report screen size, colour scheme and installed fonts",
+    "classes": ["css-exfil", "css-url", "css-font-face"],
+    "html": "messages/123-css-media-query-fingerprint.html",
+    "expect": {
+      "mustKeepText": ["Display settings survey"]
+    }
+  },
+  {
+    "id": "124-amp-email-and-custom-elements",
+    "title": "Interactive email markup and unknown elements that carry addresses",
+    "classes": ["script-inline", "tracking-pixel", "remote-image"],
+    "html": "messages/124-amp-email-and-custom-elements.html",
+    "expect": {
+      "mustKeepText": ["Interactive newsletter"]
+    }
+  },
+  {
+    "id": "125-document-structure-confusion",
+    "title": "Documents with several heads, bodies and content after the end",
+    "classes": ["mxss", "event-handler", "base-tag", "meta-misc"],
+    "html": "messages/125-document-structure-confusion.html",
+    "expect": {
+      "mustKeepText": ["Real content in the first body", "Content after the closing html tag"]
+    }
+  },
+  {
+    "id": "126-cid-in-active-contexts",
+    "title": "Inline attachment references used where only a picture is expected",
+    "classes": ["cid-inline", "iframe-nested", "object-embed", "script-inline"],
+    "html": "messages/126-cid-in-active-contexts.html",
+    "cids": ["page@mail.example", "script@mail.example", "style@mail.example"],
+    "expect": {
+      "mustKeepText": ["Attachment references in active places"],
+      "notes": "The attachments themselves are hostile (an html page, a script and a stylesheet). Only img sources may carry cid:, and a cid may only ever be served as an image."
+    }
+  },
+  {
+    "id": "127-dangling-markup",
+    "title": "Unclosed quotes that would send the following text to a server",
+    "classes": ["mxss", "remote-image", "form-autosubmit", "meta-refresh"],
+    "html": "messages/127-dangling-markup.html",
+    "expect": {
+      "mustKeepText": ["Your verification code is 482915"],
+      "notes": "Each tag below opens an attribute value and never closes it, so a loose parser would swallow everything up to the next matching quote, including the verification code and the lines after it, into the address. The visible code must stay visible text and must not appear inside any URL."
+    }
+  },
+  {
+    "id": "128-unicode-case-folding",
+    "title": "Letters from other alphabets that fold to ASCII",
+    "classes": ["mxss", "malformed-encoding", "unicode-bidi"],
+    "html": "messages/128-unicode-case-folding.html",
+    "expect": {
+      "mustKeepText": ["Case folding message"]
+    }
+  },
+  {
+    "id": "129-open-redirect-image-parameter-names",
+    "title": "Images behind a link redirector with other parameter names",
+    "classes": ["open-redirect-image", "remote-image"],
+    "html": "messages/129-open-redirect-image-parameter-names.html",
+    "expect": {
+      "mustKeepText": ["Newsletter images served through a link-tracking redirector"]
+    }
+  },
+  {
+    "id": "130-ping-attribute-links-and-areas",
+    "title": "Links that report clicks through the ping attribute",
+    "classes": ["ping-attr"],
+    "html": "messages/130-ping-attribute-links-and-areas.html",
+    "expect": {
+      "mustKeepText": ["Click-tracking through the ping attribute"]
+    }
+  },
+  {
+    "id": "131-iso-2022-jp-shift-sequences",
+    "title": "Escape characters that switch a sniffed page into a two-byte Japanese charset",
+    "classes": ["malformed-encoding", "mxss", "event-handler"],
+    "html": "messages/131-iso-2022-jp-shift-sequences.html",
+    "expect": {
+      "mustKeepText": [
+        "Shift sequences for a sniffed Japanese charset",
+        "the closing line stays visible"
+      ],
+      "notes": "Found by the html-3 bypass review. If the frame were ever read as ISO-2022-JP (no charset declared, the browser guesses), ESC $ B makes the following bytes two-byte characters and can swallow a closing quote, so the next attribute value would be read as attributes (onerror). The sanitizer turns ESC into U+FFFD everywhere and the document declares UTF-8 within its first 1,024 bytes."
+    }
+  },
+  {
+    "id": "132-css-late-values-in-image-functions",
+    "title": "Image functions whose address comes from a variable, an attribute or the environment",
+    "classes": ["css-image-set", "css-url", "relative-url"],
+    "html": "messages/132-css-late-values-in-image-functions.html",
+    "expect": {
+      "remoteImages": 1,
+      "mustKeepText": ["Stylesheet values that are filled in later", "list image from a variable"],
+      "notes": "Found by the html-3 bypass review. var(), env() and attr() are filled in after the sanitizer has read the stylesheet, so inside image-set(), image() and src() they could put a string the sanitizer never classified in URL position (a relative img/<n> or cid/<n> on the frame's own origin, or a remote address). They are replaced inside image functions; address-like strings are emptied everywhere, and url() in a custom property is rewritten like any other (the one remote image left: img/0 through the proxy when images are on)."
+    }
+  },
+  {
+    "id": "133-noframes-self-rebuilding-fallback",
+    "title": "A frameset fallback whose tags rebuild themselves each time one is removed",
+    "classes": ["resource-exhaustion", "mxss"],
+    "html": "messages/133-noframes-self-rebuilding-fallback.html",
+    "expect": {
+      "mustKeepText": ["A frameset fallback that rebuilds itself"],
+      "notes": "Found by the Opus review of html-3. The sanitizer re-parses <noframes> text as markup; once it also removed nested <noframes> tags in one pass, <nofr<noframes>ames> became <noframes> again, and each level re-read everything below it with fresh limits (quadratic). Fallbacks are now re-parsed only at the top level, one inside re-parsed text is dropped, and all re-parses share one element budget. The bigger shape is timed in tests/perf.test.ts."
+    }
+  },
+  {
+    "id": "134-css-hides-aplos-wrappers",
+    "title": "A stylesheet that tries to hide the quote wrapper and the clipped note Aplos adds",
+    "classes": ["css-layout-abuse", "quoted-history"],
+    "html": "messages/134-css-hides-aplos-wrappers.html",
+    "expect": {
+      "quotedCountMin": 1,
+      "mustKeepText": [
+        "A mail whose stylesheet tries to hide what Aplos adds",
+        "Earlier text that Aplos folds into a quote"
+      ],
+      "notes": "From the Integrator's round-2 review of html-3. Aplos's own wrappers carry classes that start aplos-, and a mail class of that name is moved to m-aplos-. The selectors here reached the wrappers by a dot, a comment and a name, by [class] attribute selectors with every operator, quoting and flag, and inside :is(), :where(), :not() and :has() (also malformed ones); each now names m-aplos- instead. The oracle in tests/oracle.ts fails any sanitized corpus message whose CSS still names an aplos- class. Tag and position selectors (details, p:last-child) can still hide a wrapper: cosmetic, recorded in DECISIONS."
+    }
+  },
+  {
+    "id": "135-css-class-selector-value-as-address",
+    "title": "A class selector whose value is an address, with an aplos- name beside it",
+    "classes": ["css-exfil", "css-image-set"],
+    "html": "messages/135-css-class-selector-value-as-address.html",
+    "expect": {
+      "remoteImages": 0,
+      "mustKeepText": [
+        "A stylesheet whose class selector values double as addresses",
+        "Contact the sender"
+      ],
+      "notes": "From the Integrator's security review of the aplos- selector fix. A [class=...] string that holds an aplos- name is rewritten (aplos- to m-aplos-), and the rewritten value was first written without the checks every other string gets: an address-like string was kept, and inside image-set(), -webkit-image-set() or image() the value skipped URL classification. Now the rewritten value is judged as written: an address-like string is emptied, and inside an image function it goes through the image book (here none, because a name in front makes it relative). The oracle fails any message that still carries an address."
+    }
+  },
+  {
+    "id": "136-viewport-units-grow-the-frame",
+    "title": "Lengths in viewport units on the root, in custom properties, calc() and escapes",
+    "classes": ["css-layout-abuse"],
+    "html": "messages/136-viewport-units-grow-the-frame.html",
+    "expect": {
+      "mustKeepText": [
+        "Viewport units sized this letter to its own frame",
+        "Absurd values stay bounded"
+      ],
+      "notes": "From the ui-core REQUEST (html-5 slice 2). The frame is sized to the letter, so a letter sized by 100vh grew the frame, which grew the letter, without end (a 7.6 GB renderer in the host's browser spec). Every vw/vh/vi/vb/vmin/vmax length, also the s/l/d forms, in escapes, calc(), min(), max(), clamp(), custom properties, media and supports preludes and style attributes, becomes px against a fixed reading viewport (640 x 600), clamped to 100,000 px. The oracle fails any sanitized message that still holds one; the browser run checks that this message's height settles."
+    }
+  },
+  {
+    "id": "137-dom-clobbering-frame-script-members",
+    "title": "Names and ids on every member the frame's script reads, on every element that can carry one",
+    "classes": ["dom-clobbering", "postmessage-spoof"],
+    "html": "messages/137-dom-clobbering-frame-script-members.html",
+    "expect": {
+      "mustKeepText": [
+        "Every member of document, window and an element",
+        "Two hundred pixels of measured content"
+      ],
+      "notes": "From the ui-core REQUEST (html-5 slice 2). A named img, form, embed, object or iframe shadows document.body, documentElement, addEventListener and the rest on document; an id shadows window members that are inherited from EventTarget. The sanitizer drops form, embed, object, iframe, frameset, select, textarea, button, svg and math, keeps name only on a, and moves every id and name to m-<name>, which is not a JavaScript identifier. The oracle fails any name or id outside m-. The reporter also takes its members from the prototypes before the mail can matter; the browser run loads this message and an unsanitized copy and checks the report."
+    }
+  },
+  {
+    "id": "138-quirks-mode-doctypes-and-comments-first",
+    "title": "A comment and a 3.2 doctype before the real one, and a table that wants to be window-tall",
+    "classes": ["css-layout-abuse"],
+    "html": "messages/138-quirks-mode-doctypes-and-comments-first.html",
+    "expect": {
+      "mustKeepText": ["A layout that was written for quirks mode", "A 400 pixel spacer block"],
+      "notes": "From the ui-core REQUEST (html-5 slice 2). The first doctype the mail declared used to decide the frame's rendering mode, and most mail declares none or an old one, so most frames laid out in quirks mode, where body.scrollHeight follows the viewport. The document now always starts with <!DOCTYPE html> (tests pin the first bytes of the served document, and the browser run checks document.compatMode)."
+    }
+  },
+  {
+    "id": "139-background-on-the-root-only",
+    "title": "A paper colour on the html element, with a transparent body",
+    "classes": ["css-layout-abuse"],
+    "html": "messages/139-background-on-the-root-only.html",
+    "expect": {
+      "mustKeepText": ["The paper colour is on the html element only"],
+      "notes": "From the ui-core REQUEST (html-5 slice 2). The reporter reported only the body's background, so a mail that coloured <html> showed on light paper. It now falls back to the root's colour when the body's is transparent; the browser run checks the reported colour."
+    }
+  },
+  {
+    "id": "140-container-query-units-grow-the-frame",
+    "title": "Container query units with no container, in escapes, calc(), custom properties and style attributes",
+    "classes": ["css-layout-abuse"],
+    "html": "messages/140-container-query-units-grow-the-frame.html",
+    "expect": {
+      "mustKeepText": [
+        "Container units fall back to the viewport",
+        "The frame follows the letter",
+        "Absurd container values stay bounded"
+      ],
+      "notes": "From the independent review of the frame reporter fixes. cqw, cqh, cqi, cqb, cqmin and cqmax resolve against the small viewport when no ancestor is a size container, which is how the sanitizer's own output is laid out, so 100cqh grew the frame exactly like 100vh (132 to 4,900 px, then the 300-report cap in the browser run). They are rewritten to px like the viewport units (css.ts viewportLength), also with a container declared: the mail cannot be relied on to declare one, and a declared size container could still be sized by the frame. container-type and container are left alone. The oracle fails any sanitized CSS that still holds a cq unit; reporter.e2e.ts checks that the frame settles."
+    }
+  },
+  {
+    "id": "141-root-positioned-with-negative-bottom",
+    "title": "The html element positioned against the frame and pushed past it",
+    "classes": ["css-layout-abuse"],
+    "html": "messages/141-root-positioned-with-negative-bottom.html",
+    "expect": {
+      "mustKeepText": ["The html element is positioned"],
+      "notes": "From the Integrator's review of PR #249 (reading CSS). Vector 1: html{position:absolute;top:0;bottom:-50px} sizes the root from the frame, and the frame from the root, 50 px per report. The reading layer sets position:static and inset:auto !important. Rules with and without !important in a <style> block: the layered !important beats an unlayered one."
+    }
+  },
+  {
+    "id": "142-body-positioned-with-negative-bottom",
+    "title": "The body element positioned or fixed against the frame and pushed past it",
+    "classes": ["css-layout-abuse"],
+    "html": "messages/142-body-positioned-with-negative-bottom.html",
+    "expect": {
+      "mustKeepText": ["The body element is positioned"],
+      "notes": "From the Integrator's review of PR #249 (reading CSS). Vector 2: the same on body, in physical and logical insets, absolute and fixed. Rules with and without !important in a <style> block: the layered !important beats an unlayered one."
+    }
+  },
+  {
+    "id": "143-root-vertical-writing-mode",
+    "title": "A root and body in a vertical writing mode with a negative margin",
+    "classes": ["css-layout-abuse"],
+    "html": "messages/143-root-vertical-writing-mode.html",
+    "expect": {
+      "mustKeepText": ["A root turned sideways"],
+      "notes": "From the Integrator's review of PR #249 (reading CSS). Vector 3: writing-mode:vertical-lr on html makes its block size the frame's width and its length the frame's height. The reading layer sets writing-mode:horizontal-tb !important on both."
+    }
+  },
+  {
+    "id": "144-layered-important-height-on-the-root",
+    "title": "!important rules in the mail's own layers, named, ordered and anonymous",
+    "classes": ["css-layout-abuse"],
+    "html": "messages/144-layered-important-height-on-the-root.html",
+    "expect": {
+      "mustKeepText": ["A layered !important rule beats an unlayered one"],
+      "notes": "From the Integrator's review of PR #249 (reading CSS). Vector 4: a layered !important declaration beats an unlayered !important one, so the unlayered reading rules lost to @layer x{html{height:calc(100% + 50px)!important}}. The reading rules now live in the first declared layer, whose !important wins over every later layer, unlayered rules and a style attribute."
+    }
+  },
+  {
+    "id": "145-inline-body-style-fixed-important",
+    "title": "An inline body style with position:fixed !important, and an html style",
+    "classes": ["css-layout-abuse"],
+    "html": "messages/145-inline-body-style-fixed-important.html",
+    "expect": {
+      "mustKeepText": ["An inline body style survives"],
+      "notes": "Vector 5 of the Integrator's REQUEST, with !important on every offset. The body's style attribute survives on the frame's body, and an element's own style attribute outranks every cascade layer (element-attached styles rank before layers), so an inline !important beat the layered reading rule. The frame body's style now keeps only background*, color, margin*, padding*, font*, text-align and line-height (css.ts keepDeclarations, sanitize.ts BODY_STYLE_PROPERTIES), so it cannot touch anything the layer guards; the oracle fails any other property there."
+    }
+  },
+  {
+    "id": "146-layer-named-like-the-reading-layer",
+    "title": "Mail layers named aplos-reading (plain, escaped, dotted, in a statement, after a comment, inside @media)",
+    "classes": ["css-layout-abuse"],
+    "html": "messages/146-layer-named-like-the-reading-layer.html",
+    "expect": {
+      "mustKeepText": ["A mail layer called aplos-reading"],
+      "notes": "From the Integrator's review of PR #249 (reading CSS). A mail layer with the reading layer's name would merge into it and add !important rules there, later in the layer so winning. The sanitizer moves every identifier in an @layer prelude to m-<name> (css.ts), so no mail layer can have that name; the oracle fails any sanitized mail @layer name outside m-."
+    }
+  },
+  {
+    "id": "147-signed-viewport-units-in-calc",
+    "title": "Viewport and container units with a leading + or - sign inside calc()",
+    "classes": ["css-layout-abuse"],
+    "html": "messages/147-signed-viewport-units-in-calc.html",
+    "expect": {
+      "mustKeepText": ["Signed viewport units keep their signs"],
+      "notes": "From the Integrator's review of PR #249 (reading CSS). calc(1px+100vh) tokenizes as 1px and +100vh; the rewritten unit lost its + and became 1px600px. The + is kept, - is part of the number, and * and / are separate tokens."
+    }
+  },
+  {
+    "id": "148-inline-body-style-zoom-important",
+    "title": "An inline body style with zoom:1000 !important",
+    "classes": ["css-layout-abuse"],
+    "html": "messages/148-inline-body-style-zoom-important.html",
+    "expect": {
+      "mustKeepText": ["An inline zoom with !important"],
+      "notes": "From the independent review of the reading layer (PR following #249). zoom:1000!important in the body's style attribute reported 69,750 px (the same zoom in a <style> rule stays at 86 px, because the layered rule wins there). Fixed by keeping only an allowlist of properties in the body's style attribute."
+    }
+  },
+  {
+    "id": "149-inline-body-style-vertical-writing-important",
+    "title": "An inline body style with writing-mode:vertical-lr !important and a negative margin",
+    "classes": ["css-layout-abuse"],
+    "html": "messages/149-inline-body-style-vertical-writing-important.html",
+    "expect": {
+      "mustKeepText": ["An inline vertical writing mode"],
+      "notes": "From the independent review of the reading layer (PR following #249). writing-mode:vertical-lr!important in the body's style attribute grew the frame 50 px per report. Fixed the same way. Another element's inline style is kept as written."
+    }
+  },
+  {
+    "id": "150-absolute-content-far-below",
+    "title": "An absolutely positioned box 1,200 px down in a short letter",
+    "classes": ["css-layout-abuse"],
+    "html": "messages/150-absolute-content-far-below.html",
+    "expect": {
+      "mustKeepText": ["The root box leaves out"],
+      "notes": "From the independent reviews of the reading layer (PR #249 follow-up). Item 1: with h = max(root box, body.scrollHeight) the report was 86 against a true 1,224, because the body was not the box's containing block. The body is now positioned (relative, no offsets) by the reading layer and the reporter adds the body's top to its scroll height."
+    }
+  },
+  {
+    "id": "151-relative-box-with-tall-absolute-child",
+    "title": "A relative box holding a 900 px absolutely positioned child",
+    "classes": ["css-layout-abuse"],
+    "html": "messages/151-relative-box-with-tall-absolute-child.html",
+    "expect": {
+      "mustKeepText": ["Short text in a relative box"],
+      "notes": "From the independent reviews of the reading layer (PR #249 follow-up). Item 1: reported 82 against a true 956."
+    }
+  },
+  {
+    "id": "152-dropdown-below-a-relative-menu",
+    "title": "A dropdown menu positioned at top:100% of a relative item",
+    "classes": ["css-layout-abuse"],
+    "html": "messages/152-dropdown-below-a-relative-menu.html",
+    "expect": {
+      "mustKeepText": ["Dropdown items"],
+      "notes": "From the independent reviews of the reading layer (PR #249 follow-up). Item 1: reported 56 against a true 340."
+    }
+  },
+  {
+    "id": "153-transformed-content-below",
+    "title": "A block translated 800 px down",
+    "classes": ["css-layout-abuse"],
+    "html": "messages/153-transformed-content-below.html",
+    "expect": {
+      "mustKeepText": ["Moved down by a transform"],
+      "notes": "From the independent reviews of the reading layer (PR #249 follow-up). Item 1: reported 109 against a true 893. A transform moves a box without changing the flow."
+    }
+  },
+  {
+    "id": "154-body-transform-moves-the-letter",
+    "title": "A body translated 500 px down",
+    "classes": ["css-layout-abuse"],
+    "html": "messages/154-body-transform-moves-the-letter.html",
+    "expect": {
+      "mustKeepText": ["The whole letter sits 500 px lower"],
+      "notes": "From the independent reviews of the reading layer (PR #249 follow-up). Item 1: reported 86 against a true 586. The body keeps its transform (it is a layout the mail asked for and cannot feed back); the body's top is part of the measurement."
+    }
+  },
+  {
+    "id": "155-body-negative-bottom-margin",
+    "title": "A body with a negative bottom margin",
+    "classes": ["css-layout-abuse"],
+    "html": "messages/155-body-negative-bottom-margin.html",
+    "expect": {
+      "mustKeepText": ["The root box ends 60 px above"],
+      "notes": "From the independent reviews of the reading layer (PR #249 follow-up). Item 1: reported 64 against a true 124."
+    }
+  },
+  {
+    "id": "156-root-offset-path-zero-width",
+    "title": "A zero-width root on an offset path, rotated",
+    "classes": ["css-layout-abuse"],
+    "html": "messages/156-root-offset-path-zero-width.html",
+    "expect": {
+      "mustKeepText": ["A root on a path"],
+      "notes": "From the independent reviews of the reading layer (PR #249 follow-up). Item 2: the root's box was 0 high, the reporter was silent and the host showed Couldn't load. The reading layer sets offset-path:none and a 1 px minimum height on the root."
+    }
+  },
+  {
+    "id": "157-root-offset-path-moves-everything",
+    "title": "A root moved 5,000 px up an offset path",
+    "classes": ["css-layout-abuse"],
+    "html": "messages/157-root-offset-path-moves-everything.html",
+    "expect": {
+      "mustKeepText": ["The whole letter is off screen"],
+      "notes": "From the independent reviews of the reading layer (PR #249 follow-up). Item 2: offset-path:none on the root and the body."
+    }
+  },
+  {
+    "id": "158-size-containers-on-root-and-body",
+    "title": "container-type:size on the root and the body",
+    "classes": ["css-layout-abuse"],
+    "html": "messages/158-size-containers-on-root-and-body.html",
+    "expect": {
+      "mustKeepText": ["Size containment gives a box no height"],
+      "notes": "From the independent reviews of the reading layer (PR #249 follow-up). Item 2: container-type:size is size containment that contain:none does not undo (32 against 916). The layer sets container-type:normal on both."
+    }
+  },
+  {
+    "id": "159-vertical-text-in-a-block",
+    "title": "Vertical Japanese text in a block",
+    "classes": ["css-layout-abuse"],
+    "html": "messages/159-vertical-text-in-a-block.html",
+    "expect": {
+      "mustKeepText": ["Vertical text in a div"],
+      "notes": "From the independent reviews of the reading layer (PR #249 follow-up). Item 4: an orthogonal writing mode inside the body made a block's length the frame's height, and the frame followed (182, 214, 246 px ... for ever). The property name becomes --m-writing-mode, which does nothing; vertical text is lost to mail."
+    }
+  },
+  {
+    "id": "160-max-height-media-flip",
+    "title": "A max-height media query that flips the letter's height",
+    "classes": ["css-layout-abuse"],
+    "html": "messages/160-max-height-media-flip.html",
+    "expect": {
+      "mustKeepText": ["Flips between 132 and 532 px"],
+      "notes": "From the independent reviews of the reading layer (PR #249 follow-up). Item 4: the query follows the frame, the frame follows the letter, for ever. Height, aspect-ratio, orientation and device-* features become unknown (false) names; width features are untouched."
+    }
+  },
+  {
+    "id": "161-orientation-media-flip",
+    "title": "An orientation media query that flips the letter between landscape and portrait",
+    "classes": ["css-layout-abuse"],
+    "html": "messages/161-orientation-media-flip.html",
+    "expect": {
+      "mustKeepText": ["Flips between portrait and landscape"],
+      "notes": "From the independent reviews of the reading layer (PR #249 follow-up). Item 4: 732 against 42 for ever. orientation is rewritten like the height features."
+    }
+  },
+  {
+    "id": "162-min-height-media-staircase",
+    "title": "Forty min-height media rules, each raising the height that enables the next",
+    "classes": ["css-layout-abuse"],
+    "html": "messages/162-min-height-media-staircase.html",
+    "expect": {
+      "mustKeepText": ["A staircase of height queries"],
+      "notes": "From the independent reviews of the reading layer (PR #249 follow-up). Item 4: each step raises the frame past the next rule's threshold. A long chain climbs up to the host's 200,000 px clamp."
+    }
+  },
+  {
+    "id": "163-root-content-visibility-hidden",
+    "title": "A root with content-visibility:hidden and a 5,000 px intrinsic size",
+    "classes": ["css-layout-abuse"],
+    "html": "messages/163-root-content-visibility-hidden.html",
+    "expect": {
+      "mustKeepText": ["The root reports a fixed 5,000 px"],
+      "notes": "From the independent reviews of the reading layer (PR #249 follow-up). Pre-existing, from the review. contain:none and content-visibility:visible on the root and the body."
+    }
+  },
+  {
+    "id": "164-body-style-shares-an-elements-style-text",
+    "title": "A div and the body whose style attributes differ only by a leading marker",
+    "classes": ["css-layout-abuse"],
+    "html": "messages/164-body-style-shares-an-elements-style-text.html",
+    "expect": {
+      "mustKeepText": ["The body then asks for the same declarations"],
+      "notes": "From the second independent review of the reading layer. HIGH: the body's filtered style was cached under '!' + its text while every other element's unfiltered style was cached under the bare text, so a div with style=\"!x;P\" planted its unfiltered result under the key a later <body style=\"x;P\"> looked up, and the body kept position:fixed!important and zoom:1000!important (268 reports, 650 to 13,800 px, still growing). The body's style is no longer cached at all (sanitize.ts bodyStyle); the other caches (styleTokens, hidingStyles, cleanStyles) are each keyed by the style text for one transformation, images.ts keeps separate maps per kind."
+    }
+  },
+  {
+    "id": "165-vendor-prefixed-writing-modes",
+    "title": "Vertical Japanese text under -epub-writing-mode and other prefixed aliases",
+    "classes": ["css-layout-abuse"],
+    "html": "messages/165-vendor-prefixed-writing-modes.html",
+    "expect": {
+      "mustKeepText": ["Aliases of writing-mode turn a block sideways"],
+      "notes": "From the second independent review of the reading layer. MEDIUM: Chromium honours -epub-writing-mode (and -webkit-writing-mode) as aliases of writing-mode, and only the unprefixed and -webkit- names were renamed; the -epub- block hit the host's 303-report cap (632 to 5,400 px). Every property whose name ends in writing-mode, under any prefix, escape or case, becomes a custom property. Measured: text-orientation, text-combine-upright, glyph-orientation-vertical, direction with unicode-bidi, -webkit-line-break and -webkit-box-orient settle on their own (no vertical mode without writing-mode)."
+    }
+  },
+  {
+    "id": "166-body-type-sizes-past-the-bound",
+    "title": "A body style with a 3,000 px font, a line height of 100 and a 900 px font shorthand",
+    "classes": ["css-layout-abuse"],
+    "html": "messages/166-body-type-sizes-past-the-bound.html",
+    "expect": {
+      "mustKeepText": ["Huge type on the body is left out"],
+      "notes": "From the second independent review of the reading layer. LOW: the body style's font-*, margin-* and padding-* were prefix patterns, so font-size-adjust:1000 (16,917 px) or a huge font-size or line-height (8,566 px) passed: stable but tall. The allowlist is now explicit names, and font-size, line-height and font are bounded (200 px or the equivalent in other units, a unitless line height of 10, no functions); margin and padding are not bounded (a spacer div can be as tall)."
+    }
+  },
+  {
+    "id": "167-css-if-media-follows-the-frame",
+    "title": "CSS if() with media() conditions on the frame's height, shape and orientation",
+    "classes": ["css-layout-abuse"],
+    "html": "messages/167-css-if-media-follows-the-frame.html",
+    "expect": {
+      "mustKeepText": ["Flips with the frame's height"],
+      "notes": "From the independent review of #255 (CSS if() and the clipped-content measurement). CSS if() takes media() conditions, and Chromium 137 and later evaluates them: padding-top:if(media(max-height:300px):600px;else:0) brought back the endless flip the @media rewrite stops (217 reports in 3.5 s, 564 and 164 px). if( is now dropped like attr(: the function becomes an empty string, the declaration is invalid and ignored, in style blocks, style attributes and inside calc() or var(). Container queries on min-block-size and max-block-size are renamed like the other height features."
+    }
+  },
+  {
+    "id": "168-body-style-if-media",
+    "title": "The allowlisted body margin carrying an if(media()) condition",
+    "classes": ["css-layout-abuse"],
+    "html": "messages/168-body-style-if-media.html",
+    "expect": {
+      "mustKeepText": ["The body margin asks the frame which way up"],
+      "notes": "From the independent review of #255 (CSS if() and the clipped-content measurement). The same vector through the body's style attribute, which keeps margin and padding by name (786 and 86 px, 217 reports). The function is dropped before the declaration is written."
+    }
+  },
+  {
+    "id": "169-scroll-driven-animation-timeline",
+    "title": "A height keyframe tied to the scroll or view timeline",
+    "classes": ["css-layout-abuse"],
+    "html": "messages/169-scroll-driven-animation-timeline.html",
+    "expect": {
+      "mustKeepText": ["Scroll-driven animations follow the scroller"],
+      "notes": "From the independent review of #255 (CSS if() and the clipped-content measurement). animation-timeline:scroll(root) ties an animation's progress to the scroller, which is the frame, so the keyframe's height was in effect only when the frame could scroll: the letter flipped between 86 and 1086 px (217 reports in 3.5 s). The timeline properties (animation-timeline, animation-range*, scroll-timeline*, view-timeline*, timeline-scope) become custom properties, and scroll() and view() are dropped as functions. Ordinary animations and transitions are untouched."
+    }
+  },
+  {
+    "id": "170-body-display-contents",
+    "title": "display:contents on the body, and a box positioned 1,200 px down",
+    "classes": ["css-layout-abuse"],
+    "html": "messages/170-body-display-contents.html",
+    "expect": {
+      "mustKeepText": ["A body with no box is no containing block"],
+      "notes": "From the independent review of #255 (CSS if() and the clipped-content measurement). With display:contents the body had no box, position:relative made no containing block, and the report was 54 against a true 1,224. The body rule now sets display:block with !important in the reading layer."
+    }
+  },
+  {
+    "id": "171-absolute-box-animated-after-load",
+    "title": "An absolutely positioned box that moves 1,200 px down a second after load",
+    "classes": ["css-layout-abuse"],
+    "html": "messages/171-absolute-box-animated-after-load.html",
+    "expect": {
+      "mustKeepText": ["Nothing changes size, so no observer fires"],
+      "notes": "From the independent review of #255 (CSS if() and the clipped-content measurement). The ResizeObserver watched only the root, whose box does not change when an absolute box moves, and the report stayed at 86 against a true 1,224. The reporter now looks at every frame for 3 s after any change or event (animationend, transitionend, load, error, toggle, resize), posts only a changed report and at most 20 a second, and observes the body as well. A move more than 3 s after the last change, with no event, is not seen (recorded in DECISIONS)."
+    }
+  },
+  {
+    "id": "172-absolute-box-jumps-with-no-end-event",
+    "title": "An absolutely positioned box that jumps 1,200 px down a second after load and animates for 100 s",
+    "classes": ["css-layout-abuse"],
+    "html": "messages/172-absolute-box-jumps-with-no-end-event.html",
+    "expect": {
+      "mustKeepText": ["The jump has no end event"],
+      "notes": "From the independent review of #255 (the clipped-content measurement). Like 171 but the animation does not end for 100 s, so no animationend event can report it: only the reporter's look at every frame after a change sees the jump."
+    }
+  },
+  {
+    "id": "173-absolute-box-animates-after-the-quiet-period",
+    "title": "An absolutely positioned box that starts moving 4.5 s after load",
+    "classes": ["css-layout-abuse"],
+    "html": "messages/173-absolute-box-animates-after-the-quiet-period.html",
+    "expect": {
+      "mustKeepText": ["Nothing moves until the frame loop has gone quiet"],
+      "notes": "From the independent review of #255 (the clipped-content measurement). The frame loop stops after 3 s without a change; a box that starts moving later is reported when its animation ends (the animationend event, captured on the document). A late move with no end event, a long or infinite animation that starts after the quiet period, is not seen and is recorded in DECISIONS."
+    }
+  },
+  {
+    "id": "174-background-colour-animation",
+    "title": "A body whose background colour animates for ever",
+    "classes": ["css-layout-abuse"],
+    "html": "messages/174-background-colour-animation.html",
+    "expect": {
+      "mustKeepText": ["Only the colour changes"],
+      "notes": "From the Integrator's review of #257 and the old Engine thread's re-check (reporter lifetime). A letter that changes only colour posted a report for as long as it was open (about 23 a second, 40 in 5 s at a 2 s cycle): the background rode in the change key and every post extended the watch, and the host's freeze counts only growth. The background is no longer a reason to post (it still rides in every message) and only a new height or width extends the watch, so this letter posts its first report and its readiness and then nothing."
+    }
+  },
+  {
+    "id": "175-height-animation-for-ever",
+    "title": "A box whose height animates for ever",
+    "classes": ["css-layout-abuse"],
+    "html": "messages/175-height-animation-for-ever.html",
+    "expect": {
+      "mustKeepText": ["A height that never settles"],
+      "notes": "From the Integrator's review of #257 and the old Engine thread's re-check (reporter lifetime). A size that changes for the life of the letter is limited to 20 reports a second and, after 2,000 reports in all, the reporter posts the state of that moment and stops for good (the host keeps that size). The browser check shortens the cap to 60 in a copy of the script to see it in seconds."
+    }
+  }
+]

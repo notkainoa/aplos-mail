@@ -1,0 +1,13 @@
+{
+  "about": "Default states for taste.score.ts: owner-visible screens in the real shell. --state overrides.",
+  "states": [
+    "home-full",
+    "later-groups",
+    "list-label",
+    "done-screen-rows",
+    "shell-sidebar-groups",
+    "shell-status-syncing",
+    "shell-toast-stack-three",
+    "shell-empty-inbox-zero"
+  ]
+}

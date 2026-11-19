@@ -1,0 +1,22 @@
+version: 2
+updates:
+  # One entry covers every npm workspace (apps/*, packages/*) through the root lockfile.
+  - package-ecosystem: npm
+    directory: /
+    target-branch: revamp
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 5
+    groups:
+      npm-minor-patch:
+        update-types: [minor, patch]
+
+  - package-ecosystem: github-actions
+    directory: /
+    target-branch: revamp
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 5
+    groups:
+      actions-minor-patch:
+        update-types: [minor, patch]

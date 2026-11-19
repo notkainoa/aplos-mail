@@ -1,0 +1,189 @@
+<!doctype html>
+<html lang="en" data-window="onboarding" data-states="choose,typed,waiting,connected,icloud" data-esc="onboarding-welcome.html">
+<head>
+<meta charset="utf-8">
+<title>Onboarding · Accounts · Aplos mockup</title>
+<link rel="stylesheet" href="tokens.css">
+<link rel="stylesheet" href="shell.css">
+<script src="shell.js"></script>
+<style>
+  .onb .onb-body { justify-content: flex-start; padding-top: var(--space-7); }
+  .step { display: flex; flex-direction: column; align-items: flex-start; width: 100%; }
+  .step .field { width: 100%; margin-top: var(--space-6); }
+  .step .field .kbd { flex: none; }
+  .cap { font: var(--type-small); font-weight: 500; color: var(--dim); margin-top: var(--space-7); }
+
+  /* quiet list rows: hairlines between, no box. Hover tints the row and moves nothing. */
+  .rows { width: 100%; margin-top: var(--space-2); }
+  .row-q { position: relative; display: flex; align-items: center; gap: var(--space-3); width: calc(100% + 2 * var(--space-3)); margin: 0 calc(-1 * var(--space-3)); height: var(--row-roomy); padding: 0 var(--space-3); border-radius: var(--radius-md); font: var(--type-base); letter-spacing: var(--track-base); color: var(--ink); text-align: left; }
+  .row-q + .row-q::before { content: ""; position: absolute; top: 0; left: var(--space-3); right: var(--space-3); height: var(--hairline); background: var(--line); }
+  .row-q + .row-q:hover::before, .row-q:hover + .row-q::before { background: transparent; }
+  button.row-q:hover { background: var(--hover); }
+  .row-q:focus-visible { outline-offset: calc(-1 * var(--focus-width)); }
+  .row-q .ic { color: var(--dim); }
+  .row-q .go { margin-left: auto; }
+  .row-q .who { font-weight: 500; }
+  .row-q .kind { font: var(--type-small); color: var(--dim); }
+  .row-q .stack { display: flex; flex-direction: column; min-width: 0; }
+  .row-q.tall { height: auto; min-height: var(--row-roomy); padding-top: var(--space-3); padding-bottom: var(--space-3); align-items: flex-start; }
+  .row-q.tall > .ic { margin-top: var(--space-half); }
+  .row-q .dot { width: var(--mark-dot); height: var(--mark-dot); border-radius: 50%; background: var(--tag-sky); flex: none; margin: 0 var(--space-1); }
+  .row-q .stat { margin-left: auto; display: inline-flex; align-items: center; gap: var(--space-1); font: var(--type-small); color: var(--dim); }
+  .row-q .stat .ic { width: var(--icon-sm); height: var(--icon-sm); }
+  .row-q .d { font: var(--type-small); color: var(--dim); margin-top: var(--space-half); }
+
+  .go-row { display: flex; align-items: center; gap: var(--space-3); margin-top: var(--space-7); }
+  .wait-track { width: 100%; margin-top: var(--space-7); }
+  .fine { display: flex; align-items: center; gap: var(--space-2); font: var(--type-small); color: var(--dim); margin-top: var(--space-3); }
+  .fine .ic { width: var(--icon-sm); height: var(--icon-sm); }
+  .two { width: 100%; display: flex; flex-direction: column; gap: var(--space-3); margin-top: var(--space-6); }
+  .two .field { margin-top: 0; }
+</style>
+</head>
+<body>
+<div class="window">
+  <div class="onb">
+    <div class="drag">
+      <span class="traffic"></span>
+      <a class="btn btn-text xs" href="demo.html" data-tip="Load sample mail to look around. Remove it any time in Settings.">Try demo mail</a>
+    </div>
+    <main class="onb-body" aria-labelledby="h">
+
+        <!-- choose + typed share the address field -->
+        <div class="step" data-s="choose typed">
+          <h1 class="t-heading" id="h">Add your mail</h1>
+          <p class="lede">Type your address and Aplos finds the right sign-in. Aplos reads your mail on this Mac.</p>
+          <label class="field lg" for="addr">
+            <svg class="ic"><use href="#i-mail"/></svg>
+            <input id="addr" type="email" placeholder="name@example.com" autocomplete="off" spellcheck="false" aria-label="Email address">
+            <span class="kbd" data-s="choose">Return</span>
+          </label>
+
+          <div data-s="choose" style="width:100%">
+            <div class="cap">Or choose a provider</div>
+            <div class="rows" role="list">
+              <button class="row-q" data-pick="Google"><svg class="ic"><use href="#i-mail"/></svg>Google<svg class="ic go"><use href="#i-chevr"/></svg></button>
+              <button class="row-q" data-pick="Microsoft"><svg class="ic"><use href="#i-at"/></svg>Microsoft<svg class="ic go"><use href="#i-chevr"/></svg></button>
+              <button class="row-q" data-pick="iCloud"><svg class="ic"><use href="#i-globe"/></svg>iCloud<svg class="ic go"><use href="#i-chevr"/></svg></button>
+              <button class="row-q" data-pick="Other"><svg class="ic"><use href="#i-server"/></svg>Other mail (IMAP)<svg class="ic go"><use href="#i-chevr"/></svg></button>
+            </div>
+          </div>
+
+          <div data-s="typed" style="width:100%">
+            <div class="rows" style="margin-top:var(--space-6)">
+              <div class="row-q tall">
+                <svg class="ic"><use href="#i-mail"/></svg>
+                <div class="stack"><span class="who">Google</span><span class="d">You sign in on Google's own page in your browser. Aplos never sees your password.</span></div>
+                <span class="stat"><svg class="ic"><use href="#i-check"/></svg>Found</span>
+              </div>
+            </div>
+            <div class="go-row">
+              <button class="btn btn-filled lg" id="primary">Continue with Google<span class="kbd">Return</span></button>
+              <button class="btn btn-text" id="other">Use a different provider</button>
+            </div>
+          </div>
+        </div>
+
+        <!-- waiting -->
+        <div class="step" data-s="waiting">
+          <h1 class="t-heading">Waiting for <span class="pv">Google</span> in your browser…</h1>
+          <p class="lede">Finish signing in there, then come back. Aplos only asks to read and send your mail and calendar, and you can revoke that any time.</p>
+          <div class="status-track wait-track" role="progressbar" aria-label="Waiting for sign-in"><i></i></div>
+          <div class="go-row" style="margin-top:var(--space-6)">
+            <button class="btn btn-text" id="cancel">Cancel<span class="kbd">Esc</span></button>
+          </div>
+        </div>
+
+        <!-- connected -->
+        <div class="step" data-s="connected">
+          <h1 class="t-heading">Your accounts</h1>
+          <p class="lede">Mail from every account lands together. Add another one now or later in Settings.</p>
+          <div class="rows" style="margin-top:var(--space-6)">
+            <div class="row-q">
+              <i class="dot"></i>
+              <div class="stack"><span class="who">alex.moreno@gmail.com</span><span class="kind">Google</span></div>
+              <span class="stat"><svg class="ic"><use href="#i-check"/></svg>Connected</span>
+            </div>
+          </div>
+          <div class="go-row">
+            <button class="btn btn-filled lg" id="primary2">Continue<span class="kbd">Return</span></button>
+            <button class="btn btn-text" id="another"><svg class="ic"><use href="#i-plus"/></svg>Add another account</button>
+          </div>
+        </div>
+
+        <!-- icloud -->
+        <div class="step" data-s="icloud">
+          <h1 class="t-heading">Add iCloud Mail</h1>
+          <p class="lede">iCloud needs an app-specific password, not your Apple ID password. Make one called Aplos at account.apple.com under Sign-In and Security, then paste it here.</p>
+          <div class="two">
+            <label class="field"><svg class="ic"><use href="#i-at"/></svg><input type="email" value="alex.moreno@icloud.com" aria-label="iCloud address"></label>
+            <label class="field"><svg class="ic"><use href="#i-key"/></svg><input id="pw" type="password" placeholder="App-specific password" aria-label="App-specific password"></label>
+          </div>
+          <div class="fine"><svg class="ic"><use href="#i-lock"/></svg>Saved in Keychain on this Mac. Never sent anywhere else.</div>
+          <div class="go-row" style="margin-top:var(--space-6)">
+            <button class="btn btn-filled lg" id="connect">Connect iCloud<span class="kbd">Return</span></button>
+          </div>
+        </div>
+
+    </main>
+    <footer class="onb-foot">
+      <div class="steps" aria-label="Step 2 of 4"><i class="done"></i><i class="on"></i><i></i><i></i></div>
+      <span class="note">Setup continues in the background.</span>
+      <div class="btns"><button class="btn btn-text" id="back">Back<span class="kbd hint">Esc</span></button></div>
+    </footer>
+  </div>
+</div>
+<script>
+(function () {
+  const html = document.documentElement;
+  const $ = id => document.getElementById(id);
+  const addr = $('addr');
+  let st = 'choose', provider = 'Google', timer;
+  const target = { choose: () => addr, typed: () => $('primary'), waiting: () => $('cancel'), connected: () => $('primary2'), icloud: () => $('pw') };
+  function show(s) {
+    st = s; html.dataset.state = s; clearTimeout(timer);
+    document.querySelectorAll('[data-s]').forEach(el => { el.hidden = !el.dataset.s.split(' ').includes(s); });
+    document.querySelectorAll('.pv').forEach(p => { p.textContent = provider; });
+    if (s === 'typed' && !addr.value) addr.value = 'alex.moreno@gmail.com';
+    if (s === 'choose') addr.value = '';
+    const t = target[s](); if (t) t.focus({ preventScroll: true });
+    // Outside screenshots, the browser "returns" a moment later, as it would for real.
+    if (s === 'waiting' && !html.classList.contains('shot')) timer = setTimeout(() => show('connected'), 2600);
+  }
+  function discover() {
+    const v = addr.value.trim(); if (!/.+@.+\..+/.test(v)) return;
+    if (/@(icloud|me|mac)\.com$/i.test(v)) { provider = 'iCloud'; return show('icloud'); }
+    provider = 'Google'; show('typed');
+  }
+  document.querySelectorAll('[data-pick]').forEach(b => b.addEventListener('click', () => {
+    const p = b.dataset.pick;
+    if (p === 'iCloud') { provider = 'iCloud'; return show('icloud'); }
+    if (p === 'Other') return;
+    provider = p; show('waiting');
+  }));
+  $('primary').addEventListener('click', () => { provider = 'Google'; show('waiting'); });
+  $('other').addEventListener('click', () => show('choose'));
+  $('cancel').addEventListener('click', () => show('choose'));
+  $('another').addEventListener('click', () => show('choose'));
+  $('primary2').addEventListener('click', () => Mock.go('onboarding-ai.html'));
+  $('connect').addEventListener('click', () => show('connected'));
+  const back = () => { if (st === 'choose' || st === 'connected') return Mock.go('onboarding-welcome.html'); show('choose'); };
+  $('back').addEventListener('click', back);
+  Mock.onKey(e => {
+    if (e.key === 'Escape') { back(); return true; }
+    if (e.key === 'Enter') {
+      if (e.target.closest('button')) return false;   // a focused button handles its own Return
+      if (st === 'choose') { discover(); return true; }
+      if (st === 'typed') { $('primary').click(); return true; }
+      if (st === 'connected') { $('primary2').click(); return true; }
+      if (st === 'icloud') { $('connect').click(); return true; }
+    }
+  });
+  addEventListener('DOMContentLoaded', () => {
+    if (Mock.state === 'typed') provider = 'Google';
+    show(Mock.state || 'choose');
+  });
+})();
+</script>
+</body>
+</html>

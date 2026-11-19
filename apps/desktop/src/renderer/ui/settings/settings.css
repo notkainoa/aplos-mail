@@ -1,0 +1,684 @@
+/* The settings family: SettingRow, ProviderTable, KeyRecorder (DESIGN 7.10). Tokens only.
+   Derived sizes, named once from tokens: --set-control (the fixed control column, 208 px), --set-status and
+   --set-actions (a provider row's columns, 128 px each), --set-address (an address field, 256 px). */
+
+.ui-setting-row,
+.ui-provider-table,
+.ui-key-recorder {
+  --set-control: calc(var(--space-10) * 3 + var(--space-4));
+  --set-status: calc(var(--space-10) * 2);
+  --set-actions: calc(var(--space-10) * 2);
+  --set-address: calc(var(--space-10) * 4);
+}
+
+.ui-set-icon {
+  width: var(--icon-sm);
+  height: var(--icon-sm);
+  flex: none;
+  stroke-width: var(--icon-stroke);
+}
+
+/* ---------- SettingRow: 40 px, or 48 px with a description; hairline above; fixed control column ---------- */
+.ui-setting-row {
+  box-shadow: inset 0 var(--hairline) 0 var(--line);
+  color: var(--ink);
+  /* A deep link scrolls the row clear of the pane's edge. */
+  scroll-margin-block: var(--space-10);
+}
+
+.ui-setting-row__main,
+.ui-setting-row__toggle {
+  display: grid;
+  /* The control takes what it needs (never less than its own words), so a description runs nearly the row's width
+     beside a switch and wraps only beside a wide picker (council 2, round 5). */
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  column-gap: var(--space-4);
+  width: 100%;
+  min-height: var(--row);
+  padding: var(--space-1) var(--space-3);
+  text-align: left;
+}
+
+.ui-setting-row[data-has-description='true'] .ui-setting-row__main,
+.ui-setting-row[data-has-description='true'] .ui-setting-row__toggle {
+  min-height: var(--row-roomy);
+  /* A long description wraps instead of clipping; the padding keeps wrapped rows calm. */
+  padding-block: var(--space-1);
+}
+
+.ui-setting-row__text {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.ui-setting-row__line {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  min-width: 0;
+  font: var(--type-ui);
+  letter-spacing: var(--track-ui);
+  color: var(--ink);
+}
+
+.ui-setting-row__label {
+  min-width: 0;
+  /* A long address is the label now: it wraps so its distinguishing tail stays readable. */
+  overflow-wrap: anywhere;
+  font-weight: 400;
+}
+
+.ui-setting-row[data-has-description='true'] .ui-setting-row__label {
+  font-weight: 500;
+}
+
+.ui-setting-row__meta,
+.ui-setting-row__tag {
+  /* A wrapping label gives way first; the provider word beside it keeps its width (capped at half the row). */
+  flex: none;
+  max-width: 50%;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font: var(--type-small);
+  letter-spacing: var(--track-small);
+  color: var(--dim);
+}
+
+/* The tag ("Default") is never clipped; a long meta shrinks first. */
+.ui-setting-row__tag {
+  flex: none;
+  max-width: none;
+  overflow: visible;
+}
+
+.ui-setting-row__mark {
+  flex: none;
+  width: var(--mark-dot);
+  height: var(--mark-dot);
+  border-radius: var(--radius-xs);
+  background: var(--swatch);
+}
+
+.ui-setting-row__description {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--space-1);
+  min-width: 0;
+  font: var(--type-small);
+  letter-spacing: var(--track-small);
+  color: var(--dim);
+}
+
+.ui-setting-row__description .ui-set-icon {
+  margin-top: var(--space-half);
+}
+
+.ui-setting-row__description-text {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+/* A keycap in a sentence sits on the text's baseline, not below it: an inline box as tall as its own line. */
+.ui-setting-row__description-text .ui-kbd {
+  display: inline-block;
+  min-width: var(--kbd);
+  line-height: var(--kbd);
+  vertical-align: baseline;
+  text-align: center;
+}
+
+.ui-setting-row__description[data-tone='attention'],
+.ui-setting-row__description[data-tone='attention'] .ui-set-icon {
+  color: var(--stamp-ink);
+}
+
+.ui-setting-row__control {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: var(--space-2);
+  min-width: 0;
+}
+
+/* A row's action (Show shortcuts, Export, Open, Add a tool, Remove) is a hairline pill, so it reads as a control and
+   not as a caption beside a switch. The same look as the calendar editor's Day, Time and Calendar triggers. */
+.ui-setting-row__control .ui-button[data-variant='text'] {
+  --btn-h: var(--control-sm);
+  box-shadow: inset 0 0 0 var(--hairline) var(--line-strong);
+}
+.ui-setting-row__control .ui-button[data-variant='text']:is(:disabled, [aria-disabled='true']) {
+  box-shadow: inset 0 0 0 var(--hairline) var(--line);
+}
+/* Remove is a quiet text button, no pill, in the danger text colour: it sits beside Reset without matching its weight. */
+.ui-setting-row__control .ui-button[data-variant='text'][data-tone='danger'] {
+  box-shadow: none;
+}
+
+.ui-setting-row__toggle .ui-setting-row__control {
+  color: var(--dim);
+}
+
+.ui-setting-row__toggle .ui-setting-row__control .ui-set-icon {
+  transition: transform var(--dur-swap) var(--ease-std);
+}
+
+.ui-setting-row__control[data-expanded='true'] .ui-set-icon {
+  transform: rotate(180deg);
+}
+
+.ui-setting-row__content {
+  padding: var(--space-1) var(--space-3) var(--space-5);
+  font: var(--type-base);
+  letter-spacing: var(--track-base);
+  color: var(--ink-2);
+  max-width: var(--measure-read);
+}
+
+.ui-setting-row__content[hidden] {
+  display: none;
+}
+
+.ui-setting-row__below {
+  padding: 0 var(--space-3) var(--space-2);
+}
+
+.ui-setting-row__toggle:focus-visible {
+  outline: var(--focus-width) solid var(--accent);
+  outline-offset: calc(-1 * var(--focus-width));
+  border-radius: var(--radius-md);
+}
+
+@media (hover: hover) {
+  .ui-setting-row__toggle:hover .ui-setting-row__control {
+    color: var(--ink);
+  }
+}
+
+/* ---------- ProviderTable ---------- */
+.ui-provider-table[data-kind='features'] .ui-setting-row__main,
+.ui-provider-table[data-kind='local'] .ui-setting-row__main {
+  grid-template-columns: minmax(0, 1fr) auto;
+}
+
+/* A feature row: its name with the two selects on the name's own line, and what the feature does under the name at the
+   row's full width (the description never wraps into a 190 px column beside the selects). */
+.ui-provider-table[data-kind='features'] .ui-setting-row__main {
+  grid-template-rows: auto auto;
+  row-gap: var(--space-half);
+  padding-block: var(--space-2);
+}
+.ui-provider-table[data-kind='features'] .ui-setting-row__text {
+  display: contents;
+}
+.ui-provider-table[data-kind='features'] .ui-setting-row__line {
+  grid-column: 1;
+  grid-row: 1;
+}
+.ui-provider-table[data-kind='features'] .ui-setting-row__control {
+  grid-column: 2;
+  grid-row: 1;
+}
+.ui-provider-table[data-kind='features'] .ui-setting-row__description {
+  grid-column: 1 / -1;
+  grid-row: 2;
+}
+
+/* Provider and model in two fixed columns, so every feature's selects line up, Voice's included. */
+.ui-provider-table__pair {
+  display: grid;
+  grid-template-columns: calc(var(--space-10) * 2.5) calc(var(--space-10) * 3);
+  align-items: center;
+  gap: var(--space-2);
+}
+.ui-provider-table__pair .ui-provider-table__select {
+  display: flex;
+  min-width: 0;
+}
+.ui-provider-table__pair .ui-provider-table__select select {
+  width: 100%;
+  min-width: 0;
+  max-width: none;
+}
+
+.ui-provider-table__select {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+}
+
+.ui-provider-table__select select {
+  appearance: none;
+  border: 0;
+  height: var(--control-sm);
+  min-width: calc(var(--space-10) * 1.5);
+  max-width: calc(var(--space-10) * 3);
+  padding: 0 calc(var(--space-2) + var(--icon-sm) + var(--space-1)) 0 var(--space-3);
+  border-radius: var(--radius-md);
+  background: var(--canvas);
+  box-shadow: inset 0 0 0 1px var(--line-strong);
+  font: var(--type-ui);
+  letter-spacing: var(--track-ui);
+  color: var(--ink);
+  text-overflow: ellipsis;
+}
+
+.ui-provider-table__select .ui-set-icon {
+  position: absolute;
+  right: var(--space-2);
+  color: var(--dim);
+  pointer-events: none;
+}
+
+.ui-provider-table__select select:focus-visible,
+.ui-provider-table__address:focus-visible,
+.ui-provider-table__button:focus-visible,
+.ui-key-recorder__keys:focus-visible,
+.ui-key-recorder__reset:focus-visible,
+.ui-key-recorder__action:focus-visible,
+.ui-key-recorder__capture:focus-visible {
+  outline: var(--focus-width) solid var(--accent);
+  outline-offset: var(--focus-gap);
+}
+
+.ui-provider-table__address {
+  border: 0;
+  width: var(--set-address);
+  height: var(--control-sm);
+  padding: 0 var(--space-3);
+  border-radius: var(--radius-md);
+  background: var(--canvas);
+  box-shadow: inset 0 0 0 1px var(--line-strong);
+  font: var(--type-ui);
+  letter-spacing: var(--track-ui);
+  color: var(--ink);
+}
+
+.ui-provider-table__address::placeholder {
+  color: var(--dim);
+}
+
+.ui-provider-table__row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) var(--set-status) var(--set-actions);
+  align-items: center;
+  column-gap: var(--space-4);
+  min-height: var(--row-roomy);
+  padding: 0 var(--space-3);
+  box-shadow: inset 0 var(--hairline) 0 var(--line);
+}
+
+.ui-provider-table__text {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.ui-provider-table__line {
+  display: flex;
+  align-items: baseline;
+  gap: var(--space-2);
+  font: var(--type-ui);
+  letter-spacing: var(--track-ui);
+  color: var(--ink);
+}
+
+.ui-provider-table__name {
+  font-weight: 500;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.ui-provider-table__tag {
+  flex: none;
+  font: var(--type-small);
+  letter-spacing: var(--track-small);
+  color: var(--dim);
+}
+
+.ui-provider-table__source {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font: var(--type-small);
+  letter-spacing: var(--track-small);
+  color: var(--dim);
+}
+
+.ui-provider-table__status {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  min-width: 0;
+  font: var(--type-small);
+  letter-spacing: var(--track-small);
+  color: var(--ink-2);
+}
+
+.ui-provider-table__status-text {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.ui-provider-table__status[data-tone='busy'],
+.ui-provider-table__status[data-tone='quiet'] {
+  color: var(--dim);
+}
+
+.ui-provider-table__status[data-tone='bad'],
+.ui-provider-table__status[data-tone='bad'] .ui-set-icon {
+  color: var(--stamp-ink);
+}
+
+.ui-provider-table__status .ui-set-icon {
+  color: var(--hill);
+}
+
+.ui-provider-table__dot {
+  flex: none;
+  width: var(--mark-dot);
+  height: var(--mark-dot);
+  border-radius: var(--radius-xs);
+  background: var(--faint);
+}
+
+.ui-provider-table__status[data-tone='ok'] .ui-provider-table__dot {
+  background: var(--hill);
+}
+
+.ui-provider-table__actions,
+.ui-provider-table__local-actions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: var(--space-half);
+}
+
+.ui-provider-table__actions {
+  gap: var(--space-2);
+}
+
+.ui-provider-table__local-actions {
+  gap: var(--space-2);
+}
+
+/* The address field, its status and Test share one line (no wrapped second line under the field). */
+.ui-provider-table__local-control {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+}
+
+.ui-provider-table__button {
+  display: inline-flex;
+  align-items: center;
+  height: var(--control-sm);
+  padding: 0 var(--space-3);
+  border-radius: var(--radius-md);
+  /* The one small outlined button every row action wears (Add a key, Add account, Reset, Export, Preview). */
+  box-shadow: inset 0 0 0 var(--hairline) var(--line-strong);
+  font: var(--type-ui);
+  font-weight: 500;
+  letter-spacing: var(--track-ui);
+  white-space: nowrap;
+  color: var(--ink-2);
+  transition:
+    transform var(--dur-press-up) var(--ease-out),
+    background-color var(--dur-hover) var(--ease-std),
+    color var(--dur-hover) var(--ease-std);
+}
+
+.ui-provider-table__button:active:not([aria-disabled='true']) {
+  transform: scale(var(--press-scale));
+  transition-duration: var(--dur-press-down);
+  background: var(--press);
+}
+
+.ui-provider-table__button[aria-disabled='true'] {
+  box-shadow: inset 0 0 0 var(--hairline) var(--line);
+  color: var(--dim);
+}
+/* Remove is the quiet danger text beside the outlined actions, as it is on Accounts. */
+.ui-provider-table__button[data-tone='danger'] {
+  box-shadow: none;
+  color: var(--stamp-ink);
+}
+.ui-provider-table__button[data-tone='danger'][aria-disabled='true'] {
+  color: var(--dim);
+}
+
+.ui-provider-table__fix {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--space-2);
+  padding: var(--space-1) var(--space-3) var(--space-2);
+  font: var(--type-small);
+  letter-spacing: var(--track-small);
+  color: var(--stamp-ink);
+}
+
+.ui-provider-table__fix .ui-set-icon {
+  margin-top: var(--space-half);
+}
+
+.ui-provider-table__fix .ui-provider-table__button {
+  margin: calc(-1 * var(--space-half)) 0 0 auto;
+}
+
+.ui-provider-table__sr {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+
+@media (hover: hover) {
+  .ui-provider-table__button:hover:not([aria-disabled='true']) {
+    background: var(--hover);
+    color: var(--ink);
+  }
+
+  .ui-provider-table__select select:hover,
+  .ui-provider-table__address:hover {
+    box-shadow: inset 0 0 0 1px var(--control-edge);
+  }
+}
+
+.ui-provider-table__address:focus {
+  box-shadow: inset 0 0 0 1px var(--accent);
+}
+
+/* ---------- KeyRecorder: one 40 px row per command; 48 px while recording ---------- */
+.ui-key-recorder {
+  --label-min: calc(var(--space-10) * 2); /* the label keeps this much; the controls give way */
+  display: grid;
+  grid-template-columns: minmax(var(--label-min), 1fr) minmax(0, auto);
+  align-items: center;
+  column-gap: var(--space-4);
+  min-height: var(--row);
+  padding: 0 var(--space-3);
+  box-shadow: inset 0 var(--hairline) 0 var(--line);
+  font: var(--type-ui);
+  letter-spacing: var(--track-ui);
+  color: var(--ink);
+}
+
+.ui-key-recorder__label {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap; /* one line, so the row stays 40 or 48 */
+}
+
+.ui-key-recorder__text {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.ui-key-recorder[data-state='idle'] .ui-key-recorder__label {
+  font-weight: 400;
+}
+
+.ui-key-recorder:not([data-state='idle']) {
+  min-height: var(--row-roomy);
+  background: var(--accent-wash);
+  border-radius: var(--radius-md);
+  box-shadow: none;
+}
+
+.ui-key-recorder:not([data-state='idle']) .ui-key-recorder__label {
+  font-weight: 500;
+}
+
+.ui-key-recorder__hint {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font: var(--type-small);
+  letter-spacing: var(--track-small);
+  color: var(--dim);
+}
+
+.ui-key-recorder__controls {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: var(--space-3);
+  min-width: 0;
+}
+
+.ui-key-recorder__keys,
+.ui-key-recorder__capture,
+.ui-key-recorder__reset,
+.ui-key-recorder__action {
+  flex: none;
+}
+
+.ui-key-recorder__keys,
+.ui-key-recorder__capture {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-half);
+  height: var(--control-sm);
+  padding: 0 var(--space-2);
+  border-radius: var(--radius-md);
+  transition: background-color var(--dur-hover) var(--ease-std);
+}
+
+.ui-key-recorder__keys {
+  margin-right: calc(-1 * var(--space-2));
+}
+
+.ui-key-recorder__kbd {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: var(--kbd);
+  height: var(--kbd);
+  padding: 0 var(--space-1);
+  border-radius: var(--radius-xs);
+  background: var(--keycap);
+  box-shadow: inset 0 0 0 var(--hairline) var(--line);
+  color: var(--keycap-ink);
+  font: var(--type-caption);
+  letter-spacing: var(--track-caption);
+}
+
+/* Alternatives for one command (J or ↓): a small muted word between the keycaps, so they never read as a combination. */
+.ui-key-recorder__or {
+  padding: 0 var(--space-half);
+  font: var(--type-small);
+  letter-spacing: var(--track-small);
+  color: var(--dim);
+}
+
+.ui-key-recorder__kbd[data-role='new'] {
+  background: var(--paper);
+  box-shadow: inset 0 0 0 1px var(--accent);
+  color: var(--ink);
+}
+
+.ui-key-recorder__kbd[data-role='wait'] {
+  min-width: calc(var(--kbd) * 2);
+  background: transparent;
+  box-shadow: inset 0 0 0 1px var(--control-edge);
+}
+
+.ui-key-recorder__none {
+  font: var(--type-small);
+  color: var(--dim);
+}
+
+.ui-key-recorder__conflict {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+  min-width: 0;
+  font: var(--type-small);
+  letter-spacing: var(--track-small);
+  color: var(--stamp-ink);
+}
+
+.ui-key-recorder__conflict .ui-set-icon {
+  flex: none;
+}
+
+.ui-key-recorder__conflict-text {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.ui-key-recorder__reset,
+.ui-key-recorder__action {
+  display: inline-flex;
+  align-items: center;
+  height: var(--control-xs);
+  padding: 0 var(--space-2);
+  border-radius: var(--radius-md);
+  font: var(--type-ui);
+  font-weight: 500;
+  letter-spacing: var(--track-ui);
+  white-space: nowrap;
+  color: var(--ink-2);
+  transition:
+    transform var(--dur-press-up) var(--ease-out),
+    background-color var(--dur-hover) var(--ease-std),
+    color var(--dur-hover) var(--ease-std);
+}
+
+.ui-key-recorder__action {
+  height: var(--control-md);
+  padding: 0 var(--space-3);
+}
+
+.ui-key-recorder__reset:active,
+.ui-key-recorder__action:active {
+  transform: scale(var(--press-scale));
+  transition-duration: var(--dur-press-down);
+  background: var(--press);
+}
+
+@media (hover: hover) {
+  .ui-key-recorder__keys:hover {
+    background: var(--hover);
+  }
+
+  .ui-key-recorder__reset:hover,
+  .ui-key-recorder__action:hover {
+    background: var(--hover);
+    color: var(--ink);
+  }
+}

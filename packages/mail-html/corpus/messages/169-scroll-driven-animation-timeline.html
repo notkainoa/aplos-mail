@@ -1,0 +1,9 @@
+<style>
+  .g { height: 0; animation: g linear both; animation-timeline: scroll(root) }
+  .v { height: 0; animation: g linear both; animation-timeline: view(); animation-range: entry 0% exit 100% }
+  .n { scroll-timeline: --t y; view-timeline-name: --u; timeline-scope: --t }
+  @keyframes g { from { height: 1000px } to { height: 1000px } }
+</style>
+<p>Scroll-driven animations follow the scroller.</p>
+<div class="g"></div>
+<div class="v"></div>

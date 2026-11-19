@@ -1,0 +1,34 @@
+/* Planted violations carry an expect marker; the test requires exactly those lines to be reported. */
+.hex {
+  color: #fff; /* @expect */
+  background: #0b5394; /* @expect */
+  border-color: #0b539480; /* @expect */
+}
+
+.functions {
+  color: rgb(0 0 0); /* @expect */
+  background: rgba(0, 0, 0, 0.5); /* @expect */
+  border-color: hsl(210 50% 40%); /* @expect */
+  fill: oklch(0.5 0.1 200); /* @expect */
+  stroke: lab(50% 10 10); /* @expect */
+  outline-color: color(srgb 1 0 0); /* @expect */
+  box-shadow: 0 0 0 var(--hairline) hwb(200 10% 10%); /* @expect */
+  caret-color: lch(50% 20 100); /* @expect */
+  text-decoration-color: oklab(0.5 0.1 0.1); /* @expect */
+}
+
+.named {
+  color: red; /* @expect */
+  background: white; /* @expect */
+  border: 1px solid tomato; /* @expect */
+}
+
+.mix {
+  background: color-mix(in srgb, #0b5394 8%, transparent); /* @expect */
+  border-color: color-mix(in srgb, red 50%, var(--paper)); /* @expect */
+}
+
+.custom {
+  --brand: #123456; /* @expect */
+  --fallback: var(--accent, #ffffff); /* @expect */
+}

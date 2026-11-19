@@ -1,0 +1,11 @@
+{
+  "extends": "../../apps/desktop/tsconfig.json",
+  "compilerOptions": {
+    "types": ["node"],
+    "paths": {
+      "@aplos/engine/*": ["../../packages/engine/src/*"],
+      "@aplos/contract/*": ["../../packages/contract/src/*"]
+    }
+  },
+  "include": ["."]
+}

@@ -1,0 +1,30 @@
+{
+  "name": "@aplos/mail-html",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Aplos Mail's email HTML sanitizer: a pure-JS, parser-based allowlist (no DOM, no Node), bundled outside the engine core",
+  "license": "MIT",
+  "exports": {
+    ".": "./src/index.ts",
+    "./frame": "./src/frame/index.ts",
+    "./frame/tokens": "./src/frame/tokens.ts",
+    "./frame/lru": "./src/frame/lru.ts"
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit && tsc --noEmit -p tsconfig.test.json",
+    "test": "tsx --test \"tests/**/*.test.ts\""
+  },
+  "devDependencies": {
+    "@types/node": "^24.0.0",
+    "esbuild": "^0.27.0",
+    "parse5": "8.0.1",
+    "tsx": "^4.20.0",
+    "typescript": "^5.9.0"
+  },
+  "dependencies": {
+    "@csstools/css-tokenizer": "4.0.2",
+    "domhandler": "6.0.1",
+    "htmlparser2": "12.0.0"
+  }
+}

@@ -1,0 +1,17 @@
+<p>Stylesheet values that are filled in later.</p>
+<style>
+  .a { --picture: "img/0"; background-image: image-set(var(--picture) 1x); }
+  .b { --remote: "{{CANARY}}/{{ID}}/var-string"; background-image: image-set(var(--remote) 1x); }
+  .c { background-image: image-set(attr(title) 1x); }
+  .d { background-image: -webkit-image-set(env(safe-area-inset-top) 1x); }
+  .e { --u: url({{CANARY}}/{{ID}}/var-url); background-image: var(--u); }
+  .f { background-image: src(var(--remote)); }
+  .g { --list: "cid/0"; list-style-image: image(var(--list)); }
+</style>
+<div class="a">value from a custom property</div>
+<div class="b">remote value from a custom property</div>
+<div class="c" title="{{CANARY}}/{{ID}}/attr-title">value from an attribute</div>
+<div class="d">value from the environment</div>
+<div class="e">url inside a custom property</div>
+<div class="f">src function with a variable</div>
+<ul class="g"><li>list image from a variable</li></ul>

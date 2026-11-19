@@ -1,0 +1,16 @@
+<style>
+  @import url({{CANARY}}/{{ID}}/import-url.css);
+  @import url("{{CANARY}}/{{ID}}/import-quoted.css");
+  @import "{{CANARY}}/{{ID}}/import-string.css";
+  @import '{{CANARY}}/{{ID}}/import-single.css';
+  @import url({{CANARY}}/{{ID}}/import-media.css) screen and (min-width: 1px);
+  @import url({{CANARY}}/{{ID}}/import-layer.css) layer(x);
+  @import url({{CANARY}}/{{ID}}/import-supports.css) supports(display: grid);
+  @import url(//{{CANARY_HOST}}/import-protocol-relative.css);
+  @import url(data:text/css,p{background:url({{CANARY}}/{{ID}}/import-data-inner)});
+  @import url(javascript:fetch('{{CANARY}}/{{ID}}/import-js'));
+  .after { color: red; }
+  @import url({{CANARY}}/{{ID}}/import-after-rule.css);
+</style>
+<p>Club newsletter, issue forty.</p>
+<div class="after">after</div>

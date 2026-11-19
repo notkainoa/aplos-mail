@@ -1,0 +1,689 @@
+/* The onboarding family: OnboardingStep, ChoiceRow, ConsentCard (DESIGN 7.11, 7.12). Tokens only.
+   The window is full-bleed white paper: no sheet, no card, no image. */
+
+.ui-onb-icon {
+  width: var(--icon);
+  height: var(--icon);
+  flex: none;
+  stroke-width: var(--icon-stroke);
+}
+
+/* ---------- Family buttons: filled (Return), text; keycap ---------- */
+.ui-onb-button {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: calc(var(--space-1) + var(--space-half));
+  flex: none;
+  height: var(--control-sm);
+  padding: 0 var(--space-3);
+  border-radius: var(--radius-md);
+  font: var(--type-ui);
+  font-weight: 500;
+  letter-spacing: var(--track-ui);
+  white-space: nowrap;
+  color: var(--ink-2);
+  transition:
+    transform var(--dur-press-up) var(--ease-out),
+    background-color var(--dur-hover) var(--ease-std),
+    color var(--dur-hover) var(--ease-std);
+}
+
+/* The filled button's hover tint sits on an overlay so the solid accent shifts with the shared --press token. */
+.ui-onb-button::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  pointer-events: none;
+}
+
+.ui-onb-button[data-size='xs'] {
+  height: var(--control-xs);
+  padding: 0 var(--space-2);
+}
+
+.ui-onb-button[data-size='md'] {
+  height: var(--control-md);
+}
+
+.ui-onb-button[data-size='lg'] {
+  height: var(--control-lg);
+  padding: 0 var(--space-5);
+  font: var(--type-base);
+  font-weight: 500;
+  letter-spacing: var(--track-base);
+}
+
+.ui-onb-button:active:not(:disabled) {
+  transform: scale(var(--press-scale));
+  transition-duration: var(--dur-press-down);
+  background: var(--press);
+}
+
+.ui-onb-button[data-variant='text'] .ui-onb-icon {
+  color: var(--dim);
+}
+
+.ui-onb-button[data-variant='filled'] {
+  background: var(--accent);
+  color: var(--accent-ink);
+  box-shadow:
+    inset 0 1px 0 var(--press-hi),
+    inset 0 -1px 0 var(--press-lo);
+}
+
+.ui-onb-button[data-variant='filled']:active:not(:disabled) {
+  background: var(--accent);
+  box-shadow: inset 0 1px 0 var(--press-lo);
+}
+
+.ui-onb-button:disabled {
+  color: var(--dim);
+}
+
+.ui-onb-button[data-variant='filled']:disabled {
+  /* the primary, faded: the same by day and at night (a --sunken well read as an enabled black slab in dark) */
+  background: color-mix(in srgb, var(--accent) 30%, transparent);
+  box-shadow: none;
+}
+
+.ui-onb-kbd {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: none;
+  min-width: var(--kbd);
+  height: var(--kbd);
+  padding: 0 var(--space-1);
+  border-radius: var(--radius-xs);
+  background: var(--keycap);
+  box-shadow: inset 0 0 0 var(--hairline) var(--line);
+  color: var(--keycap-ink);
+  font: var(--type-caption);
+  letter-spacing: var(--track-caption);
+}
+
+.ui-onb-button[data-variant='filled'] .ui-onb-kbd {
+  /* A hint, not part of the label: a faint plate with a hairline edge on the fill, the label's own colour. */
+  background: color-mix(in srgb, var(--accent-ink) 12%, transparent);
+  box-shadow: inset 0 0 0 var(--hairline) color-mix(in srgb, var(--accent-ink) 32%, transparent);
+  color: var(--accent-ink);
+}
+
+.ui-onb-button[data-variant='filled']:disabled .ui-onb-kbd {
+  background: var(--raised);
+  color: var(--dim);
+}
+
+/* A footer Esc is a hint: it shows only with "Show all key hints" (the shell sets data-show-keys on the root). */
+.ui-onb-kbd[data-key-hint='hint'] {
+  display: none;
+}
+
+:root[data-show-keys='all'] .ui-onb-kbd[data-key-hint='hint'] {
+  display: inline-flex;
+}
+
+.ui-onb-spinner {
+  flex: none;
+  width: var(--icon-sm);
+  height: var(--icon-sm);
+  border-radius: var(--radius-md);
+  border: var(--space-half) solid var(--line-strong);
+  border-top-color: currentColor;
+  animation: ui-onb-spin var(--dur-status) var(--ease-linear) infinite;
+}
+
+@keyframes ui-onb-spin {
+  to {
+    transform: rotate(1turn);
+  }
+}
+
+.ui-onb-button:focus-visible,
+.ui-choice-row:focus-visible,
+.ui-choice-row__pick:focus-visible {
+  outline: var(--focus-width) solid var(--accent);
+  outline-offset: var(--focus-gap);
+}
+
+@media (hover: hover) {
+  .ui-onb-button:hover:not(:disabled) {
+    background: var(--hover);
+    color: var(--ink);
+  }
+
+  .ui-onb-button[data-variant='filled']:hover:not(:disabled) {
+    background: var(--accent);
+    color: var(--accent-ink);
+  }
+
+  .ui-onb-button[data-variant='filled']:hover:not(:disabled)::after {
+    background: var(--press);
+  }
+}
+
+/* ---------- OnboardingStep ---------- */
+.ui-onboarding-step {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  width: 100%;
+  height: 100%;
+  min-height: 0;
+  background: var(--canvas);
+  color: var(--ink);
+}
+
+/* The 48 px strip holds the traffic lights (macOS draws them) and one small text button on the right. */
+.ui-onboarding-step__strip {
+  flex: none;
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  height: var(--space-9);
+  padding: 0 var(--space-4);
+  -webkit-app-region: drag;
+}
+
+.ui-onboarding-step__demo {
+  -webkit-app-region: no-drag;
+}
+
+/* Steps are top-anchored inside a 64 px side margin and scroll inside the window; they never clip their top. */
+.ui-onboarding-step__body {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+  display: flex;
+  flex-direction: column;
+  justify-content: flex-start;
+  padding: var(--space-7) var(--space-10) var(--space-6);
+  scrollbar-width: none;
+}
+
+.ui-onboarding-step__body[data-layout='welcome'] {
+  justify-content: safe center;
+  padding-top: 0;
+}
+
+/* A step that is only its head and one choice row (a single provider) would leave the window's lower half empty:
+   the block centres in the body instead, `safe` so a taller one still anchors at the top. Other steps stay
+   top-anchored so their titles do not move between steps. */
+.ui-onboarding-step__body[data-layout='step']:has(
+    > .ui-onboarding-step__content > .ui-choice-row:nth-child(2):last-child
+  ) {
+  justify-content: safe center;
+  padding-top: 0;
+}
+
+.ui-onboarding-step__content {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: var(--space-6);
+  width: 100%;
+}
+
+.ui-onboarding-step__head {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  min-width: 0;
+  max-width: 100%;
+}
+
+.ui-onboarding-step__title {
+  font: var(--type-heading);
+  letter-spacing: var(--track-heading);
+  text-wrap: balance;
+  overflow-wrap: anywhere;
+}
+
+.ui-onboarding-step__lede {
+  /* About 360 px: a measure that breaks the sentence in even lines, with no one-word last line. */
+  max-width: calc(var(--space-10) * 5 + var(--space-8));
+  font: var(--type-base);
+  letter-spacing: var(--track-base);
+  color: var(--dim);
+  /* Pretty, not balance: balance halves a short sentence and leaves "Mac." leading the second line. */
+  text-wrap: pretty;
+  overflow-wrap: anywhere;
+}
+
+.ui-onboarding-step__body[data-layout='welcome'] .ui-onboarding-step__head {
+  gap: var(--space-4);
+}
+
+.ui-onboarding-step__body[data-layout='welcome'] .ui-onboarding-step__title {
+  max-width: 16ch;
+  font: var(--type-display);
+  letter-spacing: var(--track-display);
+}
+
+.ui-onboarding-step__body[data-layout='welcome'] .ui-onboarding-step__lede {
+  max-width: 40ch;
+}
+
+.ui-onboarding-step__more {
+  margin: calc(-1 * var(--space-4)) 0 0 calc(-1 * var(--space-2));
+}
+
+.ui-onboarding-step__chevron {
+  display: inline-flex;
+  color: var(--dim);
+}
+
+.ui-onboarding-step__chevron .ui-onb-icon {
+  width: var(--icon-sm);
+  height: var(--icon-sm);
+}
+
+.ui-onboarding-step__chevron[data-expanded='true'] {
+  transform: rotate(180deg);
+}
+
+.ui-onboarding-step__more-content {
+  width: 100%;
+}
+
+.ui-onboarding-step__more-content[hidden] {
+  display: none;
+}
+
+.ui-onboarding-step__actions {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  margin-top: var(--space-2);
+}
+
+.ui-onboarding-step__body[data-layout='welcome'] .ui-onboarding-step__actions {
+  margin-top: var(--space-4);
+}
+
+.ui-onboarding-step__foot {
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  height: var(--space-10);
+  padding: 0 var(--space-6) 0 var(--space-10);
+}
+
+.ui-onboarding-step__note {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+  font: var(--type-small);
+  letter-spacing: var(--track-small);
+  color: var(--dim);
+}
+
+.ui-onboarding-step__buttons {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  margin-left: auto;
+}
+
+.ui-onboarding-step__steps {
+  display: flex;
+  flex: none;
+  align-items: center;
+  gap: var(--space-1);
+  margin-right: var(--space-2);
+}
+
+/* The footer is one quiet size: a text button there (Back) reads at the `small` size, like the note beside the marks. */
+.ui-onboarding-step__foot .ui-onb-button[data-variant='text'] {
+  font: var(--type-small);
+  font-weight: 500;
+  letter-spacing: var(--track-small);
+}
+
+/* A text button that ends the footer (Skip setup) ends where "Try demo mail" ends above it: one 24 px right margin for the words,
+   so the button's own 12 px padding hangs into the footer's inset. */
+.ui-onboarding-step__buttons > .ui-onb-button[data-variant='text']:last-child {
+  margin-right: calc(-1 * var(--space-3));
+}
+
+/* Four marks, one per step: the one you are on in ink, the ones behind you in --dim. */
+.ui-onboarding-step__mark {
+  display: block;
+  width: var(--space-4);
+  height: var(--space-half);
+  border-radius: var(--hairline);
+  background: var(--line-strong);
+}
+.ui-onboarding-step__mark[data-state='on'] {
+  background: var(--ink);
+}
+.ui-onboarding-step__mark[data-state='done'] {
+  background: var(--dim);
+}
+
+.ui-onboarding-step__sr {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+
+/* ---------- ChoiceRow: quiet rows, hairlines between, no box ---------- */
+.ui-choice-row {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  width: 100%;
+  min-height: var(--row-roomy);
+  padding: 0 var(--space-3);
+  border-radius: var(--radius-md);
+  text-align: left;
+  font: var(--type-base);
+  letter-spacing: var(--track-base);
+  color: var(--ink);
+}
+
+.ui-choice-row[data-has-detail='true'] {
+  padding-top: var(--space-3);
+  padding-bottom: var(--space-3);
+}
+
+/* A row with a second line lines its lead (icon, swatch, radio) and its status up with the first text line, as
+   onboarding-accounts.html's .tall row does; single-line rows stay centred. */
+.ui-choice-row[data-has-detail='true'],
+.ui-choice-row[data-has-detail='true'] .ui-choice-row__link,
+.ui-choice-row[data-has-detail='true'] .ui-choice-row__pick {
+  align-items: flex-start;
+}
+
+.ui-choice-row[data-has-detail='true'] .ui-choice-row__end {
+  align-self: flex-start;
+}
+
+/* A row that goes somewhere ends in a chevron that belongs to the whole row, not to its first line: centred on the row
+   even when the row has a second line. */
+.ui-choice-row[data-role='link'][data-has-detail='true'] .ui-choice-row__end {
+  align-self: center;
+}
+
+.ui-choice-row[data-has-detail='true'] .ui-choice-row__icon,
+.ui-choice-row[data-has-detail='true'] .ui-choice-row__radio {
+  margin-top: var(--space-half);
+}
+
+.ui-choice-row[data-has-detail='true'] .ui-choice-row__mark {
+  margin-top: calc(var(--space-1) + var(--space-half));
+}
+
+.ui-choice-row + .ui-choice-row::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: var(--space-3);
+  right: var(--space-3);
+  height: var(--hairline);
+  background: var(--line);
+}
+
+.ui-choice-row[data-role='static'],
+.ui-choice-row[data-role='radio'] {
+  padding-left: 0;
+  padding-right: 0;
+  border-radius: 0;
+}
+
+.ui-choice-row[data-role='static']::before,
+.ui-choice-row[data-role='radio']::before {
+  left: 0;
+  right: 0;
+}
+
+.ui-choice-row[data-role='link'] {
+  /* A row that goes somewhere reads as a button: a hairline round it (and the hover fill below), its edges on the
+     column's, the content inset by the row's own padding. Stacked ones sit a step apart instead of sharing a divider. */
+  box-shadow: inset 0 0 0 var(--hairline) var(--line);
+}
+
+.ui-choice-row[data-role='link'] + .ui-choice-row[data-role='link'] {
+  margin-top: var(--space-2);
+}
+
+.ui-choice-row[data-role='link'] + .ui-choice-row[data-role='link']::before {
+  content: none;
+}
+
+.ui-choice-row[data-role='link']:focus-visible {
+  outline-offset: calc(-1 * var(--focus-width));
+}
+
+/* A link row with a control: the button that goes on and the control sit side by side, never nested. */
+.ui-choice-row__link {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  flex: 1;
+  min-width: 0;
+  min-height: var(--row-roomy);
+  margin: calc(-1 * var(--space-3)) 0;
+  padding: var(--space-3) 0;
+  border-radius: var(--radius-md);
+  text-align: left;
+  color: inherit;
+}
+
+.ui-choice-row__link:focus-visible {
+  outline: var(--focus-width) solid var(--accent);
+  outline-offset: var(--focus-gap);
+}
+
+.ui-choice-row__icon,
+.ui-choice-row__go {
+  display: inline-flex;
+  flex: none;
+  color: var(--dim);
+}
+
+.ui-choice-row__mark {
+  flex: none;
+  width: var(--mark-dot);
+  height: var(--mark-dot);
+  margin: 0 var(--space-1);
+  border-radius: var(--radius-xs);
+  background: var(--swatch);
+}
+
+.ui-choice-row__pick {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  flex: 1;
+  min-width: 0;
+  border-radius: var(--radius-md);
+}
+
+.ui-choice-row__radio {
+  flex: none;
+  width: var(--space-4);
+  height: var(--space-4);
+  border-radius: var(--radius-md);
+  box-shadow: inset 0 0 0 1px var(--control-edge);
+}
+
+.ui-choice-row__pick[aria-checked='true'] .ui-choice-row__radio {
+  box-shadow: inset 0 0 0 var(--radio-dot) var(--accent);
+}
+
+.ui-choice-row__stack {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.ui-choice-row__line {
+  display: flex;
+  align-items: baseline;
+  gap: var(--space-2);
+  min-width: 0;
+}
+
+.ui-choice-row__name {
+  min-width: 0;
+  overflow-wrap: anywhere;
+  font-weight: 500;
+}
+
+.ui-choice-row__tag {
+  flex: none; /* the tag wins over a long name: the name wraps, "Default" never clips */
+  font: var(--type-small);
+  letter-spacing: var(--track-small);
+  color: var(--dim);
+}
+
+.ui-choice-row__detail {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  margin-top: var(--space-half);
+  font: var(--type-small);
+  letter-spacing: var(--track-small);
+  color: var(--dim);
+  overflow-wrap: anywhere;
+}
+
+.ui-choice-row__detail code {
+  font-family: var(--font-mono);
+  color: var(--ink-2);
+}
+
+.ui-choice-row__dot {
+  flex: none;
+  width: var(--mark-dot);
+  height: var(--mark-dot);
+  border-radius: var(--radius-xs);
+  background: var(--faint);
+}
+
+.ui-choice-row__dot[data-state='ok'] {
+  background: var(--hill);
+}
+
+.ui-choice-row__end {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  margin-left: auto;
+  flex: none;
+}
+
+.ui-choice-row__status {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+  font: var(--type-small);
+  letter-spacing: var(--track-small);
+  color: var(--dim);
+}
+
+.ui-choice-row__status .ui-onb-icon {
+  width: var(--icon-sm);
+  height: var(--icon-sm);
+}
+
+.ui-choice-row__status[data-tone='ok'] .ui-onb-icon {
+  color: var(--hill);
+}
+
+.ui-choice-row__status[data-tone='attention'],
+.ui-choice-row__status[data-tone='attention'] .ui-onb-icon {
+  color: var(--stamp-ink);
+}
+
+@media (hover: hover) {
+  .ui-choice-row[data-role='link']:hover {
+    background: var(--hover);
+  }
+
+  .ui-choice-row[data-role='link']:hover .ui-choice-row__go {
+    color: var(--ink);
+  }
+
+  .ui-choice-row[data-role='link']:hover::before,
+  .ui-choice-row[data-role='link']:hover + .ui-choice-row::before {
+    background: transparent;
+  }
+}
+
+/* ---------- ConsentCard: the step's one card ---------- */
+.ui-consent-card {
+  width: 100%;
+}
+
+.ui-consent-card__card {
+  padding: var(--space-2) var(--space-5);
+  border-radius: var(--radius-lg);
+  background: var(--paper);
+  box-shadow: var(--elev-card);
+}
+
+.ui-consent-card__facts {
+  display: grid;
+  grid-template-columns: var(--sender-w) minmax(0, 1fr);
+}
+
+.ui-consent-card__facts dt,
+.ui-consent-card__facts dd {
+  padding: var(--space-3) 0;
+  font: var(--type-ui);
+  letter-spacing: var(--track-ui);
+}
+
+.ui-consent-card__facts dt {
+  color: var(--dim);
+}
+
+.ui-consent-card__facts dd {
+  color: var(--ink);
+  overflow-wrap: anywhere;
+}
+
+.ui-consent-card__facts > :nth-child(n + 3) {
+  box-shadow: 0 calc(-1 * var(--hairline)) 0 var(--line);
+}
+
+.ui-consent-card__note {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  margin-top: var(--space-3);
+  font: var(--type-small);
+  letter-spacing: var(--track-small);
+  color: var(--dim);
+}
+
+.ui-consent-card__note .ui-onb-icon {
+  width: var(--icon-sm);
+  height: var(--icon-sm);
+}
+
+.ui-consent-card__actions {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  margin-top: var(--space-6);
+}
+
+/* ---------- ChoiceGroup: the radiogroup around radio ChoiceRows; it draws nothing ---------- */
+.ui-choice-group {
+  display: flex;
+  flex-direction: column;
+  /* The step's content column left-aligns its children, so the group is told to span it: its hairlines then run the full
+     inner width, like the account list's. */
+  align-self: stretch;
+}

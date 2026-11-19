@@ -1,0 +1,525 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Aplos revamp at a glance</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&family=Newsreader:opsz,wght@6..72,400;6..72,450&display=swap" rel="stylesheet">
+<style>
+:root,.t-light{--canvas:#e9edf0;--horizon:#dce7f1;--paper:#fefefc;--raised:#f3f5f7;--sunken:#e1e6eb;--ink:#121820;--ink-2:#2f3a46;--dim:#56616d;--faint:#7d8792;--accent:#0b5394;--accent-ink:#ffffff;--hill:#2f6f2a;--dusk:#3e5878;--stamp:#c4302b;--fill-ink:#ffffff;--sky:#9fd3ff;--sand:#8a6320;--line:color-mix(in srgb,#121820 14%,transparent);--control-edge:color-mix(in srgb,#121820 50%,transparent);--accent-wash:color-mix(in srgb,#0b5394 10%,transparent);--sand-wash:color-mix(in srgb,#8a6320 14%,transparent);--shadow:0 1px 2px rgba(18,24,32,.05),0 8px 24px rgba(18,24,32,.04);color-scheme:light;}
+@media (prefers-color-scheme:dark){:root:not([data-theme]){--canvas:#0b1219;--horizon:#112133;--paper:#141c25;--raised:#1b2530;--sunken:#070c11;--ink:#e7ecf1;--ink-2:#c4ccd5;--dim:#97a3af;--faint:#75818e;--accent:#88aee0;--accent-ink:#08111a;--hill:#86b86a;--dusk:#8fa9cc;--stamp:#ff7a6e;--fill-ink:#08111a;--sky:#11263d;--sand:#d9a65a;--line:color-mix(in srgb,#e7ecf1 12%,transparent);--control-edge:color-mix(in srgb,#e7ecf1 45%,transparent);--accent-wash:color-mix(in srgb,#88aee0 16%,transparent);--sand-wash:color-mix(in srgb,#d9a65a 20%,transparent);--shadow:0 1px 0 rgba(255,255,255,.04) inset,0 8px 24px rgba(0,0,0,.35);color-scheme:dark;}}
+:root[data-theme="dark"]{--canvas:#0b1219;--horizon:#112133;--paper:#141c25;--raised:#1b2530;--sunken:#070c11;--ink:#e7ecf1;--ink-2:#c4ccd5;--dim:#97a3af;--faint:#75818e;--accent:#88aee0;--accent-ink:#08111a;--hill:#86b86a;--dusk:#8fa9cc;--stamp:#ff7a6e;--fill-ink:#08111a;--sky:#11263d;--sand:#d9a65a;--line:color-mix(in srgb,#e7ecf1 12%,transparent);--control-edge:color-mix(in srgb,#e7ecf1 45%,transparent);--accent-wash:color-mix(in srgb,#88aee0 16%,transparent);--sand-wash:color-mix(in srgb,#d9a65a 20%,transparent);--shadow:0 1px 0 rgba(255,255,255,.04) inset,0 8px 24px rgba(0,0,0,.35);color-scheme:dark;}
+:root[data-theme="light"]{--canvas:#e9edf0;--horizon:#dce7f1;--paper:#fefefc;--raised:#f3f5f7;--sunken:#e1e6eb;--ink:#121820;--ink-2:#2f3a46;--dim:#56616d;--faint:#7d8792;--accent:#0b5394;--accent-ink:#ffffff;--hill:#2f6f2a;--dusk:#3e5878;--stamp:#c4302b;--fill-ink:#ffffff;--sky:#9fd3ff;--sand:#8a6320;--line:color-mix(in srgb,#121820 14%,transparent);--control-edge:color-mix(in srgb,#121820 50%,transparent);--accent-wash:color-mix(in srgb,#0b5394 10%,transparent);--sand-wash:color-mix(in srgb,#8a6320 14%,transparent);--shadow:0 1px 2px rgba(18,24,32,.05),0 8px 24px rgba(18,24,32,.04);color-scheme:light;}
+.t-light{--canvas:#e9edf0;--horizon:#dce7f1;--paper:#fefefc;--raised:#f3f5f7;--sunken:#e1e6eb;--ink:#121820;--ink-2:#2f3a46;--dim:#56616d;--faint:#7d8792;--accent:#0b5394;--accent-ink:#ffffff;--hill:#2f6f2a;--dusk:#3e5878;--stamp:#c4302b;--fill-ink:#ffffff;--sky:#9fd3ff;--sand:#8a6320;--line:color-mix(in srgb,#121820 14%,transparent);--control-edge:color-mix(in srgb,#121820 50%,transparent);--accent-wash:color-mix(in srgb,#0b5394 10%,transparent);--sand-wash:color-mix(in srgb,#8a6320 14%,transparent);--shadow:0 1px 2px rgba(18,24,32,.05),0 8px 24px rgba(18,24,32,.04);color-scheme:light;}
+.t-dark{--canvas:#0b1219;--horizon:#112133;--paper:#141c25;--raised:#1b2530;--sunken:#070c11;--ink:#e7ecf1;--ink-2:#c4ccd5;--dim:#97a3af;--faint:#75818e;--accent:#88aee0;--accent-ink:#08111a;--hill:#86b86a;--dusk:#8fa9cc;--stamp:#ff7a6e;--fill-ink:#08111a;--sky:#11263d;--sand:#d9a65a;--line:color-mix(in srgb,#e7ecf1 12%,transparent);--control-edge:color-mix(in srgb,#e7ecf1 45%,transparent);--accent-wash:color-mix(in srgb,#88aee0 16%,transparent);--sand-wash:color-mix(in srgb,#d9a65a 20%,transparent);--shadow:0 1px 0 rgba(255,255,255,.04) inset,0 8px 24px rgba(0,0,0,.35);color-scheme:dark;}
+:root{
+ --sans:-apple-system,BlinkMacSystemFont,"SF Pro Text","Inter",system-ui,sans-serif;
+ --serif:"Newsreader","New York",Georgia,serif;
+ --mono:ui-monospace,"SF Mono",Menlo,monospace;
+ --r-xs:4px;--r-sm:6px;--r-md:8px;--r-lg:14px;--r-xl:20px;
+ --ease-out:cubic-bezier(.16,1,.3,1);
+}
+*{box-sizing:border-box}
+html{background:var(--canvas);-webkit-text-size-adjust:100%}
+body{margin:0;font:400 14px/20px var(--sans);letter-spacing:-.12px;color:var(--ink);background:linear-gradient(var(--horizon),var(--canvas) 320px) no-repeat,var(--canvas);min-height:100vh}
+.wrap{max-width:1296px;margin:0 auto;padding:28px clamp(16px,2.2vw,32px) 72px}
+header.top{display:flex;justify-content:space-between;align-items:flex-start;gap:24px;margin-bottom:28px}
+h1{font:450 28px/34px var(--serif);letter-spacing:-.4px;margin:0 0 6px;text-wrap:balance}
+.lede{margin:0;color:var(--dim);font-size:14px;max-width:62ch}
+.toggle{flex:none;font:500 13px/18px var(--sans);color:var(--ink);background:var(--paper);border:1px solid var(--control-edge);border-radius:var(--r-md);height:32px;padding:0 12px;cursor:pointer}
+.toggle:hover{background:var(--raised)}
+.toggle:focus-visible,a:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+section{margin-top:44px}
+h2{font:600 20px/26px var(--sans);letter-spacing:-.36px;margin:0}
+.cap{margin:2px 0 16px;color:var(--dim);font-size:14px}
+.card{background:var(--paper);border-radius:var(--r-lg);box-shadow:0 0 0 .75px var(--line),var(--shadow)}
+.stats{display:grid;grid-template-columns:repeat(4,1fr);gap:12px}
+.stat{padding:14px 16px}
+.stat b{display:block;font:450 28px/34px var(--serif);letter-spacing:-.4px}
+.stat span{color:var(--dim);font-size:13px;line-height:18px}
+.stat.slow{background:transparent;box-shadow:0 0 0 .75px var(--line);border-style:dashed}
+.scroll{overflow-x:auto}
+.scroll>svg{min-width:960px}
+svg{display:block;width:100%;height:auto;font-family:var(--sans)}
+.pad{padding:14px 14px 10px}
+
+/* architecture svg */
+.ar{color:var(--dim)}
+.mac{fill:var(--raised);stroke:var(--line);stroke-width:1}
+.win{fill:var(--canvas);stroke:var(--control-edge);stroke-width:1}
+.winbar{fill:var(--sunken)}
+.dot{fill:var(--faint)}
+.unread{fill:var(--accent)}
+.ln{fill:var(--ink-2);opacity:.75}.ln2{fill:var(--faint);opacity:.6}
+.serifln{fill:var(--ink);opacity:.85}
+.paper{fill:var(--paper);stroke:var(--line)}
+.seal{fill:var(--accent-wash);stroke:var(--accent);stroke-width:1.25;stroke-dasharray:5 4}
+.eng{fill:var(--paper);stroke:var(--accent);stroke-width:1.5}
+.chip,.chip2{fill:var(--raised);stroke:var(--line)}
+.chip2{fill:var(--accent-wash);stroke:none}
+.db{fill:var(--paper);stroke:var(--control-edge)}
+.db2{fill:var(--sunken);stroke:var(--control-edge)}
+.svc{fill:var(--paper);stroke:var(--control-edge)}
+.svc.off{fill:transparent;stroke-dasharray:5 4}
+.arrow{stroke:var(--ink-2);stroke-width:1.5;fill:none}
+.arrow.dashed{stroke-dasharray:5 4}
+.a-h{font:600 16px var(--sans);fill:var(--ink)}
+.a-h2{font:600 14px var(--sans);fill:var(--ink)}
+.a-b{font:400 13px var(--sans);fill:var(--ink-2)}
+.a-b.strong{font-weight:600;fill:var(--accent)}
+.a-s{font:400 12px var(--sans);fill:var(--dim)}
+
+/* timeline svg */
+.tl .grid{stroke:var(--line);stroke-width:.75}
+.tl .ext{fill:var(--sunken);opacity:.55}
+.tl .tick{font:500 11px var(--sans);fill:var(--dim);font-variant-numeric:tabular-nums}
+.tl .axl{font:500 11px var(--sans);fill:var(--dim)}
+.tl .lane{fill:var(--paper);opacity:.0}
+.tl .lane{fill:color-mix(in srgb,var(--paper) 70%,transparent);opacity:1;stroke:var(--line);stroke-width:.75}
+.tl .lane-owner{fill:var(--sand-wash);stroke:color-mix(in srgb,var(--sand) 35%,transparent)}
+.tl .lane-h{fill:transparent}
+.tl .lane-t{font:600 14px var(--sans);fill:var(--ink)}
+.tl .lane-s{font:400 12px var(--sans);fill:var(--dim)}
+.tl .bar{fill:var(--accent-wash);stroke:var(--accent);stroke-width:1}
+.tl .bar.owner{fill:var(--sand-wash);stroke:var(--sand)}
+.tl .bar.dashed{stroke-dasharray:5 4;fill:transparent}
+.tl .bl{font:500 11px var(--sans);fill:var(--ink)}
+.tl .dia{fill:var(--ink-2)}
+.tl .dia-o{fill:var(--sand)}
+.tl .rel{stroke:var(--accent);stroke-width:1;opacity:.45}
+.tl .relc{fill:var(--accent)}
+.tl .relc2{fill:var(--paper);stroke:var(--accent);stroke-width:1.75}
+.tl .rl{font:600 14px var(--sans);fill:var(--ink)}
+.tl .rl2{font:600 12px var(--sans);fill:var(--ink-2)}
+.tl .rs{font:400 11px var(--sans);fill:var(--dim)}
+.tl .nom{stroke:var(--ink);stroke-width:1.25;stroke-dasharray:2 3}
+.tl .beta{fill:var(--sunken);stroke:var(--control-edge);stroke-width:.75}
+.tl .bs{font:500 11px var(--sans);fill:var(--ink-2)}
+.tl .axisb{stroke:var(--line)}
+.legend{display:flex;flex-wrap:wrap;gap:6px 22px;padding:2px 20px 16px;color:var(--dim);font-size:12px;line-height:16px;align-items:center}
+.legend i{display:inline-block;vertical-align:-3px;margin-right:6px}
+.lg-bar{width:22px;height:12px;border-radius:4px;background:var(--accent-wash);border:1px solid var(--accent)}
+.lg-own{width:22px;height:12px;border-radius:4px;background:var(--sand-wash);border:1px solid var(--sand)}
+.lg-dia{width:10px;height:10px;background:var(--ink-2);transform:rotate(45deg);margin-right:8px!important}
+.lg-slow{width:22px;height:12px;border-radius:2px;background:var(--sunken)}
+
+/* threads */
+.threads{display:grid;grid-template-columns:repeat(3,1fr);gap:16px}
+.thread{padding:20px 20px 18px;display:flex;flex-direction:column;gap:14px;border-top:3px solid var(--accent)}
+.thread h3{margin:0;font:600 16px/22px var(--sans);letter-spacing:-.24px}
+.thread .tag{font:500 12px/16px var(--sans);color:var(--dim)}
+.thread dl{margin:0;display:grid;gap:12px}
+.thread dt{font:500 11px/14px var(--sans);letter-spacing:.06px;text-transform:uppercase;color:var(--dim);margin-bottom:3px}
+.thread dd{margin:0;color:var(--ink-2)}
+.thread .when{display:flex;align-items:baseline;gap:8px;padding-top:12px;border-top:1px solid var(--line);margin-top:auto}
+.thread .when b{font:450 20px/28px var(--serif)}
+.thread .when span{color:var(--dim);font-size:13px}
+.thread.pv{border-top-color:var(--accent)}
+
+/* look */
+.look{display:grid;grid-template-columns:minmax(0,1.05fr) minmax(0,1fr);gap:16px;align-items:start}
+.panel{padding:20px}
+.panel h3{margin:0 0 12px;font:600 16px/22px var(--sans);letter-spacing:-.24px}
+.swhead,.swrow{display:grid;grid-template-columns:minmax(0,1.2fr) 1fr 1fr;gap:12px;align-items:center}
+.swhead{font:500 11px/14px var(--sans);color:var(--dim);text-transform:uppercase;letter-spacing:.06px;margin-bottom:6px}
+.swrow{padding:6px 0}
+.swn b{display:block;font-weight:600;font-size:13px;line-height:18px}
+.swn span{display:block;color:var(--dim);font-size:12px;line-height:16px}
+.sw{display:flex;flex-direction:column;gap:4px;background:none;color:var(--ink)}
+.chipc{display:flex;align-items:center;justify-content:center;height:38px;border-radius:var(--r-md);box-shadow:inset 0 0 0 .75px var(--line);font:600 13px var(--sans)}
+.sw code{font:500 12px/16px var(--mono);color:var(--ink-2)}
+.swdiv{height:1px;background:var(--line);margin:8px 0}
+.type .row{padding:14px 0;border-top:1px solid var(--line)}
+.type .row:first-of-type{border-top:0;padding-top:0}
+.type .meta{font:500 11px/14px var(--sans);color:var(--dim);text-transform:uppercase;letter-spacing:.06px;margin-bottom:6px}
+.t-display{font:450 28px/34px var(--serif);letter-spacing:-.4px;margin:0}
+.t-summary{font:450 20px/28px var(--serif);letter-spacing:-.15px;margin:0;text-wrap:pretty}
+.t-answer{font:400 16px/25px var(--serif);letter-spacing:-.05px;margin:0;text-wrap:pretty}
+.t-ui{margin:0;font:400 14px/20px var(--sans)}
+.t-ui b{font-weight:600}.t-ui em{font-style:normal;font-weight:500;color:var(--dim)}
+.samples{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-top:16px}
+.sample{background:var(--canvas);border-radius:var(--r-lg);padding:14px;box-shadow:0 0 0 .75px var(--line);color:var(--ink)}
+.sample h4{margin:0 0 10px;font:500 11px/14px var(--sans);letter-spacing:.06px;text-transform:uppercase;color:var(--dim)}
+.rows{display:flex;flex-direction:column;gap:2px;margin-bottom:12px}
+.mrow{position:relative;display:grid;grid-template-columns:10px minmax(0,86px) minmax(0,1fr) auto;align-items:center;gap:8px;height:40px;padding:0 10px;border-radius:var(--r-md);font-size:14px}
+.mrow.sel{background:var(--accent-wash)}
+.mrow.sel::before{content:"";position:absolute;left:0;top:8px;bottom:8px;width:2px;border-radius:1px;background:var(--accent)}
+.mrow .dotu{width:8px;height:8px;border-radius:50%;background:var(--accent)}
+.mrow .dotu.r{background:transparent}
+.mrow .from{font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.mrow .from.read{font-weight:500;color:var(--ink-2)}
+.mrow .subj{color:var(--ink-2);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.mrow time{font:400 12px/16px var(--sans);color:var(--dim);font-variant-numeric:tabular-nums}
+.band{display:flex;justify-content:space-between;gap:8px;align-items:center;background:var(--raised);border-radius:var(--r-md);padding:8px 10px;font-size:13px;color:var(--dim);margin-bottom:12px}
+.band b{font-weight:500;color:var(--ink-2);flex:none}
+.band span{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;flex:1}
+.letter{background:var(--paper);border-radius:var(--r-lg);padding:14px 16px;box-shadow:0 0 0 .75px var(--line),var(--shadow)}
+.letter .who{display:flex;justify-content:space-between;font-size:14px}
+.letter .who b{font-weight:600}
+.letter .who time{font:400 12px/16px var(--sans);color:var(--dim)}
+.letter .sum{font:450 20px/28px var(--serif);letter-spacing:-.15px;margin:6px 0 12px;text-wrap:pretty}
+.acts{display:flex;align-items:center;gap:6px}
+.btn{font:500 13px/18px var(--sans);height:28px;padding:0 10px;border-radius:var(--r-md);border:0;display:inline-flex;align-items:center;gap:8px;color:var(--ink-2);background:none}
+.btn.fill{background:var(--accent);color:var(--accent-ink);box-shadow:inset 0 1px 0 rgba(255,255,255,.18),inset 0 -1px 0 rgba(18,24,32,.12)}
+.key{font:500 11px/14px var(--sans);letter-spacing:.06px;padding:1px 5px;border-radius:var(--r-xs);background:rgba(255,255,255,.18)}
+.sp{flex:1}
+.commit{display:inline-flex;align-items:center;height:28px;padding:0 10px;border-radius:var(--r-sm);font:500 13px var(--sans);color:var(--fill-ink)}
+.commit.hill{background:var(--hill)}.commit.dusk{background:var(--dusk)}
+.sample .chips{display:flex;gap:8px;margin-top:12px;align-items:center;font-size:12px;color:var(--dim)}
+.removed{margin-top:16px}
+.removed ul{list-style:none;margin:0;padding:0;display:grid;gap:0}
+.removed li{display:grid;grid-template-columns:minmax(0,1fr) auto minmax(0,.8fr);gap:10px;align-items:baseline;padding:8px 0;border-top:1px solid var(--line);font-size:13px;line-height:18px}
+.removed li:first-child{border-top:0}
+.removed s{color:var(--dim);text-decoration-color:var(--faint)}
+.removed .to{color:var(--faint)}
+.removed .new{color:var(--ink);font-weight:500}
+
+/* decisions */
+.dgrid{display:grid;grid-template-columns:repeat(5,1fr);gap:12px}
+.dec{padding:14px 14px 14px;display:flex;flex-direction:column;gap:10px;min-height:152px}
+.dec .n{font:500 12px/16px var(--sans);color:var(--dim);display:flex;justify-content:space-between;align-items:center}
+.dec .soon{font:500 11px/14px var(--sans);color:var(--stamp);letter-spacing:.06px}
+.dec h3{margin:0;font:500 14px/20px var(--sans);letter-spacing:-.12px;text-wrap:pretty}
+.dec .def{margin-top:auto;border-top:1px solid var(--line);padding-top:10px;font-size:13px;line-height:18px;color:var(--ink-2)}
+.dec .def b{display:block;font:500 11px/14px var(--sans);letter-spacing:.06px;text-transform:uppercase;color:var(--dim);margin-bottom:2px}
+.note{margin:14px 0 0;color:var(--dim);font-size:13px}
+footer{margin-top:44px;color:var(--dim);font-size:12px;line-height:16px}
+
+@media (max-width:1180px){
+ .look{grid-template-columns:1fr}
+ .dgrid{grid-template-columns:repeat(3,1fr)}
+}
+@media (max-width:980px){
+ .stats{grid-template-columns:repeat(2,1fr)}
+ .threads{grid-template-columns:1fr}
+ .samples{grid-template-columns:1fr}
+ .dgrid{grid-template-columns:repeat(2,1fr)}
+}
+@media (prefers-reduced-motion:no-preference){.toggle{transition:background .1s var(--ease-out)}}
+</style>
+</head>
+<body>
+<div class="wrap">
+
+<header class="top">
+ <div>
+  <h1>Aplos revamp, at a glance</h1>
+  <p class="lede">A plan on one page, revised after your answers on 27 October. Nothing is built yet, and nothing goes to main until you say so.</p>
+ </div>
+ <button class="toggle" id="theme" type="button" aria-pressed="false">Switch to night</button>
+</header>
+
+<div class="stats">
+ <div class="card stat"><b>Days 1 to 3</b><span>The shared rules are written, attacked by three reviewers, then frozen.</span></div>
+ <div class="card stat"><b>About day 9</b><span>The main screens on demo mail, in the new look.</span></div>
+ <div class="card stat"><b>About day 18</b><span>A build you use every day, on your real mail.</span></div>
+ <div class="card stat slow"><b>Day 25 to 35</b><span>Finished after a week of daily use. Day 35 if things run slow. Nothing costs money.</span></div>
+</div>
+
+<section id="picture">
+ <h2>The new Aplos in one picture</h2>
+ <p class="cap">One brain on your Mac does the syncing. The window is just what you see.</p>
+ <div class="card pad scroll">
+<svg viewBox="0 0 1200 520" role="img" aria-labelledby="ar-t ar-d" class="ar">
+<title id="ar-t">How the new Aplos fits together</title>
+<desc id="ar-d">The app window, the background engine and the local database sit on your Mac. The engine talks to Gmail and Google Calendar, and to an AI provider. iCloud, Fastmail and Outlook come in round 2. A phone comes later.</desc>
+<defs>
+ <marker id="ah" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M1 1L9 5L1 9" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></marker>
+</defs>
+<rect x="12" y="12" width="780" height="496" rx="20" class="mac"/>
+<text x="36" y="46" class="a-h">Your Mac</text>
+<text x="36" y="64" class="a-s">Your mail lives here. No Aplos server ever holds it.</text>
+
+<!-- window -->
+<g>
+ <rect x="40" y="90" width="290" height="300" rx="14" class="win"/>
+ <rect x="40" y="90" width="290" height="30" rx="14" class="winbar"/>
+ <rect x="40" y="106" width="290" height="14" class="winbar"/>
+ <circle cx="58" cy="105" r="4" class="dot"/><circle cx="72" cy="105" r="4" class="dot"/><circle cx="86" cy="105" r="4" class="dot"/>
+ <text x="185" y="109" class="a-s" text-anchor="middle">Aplos Mail</text>
+ <!-- list rows -->
+ <rect x="56" y="138" width="8" height="8" rx="4" class="unread"/>
+ <rect x="74" y="136" width="70" height="5" rx="2.5" class="ln"/><rect x="74" y="147" width="150" height="5" rx="2.5" class="ln2"/>
+ <rect x="74" y="170" width="60" height="5" rx="2.5" class="ln2"/><rect x="74" y="181" width="130" height="5" rx="2.5" class="ln2"/>
+ <!-- sealed paper -->
+ <rect x="56" y="204" width="258" height="170" rx="10" class="paper"/>
+ <rect x="72" y="220" width="100" height="6" rx="3" class="ln"/>
+ <rect x="72" y="236" width="226" height="8" rx="4" class="serifln"/>
+ <rect x="72" y="250" width="170" height="8" rx="4" class="serifln"/>
+ <rect x="72" y="272" width="226" height="86" rx="8" class="seal"/>
+ <text x="185" y="306" class="a-b" text-anchor="middle">Each email opens in a</text>
+ <text x="185" y="324" class="a-b" text-anchor="middle">sealed box. It cannot</text>
+ <text x="185" y="342" class="a-b" text-anchor="middle">track you or touch the app.</text>
+</g>
+<text x="40" y="414" class="a-h2">The app window</text>
+<text x="40" y="432" class="a-s">What you see and press keys in.</text>
+<g>
+ <rect x="40" y="450" width="290" height="44" rx="10" class="chip"/>
+ <text x="56" y="469" class="a-b">Menu bar</text>
+ <text x="56" y="485" class="a-s">Stay here when you close the window.</text>
+</g>
+
+<!-- engine -->
+<g>
+ <rect x="420" y="90" width="340" height="224" rx="14" class="eng"/>
+ <text x="440" y="122" class="a-h2">The engine</text>
+ <text x="440" y="142" class="a-b">Works in the background.</text>
+ <text x="440" y="160" class="a-b strong">Keeps syncing when the window is closed.</text>
+ <rect x="440" y="178" width="300" height="48" rx="8" class="chip2"/>
+ <text x="454" y="198" class="a-b">Budget keeper</text><text x="454" y="214" class="a-s">Stays under each service's limits.</text>
+ <rect x="440" y="238" width="300" height="48" rx="8" class="chip2"/>
+ <text x="454" y="258" class="a-b">AI queue</text><text x="454" y="274" class="a-s">AI runs only after you agree. It never slows sync.</text>
+</g>
+<!-- db -->
+<g>
+ <path d="M420 366 v62 a170 20 0 0 0 340 0 v-62" class="db"/>
+ <ellipse cx="590" cy="366" rx="170" ry="20" class="db2"/>
+ <text x="590" y="402" class="a-h2" text-anchor="middle">Your mail database</text>
+ <text x="590" y="422" class="a-s" text-anchor="middle">On this Mac. Opens in milliseconds at any size.</text>
+</g>
+<text x="590" y="478" class="a-s" text-anchor="middle">Nothing syncs while the Mac sleeps.</text>
+
+<!-- arrows inside -->
+<line x1="334" y1="200" x2="414" y2="200" class="arrow" marker-end="url(#ah)" marker-start="url(#ah)"/>
+<text x="374" y="188" class="a-s" text-anchor="middle">live</text>
+<line x1="590" y1="318" x2="590" y2="342" class="arrow" marker-end="url(#ah)" marker-start="url(#ah)"/>
+
+<!-- services -->
+<text x="830" y="46" class="a-h">Mail services</text>
+<g>
+ <rect x="830" y="62" width="350" height="46" rx="10" class="svc"/><text x="850" y="90" class="a-h2">Gmail</text><text x="1160" y="90" class="a-s" text-anchor="end">inbox in seconds, rest fills in quietly</text>
+ <rect x="830" y="116" width="350" height="46" rx="10" class="svc"/><text x="850" y="144" class="a-h2">Google Calendar</text><text x="1160" y="144" class="a-s" text-anchor="end">only changed events, links kept</text>
+ <rect x="830" y="170" width="350" height="46" rx="10" class="svc off"/><text x="850" y="198" class="a-h2">iCloud, Fastmail, IMAP</text><text x="1160" y="198" class="a-s" text-anchor="end">round 2</text>
+ <rect x="830" y="224" width="350" height="46" rx="10" class="svc off"/><text x="850" y="252" class="a-h2">Outlook</text><text x="1160" y="252" class="a-s" text-anchor="end">round 2</text>
+</g>
+<path d="M764 200 H826 M812 85 V247 M812 85 H826 M812 139 H826 M812 247 H826" class="arrow" fill="none" stroke-dasharray="none"/><path d="M764 200 H790" class="arrow" fill="none" marker-start="url(#ah)"/>
+<text x="795" y="182" class="a-s" text-anchor="middle">sync</text>
+
+<!-- AI -->
+<text x="830" y="316" class="a-h">AI provider</text>
+<rect x="830" y="330" width="350" height="64" rx="10" class="svc"/>
+<text x="850" y="358" class="a-h2">Groq by default</text>
+<text x="850" y="378" class="a-s">Or a model running on your Mac. You choose per feature.</text>
+<path d="M764 262 H800 V362 H826" class="arrow" fill="none" marker-end="url(#ah)"/>
+<text x="808" y="340" class="a-s" text-anchor="start" opacity="0"></text>
+
+<!-- phone -->
+<text x="830" y="428" class="a-h">Later</text>
+<rect x="830" y="442" width="350" height="62" rx="10" class="svc off"/>
+<text x="850" y="468" class="a-h2">Your phone</text>
+<text x="850" y="488" class="a-s">A remote for your Mac. Needs a Mac that is awake.</text>
+<path d="M826 476 H796" class="arrow dashed" fill="none" marker-end="url(#ah)"/>
+</svg></div>
+</section>
+
+<section id="timeline">
+ <h2>The plan in days</h2>
+ <p class="cap">Day 1 is the day you say go. Phases overlap so no one waits. The grey band is the slow case.</p>
+ <div class="card pad scroll"><svg viewBox="0 0 1240 532" role="img" aria-labelledby="tl-t tl-d" class="tl"><title id="tl-t">Revamp phases by day</title><desc id="tl-d">Four phases across days 1 to 25: freeze the shared rules on days 1 to 3, wide fan-out on days 4 to 13, join and check on days 11 to 18, daily use on days 18 to 25. Rows show what each of the six threads and you do, with a lighter extension to day 35 for the slow case.</desc>
+<rect x="910" y="34" width="300" height="466" class="ext"/>
+<line x1="160" x2="160" y1="34" y2="500" class="grid"/>
+<text x="160" y="24" class="tick" text-anchor="middle">day 1</text>
+<line x1="280" x2="280" y1="34" y2="500" class="grid"/>
+<text x="280" y="24" class="tick" text-anchor="middle">day 5</text>
+<line x1="430" x2="430" y1="34" y2="500" class="grid"/>
+<text x="430" y="24" class="tick" text-anchor="middle">day 10</text>
+<line x1="580" x2="580" y1="34" y2="500" class="grid"/>
+<text x="580" y="24" class="tick" text-anchor="middle">day 15</text>
+<line x1="730" x2="730" y1="34" y2="500" class="grid"/>
+<text x="730" y="24" class="tick" text-anchor="middle">day 20</text>
+<line x1="880" x2="880" y1="34" y2="500" class="grid"/>
+<text x="880" y="24" class="tick" text-anchor="middle">day 25</text>
+<line x1="1030" x2="1030" y1="34" y2="500" class="grid"/>
+<text x="1030" y="24" class="tick" text-anchor="middle" opacity=".7">day 30</text>
+<line x1="1180" x2="1180" y1="34" y2="500" class="grid"/>
+<text x="1180" y="24" class="tick" text-anchor="middle" opacity=".7">day 35</text>
+<text x="12" y="72" class="lane-t">Phases</text>
+<rect x="160" y="52" width="90" height="14" rx="4" class="bar"/>
+<text x="166" y="63" class="bl">0. Freeze</text>
+<rect x="250" y="68" width="300" height="14" rx="4" class="bar"/>
+<text x="256" y="79" class="bl">1. Wide fan-out</text>
+<rect x="460" y="52" width="240" height="14" rx="4" class="bar"/>
+<text x="466" y="63" class="bl">2. Join and check</text>
+<rect x="670" y="68" width="240" height="14" rx="4" class="bar"/>
+<text x="676" y="79" class="bl">3. Daily use</text>
+<rect x="4" y="104" width="1216" height="44" rx="8" class="lane"/>
+<text x="12" y="122" class="lane-t">Engine</text>
+<text x="12" y="138" class="lane-s">rules, then 7 lanes</text>
+<rect x="160" y="114" width="90" height="22" rx="5" class="bar"/>
+<text x="166" y="129" class="bl">Shared rules</text>
+<rect x="250" y="114" width="270" height="22" rx="5" class="bar"/>
+<text x="256" y="129" class="bl">Database, live lists, clock, AI, mail frame</text>
+<rect x="520" y="114" width="390" height="22" rx="5" class="bar dashed"/>
+<text x="526" y="129" class="bl">Joining, soak</text>
+<rect x="4" y="154" width="1216" height="44" rx="8" class="lane"/>
+<text x="12" y="172" class="lane-t">Providers</text>
+<text x="12" y="188" class="lane-s">5 lanes</text>
+<rect x="160" y="164" width="90" height="22" rx="5" class="bar"/>
+<text x="166" y="179" class="bl">Practice mail</text>
+<rect x="250" y="164" width="300" height="22" rx="5" class="bar"/>
+<text x="256" y="179" class="bl">Gmail and Google Calendar</text>
+<rect x="550" y="164" width="360" height="22" rx="5" class="bar dashed"/>
+<text x="556" y="179" class="bl">Live checks, hardening</text>
+<rect x="4" y="204" width="1216" height="44" rx="8" class="lane"/>
+<text x="12" y="222" class="lane-t">UI-core</text>
+<text x="12" y="238" class="lane-s">4 lanes</text>
+<rect x="160" y="214" width="90" height="22" rx="5" class="bar"/>
+<text x="166" y="229" class="bl">Tokens, rules</text>
+<rect x="250" y="214" width="300" height="22" rx="5" class="bar"/>
+<text x="256" y="229" class="bl">Design system, shell, Home, reader</text>
+<rect x="550" y="214" width="360" height="22" rx="5" class="bar dashed"/>
+<text x="556" y="229" class="bl">Real mail, polish</text>
+<rect x="4" y="254" width="1216" height="44" rx="8" class="lane"/>
+<text x="12" y="272" class="lane-t">UI-screens</text>
+<text x="12" y="288" class="lane-s">4 lanes</text>
+<rect x="160" y="264" width="90" height="22" rx="5" class="bar dashed"/>
+<text x="166" y="279" class="bl">Prep</text>
+<rect x="280" y="264" width="270" height="22" rx="5" class="bar"/>
+<text x="286" y="279" class="bl">Onboarding, Calendar, Settings, Ask</text>
+<rect x="550" y="264" width="360" height="22" rx="5" class="bar dashed"/>
+<text x="556" y="279" class="bl">Real mail, polish</text>
+<rect x="4" y="304" width="1216" height="44" rx="8" class="lane"/>
+<text x="12" y="322" class="lane-t">Platform, website</text>
+<text x="12" y="338" class="lane-s">3 lanes</text>
+<rect x="160" y="314" width="90" height="22" rx="5" class="bar"/>
+<text x="166" y="329" class="bl">Format, lint</text>
+<rect x="250" y="314" width="330" height="22" rx="5" class="bar"/>
+<text x="256" y="329" class="bl">Tests, safety, releases, aplos.email</text>
+<rect x="580" y="314" width="330" height="22" rx="5" class="bar dashed"/>
+<text x="586" y="329" class="bl">Release candidate, public prep</text>
+<rect x="4" y="354" width="1216" height="44" rx="8" class="lane"/>
+<text x="12" y="372" class="lane-t">Integrator</text>
+<text x="12" y="388" class="lane-s">merges, reports</text>
+<rect x="160" y="364" width="90" height="22" rx="5" class="bar"/>
+<text x="166" y="379" class="bl">Freeze review</text>
+<rect x="250" y="364" width="450" height="22" rx="5" class="bar"/>
+<text x="256" y="379" class="bl">Merges every change, daily digest, end-to-end runs</text>
+<rect x="700" y="364" width="210" height="22" rx="5" class="bar dashed"/>
+<text x="706" y="379" class="bl">Triage your reports</text>
+<rect x="4" y="404" width="1216" height="70" rx="8" class="lane lane-owner"/>
+<text x="12" y="422" class="lane-t">You</text>
+<text x="12" y="438" class="lane-s">all free</text>
+<rect x="170.0" y="417" width="10" height="10" transform="rotate(45 175.0 422)" class="dia-o"/>
+<text x="175.0" y="446" class="rs" text-anchor="middle">Go</text>
+<rect x="230.0" y="417" width="10" height="10" transform="rotate(45 235.0 422)" class="dia-o"/>
+<text x="235.0" y="446" class="rs" text-anchor="middle">Note</text>
+<rect x="410.0" y="417" width="10" height="10" transform="rotate(45 415.0 422)" class="dia-o"/>
+<text x="415.0" y="446" class="rs" text-anchor="middle">Look review</text>
+<rect x="550" y="412" width="90" height="20" rx="5" class="bar owner"/>
+<text x="556" y="426" class="bl">Live checks</text>
+<rect x="670" y="412" width="240" height="20" rx="5" class="bar owner"/>
+<text x="676" y="426" class="bl">Use it every day</text>
+<circle cx="355.0" cy="462" r="3.5" class="dia-o"/>
+<circle cx="565.0" cy="462" r="3.5" class="dia-o"/>
+<circle cx="775.0" cy="462" r="3.5" class="dia-o"/>
+<text x="345.0" y="466" class="rs" text-anchor="end">Gmail reconnect, weekly</text>
+<line x1="250" x2="250" y1="34" y2="480" class="rel"/>
+<circle cx="250" cy="486" r="5" class="relc"/>
+<text x="250" y="506" class="rl2" text-anchor="middle">Rules frozen</text>
+<text x="250" y="520" class="rs" text-anchor="middle">day 3</text>
+<line x1="490" x2="490" y1="34" y2="480" class="rel"/>
+<circle cx="490" cy="486" r="5" class="relc"/>
+<text x="490" y="506" class="rl2" text-anchor="middle">Real engine</text>
+<text x="490" y="520" class="rs" text-anchor="middle">day 11</text>
+<line x1="700" x2="700" y1="34" y2="480" class="rel"/>
+<circle cx="700" cy="486" r="5" class="relc"/>
+<text x="700" y="506" class="rl2" text-anchor="middle">Daily-use build</text>
+<text x="700" y="520" class="rs" text-anchor="middle">day 18</text>
+<line x1="910" x2="910" y1="34" y2="480" class="rel"/>
+<circle cx="910" cy="486" r="5" class="relc"/>
+<text x="910" y="506" class="rl2" text-anchor="middle">Finished</text>
+<text x="910" y="520" class="rs" text-anchor="middle">day 25</text>
+<text x="1060.0" y="506" class="rl2" text-anchor="middle">Slow case</text>
+<text x="1060.0" y="520" class="rs" text-anchor="middle">about day 35</text>
+</svg>
+  <div class="legend">
+   <span><i class="lg-bar"></i>Work, by thread</span>
+   <span><i class="lg-own"></i>Needs you</span>
+   <span><i class="lg-slow"></i>Slow case, up to day 35</span>
+  </div>
+ </div>
+</section>
+
+<section id="threads">
+ <h2>The six threads</h2>
+ <p class="cap">About 23 lanes run inside them, each owning its own folders. The Integrator merges everything and writes you one summary a day.</p>
+ <div class="threads">
+  <article class="card thread">
+   <div><h3>Engine</h3><div class="tag">The shared rules, then the foundation</div></div>
+   <dl>
+    <div><dt>Builds</dt><dd>The command list and database layout everyone builds on. Then the database, live lists, the clock for scheduled sends and reminders, the AI queue, the sealed email frame and menu-bar life.</dd></div>
+    <div><dt>You will see</dt><dd>Quick opens at any size. Aplos staying in the menu bar.</dd></div>
+   </dl>
+   <div class="when"><b>Days 1 to 12</b><span>Rules frozen by day 3</span></div>
+  </article>
+  <article class="card thread pv">
+   <div><h3>Providers</h3><div class="tag">Gmail works, and works well</div></div>
+   <dl>
+    <div><dt>Builds</dt><dd>Practice servers, then Gmail with the old quick fix built in, and Google Calendar. Also the smooth weekly Gmail reconnect. Outlook, iCloud and Fastmail are round 2.</dd></div>
+    <div><dt>You will see</dt><dd>Gmail that finishes syncing, an inbox in seconds, and calendar edits that keep their meeting links.</dd></div>
+   </dl>
+   <div class="when"><b>Days 1 to 16</b><span>Live checks on days 12 to 16</span></div>
+  </article>
+  <article class="card thread">
+   <div><h3>UI-core</h3><div class="tag">The look and the main screens</div></div>
+   <dl>
+    <div><dt>Builds</dt><dd>Design tokens and style rules, the building blocks, the app shell and sidebar, Home and the reader, from the revised mockups.</dd></div>
+    <div><dt>You will see</dt><dd>Screens on demo mail around day 9, on your real mail around day 15.</dd></div>
+   </dl>
+   <div class="when"><b>Days 1 to 18</b><span>Switch to the real engine around day 11</span></div>
+  </article>
+  <article class="card thread">
+   <div><h3>UI-screens</h3><div class="tag">Everything else you see</div></div>
+   <dl>
+    <div><dt>Builds</dt><dd>Onboarding and the first-sync screen, the reconnect sheet, Calendar, Settings, Ask and the command palette.</dd></div>
+    <div><dt>You will see</dt><dd>An onboarding that cannot get stuck, and a reconnect that takes one click.</dd></div>
+   </dl>
+   <div class="when"><b>Days 5 to 18</b><span>Built on UI-core’s blocks</span></div>
+  </article>
+  <article class="card thread">
+   <div><h3>Platform and website</h3><div class="tag">Tests, safety, releases, aplos.email</div></div>
+   <dl>
+    <div><dt>Builds</dt><dd>Tidy code and checks, the test pipeline within free limits, app hardening, releases from this one repo, and an honest aplos.email with the privacy page.</dd></div>
+    <div><dt>You will see</dt><dd>A website that matches the app. Going public prepared for whenever you choose.</dd></div>
+   </dl>
+   <div class="when"><b>Days 1 to 18</b><span>Public prep during daily use</span></div>
+  </article>
+  <article class="card thread">
+   <div><h3>Integrator</h3><div class="tag">Joins it all and reports to you</div></div>
+   <dl>
+    <div><dt>Does</dt><dd>Runs the freeze review, merges every change, keeps the shared branch green, runs end-to-end checks, and turns your daily-use notes into fixes.</dd></div>
+    <div><dt>You will see</dt><dd>One short plain summary a day, and a checklist before each review.</dd></div>
+   </dl>
+   <div class="when"><b>Days 1 to 25</b><span>Your one point of contact</span></div>
+  </article>
+ </div>
+</section>
+
+<section id="look">
+ <h2>The look: Paper</h2>
+ <p class="cap">Quiet gray and white after Notion and Redakt, roomy type, ink blue for the one main action, a serif for AI text. No sky, no airmail stripe, no page titles, no app icon until the new logo.</p>
+ <div class="card panel"><p class="t-ui">Every screen is drawn in the mockups: open <code>mockups/index.html</code> in this repo, or <a href="https://aplos-mockups.vercel.app">aplos-mockups.vercel.app</a>. Home is now Do now, Important updates, Low importance and Follow up. DESIGN.md has the full spec.</p></div>
+</section>
+
+<section id="decisions">
+ <h2>Decisions</h2>
+ <p class="cap">All answered on 27 October. Nothing is open.</p>
+ <div class="dgrid"><article class="card dec"><div class="n"><span>1</span></div><h3>Quick Gmail fix, 0.2.4?</h3><div class="def"><b>Answered</b>No. Built into the rebuild.</div></article><article class="card dec"><div class="n"><span>2</span></div><h3>Domain?</h3><div class="def"><b>Answered</b>aplos.email, already in this repo.</div></article><article class="card dec"><div class="n"><span>3</span></div><h3>Google project to Production?</h3><div class="def"><b>Answered</b>No. Stays in Testing, with a one-click weekly reconnect.</div></article><article class="card dec"><div class="n"><span>4</span></div><h3>Google review and CASA?</h3><div class="def"><b>Answered</b>No. Nothing that costs money.</div></article><article class="card dec"><div class="n"><span>5</span></div><h3>Gmail filter permission?</h3><div class="def"><b>Answered</b>Keep it.</div></article><article class="card dec"><div class="n"><span>6</span></div><h3>Separate releases repo?</h3><div class="def"><b>Answered</b>No. One repo, public later at your call.</div></article><article class="card dec"><div class="n"><span>7</span></div><h3>Live check mailboxes?</h3><div class="def"><b>Answered</b>Your spare Gmail. Agents may read it all and send only to itself.</div></article><article class="card dec"><div class="n"><span>8</span></div><h3>Ink blue and a serif for AI?</h3><div class="def"><b>Answered</b>Yes, inside the Paper look.</div></article><article class="card dec"><div class="n"><span>9</span></div><h3>How do you review?</h3><div class="def"><b>Answered</b>Per big feature: visuals, your feedback, your approval, then deep review, a PR and a merge into revamp.</div></article><article class="card dec"><div class="n"><span>10</span></div><h3>Which accounts first?</h3><div class="def"><b>Answered</b>Gmail and Google Calendar. Outlook, iCloud and Fastmail in round 2.</div></article>
+<article class="card dec"><div class="n"><span>11</span></div><h3>Threads, reconnect, live checks, going public</h3><div class="def"><b>Answered</b>Defaults accepted: six threads, a quiet sidebar note, checks on your Mac, decide later.</div></article></div>
+</section>
+
+<footer>Source: plans/00-roadmap.md, plans/ARCHITECTURE.md and plans/DESIGN.md, revised 2026-10-27 on branch revamp. Planning only.</footer>
+</div>
+<script>
+(function(){
+ var r=document.documentElement,b=document.getElementById('theme');
+ function cur(){return r.getAttribute('data-theme')||(matchMedia('(prefers-color-scheme: dark)').matches?'dark':'light')}
+ function label(){var d=cur()==='dark';b.textContent=d?'Switch to light':'Switch to night';b.setAttribute('aria-pressed',String(d))}
+ b.addEventListener('click',function(){r.setAttribute('data-theme',cur()==='dark'?'light':'dark');label()});
+ label();
+})();
+</script>
+</body>
+</html>

@@ -1,0 +1,31 @@
+<style>
+  @counter-style custom { system: cyclic; symbols: url({{CANARY}}/{{ID}}/counter-style-symbol); suffix: " "; }
+  ul.counted { list-style: custom; }
+  @page :first { @top-left { content: url({{CANARY}}/{{ID}}/page-margin-box); } margin: 1in; }
+  @font-palette-values --p { font-family: x; override-colors: 0 red; }
+  @position-try --t { top: anchor(bottom); }
+  @view-transition { navigation: auto; }
+  @supports selector(:has(a)) { .s1 { background: url({{CANARY}}/{{ID}}/supports-selector); } }
+  @media (min-width: 0) and (hover: none), print { .m1 { background: url({{CANARY}}/{{ID}}/media-comma); } }
+  @layer one, two; @layer two { .l2 { background: url({{CANARY}}/{{ID}}/layer-two); } }
+  .marker::marker { content: url({{CANARY}}/{{ID}}/marker-content); }
+  .marker-svg { marker-start: url({{CANARY}}/{{ID}}/marker-start.svg#m); marker-mid: url({{CANARY}}/{{ID}}/marker-mid.svg#m); marker-end: url({{CANARY}}/{{ID}}/marker-end.svg#m); }
+  .stroke { stroke: url({{CANARY}}/{{ID}}/stroke.svg#g) red; fill: url({{CANARY}}/{{ID}}/fill.svg#g) blue; }
+  .mbs { mask-border-source: url({{CANARY}}/{{ID}}/mask-border-source); -webkit-mask-box-image-source: url({{CANARY}}/{{ID}}/webkit-mask-box-image-source); }
+  .wbi { -webkit-border-image: url({{CANARY}}/{{ID}}/webkit-border-image) 10 stretch; -moz-border-image: url({{CANARY}}/{{ID}}/moz-border-image) 10; }
+  .so { shape-outside: image-set("{{CANARY}}/{{ID}}/shape-outside-set.png" 1x); }
+  .ci { cursor: -webkit-image-set(url({{CANARY}}/{{ID}}/cursor-webkit-set.png) 1x) 0 0, auto; }
+  .ls { list-style-image: -webkit-image-set(url({{CANARY}}/{{ID}}/list-webkit-set.png) 1x); }
+  .bg-blend { background: url({{CANARY}}/{{ID}}/blend-a) , url({{CANARY}}/{{ID}}/blend-b); background-blend-mode: multiply; }
+  .sel::selection { background-image: url({{CANARY}}/{{ID}}/selection-image); }
+  .ph::placeholder { background: url({{CANARY}}/{{ID}}/placeholder-image); }
+  .fl::first-letter { background: url({{CANARY}}/{{ID}}/first-letter); }
+  .fl2::first-line { background: url({{CANARY}}/{{ID}}/first-line); }
+  .bd::backdrop { background: url({{CANARY}}/{{ID}}/backdrop); }
+  :host { background: url({{CANARY}}/{{ID}}/host); }
+  ::slotted(span) { background: url({{CANARY}}/{{ID}}/slotted); }
+  .vt::view-transition-old(root) { background: url({{CANARY}}/{{ID}}/view-transition); }
+</style>
+<p>Rare style features, each one trying to load a picture.</p>
+<ul class="counted marker ls"><li class="sel fl fl2">item</li></ul>
+<div class="s1 m1 l2 marker-svg stroke mbs wbi so ci bg-blend ph bd vt">elements</div>

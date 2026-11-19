@@ -1,0 +1,34 @@
+.transitions {
+  transition: color var(--dur-hover) var(--ease-std), background-color var(--dur-hover) var(--ease-std);
+  transition: transform var(--dur-slide) var(--spring-slide), opacity var(--dur-hover) var(--ease-std);
+  transition-property: opacity, transform, box-shadow, border-color, fill, stroke, outline-color;
+  transition: none;
+  padding: var(--space-2);
+  width: var(--sidebar-w);
+}
+
+/* waapi: played from motion.ts */
+@keyframes carry {
+  from {
+    transform: translateX(0);
+    opacity: 1;
+  }
+  to {
+    transform: translateX(var(--move-carry));
+    opacity: 0;
+    animation-timing-function: var(--ease-carry);
+  }
+}
+
+/* waapi: played from motion.ts */
+@keyframes tint {
+  to {
+    background-color: var(--accent-wash);
+    color: var(--ink);
+    border-color: var(--line-strong);
+    fill: var(--hill);
+    stroke: var(--hill);
+    box-shadow: var(--elev-card);
+    outline-color: var(--accent);
+  }
+}

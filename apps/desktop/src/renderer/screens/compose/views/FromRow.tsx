@@ -1,0 +1,83 @@
+/**
+ * The composer's From row (owner's hands-on pass 2026-11-12: with two accounts there was no way to say which one
+ * sends). Shown only when more than one account is connected. A new message starts in the current account; a reply or
+ * forward starts in the account the thread belongs to. Either can be moved to another account from the menu (owner,
+ * 2026-11-16: replies too). Accounts are named by their address.
+ */
+import { useId, useRef, useState } from 'react';
+import type { Account } from '../../../data';
+import { Button } from '../../../ui/buttons-keys';
+import type { MenuEntry } from '../../../ui/props';
+import { statusCopy } from '../../../ui/status';
+import { Menu } from '../../../ui/surfaces';
+import { needsReconnect } from '../../../shell/status-map';
+
+/** Props for `FromRow`. */
+export interface FromRowProps {
+  readonly accounts: readonly Account[];
+  /** A moment's lockout (a save or send in flight) keeps the menu: the move waits for it (`chooseAccount`). */
+  readonly accountId: string;
+  readonly onChange: (accountId: string) => void;
+}
+
+/** An account that needs the owner to sign in again cannot send: its row says why and cannot be chosen. */
+function entriesOf(accounts: readonly Account[]): readonly MenuEntry[] {
+  return accounts.map(account => {
+    const blocked = needsReconnect(account);
+    const reason = blocked
+      ? statusCopy({ kind: account.health.status.state as 'needsReauth' | 'needsPermission' })?.text
+      : undefined;
+    return {
+      kind: 'item',
+      id: account.id,
+      label: account.address,
+      ...(blocked ? { disabled: true, detail: reason } : {}),
+    };
+  });
+}
+
+/** The From row, or nothing when there is only one account to send from. */
+export function FromRow({ accounts, accountId, onChange }: FromRowProps) {
+  const [open, setOpen] = useState(false);
+  const [active, setActive] = useState(accountId);
+  const anchor = useRef<HTMLButtonElement>(null);
+  const menuId = useId();
+  if (accounts.length < 2) return null;
+  const current = accounts.find(account => account.id === accountId);
+  const address = current?.address ?? accountId;
+  return (
+    <div className="ui-recipient-field aplos-from" role="group" aria-label="From">
+      <span className="ui-recipient-field__label" aria-hidden="true">
+        From
+      </span>
+      <Button
+        ref={anchor}
+        variant="text"
+        size="sm"
+        label={address}
+        ariaLabel={`From ${address}, change account`}
+        trailingIcon="chevron-down"
+        popup={{ kind: 'menu', expanded: open, controls: menuId }}
+        onPress={() => {
+          setActive(accountId);
+          setOpen(value => !value);
+        }}
+      />
+      <Menu
+        id={menuId}
+        open={open}
+        anchor={anchor.current}
+        label="Send from"
+        entries={entriesOf(accounts)}
+        checkedId={accountId}
+        activeId={active}
+        onActiveChange={setActive}
+        onSelect={id => {
+          setOpen(false);
+          onChange(id);
+        }}
+        onClose={() => setOpen(false)}
+      />
+    </div>
+  );
+}

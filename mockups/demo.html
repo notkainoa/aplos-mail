@@ -1,0 +1,73 @@
+<!doctype html>
+<html lang="en" data-window="main" data-states="default" data-esc="home.html">
+<head>
+<meta charset="utf-8">
+<title>Home with demo mail · Aplos mockup</title>
+<link rel="stylesheet" href="tokens.css">
+<link rel="stylesheet" href="shell.css">
+<script src="shell.js"></script>
+<script src="home-view.js"></script>
+</head>
+<body>
+<div class="window">
+  <span class="traffic"></span>
+  <div class="app">
+    <aside class="sidebar" data-active="home" data-accounts="demo" data-status="demo"></aside>
+    <main class="main">
+      <header class="toolbar">
+        <div class="tools">
+          <a class="btn btn-icon labelled" href="ask.html" data-tip="Ask about your mail" data-key="A"><svg class="ic"><use href="#i-bubble"/></svg>Ask</a>
+        </div>
+      </header>
+      <div class="workspace">
+        <div class="column">
+          <div class="page-head">
+            <div>
+              <h1 class="page-title">Home</h1>
+              <p class="page-sub">Thursday, October 29 · 9 to handle</p>
+            </div>
+          </div>
+          <div id="home" role="listbox" aria-label="Home"></div>
+        </div>
+      </div>
+      <p class="sr-only" role="status" id="live"></p>
+    </main>
+  </div>
+</div>
+<script>
+// Demo mail: an original, invented dataset (a small bakery's inbox). Nothing here is real.
+const ITEMS = [
+  { sec: 'new', sender: 'Odessa Whitfield', unread: 1, date: '9:48 AM', act: ['reply', 'Reply'],
+    sum: 'Little Lantern wants to raise its weekly order from 40 to 60 loaves starting Monday, and needs a yes by Friday.',
+    subj: 'Bigger order from Monday?' },
+  { sec: 'new', sender: 'Nell Aberdeen', unread: 1, date: 'Yesterday', act: ['reply', 'Reply with a count'],
+    sum: 'The Aberdeen wedding needs 120 mini pastries on November 14. Nell asks for your final count by Friday.',
+    subj: 'Wedding pastries, November 14' },
+  { sec: 'new', sender: 'Brightside Ovens', unread: 1, date: 'Yesterday', act: ['calendar', 'Add to calendar'],
+    sum: 'A technician is booked for Friday at 8:30 AM to repair the deck oven. Someone needs to be at the shop.',
+    subj: 'Your repair visit is booked' },
+  { sec: 'new', sender: 'Tomas Ferreira', date: 'Tuesday', act: ['reply', 'Reply'],
+    sum: 'The rye flour delivery moved from Monday to Tuesday morning. Tomas asks you to leave the back door open by 6 AM.',
+    subj: 'Rye flour delivery change' },
+  { sec: 'new', sender: 'Harbor Street Market', date: 'Tuesday', act: ['calendar', 'Add to calendar'],
+    sum: 'Your stall B4 is confirmed for Saturday. Setup opens at 6 AM, and the market permit must be on display.',
+    subj: 'Stall B4 confirmed' },
+  { sec: 'new', sender: 'Ines Okoye', date: 'Monday', act: ['reply', 'Reply'],
+    sum: 'Ines asks to swap her Sunday morning shift with Cal. A yes or no by Thursday lets her plan the week.',
+    subj: 'Swapping Sunday?' },
+  { sec: 'low' },
+  { sec: 'due', sender: 'Fenwick Utilities', date: 'Oct 26', due: 'Due today', act: ['paperclip', 'View bill'],
+    sum: 'The gas bill of $212 is due today. Autopay is off this month.',
+    subj: 'Your October bill' },
+  { sec: 'due', sender: 'Ledger & Pine', date: 'Oct 27', due: 'Due today', act: ['paperclip', 'View form'],
+    sum: 'The October sales tax form needs your signature today so it can be filed on time.',
+    subj: 'Sales tax form for signature' },
+  { sec: 'wait', sender: 'To Dairy Hollow Farm', date: 'Oct 26', act: ['reply', 'Write a nudge'],
+    sum: 'You asked about butter prices for the holiday season. No reply in three days.',
+    subj: 'Butter prices for the holidays' },
+];
+HomeView(document.getElementById('home'), { items: ITEMS, low: { names: 'Paper Goods Co, Dough Weekly, Sweet Ledger and 2 more', n: 5 } });
+document.addEventListener('DOMContentLoaded', () => Mock.toast({ icon: 'mail', text: 'Demo mail loaded. Remove it any time in Settings.' }));
+</script>
+</body>
+</html>

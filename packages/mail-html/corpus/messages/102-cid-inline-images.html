@@ -1,0 +1,12 @@
+<p>Photos from the open day are attached inline.</p>
+<img src="cid:logo@mail.example" width="120" height="40" alt="logo">
+<img src="cid:photo1@mail.example" width="300" height="200" alt="first photo">
+<img src="CID:photo2@mail.example" width="300" height="200" alt="second photo, upper case scheme">
+<img src="cid:missing@mail.example" width="300" height="200" alt="a cid that is not attached">
+<img src="cid:" alt="empty cid">
+<img src="cid:logo@mail.example?x=1#frag" alt="cid with a query">
+<img src="cid:%6Cogo@mail.example" alt="percent encoded cid">
+<img src=" cid:logo@mail.example" alt="leading space cid">
+<table background="cid:photo1@mail.example" width="100" height="100"><tr><td>cid background</td></tr></table>
+<img src="cid:logo@mail.example" srcset="cid:photo1@mail.example 1x, {{CANARY}}/{{ID}}/cid-srcset-remote.png 2x" alt="srcset with cid and remote">
+<a href="cid:photo1@mail.example">link to a cid</a>

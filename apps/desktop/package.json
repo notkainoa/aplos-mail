@@ -1,6 +1,6 @@
 {
   "name": "@aplos/desktop",
-  "version": "0.2.3",
+  "version": "0.0.1",
   "private": true,
   "type": "module",
   "description": "A calm desktop inbox with Groq intelligence",
@@ -18,32 +18,42 @@
     "bench:mailbox": "tsx scripts/mailbox-benchmark.ts",
     "desktop": "npm run build && electron .",
     "build": "tsc --noEmit && vite build && node scripts/build-main.mjs",
+    "notices": "node scripts/notices.mjs --out dist/notices/THIRD_PARTY_NOTICES.txt --require-chromium",
     "typecheck": "tsc --noEmit",
-    "test": "tsx --test tests/*.test.ts",
-    "package": "npm run build && electron-builder --mac dir",
+    "test": "tsx --test \"tests/*.test.ts\" \"tests/*/**/*.test.ts\" \"src/renderer/**/*.test.ts\" \"src/renderer/**/*.test.tsx\" \"scripts/design/*.test.mjs\"",
+    "package": "npm run build && npm run notices && CSC_IDENTITY_AUTO_DISCOVERY=false electron-builder --mac dir -c.mac.identity=- -c.mac.notarize=false -c.mac.entitlements=build/entitlements.adhoc.plist -c.mac.entitlementsInherit=build/entitlements.adhoc.plist",
     "start": "electron .",
     "verify:release": "node scripts/verify-release.mjs",
+    "verify:release:real": "node scripts/verify-release-real.mjs",
+    "verify:hardening": "node scripts/verify-hardening.mjs",
     "verify:large": "node scripts/verify-large-mailbox.mjs",
-    "release:build": "APLOS_RELEASE_BUILD=1 npm run build && node scripts/release-build.mjs",
-    "release:publish": "APLOS_RELEASE_BUILD=1 npm run build && node scripts/release-build.mjs --publish always",
+    "release:build": "APLOS_RELEASE_BUILD=1 npm run build && npm run notices && node scripts/release-build.mjs",
+    "release:publish": "APLOS_RELEASE_BUILD=1 npm run build && npm run notices && node scripts/release-build.mjs --publish always",
     "update-feed": "node scripts/fake-update-feed.mjs",
     "dmg-background": "electron scripts/build-dmg-background.cjs",
     "icon": "node scripts/build-icon.mjs"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^1.1.0",
+    "@csstools/css-tokenizer": "4.0.2",
+    "domhandler": "6.0.1",
     "dompurify": "^3.3.0",
     "dotenv": "^17.2.0",
     "electron-updater": "^6.8.9",
     "fast-xml-parser": "^5.11.2",
+    "htmlparser2": "12.0.0",
     "imapflow": "^2.4.3",
     "lucide-react": "^0.468.0",
     "mailparser": "^3.7.0",
     "nodemailer": "^10.1.1",
     "react": "^19.2.0",
-    "react-dom": "^19.2.0"
+    "react-dom": "^19.2.0",
+    "zod": "^4.6.7"
   },
   "devDependencies": {
+    "@aplos/contract": "*",
+    "@aplos/contract-fixture": "*",
+    "@aplos/engine": "*",
     "@types/mailparser": "^3.4.0",
     "@types/node": "^24.0.0",
     "@types/nodemailer": "^7.0.0",
@@ -65,12 +75,17 @@
     "files": [
       "dist/**/*",
       "!dist/bin/**",
+      "!dist/notices/**",
       "package.json"
     ],
     "extraResources": [
       {
         "from": "dist/bin",
         "to": "bin"
+      },
+      {
+        "from": "dist/notices",
+        "to": "notices"
       }
     ],
     "mac": {
@@ -108,9 +123,18 @@
       "gatekeeperAssess": false,
       "entitlements": "build/entitlements.mac.plist",
       "entitlementsInherit": "build/entitlements.mac.plist",
-      "minimumSystemVersion": "12.0"
+      "minimumSystemVersion": "13.0"
     },
     "asar": true,
+    "electronFuses": {
+      "runAsNode": false,
+      "enableNodeOptionsEnvironmentVariable": false,
+      "enableNodeCliInspectArguments": false,
+      "enableEmbeddedAsarIntegrityValidation": true,
+      "onlyLoadAppFromAsar": true,
+      "enableCookieEncryption": false,
+      "grantFileProtocolExtraPrivileges": true
+    },
     "dmg": {
       "title": "${productName}",
       "iconSize": 160,

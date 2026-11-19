@@ -1,0 +1,15 @@
+/* The renderer's one stylesheet: the base layer, then every component family
+   (DESIGN 6). Screens import this file once and never style their own controls. */
+
+@import url('./base.css');
+@import url('./buttons-keys/buttons-keys.css');
+@import url('./controls/controls.css');
+@import url('./surfaces/surfaces.css');
+@import url('./status/status.css');
+@import url('./list/list.css');
+@import url('./reader/reader.css');
+@import url('./compose/compose.css');
+@import url('./ask/ask.css');
+@import url('./calendar/calendar.css');
+@import url('./settings/settings.css');
+@import url('./onboarding/onboarding.css');

@@ -1,0 +1,12 @@
+<style>
+  .a { min-height: 100cqb; width: 100cqw }
+  .b { height: calc(100cqh + 20px); max-width: 100CQI }
+  .c { height: 150cqmin; padding-top: 10cqmax; margin-bottom: -5cqh }
+  .d { height: 100\63 qh; min-height: 100c\71 b }
+  .e { --box: 100cqh; height: var(--box); min-height: min(100cqh, max(50cqb, 10cqw)) }
+  .f { container-type: size; container-name: box; height: 100cqh }
+  @container (min-height: 100cqh) { .a { height: 200cqh } }
+</style>
+<div class="a" style="height:100cqh"><p>Container units fall back to the viewport when nothing is declared.</p></div>
+<div class="b c d e f"><p class="a">The frame follows the letter and the letter follows the frame.</p></div>
+<div style="height:99999999cqh;margin-top:-99999999cqb">Absurd container values stay bounded.</div>

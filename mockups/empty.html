@@ -1,0 +1,89 @@
+<!doctype html>
+<html lang="en" data-window="main" data-states="inbox-zero,first-mail,no-accounts,drafts,trash,spam" data-esc="home.html">
+<head>
+<meta charset="utf-8">
+<title>Empty states · Aplos mockup</title>
+<link rel="stylesheet" href="tokens.css">
+<link rel="stylesheet" href="shell.css">
+<script src="shell.js"></script>
+<style>
+  /* Inbox zero: no sky, no card. A calm centred block; the space carries it. */
+  .zero { position: absolute; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; text-align: center; gap: var(--space-3); padding: var(--pane-head) var(--space-8) var(--space-10); }
+  .zero .t-display { color: var(--ink); }
+  .zero .next { font: var(--type-base); letter-spacing: var(--track-base); color: var(--dim); }
+  .zero .btn { margin-top: var(--space-4); }
+  html:not([data-state="inbox-zero"]) .zero, html[data-state="inbox-zero"] .workspace { display: none; }
+  /* calm lines sit on the column's left edge, under the page head */
+  .empty-line { padding: 0; }
+  .empty-line .row-flex { gap: var(--space-2); }
+</style>
+</head>
+<body>
+<div class="window">
+  <span class="traffic"></span>
+  <div class="app">
+    <aside class="sidebar" id="side" data-active="home"></aside>
+    <main class="main">
+      <header class="toolbar">
+        <div class="tools">
+          <a class="btn btn-icon labelled" href="ask.html" data-tip="Ask about your mail" data-key="A"><svg class="ic"><use href="#i-bubble"/></svg>Ask</a>
+        </div>
+      </header>
+      <div class="zero" id="zero" role="status">
+        <p class="t-display">You handled 12 emails.</p>
+        <p class="next">Next: Design review at 2:00 PM</p>
+        <button class="btn btn-text md" id="undo-last">Undo last<span class="kbd">Z</span></button>
+      </div>
+      <div class="workspace">
+        <div class="column">
+          <div class="page-head">
+            <div>
+              <h1 class="page-title" id="title">Home</h1>
+              <p class="page-sub" id="sub"></p>
+            </div>
+          </div>
+          <div id="col" role="list"></div>
+        </div>
+      </div>
+    </main>
+  </div>
+</div>
+<script>
+const S = Mock.state;
+const side = document.getElementById('side');
+const set = (k, v) => side.dataset[k] = v;
+const ADD = `<svg class="ic"><use href="#i-plus"/></svg>`;
+const MBOX = { drafts: ['Drafts', 'No drafts.'], trash: ['Trash', 'Trash is empty.'], spam: ['Spam', 'Spam is empty.'] };
+const col = document.getElementById('col');
+const sub = document.getElementById('sub');
+if (MBOX[S]) {
+  // the sidebar links point here with ?state=drafts|trash|spam: the page title and one dim line
+  set('active', S); set('counts', JSON.stringify({ drafts: 0 }));
+  document.getElementById('title').textContent = MBOX[S][0];
+  sub.textContent = MBOX[S][1];
+  col.setAttribute('aria-label', MBOX[S][0]);
+} else if (S === 'first-mail') {
+  set('status', 'firstmail'); set('counts', JSON.stringify({ home: 0, later: 0, drafts: 0 }));
+  sub.textContent = 'Nothing to handle yet';
+  col.innerHTML = `<div class="empty-line">Your first mail is on its way.</div>`;
+} else if (S === 'no-accounts') {
+  set('accounts', 'none'); set('status', 'none'); set('counts', JSON.stringify({ home: 0, later: 0, drafts: 0 }));
+  sub.textContent = 'No accounts yet';
+  col.innerHTML = `<div class="empty-line">Add an account to bring in your mail.
+    <div class="row-flex"><button class="btn btn-filled md">${ADD}Add an account</button><button class="btn btn-text md">Try demo mail</button></div></div>`;
+} else {
+  set('counts', JSON.stringify({ home: 0 }));
+}
+Mock.onKey(e => {
+  if (e.metaKey || e.ctrlKey || e.altKey || e.target.closest('input,textarea')) return;
+  if (e.key === 'z' && S === 'inbox-zero') { document.getElementById('undo-last').click(); return true; }
+});
+document.getElementById('undo-last').addEventListener('click', () => {
+  Mock.toast({ icon: 'undo', text: 'Undone' });
+  setTimeout(() => Mock.go('home.html'), 900);
+});
+document.querySelector('.empty-line .btn-filled')?.addEventListener('click', () => Mock.go('onboarding-welcome.html'));
+document.querySelector('.empty-line .btn-text')?.addEventListener('click', () => Mock.go('demo.html'));
+</script>
+</body>
+</html>

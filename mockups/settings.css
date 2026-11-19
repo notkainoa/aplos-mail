@@ -1,0 +1,101 @@
+/* Settings screens (General, Accounts, AI, Keyboard), revision 2. Shared layout: a 180 px nav with a puck, 600 px of content.
+   Tokens only. INVENTED values are marked below. */
+:root {
+  --ctl-w: calc(var(--space-10) * 3 + var(--space-4));   /* INVENTED: the fixed, right-aligned control column (208) */
+  --prov-status-w: calc(var(--space-10) * 2);            /* INVENTED: status column of a provider row (128) */
+  --prov-act-w: calc(var(--space-10) * 2);               /* INVENTED: Test / Remove column (128) */
+  --addr-w: calc(var(--space-10) * 4);                   /* INVENTED: width of an address field (256) */
+}
+.workspace.set-ws { padding: 0 var(--gutter) var(--space-10); }
+.settings { display: flex; justify-content: center; align-items: flex-start; gap: var(--space-9); }
+.scontent { width: min(var(--settings-content), 100%); flex: none; }
+.scontent .page-head { padding-bottom: var(--space-2); }
+.scontent .page-head .page-sub { margin-top: var(--space-1); }
+
+/* The nav: a quiet list with a puck that slides to the section you are in */
+.snav { width: var(--settings-nav); flex: none; position: sticky; top: 0; padding-top: calc(var(--page-top) + var(--space-1)); gap: var(--space-half); }
+.snav .puck { position: absolute; z-index: 0; left: 0; right: 0; top: 0; height: var(--control-md); border-radius: var(--radius-md); background: var(--puck); transition: transform var(--dur-slide) var(--spring-slide); pointer-events: none; }
+.snav .nav-item { height: var(--control-md); padding: 0 var(--space-3); }
+.snav .nav-item:hover { background: var(--hover); }
+.snav .nav-item[aria-current="page"], .snav .nav-item[aria-current="page"]:hover { background: none; }
+
+/* Groups: a quiet label, then rows with hairlines between them */
+.set-ws .section-head { padding: 0 var(--space-3); }
+.set-ws .page-head + .section-head { margin-top: var(--group-gap); }
+.set-ws .section-head .btn { margin-right: calc(-1 * var(--space-2)); }
+
+/* A row is 40 px, or 48 px when it carries a description. Label and description are one line each; the control sits in a fixed column. */
+.srow { display: grid; grid-template-columns: minmax(0, 1fr) var(--ctl-w); align-items: center; column-gap: var(--space-4); min-height: var(--row); padding: 0 var(--space-3); box-shadow: inset 0 var(--hairline) 0 var(--line); }
+.srow.has-h { min-height: var(--row-roomy); }
+.srow .l { font: var(--type-ui); font-weight: 500; letter-spacing: var(--track-ui); color: var(--ink); min-width: 0; display: flex; align-items: center; gap: var(--space-2); }
+.srow .l > span:not(.tag):not(.mk) { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
+.srow .l .tag { font: var(--type-small); font-weight: 400; color: var(--dim); }
+.srow .h { font: var(--type-small); letter-spacing: var(--track-small); color: var(--dim); min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.srow .h .ic { width: var(--icon-sm); height: var(--icon-sm); vertical-align: calc(-1 * var(--space-half)); margin-right: var(--space-1); }
+.srow .h.ok .ic { color: var(--hill); }
+.srow .h.bad, .srow .h.bad .ic { color: var(--stamp-ink); }
+.srow .c { display: flex; align-items: center; justify-content: flex-end; gap: var(--space-2); min-width: 0; }
+.srow.wide { grid-template-columns: minmax(0, 1fr) auto; }
+.srow .l b { font-weight: 500; }
+.srow:not(.has-h) .l { font-weight: 400; }
+.srow button.switch, .srow .select { cursor: default; }
+.select[aria-expanded="true"] { box-shadow: inset 0 0 0 1px var(--accent); }
+.set-menu { position: absolute; z-index: 40; min-width: var(--menu-min); }
+.set-menu .menu-item .ck { width: var(--icon); height: var(--icon); flex: none; }
+.set-menu .menu-item[aria-selected="true"] { font-weight: 500; }
+
+/* A disclosure row: the long text stays folded until you ask for it */
+.srow.is-disclosure { width: 100%; text-align: left; }
+.srow.is-disclosure .c .ic { color: var(--dim); transition: transform var(--dur-swap) var(--ease-std); }
+.srow.is-disclosure:hover .c .ic { color: var(--ink); }
+.srow.is-disclosure[aria-expanded="true"] .c .ic { transform: rotate(180deg); }
+.privacy { padding: var(--space-1) var(--space-3) var(--space-5); font: var(--type-base); letter-spacing: var(--track-base); color: var(--ink-2); max-width: var(--measure-read); }
+.privacy p + p { margin-top: var(--space-3); }
+.privacy b { font-weight: 500; color: var(--ink); }
+
+/* Accounts */
+.acct-name { display: flex; align-items: center; gap: var(--space-2); }
+.acct-name .mk { width: var(--mark-dot); height: var(--mark-dot); border-radius: 50%; flex: none; }
+.acct-name .prov { font: var(--type-small); color: var(--dim); font-weight: 400; }
+.swatches { display: flex; gap: var(--space-2); padding: var(--space-half); }
+.swatch { width: var(--space-5); height: var(--space-5); border-radius: 50%; background: var(--c); display: inline-flex; align-items: center; justify-content: center; color: var(--fill-ink); position: relative; flex: none; }
+.swatch .ic { width: var(--icon-xs); height: var(--icon-xs); stroke-width: calc(var(--icon-stroke) + var(--hairline)); display: none; }
+.swatch[aria-checked="true"] { box-shadow: 0 0 0 var(--space-half) var(--canvas), 0 0 0 calc(var(--space-half) * 2) var(--ink); }
+.swatch[aria-checked="true"] .ic { display: block; }
+
+/* AI providers */
+.srow.prov { grid-template-columns: minmax(0, 1fr) var(--prov-status-w) var(--prov-act-w); }
+.pstat { display: flex; align-items: center; gap: var(--space-2); font: var(--type-small); letter-spacing: var(--track-small); color: var(--ink-2); min-width: 0; }
+.pstat span:not(.status-dot) { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
+.pstat.bad { color: var(--stamp-ink); }
+.pstat .ic { color: var(--hill); width: var(--icon-sm); height: var(--icon-sm); }
+.pstat.busy { color: var(--dim); }
+.pact { display: flex; justify-content: flex-end; gap: var(--space-half); margin-right: calc(-1 * var(--space-2)); }
+.pact .btn { padding: 0 var(--space-2); }
+.pact .btn[aria-disabled="true"] { color: var(--dim); }
+.pact .btn[data-tip][aria-disabled="true"] { pointer-events: auto; }
+.srow-fix { padding: var(--space-1) 0 var(--space-2); }
+.srow-fix .error-line { align-items: flex-start; }
+.srow-fix .error-line .ic { margin-top: var(--space-half); }
+.srow-fix .error-line .btn { margin-top: calc(-1 * var(--space-half)); }
+.srow.feat { grid-template-columns: minmax(0, 1fr) auto; }
+.srow.feat .c { gap: var(--space-2); }
+.srow.feat .select { justify-content: space-between; }
+.srow.feat [data-select$="-p"] { min-width: calc(var(--space-10) * 1.5); }
+.srow.feat [data-select$="-m"] { min-width: calc(var(--space-10) * 3); }
+.srow .field.addr { width: var(--addr-w); height: var(--control-sm); }
+.srow .field.addr input { font: var(--type-ui); letter-spacing: var(--track-ui); }
+
+/* Keyboard: a registry list, one 40 px row per command */
+.krow { grid-template-columns: minmax(0, 1fr) auto; }
+.krow .c { gap: var(--space-3); }
+.keys { display: inline-flex; align-items: center; gap: var(--space-half); height: var(--control-sm); padding: 0 var(--space-2); border-radius: var(--radius-md); margin-right: calc(-1 * var(--space-2)); }
+.keys:hover { background: var(--hover); }
+.keys .kbd + .kbd { margin-left: 0; }
+.conflict { display: inline-flex; align-items: center; gap: var(--space-1); font: var(--type-small); color: var(--stamp-ink); }
+.conflict .ic { width: var(--icon-sm); height: var(--icon-sm); color: var(--stamp-ink); }
+.krow.is-recording { background: var(--accent-wash); border-radius: var(--radius-md); box-shadow: none; }
+.krow.is-recording + .krow { box-shadow: none; }
+.krow.is-recording .kbd.new { box-shadow: inset 0 0 0 1px var(--accent); background: var(--paper); color: var(--ink); }
+.krow .kbd.wait { background: transparent; box-shadow: inset 0 0 0 1px var(--control-edge); color: var(--dim); min-width: calc(var(--kbd) * 2); }
+.krow .c .btn-text { margin-right: calc(-1 * var(--space-1)); }

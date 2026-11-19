@@ -1,0 +1,39 @@
+@keyframes breathe {
+  from { opacity: var(--breathe-lo); }
+  to { opacity: var(--breathe-hi); }
+}
+
+@keyframes status {
+  from { transform: translateX(-100%); }
+  to { transform: translateX(300%); }
+}
+
+/* waapi: played from motion.ts with element.animate() */
+@keyframes flight {
+  to { transform: translate(var(--flight-x), calc(var(--flight-y) * -1)) rotate(var(--flight-rot)); opacity: 0; }
+}
+
+@keyframes arrive {
+  from { opacity: 0; }
+}
+
+.pending {
+  animation: breathe var(--dur-breathe) var(--ease-inout) infinite;
+}
+
+.syncing {
+  animation-name: status;
+  animation-duration: var(--dur-status);
+  animation-timing-function: var(--ease-inout);
+  animation-iteration-count: infinite;
+}
+
+.new-row {
+  animation: arrive var(--dur-arrive) var(--ease-out) both;
+  animation-iteration-count: 1;
+}
+
+.quiet {
+  animation: none;
+  transition: none;
+}

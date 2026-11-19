@@ -1,0 +1,574 @@
+/* The reader family (DESIGN §4.3, §4.8 breathe and undo-send, §5 rules 10 and 12, §6, §7.5, §7.6, §9).
+   Mockups: reader.html, reply.html (sent), errors.html (send-failed). Needs ../list/list.css for the shared
+   chip, error line, button, keycap and icon parts. Tokens only; hover changes colour, fill or shadow only. */
+
+/* ---------- Summary: the one big line ---------- */
+
+.ui-summary {
+  position: relative;
+  margin: 0;
+  color: var(--ink);
+  font: var(--type-summary);
+  letter-spacing: var(--track-summary);
+  font-variation-settings: 'opsz' var(--opsz-summary);
+  overflow-wrap: anywhere;
+  text-wrap: pretty;
+}
+/* Pending and absent: the subject in SF at the summary size, never the serif. */
+.ui-summary[data-state='pending'],
+.ui-summary[data-state='absent'] {
+  font-family: var(--font-sans);
+  font-weight: 500;
+  font-variation-settings: normal;
+  letter-spacing: var(--track-heading);
+}
+.ui-summary[data-state='pending'] {
+  color: var(--ink-2);
+  animation: ui-summary-breathe var(--dur-breathe) var(--ease-inout) infinite alternate;
+  animation-play-state: var(--play-breathe);
+}
+@keyframes ui-summary-breathe {
+  from {
+    opacity: var(--breathe-lo);
+  }
+  to {
+    opacity: var(--breathe-hi);
+  }
+}
+.ui-summary[data-clamp='two-lines'] {
+  display: -webkit-box;
+  overflow: hidden;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+}
+.ui-summary__lead {
+  /* Inline before the words, on the text baseline: the 24 px chip sits in the first line without growing it. */
+  display: inline-block;
+  margin-inline-end: var(--space-2);
+}
+.ui-summary__subject {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+
+/* ---------- Reader head: the summary, its due chip and a hairline ---------- */
+
+.ui-reader-head {
+  position: relative;
+  min-width: 0;
+}
+.ui-reader-head__due {
+  display: flex;
+  margin-top: var(--space-3);
+}
+.ui-reader-head__rule {
+  height: var(--hairline);
+  margin: var(--space-6) 0 0;
+  padding: 0;
+  border: 0;
+  background-color: var(--line);
+}
+
+/* ---------- Reader actions: the pinned bar ----------
+   In the flow at the end of the letter, so nothing ever hides behind it at the end of a thread; it sticks to the pane's
+   bottom while the letter is taller than the pane, and `margin-top: auto` rests it on the pane's bottom edge when the
+   letter is short. Its wrapper is the bar's height plus 24 px above and 16 px below; a pane-coloured scrim (--canvas, with a
+   soft blurred edge) spans the column and a margin either side behind it, so text never shows beside or through the pill.
+   The wrapper and the scrim take no pointer events, only the pill does. Keycap badges overlay the buttons' corners and
+   take no space. */
+
+.ui-reader-actions {
+  position: sticky;
+  bottom: 0;
+  z-index: var(--z-sticky);
+  display: flex;
+  justify-content: center;
+  margin-top: auto;
+  padding: var(--space-6) 0 var(--space-4);
+  pointer-events: none;
+}
+.ui-reader-actions::before {
+  content: '';
+  position: absolute;
+  top: var(--space-6);
+  bottom: 0;
+  /* The column's own width: all the text and card edges there are, so the fade never shows as a box wider than the
+     cards (a wider scrim lifted the pane's own colour beside them in the dark theme). */
+  inset-inline: 0;
+  background: var(--canvas);
+  /* The soft edge is a blurred shadow in the same colour (DESIGN 2.4 forbids gradients): solid 12 px above the pill,
+     fading over 24, with no spread sideways past the column. */
+  box-shadow: 0 calc(-1 * var(--space-6)) var(--space-6) calc(-1 * var(--space-3)) var(--canvas);
+}
+.ui-reader-actions__bar {
+  box-sizing: border-box;
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: var(--space-1);
+  padding: var(--space-1);
+  border-radius: var(--radius-lg);
+  background-color: var(--paper);
+  /* The ring is --line-strong over whatever scrolls under the pill, so the first layer redraws it as the same ink
+     mixed into --paper: an opaque ring, and no body text or white sheet shows at the pill's edge. */
+  box-shadow:
+    0 0 0 var(--hairline) color-mix(in srgb, var(--ink) 14%, var(--paper)),
+    var(--elev-float);
+  pointer-events: auto;
+}
+/* "Replying" is a state, not an action: a muted label (the icon and the word in --dim), with no hover fill. */
+.ui-reader-actions .ui-list-btn[aria-pressed='true'],
+.ui-reader-actions .ui-list-btn[aria-pressed='true'] .ui-list-icon,
+.ui-reader-actions .ui-list-btn[aria-pressed='true']:hover,
+.ui-reader-actions .ui-list-btn[aria-pressed='true']:hover .ui-list-icon {
+  background: none;
+  color: var(--dim);
+}
+/* The primary slot while "Replying": the filled button's own width (an unseen copy sizes it) with the quiet state
+   centred in it, so Later and Done keep their places and keycaps. */
+.ui-reader-actions__slot {
+  display: grid;
+}
+.ui-reader-actions__slot > * {
+  grid-area: 1 / 1;
+}
+.ui-reader-actions__slot > .ui-list-btn[aria-hidden='true'] {
+  visibility: hidden;
+}
+.ui-reader-actions__slot > button.ui-list-btn {
+  justify-content: center;
+}
+/* While the reply is open the bar rests in the flow under it: it never floats over the card being written. */
+.ui-reader-actions[data-demoted='true'] {
+  position: relative;
+  bottom: auto;
+}
+.ui-reader-actions[data-demoted='true']::before {
+  content: none;
+}
+.ui-reader-actions[data-demoted='true'] .ui-reader-actions__bar {
+  box-shadow: var(--elev-pane);
+}
+
+/* ---------- Thread message ---------- */
+
+.ui-thread-message {
+  position: relative;
+  margin-top: var(--space-2);
+  padding-top: var(--space-6);
+  box-shadow: 0 calc(-1 * var(--hairline)) 0 var(--line);
+}
+.ui-thread-message[data-cursor='true']::before {
+  content: '';
+  position: absolute;
+  top: var(--space-6);
+  left: calc(-1 * var(--space-5));
+  width: var(--thread-rail);
+  height: var(--space-6);
+  border-radius: var(--radius-pill);
+  background-color: var(--accent);
+}
+.ui-thread-message__head {
+  min-width: 0;
+  margin-bottom: var(--space-3);
+}
+.ui-thread-message__line {
+  display: flex;
+  align-items: baseline;
+  gap: var(--space-2);
+  min-width: 0;
+}
+.ui-thread-message__from {
+  flex: 0 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  color: var(--ink);
+  font: var(--type-ui);
+  font-weight: 600;
+  letter-spacing: var(--track-ui);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.ui-thread-message__to {
+  flex: 0 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  color: var(--dim);
+  font: var(--type-small);
+  letter-spacing: var(--track-small);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.ui-thread-message__when {
+  flex: none;
+  margin-left: auto;
+  color: var(--dim);
+  font: var(--type-small);
+  letter-spacing: var(--track-small);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+/* The card's head (owner sketch 2026-11-10): the sender's mark, who, when, then the screen's "To" circles; the actions take
+   the right side, and one full-width hairline separates the head from the body. Nothing here moves on hover. */
+.ui-thread-message:not([data-fold='folded'])
+  .ui-thread-message__head:has(.ui-thread-message__line[data-layout='card']) {
+  padding-bottom: var(--space-3);
+  margin-bottom: var(--space-5);
+  box-shadow: 0 var(--hairline) 0 var(--line-strong);
+}
+.ui-thread-message__line[data-layout='card'] {
+  align-items: center;
+}
+.ui-thread-message__line[data-layout='card'] .ui-thread-message__when {
+  margin-left: 0;
+}
+/* A list mail's header carries Unsubscribe too: the weekday goes first, so "to me" keeps its words (the tooltip has the full date). */
+.ui-thread-message__line[data-layout='card']:has(.aplos-unsubscribe) .ui-thread-message__when-day {
+  display: none;
+}
+.ui-thread-message__line[data-layout='card'] .ui-thread-message__from {
+  font: var(--type-title);
+  letter-spacing: var(--track-title);
+}
+.ui-thread-message__actions {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  gap: var(--space-1);
+  margin-left: auto;
+}
+/* An earlier message's head (owner feedback 2026-11-11; folded and open share one header, the time inline after the name): the line (who, when) and, folded, its own first words, with the fold
+   button as the grid's right column: a bare chevron (named "Show full" folded, "Show less" once open). The one
+   button stays last in the DOM, so it is one node through a fold and keeps focus. A folded card's button is stretched by a
+   pseudo-element over the whole card (nothing moves), so the whole row is its target; once open only the button is, so links,
+   attachments and the body keep their own clicks. */
+.ui-thread-message__head[data-fold] {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  column-gap: var(--space-3);
+  align-items: center;
+}
+.ui-thread-message__head[data-fold] > .ui-thread-message__line {
+  grid-column: 1;
+  grid-row: 1;
+}
+.ui-thread-message__head[data-fold] > .ui-thread-message__excerpt {
+  grid-column: 1 / -1;
+  grid-row: 2;
+}
+.ui-thread-message[data-fold='folded'] .ui-thread-message__head {
+  margin-bottom: 0;
+}
+.ui-thread-message__toggle {
+  appearance: none;
+  grid-column: 2;
+  grid-row: 1;
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+  box-sizing: border-box;
+  justify-content: center;
+  width: var(--control-xs);
+  height: var(--control-xs);
+  margin: 0;
+  padding: 0;
+  border: 0;
+  border-radius: var(--radius-sm);
+  background: none;
+  color: var(--dim);
+  font: var(--type-small);
+  letter-spacing: var(--track-small);
+  white-space: nowrap;
+  cursor: default;
+}
+.ui-thread-message[data-fold='folded'] .ui-thread-message__toggle::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+}
+.ui-thread-message__excerpt[data-empty='true'] {
+  color: var(--dim);
+}
+/* At most two lines: a line clamp ends a long excerpt; a short one keeps its own height. A card with the sender's mark
+   starts it in the name's column (`--plain-indent`), the same column the open card's body starts in. */
+.ui-thread-message__excerpt {
+  display: -webkit-box;
+  margin-top: var(--space-3);
+  margin-left: var(--plain-indent, 0px);
+  overflow: hidden;
+  color: var(--ink-2);
+  font: var(--type-read);
+  letter-spacing: var(--track-read);
+  overflow-wrap: anywhere;
+  text-wrap: pretty;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+}
+/* A short message the folded card shows whole: no line clamp, so nothing is ever hidden on a card with nothing to open. */
+.ui-thread-message[data-complete='true'] .ui-thread-message__excerpt {
+  display: block;
+  -webkit-line-clamp: unset;
+}
+.ui-thread-message__toggle:focus-visible {
+  outline: var(--focus-width) solid var(--accent);
+  outline-offset: var(--focus-gap);
+}
+/* On a folded card the whole row is the target, so the ring goes round the card, not the small button. */
+.ui-thread-message[data-fold='folded']:has(.ui-thread-message__toggle:focus-visible) {
+  outline: var(--focus-width) solid var(--accent);
+  outline-offset: var(--focus-gap);
+  border-radius: var(--radius-lg);
+}
+.ui-thread-message[data-fold='folded'] .ui-thread-message__toggle:focus-visible {
+  outline: none;
+}
+/* The remote-images notice is chrome, not mail text: a quiet hairline strip at the top of the card, one control tall,
+   and it keeps that height once the images are shown (a dim sentence, no button) so the heading below never moves. */
+.ui-thread-message__images {
+  display: flex;
+  align-items: center;
+  box-sizing: border-box;
+  height: var(--control-md);
+  margin-bottom: var(--space-4);
+  padding: 0 var(--space-1);
+  border: var(--hairline) solid var(--line);
+  border-radius: var(--radius-md);
+}
+.ui-thread-message__images-shown {
+  padding: 0 var(--space-2);
+  color: var(--dim);
+  font: var(--type-small);
+  letter-spacing: var(--track-small);
+}
+.ui-thread-message__quoted {
+  margin-left: calc(-1 * var(--space-3));
+  /* Its 28 px box carries its own 6 px above and below the words: pull the card's bottom edge in by the extra. */
+  margin-top: var(--space-2);
+  margin-bottom: calc(-1 * var(--space-2));
+}
+.ui-thread-message__body {
+  max-width: var(--measure-read);
+  color: var(--ink);
+  font: var(--type-read);
+  letter-spacing: var(--track-read);
+  overflow-wrap: anywhere;
+}
+/* An HTML mail's sheet runs the card's full content width; only text keeps the reading measure. */
+.ui-thread-message__body:has(.aplos-mailframe__frame) {
+  max-width: none;
+}
+.ui-thread-message__body p {
+  margin: 0;
+}
+.ui-thread-message__body p + p {
+  margin-top: var(--space-4);
+}
+.ui-thread-message__attachments {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+  margin-top: var(--space-6);
+}
+.ui-thread-message__attachments > span {
+  display: inline-flex;
+  max-width: 100%;
+}
+
+/* ---------- Loading line ---------- */
+
+.ui-loading-line {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  margin: 0;
+  color: var(--dim);
+  font: var(--type-small);
+  letter-spacing: var(--track-small);
+}
+.ui-loading-line__spinner {
+  box-sizing: border-box;
+  flex: none;
+  width: var(--icon-sm);
+  height: var(--icon-sm);
+  border: 1px solid var(--line-strong);
+  border-top-color: var(--dim);
+  border-radius: var(--radius-pill);
+  animation: ui-loading-spin var(--dur-status) var(--ease-inout) infinite;
+  animation-play-state: var(--play-status);
+}
+@keyframes ui-loading-spin {
+  to {
+    transform: rotate(1turn);
+  }
+}
+.ui-loading-line__label {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+/* ---------- Reply stub ---------- */
+
+.ui-reply-stub {
+  box-sizing: border-box;
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  width: 100%;
+  height: var(--control-lg);
+  margin: var(--space-8) 0 0;
+  padding: 0 var(--space-3);
+  border: 0;
+  border-radius: var(--radius-md);
+  background-color: transparent;
+  box-shadow: inset 0 0 0 var(--hairline) var(--line-strong);
+  color: var(--dim);
+  font: var(--type-base);
+  letter-spacing: var(--track-base);
+  text-align: left;
+  cursor: text;
+  transition: box-shadow var(--dur-hover) var(--ease-std);
+}
+.ui-reply-stub .ui-list-icon {
+  color: var(--dim);
+}
+.ui-reply-stub__text {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.ui-error-line[data-placement='column'] + .ui-reply-stub {
+  margin-top: var(--space-2);
+}
+
+.ui-reply-stub:focus-visible {
+  outline: var(--focus-width) solid var(--accent);
+  outline-offset: var(--focus-gap);
+}
+
+/* ---------- Why it's here ---------- */
+
+.ui-why {
+  box-sizing: border-box;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  max-width: 100%;
+  padding: var(--space-3) var(--space-4) var(--space-2);
+  color: var(--ink);
+  font: var(--type-ui);
+  letter-spacing: var(--track-ui);
+}
+.ui-why__title {
+  margin: 0;
+  font: var(--type-title);
+  letter-spacing: var(--track-title);
+}
+.ui-why__reason {
+  margin: 0;
+  color: var(--ink-2);
+  overflow-wrap: anywhere;
+}
+.ui-why__quote {
+  margin: 0;
+  padding-left: var(--space-3);
+  box-shadow: inset var(--thread-rail) 0 0 var(--line-strong);
+  color: var(--dim);
+  overflow-wrap: anywhere;
+}
+.ui-why__actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-1);
+  margin: var(--space-1) 0 0 calc(-1 * var(--space-3));
+}
+
+/* ---------- Undo tray ---------- */
+
+.ui-undo-tray {
+  position: relative;
+  margin-top: var(--space-4);
+  overflow: hidden;
+  border-radius: var(--radius-md);
+  background-color: var(--raised);
+  /* The reader card is --raised at night too, so the strip keeps its own edge in both themes (DESIGN 7.6: a --raised line). */
+  box-shadow: inset 0 0 0 var(--hairline) var(--line-strong);
+}
+.ui-undo-tray[data-placement='toast'] {
+  margin-top: 0;
+}
+.ui-undo-tray__inner {
+  box-sizing: border-box;
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  min-height: var(--control-lg);
+  padding: 0 var(--space-2) 0 var(--space-4);
+  color: var(--ink-2);
+  font: var(--type-ui);
+  letter-spacing: var(--track-ui);
+}
+.ui-undo-tray__text {
+  flex: 1 1 auto;
+  min-width: 0;
+  font-variant-numeric: tabular-nums;
+  overflow-wrap: anywhere;
+}
+.ui-undo-tray__text[data-countdown] {
+  display: flex;
+  align-items: baseline;
+}
+.ui-undo-tray__lead {
+  flex: 0 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.ui-undo-tray__tail {
+  flex: none;
+  white-space: pre;
+}
+.ui-undo-tray__actions {
+  display: flex;
+  flex: none;
+  align-items: center;
+  gap: var(--space-half);
+}
+/* The neutral 2 px drain, scaled by the undo window against the token's default length. */
+.ui-undo-tray__drain {
+  position: absolute;
+  right: 0;
+  bottom: 0;
+  left: 0;
+  height: var(--track);
+  background-color: var(--line-strong);
+  transform-origin: left;
+  animation: ui-undo-drain calc(var(--dur-undo-send) * var(--undo-scale)) var(--ease-linear)
+    forwards;
+  animation-delay: calc(var(--dur-undo-send) * var(--undo-scale) * var(--undo-elapsed) * -1);
+  animation-play-state: var(--play-undo-send);
+}
+@keyframes ui-undo-drain {
+  from {
+    transform: scaleX(1);
+  }
+  to {
+    transform: scaleX(0);
+  }
+}
+
+@media (hover: hover) {
+  .ui-thread-message[data-fold='folded']:hover .ui-thread-message__from,
+  .ui-thread-message[data-fold='folded']:hover .ui-thread-message__toggle {
+    color: var(--ink);
+  }
+  .ui-reply-stub:hover {
+    box-shadow: inset 0 0 0 var(--hairline) var(--control-edge);
+  }
+}

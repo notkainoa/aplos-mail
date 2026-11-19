@@ -1,0 +1,149 @@
+<!doctype html>
+<html lang="en" data-window="main" data-states="reconnect,quota,offline,row-error,send-failed" data-esc="home.html">
+<head>
+<meta charset="utf-8">
+<title>Errors · Aplos mockup</title>
+<link rel="stylesheet" href="tokens.css">
+<link rel="stylesheet" href="shell.css">
+<script src="shell.js"></script>
+<script src="home-view.js"></script>
+<style>
+  html[data-state="send-failed"] .v-home, html:not([data-state="send-failed"]) .v-reader { display: none; }
+
+  /* Write rejected: the row returns to its place with an inline error (§7.15) */
+  .home-row.is-error { background: var(--stamp-tint); }
+  .home-row.is-error .sender { color: var(--ink); }
+  .row-err { display: inline-flex; align-items: center; gap: var(--space-2); color: var(--stamp-ink); min-width: 0; }
+  .row-err .ic { color: var(--stamp-ink); }
+  .home-row.is-error .btn { color: var(--stamp-ink); }
+  .home-row.is-error .btn:hover { background: var(--stamp-tint); }
+
+  /* Sign-in expired: the account switcher menu, with the account row saying what happened */
+  .acct-menu { position: absolute; z-index: 60; left: var(--space-3); top: calc(var(--sidebar-top) + var(--control-md) + var(--space-1)); width: calc(var(--menu-min) + var(--space-9)); }
+  .acct-menu .dots { display: flex; flex: none; }
+  .acct-menu .dots i, .acct-menu .mk { width: var(--mark-dot); height: var(--mark-dot); border-radius: 50%; display: block; flex: none; }
+  .acct-menu .dots i + i { margin-left: calc(-1 * var(--space-half)); box-shadow: -1px 0 0 var(--paper); }
+  .acct-menu .acct-row { height: auto; align-items: flex-start; padding: var(--space-2); }
+  .acct-menu .acct-row .mk { margin-top: var(--space-1); }
+  .acct-menu .acct-row .txt { display: flex; flex-direction: column; align-items: flex-start; gap: var(--space-half); min-width: 0; }
+  .acct-menu .acct-row b { font-weight: 500; }
+  .acct-menu .acct-row .why { font: var(--type-small); color: var(--stamp-ink); }
+  .acct-menu .acct-row .why + .btn { margin: var(--space-1) 0 0 calc(-1 * var(--space-2)); }
+  .acct-switch.is-open { background: var(--hover); }
+
+  /* Send failed: the reader (same structure as reader.html) with an error line above the reply stub */
+  .r-subject { font: var(--type-small); font-weight: 500; color: var(--dim); margin-bottom: var(--space-2); }
+  .r-fail { margin-top: var(--space-8); }
+  .r-fail + .reply-stub { margin-top: var(--space-2); }
+  .r-fail .acts { margin-left: auto; display: flex; gap: var(--space-1); }
+  .r-fail .acts .btn { margin-left: 0; }
+</style>
+</head>
+<body>
+<div class="window">
+  <span class="traffic"></span>
+  <div class="app">
+    <aside class="sidebar" id="side" data-active="home"></aside>
+    <main class="main">
+      <header class="toolbar v-home">
+        <div class="tools">
+          <a class="btn btn-icon labelled" href="ask.html" data-tip="Ask about your mail" data-key="A"><svg class="ic"><use href="#i-bubble"/></svg>Ask</a>
+        </div>
+      </header>
+      <header class="toolbar v-reader">
+        <a class="btn btn-icon" href="home.html" data-tip="Back" data-key="Esc" aria-label="Back"><svg class="ic"><use href="#i-chevl"/></svg></a>
+        <span class="title">Home <span class="pos">1 of 16</span></span>
+        <div class="tools">
+          <button class="btn btn-icon" data-tip="Previous" data-key="K" aria-label="Previous email"><svg class="ic"><use href="#i-chevu"/></svg></button>
+          <button class="btn btn-icon" data-tip="Next" data-key="J" aria-label="Next email"><svg class="ic"><use href="#i-chevd"/></svg></button>
+          <button class="btn btn-icon" data-tip="More: bookmark, trash, forward, why it’s here" data-key="." aria-label="More"><svg class="ic"><use href="#i-more"/></svg></button>
+          <a class="btn btn-icon labelled" href="ask.html" data-tip="Ask about this email" data-key="A"><svg class="ic"><use href="#i-bubble"/></svg>Ask</a>
+        </div>
+      </header>
+
+      <div class="workspace v-home">
+        <div class="column">
+          <div class="page-head">
+            <div>
+              <h1 class="page-title">Home</h1>
+              <p class="page-sub">Thursday, October 29 · 9 to handle</p>
+            </div>
+          </div>
+          <div id="home" role="listbox" aria-label="Home"></div>
+        </div>
+      </div>
+
+      <div class="workspace v-reader">
+        <article class="reader-page" aria-label="Email from Jordan Park">
+          <div class="r-from">
+            <span class="name">Jordan Park</span>
+            <span class="to">to you and Mina Cho</span>
+            <span class="when"><span class="chip"><svg class="ic"><use href="#i-clock"/></svg>Due tomorrow</span>10:00 AM</span>
+          </div>
+          <p class="r-summary summary t-summary">Two layout directions for the Hollow Creek site are ready, and Jordan wants your pick by tomorrow so the build can start Monday.</p>
+          <div class="r-actions">
+            <a class="btn btn-filled md" href="reply.html"><svg class="ic"><use href="#i-reply"/></svg>Reply<span class="kbd">Space</span></a>
+            <button class="btn btn-text md" data-tip="Later" data-key="L"><svg class="ic"><use href="#i-clock"/></svg>Later</button>
+            <button class="btn btn-text md" data-tip="Done" data-key="E"><svg class="ic"><use href="#i-check"/></svg>Done</button>
+          </div>
+
+          <section class="r-thread" aria-label="4 messages">
+            <h2 class="r-subject">A quieter home for the Hollow Creek site · 4 messages</h2>
+            <button class="r-earlier"><svg class="ic sm"><use href="#i-chevr"/></svg>3 earlier messages from Jordan, you and Mina</button>
+            <div class="r-msg is-cursor">
+              <div class="head"><span class="who">Jordan Park</span><span class="to">to you, Mina Cho</span><span class="when">Today, 10:00 AM</span></div>
+              <div class="body">
+                <p>Hi Alex,</p>
+                <p>Both directions are ready. Direction A keeps the long scrolling story we talked about, with the trail photos carrying most of the page. Direction B is quieter: one screen, a short welcome, and the booking form right up front.</p>
+                <p>Can you send me your preference by tomorrow? If we lock it by Friday, Mina can start the build on Monday and we keep the November 16 launch.</p>
+                <p>Thanks,<br>Jordan</p>
+              </div>
+              <div class="attachments">
+                <span class="attachment"><svg class="ic"><use href="#i-filetext"/></svg>direction-a.pdf <span class="size">4.2 MB</span></span>
+                <span class="attachment"><svg class="ic"><use href="#i-filetext"/></svg>direction-b.pdf <span class="size">3.1 MB</span></span>
+              </div>
+            </div>
+            <div class="error-line r-fail" role="alert"><svg class="ic"><use href="#i-alert"/></svg><span>Couldn’t send to Jordan. Your draft is saved.</span>
+              <span class="acts"><button class="btn btn-text xs">Try again</button><button class="btn btn-text xs" data-tip="Edit draft" data-key="E">Edit<span class="kbd hint">E</span></button></span></div>
+            <a class="reply-stub" href="reply.html"><svg class="ic"><use href="#i-reply"/></svg>Reply to Jordan…<span class="kbd">R</span></a>
+          </section>
+        </article>
+      </div>
+      <p class="sr-only" role="status" id="live"></p>
+    </main>
+  </div>
+</div>
+<script>
+const S = Mock.state;
+const side = document.getElementById('side');
+const ic = Mock.icon;
+side.dataset.status = { reconnect: 'reconnect', quota: 'paused', offline: 'offline' }[S] || 'synced';
+
+if (S !== 'send-failed') {
+  const items = HomeView.DEFAULT_ITEMS.map(x => ({ ...x }));
+  if (S === 'row-error') items[3].err = 'Couldn’t move to Later.';
+  HomeView(document.getElementById('home'), {
+    items,
+    onRetry: (id, home) => { home.items[id].err = null; home.state.focus = id; home.render(); home.commit('later'); },
+  });
+}
+
+if (S === 'reconnect') {
+  document.addEventListener('DOMContentLoaded', () => {
+    side.querySelector('.acct-switch').classList.add('is-open');
+    const m = document.createElement('div');
+    m.className = 'float menu acct-menu reveal'; m.setAttribute('role', 'menu'); m.setAttribute('aria-label', 'Accounts');
+    m.innerHTML = `
+      <div class="menu-label">Accounts</div>
+      <div class="menu-item" role="menuitem"><span class="dots"><i style="background:var(--tag-sky)"></i><i style="background:var(--tag-hill)"></i></span>All accounts</div>
+      <div class="menu-item acct-row" role="menuitem"><span class="mk" style="background:var(--tag-sky)"></span>
+        <span class="txt"><b>alex.moreno@gmail.com</b><span class="why">Google needs you to sign in again.</span><button class="btn btn-text xs btn-danger">Reconnect</button></span></div>
+      <div class="menu-item" role="menuitem"><span class="mk" style="background:var(--tag-hill)"></span>alex@fernworks.studio<span class="aside">Synced</span></div>
+      <div class="menu-sep"></div>
+      <div class="menu-item" role="menuitem">${ic('plus')}Add an account</div>`;
+    document.querySelector('.window').append(m);
+  });
+}
+</script>
+</body>
+</html>

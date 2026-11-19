@@ -1,0 +1,141 @@
+/* Harness-only layout for the gallery. Components keep their own styles (ui/styles.css);
+   this file only places a state on a stage the size of the window and fixes the test font. */
+
+/* Test mode font: the system sans is replaced by one stable face so a macOS update cannot shift
+   the pixels. plans/30 6.2 asks for a bundled open sans; until it lands this is the fallback. */
+:root {
+  --font-sans: 'Helvetica Neue', Helvetica, Arial, sans-serif;
+}
+
+html,
+body {
+  height: 100%;
+  overflow: hidden;
+}
+
+* {
+  cursor: none !important;
+  caret-color: transparent !important;
+}
+
+#root,
+.stage {
+  position: relative;
+  width: 100%;
+  height: 100%;
+}
+
+.stage {
+  box-sizing: border-box;
+  padding: var(--shell-pad);
+  background: var(--shell);
+  overflow: hidden;
+}
+
+/* The one white pane every state sits on. */
+.stage__pane {
+  position: relative;
+  box-sizing: border-box;
+  height: 100%;
+  overflow: hidden;
+  border-radius: var(--radius-lg);
+  background: var(--canvas);
+  box-shadow: var(--elev-pane);
+}
+
+.stage__column {
+  box-sizing: border-box;
+  width: min(var(--list-w), calc(100% - 2 * var(--gutter)));
+  margin: 0 auto;
+  padding-top: var(--space-6);
+}
+
+.stage__column[data-width='reader'] {
+  width: min(var(--reader-w), calc(100% - 2 * var(--gutter)));
+}
+
+.stage__column[data-width='narrow'] {
+  width: var(--sidebar-w);
+  margin: 0;
+  padding-left: var(--space-4);
+}
+
+.stage__column[data-width='full'] {
+  width: 100%;
+  height: 100%;
+  padding-top: 0;
+}
+
+.stage__gap {
+  height: var(--space-6);
+}
+
+.stage__anchor {
+  margin: var(--space-4) var(--gutter);
+}
+
+.stage__window {
+  position: relative;
+  height: 100%;
+}
+
+.stage__editor {
+  min-height: calc(var(--space-10) + var(--space-8));
+  outline: none;
+  font: var(--type-read);
+  letter-spacing: var(--track-read);
+}
+
+/* Stand-in for the editor's ghost text, which is not in renderer/ui: the grey suggested sentence. */
+.stage__suggestion {
+  color: var(--dim);
+}
+
+.stage__editor p {
+  margin: 0 0 var(--space-3);
+}
+
+.stage__settings {
+  display: flex;
+  gap: var(--space-8);
+  padding: var(--space-6) var(--space-8);
+  box-sizing: border-box;
+}
+
+.stage__settings-nav {
+  flex: none;
+  width: calc(var(--sidebar-w) - var(--space-8));
+}
+
+.stage__settings-body {
+  flex: 1;
+  min-width: 0;
+  max-width: calc(var(--reader-w) - var(--space-4));
+}
+
+/* The onboarding window: its own 640 x 600 window (DESIGN 7.11), centred on the shell. */
+.stage[data-frame='window'] {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.stage__box {
+  position: relative;
+  box-sizing: border-box;
+  width: 40rem;
+  height: 37.5rem;
+  overflow: hidden;
+  border-radius: var(--radius-lg);
+  background: var(--canvas);
+  box-shadow: var(--elev-pane);
+}
+
+/* The whole shell (sidebar and pane) fills the window; the shell's own pane carries the margin. */
+.stage[data-frame='shell'] {
+  padding: 0;
+}
+
+.stage[data-frame='shell'] .aplos-shell {
+  height: 100%;
+}

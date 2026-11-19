@@ -1,0 +1,40 @@
+<!doctype html>
+<html lang="en" data-window="main" data-states="default">
+<head>
+<meta charset="utf-8">
+<title>Mail engine unreachable · Aplos mockup</title>
+<link rel="stylesheet" href="tokens.css">
+<link rel="stylesheet" href="shell.css">
+<script src="shell.js"></script>
+<style>
+  /* FatalScreen: the whole window on canvas, no sidebar, no pane header. The traffic lights stay. */
+  .fatal { position: absolute; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; text-align: center; padding: 0 var(--space-8) var(--space-10); background: var(--canvas); }
+  .fatal .t-display { color: var(--ink); max-width: var(--reader-w); }
+  .fatal .safe { margin-top: var(--space-3); font: var(--type-base); letter-spacing: var(--track-base); color: var(--dim); }
+  .fatal .actions { margin-top: var(--space-7); display: flex; align-items: center; gap: var(--space-2); }
+</style>
+</head>
+<body>
+<div class="window">
+  <span class="traffic"></span>
+  <main class="fatal" role="alert">
+    <h1 class="t-display">Aplos can’t reach its mail engine.</h1>
+    <p class="safe">Your mail is safe on this Mac.</p>
+    <div class="actions">
+      <button class="btn btn-filled md" id="restart"><span id="restart-l">Restart engine</span></button>
+      <button class="btn btn-text md" id="copy">Copy diagnostics</button>
+    </div>
+  </main>
+</div>
+<script>
+const restart = () => {
+  const b = document.getElementById('restart'); if (b.disabled) return;
+  b.disabled = true; document.getElementById('restart-l').textContent = 'Restarting…';
+  setTimeout(() => Mock.go('home.html'), 1400);
+};
+document.getElementById('restart').addEventListener('click', restart);
+document.getElementById('copy').addEventListener('click', () => Mock.toast({ icon: 'check', tone: 'c-hill', text: 'Diagnostics copied. They contain no mail.' }));
+Mock.onKey(e => { if (e.key === 'Enter' && !e.metaKey) { restart(); return true; } });
+</script>
+</body>
+</html>

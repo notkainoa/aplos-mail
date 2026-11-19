@@ -1,9 +1,26 @@
 name: CI
 
+# The repository is public, so Actions minutes (macOS included) are free: every job runs on pushes
+# to revamp and main and on pull requests into them. The workflow never uses pull_request_target and
+# holds no secrets, so a fork's pull request runs with a read-only token.
 on:
-  pull_request:
   push:
-    branches: [main]
+    branches: [revamp, main]
+    # Coordination and docs pushes (STATUS.md entries land on revamp many times a day) run nothing.
+    # A push that also changes code still runs everything.
+    paths-ignore:
+      - 'plans/**'
+      - 'mockups/**'
+      - 'research/**'
+      - '**/*.md'
+  pull_request:
+    branches: [revamp, main]
+    paths-ignore:
+      - 'plans/**'
+      - 'mockups/**'
+      - 'research/**'
+      - '**/*.md'
+  workflow_dispatch:
 
 permissions:
   contents: read
@@ -16,21 +33,27 @@ jobs:
   changes:
     name: Detect changes
     runs-on: ubuntu-latest
+    timeout-minutes: 5
     permissions:
       contents: read
+      # paths-filter lists a pull request's changed files through the API.
       pull-requests: read
     outputs:
-      desktop: ${{ steps.filter.outputs.desktop }}
-      web: ${{ steps.filter.outputs.web }}
+      desktop: ${{ github.event_name == 'workflow_dispatch' || steps.filter.outputs.desktop == 'true' }}
+      web: ${{ github.event_name == 'workflow_dispatch' || steps.filter.outputs.web == 'true' }}
     steps:
-      - uses: actions/checkout@v4
-      - uses: dorny/paths-filter@v3
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: dorny/paths-filter@ceb8a2b8f2d89434be7ff52d3de7ec3738c5cc9d # v4.0.3
         id: filter
+        if: github.event_name != 'workflow_dispatch'
         with:
+          # On a push, compare with the commit before the push; a pull request uses its own changed files.
+          base: ${{ github.ref_name }}
           filters: |
             shared: &shared
               - package.json
               - package-lock.json
+              - .node-version
               - packages/**
               - .github/workflows/ci.yml
             desktop:
@@ -41,23 +64,138 @@ jobs:
               - *shared
               - apps/web/**
 
-  desktop:
-    name: Desktop (typecheck, test, build)
+  static:
+    name: Static (format, lint, types, audit)
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version-file: .node-version
+          cache: npm
+      # --ignore-scripts: no Electron binary download and no git-hook install on the runner.
+      - run: npm ci --ignore-scripts
+      # Checks other lanes add later print "pending: <name>" until their script exists.
+      - run: node scripts/audit/run-if-present.mjs format:check
+      - run: npm run lint
+      - run: npm run test:lint
+      - run: npm run test:audit
+      - run: npm run lint:css
+      # The change check (a PR against revamp) runs locally in npm run check and in the integrator's merge procedure;
+      # a push to revamp has nothing to compare, so CI validates OWNERS.md itself.
+      - run: node scripts/audit/owners-check.mjs --validate
+      - run: npm run typecheck
+      - run: npm audit --omit=dev --audit-level=high
+
+  # The unit suite is split across parallel jobs to stay under the static+unit wall-clock
+  # budget: Electron-Node suites in one job, the desktop workspace sharded by test file,
+  # and the remaining workspaces together. Names all start with "Unit tests" because
+  # scripts/audit/measure-budgets.mjs takes the longest of them for ci.wall-clock-static-unit.
+  unit-engine:
+    name: Unit tests (engine, Electron Node ${{ matrix.shard }})
     needs: changes
     if: needs.changes.outputs.desktop == 'true'
-    runs-on: macos-latest
-    timeout-minutes: 30
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: ['1/4', '2/4', '3/4', '4/4']
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
-          node-version: 24
+          node-version-file: .node-version
           cache: npm
-      - run: npm ci
-      - run: npm run typecheck -w @aplos/desktop
-      - run: npm test -w @aplos/desktop
-      # Renderer (Vite), main/engine bundles (esbuild) and the native helper (swiftc).
-      - run: npm run build -w @aplos/desktop
+      - run: npm ci --ignore-scripts
+      # The Electron binary is needed by check:sqlite and test:engine: node:sqlite uses
+      # the SQLite of the runtime that loads it, and the database suites (store, service,
+      # queue, sync-safety) run under Electron's own Node (ELECTRON_RUN_AS_NODE=1, no
+      # display needed) rather than system Node.
+      - run: node node_modules/electron/install.js
+      - run: npm run check:sqlite
+      # The same file set as `npm run test:engine`, split by test-shard.mjs.
+      - run: node scripts/audit/test-shard.mjs . '${{ matrix.shard }}' --script test:engine --run
+
+  unit-desktop:
+    name: Unit tests (desktop ${{ matrix.shard }})
+    needs: changes
+    if: needs.changes.outputs.desktop == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: ['1/2', '2/2']
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version-file: .node-version
+          cache: npm
+      - run: npm ci --ignore-scripts
+      # Runs under system Node. test-shard.mjs re-expands the workspace's own test globs and
+      # runs a deterministic shard, so the shards together run exactly what npm test runs.
+      - run: node scripts/audit/test-shard.mjs apps/desktop '${{ matrix.shard }}' --run
+
+  unit-packages:
+    name: Unit tests (packages ${{ matrix.label }})
+    needs: changes
+    if: needs.changes.outputs.desktop == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - label: engine 1/4
+            shard: 1/4
+          - label: engine 2/4
+            shard: 2/4
+          - label: engine 3/4
+            shard: 3/4
+          - label: engine 4/4
+            shard: 4/4
+          - label: others
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version-file: .node-version
+          cache: npm
+      - run: npm ci --ignore-scripts
+      # Runs under system Node. The engine suite also runs under Electron's Node in the
+      # engine job — the same double coverage the old combined job had. The engine is sharded
+      # by test file (its three slowest tests are split into files for this); the small
+      # packages run together in the "others" part.
+      - if: matrix.shard
+        run: node scripts/audit/test-shard.mjs packages/engine '${{ matrix.shard }}' --run
+      - if: ${{ !matrix.shard }}
+        run: npm test -w @aplos/contract -w @aplos/contract-fixture -w @aplos/emulators -w @aplos/mail-html
+
+  e2e-browser:
+    name: Browser E2E (headless, loopback only)
+    needs: changes
+    if: needs.changes.outputs.desktop == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version-file: .node-version
+          cache: npm
+      - run: npm ci --ignore-scripts
+      - run: npx playwright install --with-deps chromium
+      # The base config starts the preview on its own ports with a temporary APLOS_DATA_DIR and no AI keys.
+      - run: npm run test:e2e:browser
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        if: failure()
+        with:
+          name: e2e-browser-results
+          path: artifacts/e2e
+          retention-days: 7
 
   web:
     name: Website (typecheck, build)
@@ -66,11 +204,70 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
-          node-version: 24
+          node-version-file: .node-version
           cache: npm
-      - run: npm ci
+      - run: npm ci --ignore-scripts
       - run: npm run typecheck -w @aplos/web
       - run: npm run build -w @aplos/web
+
+  # The app ships on macOS only, and some tests run only there (the attachment store's lstat/open
+  # swap check relies on APFS inodes; measure-idle's command line refuses other systems), so this
+  # job is what covers them.
+  desktop-macos:
+    name: Desktop on macOS (typecheck, test, build)
+    needs: changes
+    if: needs.changes.outputs.desktop == 'true'
+    runs-on: macos-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version-file: .node-version
+          cache: npm
+      - run: npm ci
+      - run: npm run typecheck
+      - run: npm test
+      # The audit suite again, for its macOS-only cases (measure-idle's command line).
+      - run: npm run test:audit
+      # Renderer (Vite), main/engine bundles (esbuild) and the native helper (swiftc).
+      - run: npm run build -w @aplos/desktop
+      # Electron tier: the built app starts hidden on a temporary data directory (APLOS_TEST=1, never a visible window).
+      - run: APLOS_E2E_ELECTRON=1 npx playwright test -c tests/e2e/playwright.config.ts --project electron
+
+  slots:
+    name: slots
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version-file: .node-version
+          cache: npm
+      - run: npm ci --ignore-scripts
+      - name: summary heading
+        run: echo '### Pending slots (listed when the owning lane has not landed its script)' >> "$GITHUB_STEP_SUMMARY"
+      # The slots run in sequence; a failing slot does not hide the ones after it.
+      - name: slot check:openapi
+        run: node scripts/audit/slot.mjs check:openapi
+      - name: slot check:tokens
+        if: ${{ !cancelled() }}
+        run: node scripts/audit/slot.mjs check:tokens
+      - name: slot check:contrast
+        if: ${{ !cancelled() }}
+        run: node scripts/audit/slot.mjs check:contrast
+      - name: slot check:identity
+        if: ${{ !cancelled() }}
+        run: node scripts/audit/slot.mjs check:identity
+      - name: slot test:visual
+        if: ${{ !cancelled() }}
+        run: node scripts/audit/slot.mjs test:visual
+      - name: budget register
+        if: ${{ !cancelled() }}
+        run: npm run check:budgets

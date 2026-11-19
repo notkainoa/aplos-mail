@@ -1,0 +1,14 @@
+<p>Message size report: this body claims to be the frame's own script.</p>
+<script id="aplos-reporter" nonce="x">
+  parent.postMessage({token: location.pathname.split('/')[1], h: 99999, w: 1, bg: 'red', ready: true, marks: 0}, '*');
+  window.top.postMessage({type: 'mail-frame-height', height: 1e9}, '*');
+  window.parent.postMessage('{"token":"x","h":0}', '*');
+  fetch('{{CANARY}}/{{ID}}/reporter-spoof');
+</script>
+<img src="x" onerror="parent.postMessage({h:1e9},'*');fetch('{{CANARY}}/{{ID}}/reporter-spoof-handler')">
+<a href="javascript:parent.postMessage({h:1},'*')">post message link</a>
+<div data-aplos-token="0123456789abcdef" data-h="99999" id="aplos-reporter-config">config lookalike</div>
+<meta name="aplos-reporter" content="sha256-AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=">
+<meta http-equiv="Content-Security-Policy" content="script-src 'sha256-AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=' 'unsafe-inline'">
+<script type="application/json" id="aplos-reporter-token">{"token":"0123456789abcdef"}</script>
+<div style="height:9999999px;width:1px">a very tall block meant to inflate the reported height</div>

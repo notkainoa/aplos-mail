@@ -1,0 +1,1459 @@
+/* The surfaces family (DESIGN 4.4-4.8, 6, 7.1, 7.13). Tokens only: every value is a var(--token), 0, a 1px
+   hairline or 100%. Hover lives under (hover: hover) and changes colour, fill, shadow, opacity or visibility only.
+   Motion is transform and opacity. Also holds the internal parts (button, keycap, overlay tooltip) shared with
+   the status family until buttons-keys lands. */
+
+/* ───────────── Internal parts ───────────── */
+
+.ui-sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+
+.ui-part-icon {
+  width: var(--icon);
+  height: var(--icon);
+  flex: none;
+  stroke-width: var(--icon-stroke);
+}
+.ui-part-icon[data-size='sm'] {
+  width: var(--icon-sm);
+  height: var(--icon-sm);
+}
+.ui-part-icon[data-size='xs'] {
+  width: var(--icon-xs);
+  height: var(--icon-xs);
+}
+
+.ui-part-keys,
+.ui-part-keys__group {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-half);
+  flex: none;
+}
+.ui-part-keys__or {
+  padding: 0 var(--space-half);
+  font: var(--type-small);
+  letter-spacing: var(--track-small);
+  color: var(--dim);
+}
+.ui-part-keys[data-reveal='hint'] {
+  display: none;
+}
+:root[data-show-keys='all'] .ui-part-keys[data-reveal='hint'] {
+  display: inline-flex;
+}
+.ui-part-kbd {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: var(--kbd);
+  height: var(--kbd);
+  padding: 0 var(--space-1);
+  border-radius: var(--radius-xs);
+  background: var(--keycap);
+  box-shadow: inset 0 0 0 var(--hairline) var(--line);
+  color: var(--keycap-ink);
+  font: var(--type-caption);
+  letter-spacing: var(--track-caption);
+  flex: none;
+}
+
+.ui-part-button {
+  --btn-h: var(--control-md);
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: calc(var(--space-1) + var(--space-half));
+  height: var(--btn-h);
+  padding: 0 var(--space-3);
+  border: 0;
+  border-radius: var(--radius-md);
+  background: transparent;
+  color: var(--ink-2);
+  font: var(--type-ui);
+  font-weight: 500;
+  letter-spacing: var(--track-ui);
+  white-space: nowrap;
+  flex: none;
+  cursor: default;
+  transition:
+    transform var(--dur-press-up) var(--ease-out),
+    background-color var(--dur-hover) var(--ease-std),
+    color var(--dur-hover) var(--ease-std);
+}
+.ui-part-button[data-size='sm'] {
+  --btn-h: var(--control-sm);
+}
+.ui-part-button[data-size='lg'] {
+  --btn-h: var(--control-lg);
+  padding: 0 var(--space-5);
+  font: var(--type-base);
+  font-weight: 500;
+  letter-spacing: var(--track-base);
+}
+.ui-part-button:focus-visible {
+  outline: var(--focus-width) solid var(--accent);
+  outline-offset: var(--focus-gap);
+}
+.ui-part-button:active {
+  transform: scale(var(--press-scale));
+  transition-duration: var(--dur-press-down);
+}
+.ui-part-button[data-variant='text'] .ui-part-icon {
+  color: var(--dim);
+}
+.ui-part-button[data-variant='icon'] {
+  width: var(--btn-h);
+  padding: 0;
+  color: var(--dim);
+}
+.ui-part-button[data-variant='icon']:active {
+  transform: scale(var(--press-scale-icon));
+}
+.ui-part-button[data-variant='icon'][data-labelled='true'] {
+  width: auto;
+  padding: 0 var(--space-2);
+  color: var(--ink-2);
+}
+.ui-part-button[data-variant='icon'][data-labelled='true'] .ui-part-icon {
+  color: var(--dim);
+}
+.ui-part-button[aria-pressed='true'] {
+  color: var(--ink);
+  background: var(--press);
+}
+.ui-part-button[data-variant='filled'] {
+  background: var(--accent);
+  color: var(--accent-ink);
+  box-shadow:
+    inset 0 1px 0 var(--press-hi),
+    inset 0 calc(-1 * 1px) 0 var(--press-lo);
+}
+/* Hover is --hover laid over --accent (as the mockup does), never a new mixed colour. The overlay comes first
+   in tree order and the contents are positioned after it, so it sits under the label without a z-index. */
+.ui-part-button[data-variant='filled'] > * {
+  position: relative;
+}
+.ui-part-button[data-variant='filled']::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  background: var(--hover);
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity var(--dur-hover) var(--ease-std);
+}
+.ui-part-button[data-variant='filled']:disabled::before,
+.ui-part-button[data-variant='filled'][aria-disabled='true']::before {
+  display: none;
+}
+.ui-part-button[data-variant='filled']:active {
+  box-shadow: inset 0 1px 0 var(--press-lo);
+}
+.ui-part-button[data-variant='filled'] .ui-part-kbd {
+  /* A hint, not part of the label: a faint plate with a hairline edge on the fill, the label's own colour. */
+  background: color-mix(in srgb, var(--accent-ink) 12%, transparent);
+  box-shadow: inset 0 0 0 var(--hairline) color-mix(in srgb, var(--accent-ink) 32%, transparent);
+  color: var(--accent-ink);
+}
+.ui-part-button[data-tone='danger'],
+.ui-part-button[data-tone='danger'] .ui-part-icon {
+  color: var(--stamp-ink);
+}
+.ui-part-button:disabled,
+.ui-part-button[aria-disabled='true'] {
+  color: var(--dim);
+}
+.ui-part-button:disabled {
+  pointer-events: none;
+}
+/* Soft-disabled keeps focus and takes no press feedback. */
+.ui-part-button[aria-disabled='true']:active {
+  transform: none;
+}
+.ui-part-button:disabled .ui-part-icon {
+  color: var(--faint);
+}
+.ui-part-button[data-variant='filled']:disabled,
+.ui-part-button[data-variant='filled'][aria-disabled='true'] {
+  /* the primary, faded: the same by day and at night (a --sunken well read as an enabled black slab in dark) */
+  background: color-mix(in srgb, var(--accent) 30%, transparent);
+  color: var(--dim);
+  box-shadow: none;
+}
+.ui-part-button[data-variant='filled']:disabled .ui-part-kbd,
+.ui-part-button[data-variant='filled'][aria-disabled='true'] .ui-part-kbd {
+  background: var(--raised);
+  color: var(--dim);
+}
+@media (hover: hover) {
+  .ui-part-button[data-variant='text']:hover,
+  .ui-part-button[data-variant='icon']:hover {
+    background: var(--hover);
+    color: var(--ink);
+  }
+  .ui-part-button[data-variant='text']:hover .ui-part-icon,
+  .ui-part-button[data-variant='icon'][data-labelled='true']:hover .ui-part-icon {
+    color: var(--ink);
+  }
+  .ui-part-button[data-tone='danger']:hover,
+  .ui-part-button[data-tone='danger']:hover .ui-part-icon {
+    color: var(--stamp-ink);
+  }
+  .ui-part-button[data-variant='filled']:hover::before {
+    opacity: 1;
+  }
+}
+.ui-part-button[data-variant='text']:active,
+.ui-part-button[data-variant='icon']:active {
+  background: var(--press);
+}
+/* A pane tool that cannot run right now (New event on view-only calendars): clearly faded, a not-allowed cursor on its wrapper, and the wrapper still shows the tooltip that says why. */
+.ui-pane__tools > .ui-part-tipwrap:has(> .ui-part-button:disabled) {
+  cursor: not-allowed;
+}
+.ui-pane__tools .ui-part-button:disabled,
+.ui-pane__tools .ui-part-button:disabled .ui-part-icon {
+  color: var(--faint);
+}
+
+/* Overlay tooltip: label + keys, opaque paper. It never moves layout; hover or keyboard focus shows it. */
+.ui-part-tipwrap {
+  position: relative;
+  display: inline-flex;
+  min-width: 0;
+}
+/* An icon button's wrapper never shrinks below its fixed square; only text beside it gives way. */
+.ui-part-tipwrap:has(> .ui-part-button[data-variant='icon']) {
+  flex: none;
+}
+.ui-part-tip {
+  position: absolute;
+  z-index: var(--z-tooltip);
+  top: calc(100% + var(--space-1));
+  left: 50%;
+  transform: translateX(-50%);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-half);
+  width: max-content;
+  max-width: calc(var(--menu-min) + var(--space-9));
+  padding: var(--space-1) var(--space-2);
+  border-radius: var(--radius-md);
+  background: var(--float);
+  box-shadow: var(--elev-float);
+  color: var(--ink);
+  font: var(--type-small);
+  letter-spacing: var(--track-small);
+  pointer-events: none;
+  visibility: hidden;
+  opacity: 0;
+  transition: opacity var(--dur-reveal-in) var(--ease-out);
+}
+.ui-part-tip[data-placement='above'] {
+  top: auto;
+  bottom: calc(100% + var(--space-1));
+}
+.ui-part-tip[data-placement='end'] {
+  top: 50%;
+  left: calc(100% + var(--space-2));
+  transform: translateY(-50%);
+}
+.ui-part-tip__line {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+.ui-part-tip__detail {
+  color: var(--dim);
+  overflow-wrap: anywhere;
+}
+/* The html flags come from inputIntent (buttons-keys): a real keydown or pointer move since load.
+   Without one, an element drawn under a resting cursor (or script focus) would show a tip nobody asked for. */
+html[data-real-key] .ui-part-tipwrap:has(> :focus-visible) > .ui-part-tip {
+  visibility: visible;
+  opacity: 1;
+}
+@media (hover: hover) {
+  html[data-real-pointer] .ui-part-tipwrap:hover > .ui-part-tip {
+    visibility: visible;
+    opacity: 1;
+  }
+  html[data-real-pointer] .ui-part-tipwrap:hover > [aria-expanded='true'] + .ui-part-tip {
+    visibility: hidden;
+    opacity: 0;
+  }
+}
+
+/* Regions and overlays that only hold focus for the keys draw no ring; the row or control inside owns it. */
+.ui-pane:focus-visible,
+.ui-menu:focus-visible,
+.ui-dialog:focus-visible,
+.ui-popover:focus-visible {
+  outline: none;
+}
+
+/* ───────────── Pane (shell.css .main / .dock / .toolbar) ───────────── */
+
+.ui-pane {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  min-height: 0;
+  margin: var(--shell-pad) var(--shell-pad) var(--shell-pad) 0;
+  border-radius: var(--radius-lg);
+  background: var(--canvas);
+  box-shadow: var(--elev-pane);
+  color: var(--ink);
+  font: var(--type-ui);
+  letter-spacing: var(--track-ui);
+}
+.ui-pane[data-kind='main'] {
+  flex: 1;
+}
+/* The dock pane wraps the aside, whose width the owner resizes (300–440): one width, never dead space or a clipped edge. */
+.ui-pane[data-kind='dock'] {
+  flex: none;
+  width: fit-content;
+  overflow: hidden;
+}
+.ui-pane__head {
+  position: relative;
+  z-index: var(--z-sticky);
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: var(--space-1);
+  height: var(--pane-head);
+  padding: 0 var(--space-3);
+  transition: box-shadow var(--dur-hover) var(--ease-std);
+}
+.ui-pane__head[data-scrolled='true'] {
+  box-shadow: 0 var(--hairline) 0 var(--line);
+}
+.ui-pane__lead,
+.ui-pane__bulk {
+  display: flex;
+  align-items: center;
+  gap: var(--space-1);
+  min-width: 0;
+}
+/* Only the crumb shrinks; back / close keeps its place. */
+.ui-pane__lead > .ui-part-tipwrap {
+  flex: none;
+}
+.ui-pane__crumb {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  min-width: 0;
+  padding: 0 var(--space-1);
+  color: var(--ink-2);
+  font: var(--type-ui);
+  font-weight: 500;
+  letter-spacing: var(--track-ui);
+}
+.ui-pane__crumb-text {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.ui-pane__crumb-pos {
+  flex: none;
+  color: var(--dim);
+  font-weight: 400;
+}
+/* The one-by-one counter: centred over the card's column (the pane's centre), on the header row, never in the way of a click. */
+.ui-pane__pos-centre {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: 50%;
+  display: flex;
+  align-items: center;
+  transform: translateX(-50%);
+  color: var(--dim);
+  font: var(--type-ui);
+  font-variant-numeric: tabular-nums;
+  letter-spacing: var(--track-ui);
+  white-space: nowrap;
+  pointer-events: none;
+}
+/* The bar starts on the list column's text edge (the section labels and the pick boxes), not the pane's corner. */
+.ui-pane__bulk {
+  margin-inline-start: max(
+    0px,
+    calc(
+      (100% + var(--space-6) - min(var(--list-w), 100% + var(--space-6) - 2 * var(--gutter))) / 2 -
+        var(--space-3) + var(--space-2)
+    )
+  );
+}
+.ui-pane__bulk-count {
+  margin: 0 var(--space-2) 0 var(--space-1);
+  color: var(--ink);
+  font: var(--type-ui);
+  font-weight: 600;
+  letter-spacing: var(--track-ui);
+  white-space: nowrap;
+}
+.ui-pane__tools {
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  margin-left: auto;
+}
+/* Ask and Today are the window's own pair: 16 px (the 8 px gap and 8 more) of air between them and a screen's local
+   tools (the reader's ↑ ↓ ⋯), so the two groups read as two. */
+.ui-pane__tools > .ui-part-tipwrap:nth-last-child(2) {
+  margin-left: var(--space-2);
+}
+.ui-pane__tools > .ui-part-tipwrap:last-child > .ui-part-tip {
+  left: auto;
+  right: 0;
+  transform: none;
+}
+/* The body scrolls; it is not a positioning context, so a ToastStack inside it sits on the pane and never scrolls. */
+.ui-pane__body {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+  border-radius: inherit;
+  scrollbar-width: thin;
+  scrollbar-color: var(--line-strong) transparent;
+}
+.ui-pane__head + .ui-pane__body {
+  border-radius: 0 0 var(--radius-lg) var(--radius-lg);
+}
+
+/* ───────────── PageHead, NavHead ───────────── */
+
+.ui-page-head {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  padding: var(--space-5) 0 var(--space-3);
+}
+.ui-page-head__date {
+  display: flex;
+  align-items: baseline;
+  gap: var(--space-2);
+  min-width: 0;
+}
+.ui-page-head__date-label {
+  color: var(--ink);
+  font: var(--type-title);
+  letter-spacing: var(--track-title);
+  white-space: nowrap;
+}
+.ui-page-head__date-range {
+  color: var(--dim);
+  font: var(--type-small);
+  letter-spacing: var(--track-small);
+  white-space: nowrap;
+}
+.ui-page-head__field {
+  flex: 1;
+  min-width: 0;
+}
+.ui-page-head__controls {
+  display: flex;
+  align-items: center;
+  gap: var(--space-1);
+  margin-left: auto;
+}
+
+.ui-nav-head {
+  display: flex;
+  align-items: center;
+  height: var(--control-sm);
+  margin-top: var(--space-5);
+  padding: 0 var(--space-2);
+  overflow: hidden;
+  color: var(--dim);
+  font: var(--type-small);
+  font-weight: 500;
+  letter-spacing: var(--track-small);
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+/* ───────────── AccountSwitcher ───────────── */
+
+.ui-account-switcher__wrap {
+  display: flex;
+  flex: 1;
+}
+.ui-account-switcher {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  height: var(--control-md);
+  padding: 0 var(--space-2);
+  border: 0;
+  border-radius: var(--radius-md);
+  background: transparent;
+  color: var(--ink);
+  font: var(--type-ui);
+  font-weight: 500;
+  letter-spacing: var(--track-ui);
+  text-align: left;
+  cursor: default;
+  transition:
+    transform var(--dur-press-up) var(--ease-out),
+    background-color var(--dur-hover) var(--ease-std);
+}
+.ui-account-switcher:focus-visible {
+  outline: var(--focus-width) solid var(--accent);
+  outline-offset: var(--focus-gap);
+}
+.ui-account-switcher:active {
+  transform: scale(var(--press-scale));
+  transition-duration: var(--dur-press-down);
+}
+.ui-account-switcher[data-state='open'] {
+  background: var(--hover);
+}
+.ui-account-switcher__mono {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: var(--space-5);
+  height: var(--space-5);
+  flex: none;
+  border-radius: var(--radius-sm);
+  /* --puck: the same quiet ink step on the shell by day and at night (--raised all but vanished on the light shell). */
+  background: var(--puck);
+  color: var(--ink);
+  font: var(--type-caption);
+  font-weight: 600;
+  letter-spacing: var(--track-caption);
+}
+.ui-account-switcher__label {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.ui-account-switcher .ui-part-icon {
+  color: var(--dim);
+}
+@media (hover: hover) {
+  .ui-account-switcher:hover {
+    background: var(--hover);
+  }
+}
+
+/* ───────────── Text ───────────── */
+
+.ui-text {
+  margin: 0;
+  overflow-wrap: break-word;
+}
+.ui-text[data-icon='true'] {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+.ui-text[data-icon='true'] .ui-part-icon {
+  flex: none;
+  color: var(--dim);
+}
+.ui-text__body {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.ui-text[data-variant='display'] {
+  font: var(--type-display);
+  letter-spacing: var(--track-display);
+  text-wrap: balance;
+}
+.ui-text[data-variant='heading'] {
+  font: var(--type-heading);
+  letter-spacing: var(--track-heading);
+  text-wrap: balance;
+}
+.ui-text[data-variant='title'] {
+  font: var(--type-title);
+  letter-spacing: var(--track-title);
+}
+.ui-text[data-variant='lede'] {
+  font: var(--type-base);
+  letter-spacing: var(--track-base);
+  text-wrap: balance;
+}
+.ui-text[data-variant='label'] {
+  font: var(--type-small);
+  font-weight: 500;
+  letter-spacing: var(--track-small);
+}
+.ui-text[data-variant='small'] {
+  font: var(--type-small);
+  letter-spacing: var(--track-small);
+}
+.ui-text[data-variant='caption'] {
+  font: var(--type-caption);
+  letter-spacing: var(--track-caption);
+}
+.ui-text[data-tone='ink'] {
+  color: var(--ink);
+}
+.ui-text[data-tone='ink-2'] {
+  color: var(--ink-2);
+}
+.ui-text[data-tone='dim'] {
+  color: var(--dim);
+}
+
+/* ───────────── Floating: Menu, Popover (opaque --float, --elev-float, `reveal`) ───────────── */
+
+.ui-menu,
+.ui-popover {
+  position: fixed;
+  left: var(--float-x);
+  top: var(--float-y);
+  /* --z-menu is being added to the layer tokens; until it lands, the existing popover layer holds. */
+  z-index: var(--z-menu, var(--z-popover));
+  border-radius: var(--radius-lg);
+  background: var(--float);
+  box-shadow: var(--elev-float);
+  color: var(--ink);
+  font: var(--type-ui);
+  letter-spacing: var(--track-ui);
+  animation: ui-reveal var(--dur-reveal-in) var(--ease-out) both;
+}
+/* Night: a menu or popover on a card needs an edge you can see, so the 1 px ring is laid twice (the stronger line, over the one
+   --elev-float already draws). */
+:root[data-theme='dark'] .ui-menu,
+:root[data-theme='dark'] .ui-popover {
+  box-shadow:
+    0 0 0 1px var(--line-strong),
+    var(--elev-float);
+}
+/* Night: --dim is 4.4:1 on --float and 3.6:1 on the cursor row over it, under the 4.5:1 DESIGN 12.4 asks of text. So inside every
+   surface at --float or lighter, --dim is re-pointed at --dim-on-float (the secondary ink at night; the same dim step by day, so
+   light does not change) and every dim line there follows, hovered, selected or not. A disabled control takes --dim-inactive and
+   keeps the dim step, so it still reads as quieter than an enabled one. */
+.ui-menu,
+.ui-popover,
+.ui-dialog,
+.ui-toast,
+.ui-part-tip,
+.ui-palette__panel,
+.ui-low-sheet__panel,
+.ui-shortcut-sheet-dialog,
+.ui-recipient-field__list,
+.ui-date-presets,
+.cal-screen__empty-box {
+  --dim: var(--dim-on-float);
+}
+:is(
+    .ui-menu,
+    .ui-popover,
+    .ui-dialog,
+    .ui-toast,
+    .ui-part-tip,
+    .ui-palette__panel,
+    .ui-low-sheet__panel,
+    .ui-shortcut-sheet-dialog,
+    .ui-recipient-field__list,
+    .ui-date-presets,
+    .cal-screen__empty-box
+  )
+  :is(:disabled, [aria-disabled='true']) {
+  --dim: var(--dim-inactive);
+}
+.ui-menu:not([data-placed]),
+.ui-popover:not([data-placed]) {
+  position: relative;
+  left: auto;
+  top: auto;
+}
+@keyframes ui-reveal {
+  from {
+    opacity: 0;
+    transform: translateY(var(--move-reveal)) scale(var(--scale-reveal));
+  }
+}
+/* `reveal` out: back toward the trigger while the surface stays mounted, inert, for --dur-reveal-out. */
+.ui-menu[data-state='leaving'],
+.ui-popover[data-state='leaving'] {
+  pointer-events: none;
+  animation: ui-reveal-out var(--dur-reveal-out) var(--ease-in) both;
+}
+@keyframes ui-reveal-out {
+  to {
+    opacity: 0;
+    transform: translateY(var(--move-reveal)) scale(var(--scale-reveal));
+  }
+}
+.ui-menu {
+  box-sizing: content-box; /* --menu-min is the width of the rows; the padding sits outside it */
+  min-width: var(--menu-min);
+  max-width: calc(var(--menu-min) * 2);
+  padding: var(--space-1);
+  outline: none;
+}
+.ui-menu__item {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  height: var(--control-md);
+  padding: 0 var(--space-2);
+  border-radius: var(--radius-md);
+  color: var(--ink);
+  cursor: default;
+  transition: background-color var(--dur-hover) var(--ease-std);
+}
+.ui-menu__item[data-detail='true'],
+.ui-menu__item:has(.ui-menu__inline) {
+  height: auto;
+  min-height: var(--control-md);
+  align-items: flex-start;
+  padding: var(--space-2);
+}
+.ui-menu__item .ui-part-icon {
+  color: var(--dim);
+}
+.ui-menu__item[data-active='true'] {
+  background: var(--puck);
+}
+.ui-menu__item[data-tone='danger'],
+.ui-menu__item[data-tone='danger'] .ui-part-icon {
+  color: var(--stamp-ink);
+}
+.ui-menu__item[aria-disabled='true'] {
+  color: var(--dim);
+}
+.ui-menu__item[aria-disabled='true'] .ui-part-icon {
+  color: var(--faint);
+}
+.ui-menu__num {
+  width: var(--space-4);
+  flex: none;
+  color: var(--dim);
+  font: var(--type-small);
+  letter-spacing: var(--track-small);
+  text-align: center;
+}
+.ui-menu__item[data-active='true'] .ui-menu__num {
+  color: var(--ink);
+}
+.ui-menu__check {
+  display: inline-flex;
+  width: var(--icon);
+  flex: none;
+}
+.ui-menu__check .ui-part-icon {
+  color: var(--ink);
+}
+/* The dots sit centred in an icon-wide column, so a row's label starts in the same place whether it wears a dot or an icon. */
+.ui-menu__swatches {
+  display: flex;
+  flex: none;
+  align-items: center;
+  justify-content: center;
+  width: var(--icon);
+}
+.ui-menu__item[data-detail='true'] .ui-menu__swatches,
+.ui-menu__item[data-detail='true'] > .ui-part-icon {
+  margin-top: var(--space-half);
+}
+.ui-menu__swatch {
+  display: block;
+  width: var(--mark-dot);
+  height: var(--mark-dot);
+  flex: none;
+  border-radius: var(--radius-pill);
+}
+.ui-menu__swatch + .ui-menu__swatch {
+  margin-left: calc(-1 * var(--space-half));
+  box-shadow: calc(-1 * 1px) 0 0 var(--float);
+}
+.ui-menu__text {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: var(--space-half);
+  min-width: 0;
+}
+.ui-menu__item-label {
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.ui-menu__item[data-detail='true'] .ui-menu__item-label {
+  font-weight: 500;
+}
+.ui-menu__detail {
+  color: var(--dim);
+  font: var(--type-small);
+  letter-spacing: var(--track-small);
+  overflow-wrap: anywhere;
+}
+.ui-menu__inline {
+  height: var(--control-sm);
+  margin: var(--space-1) 0 0 calc(-1 * var(--space-2));
+  padding: 0 var(--space-2);
+  border: 0;
+  border-radius: var(--radius-md);
+  background: transparent;
+  color: var(--ink-2);
+  font: var(--type-ui);
+  font-weight: 500;
+  letter-spacing: var(--track-ui);
+  cursor: default;
+  transition: background-color var(--dur-hover) var(--ease-std);
+}
+.ui-menu__inline[data-tone='danger'] {
+  color: var(--stamp-ink);
+}
+.ui-menu__aside {
+  flex: none;
+  margin-left: auto;
+  color: var(--dim);
+  font: var(--type-small);
+  letter-spacing: var(--track-small);
+}
+.ui-menu__item > .ui-part-keys {
+  margin-left: auto;
+}
+.ui-menu__aside + .ui-part-keys {
+  margin-left: var(--space-1);
+}
+.ui-menu__sep {
+  height: var(--hairline);
+  margin: var(--space-1) var(--space-2);
+  background: var(--line);
+}
+.ui-menu__label {
+  padding: var(--space-2) var(--space-2) var(--space-1);
+  color: var(--dim);
+  font: var(--type-small);
+  font-weight: 500;
+  letter-spacing: var(--track-small);
+}
+@media (hover: hover) {
+  .ui-menu__item:hover {
+    background: var(--hover);
+  }
+  .ui-menu__item[aria-disabled='true']:hover {
+    background: transparent;
+  }
+  .ui-menu__item[data-active='true']:hover {
+    background: var(--puck);
+  }
+  .ui-menu__inline:hover {
+    background: var(--hover);
+  }
+}
+
+.ui-popover {
+  max-width: calc(var(--menu-min) * 2);
+  padding: var(--space-4);
+  outline: none;
+}
+.ui-popover[data-role='tooltip'] {
+  pointer-events: none;
+}
+
+/* Swatch colours (accounts, labels, calendars), as marks only. */
+.ui-menu__swatch[data-color='sky'],
+.ui-puck__swatch[data-color='sky'] {
+  background: var(--tag-sky);
+}
+.ui-menu__swatch[data-color='hill'],
+.ui-puck__swatch[data-color='hill'] {
+  background: var(--tag-hill);
+}
+.ui-menu__swatch[data-color='stamp'],
+.ui-puck__swatch[data-color='stamp'] {
+  background: var(--tag-stamp);
+}
+.ui-menu__swatch[data-color='dusk'],
+.ui-puck__swatch[data-color='dusk'] {
+  background: var(--tag-dusk);
+}
+.ui-menu__swatch[data-color='sand'],
+.ui-puck__swatch[data-color='sand'] {
+  background: var(--tag-sand);
+}
+.ui-menu__swatch[data-color='ember'],
+.ui-puck__swatch[data-color='ember'] {
+  background: var(--tag-ember);
+}
+
+/* ───────────── Dialog, Confirm (--elev-dialog, radius 16, `settle`) ───────────── */
+
+.ui-dialog__scrim {
+  position: fixed;
+  inset: 0;
+  z-index: var(--z-dialog);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: var(--space-6);
+  background: var(--scrim);
+}
+.ui-dialog {
+  display: flex;
+  flex-direction: column;
+  width: 100%;
+  max-height: 100%;
+  border-radius: var(--radius-xl);
+  background: var(--float);
+  box-shadow: var(--elev-dialog);
+  color: var(--ink);
+  font: var(--type-ui);
+  letter-spacing: var(--track-ui);
+  outline: none;
+  /* Fill backwards only: `both` would keep an identity transform on the dialog after the entrance, and that
+     transform makes the dialog the containing block of every fixed Menu and Popover inside it, so they opened
+     offset. The leaving animation below keeps `both`: it ends invisible. */
+  animation: ui-settle var(--dur-settle-in) var(--ease-out) backwards;
+}
+@keyframes ui-settle {
+  from {
+    opacity: 0;
+    transform: translateY(var(--move-settle)) scale(var(--scale-settle));
+  }
+}
+/* `settle` out: the dialog sinks and the scrim fades over --dur-settle-out; nothing in it takes input. */
+.ui-dialog__scrim[data-state='leaving'] {
+  pointer-events: none;
+  animation: ui-scrim-out var(--dur-settle-out) var(--ease-in) both;
+}
+.ui-dialog[data-state='leaving'] {
+  animation: ui-settle-out var(--dur-settle-out) var(--ease-in) both;
+}
+@keyframes ui-scrim-out {
+  to {
+    opacity: 0;
+  }
+}
+@keyframes ui-settle-out {
+  to {
+    opacity: 0;
+    transform: translateY(var(--move-settle)) scale(var(--scale-settle));
+  }
+}
+.ui-dialog[data-size='sm'] {
+  max-width: var(--toast-max);
+}
+.ui-dialog[data-size='md'] {
+  max-width: var(--palette-w);
+}
+.ui-dialog[data-size='lg'] {
+  max-width: calc(100% - var(--sidebar-w));
+  height: 100%;
+}
+.ui-dialog__head {
+  flex: none;
+  padding: var(--space-6) var(--space-6) 0;
+}
+.ui-dialog__title {
+  margin: 0;
+  color: var(--ink);
+  font: var(--type-title);
+  letter-spacing: var(--track-title);
+  overflow-wrap: anywhere;
+}
+.ui-dialog__description {
+  margin: var(--space-1) 0 0;
+  color: var(--dim);
+  font: var(--type-small);
+  letter-spacing: var(--track-small);
+  overflow-wrap: anywhere;
+}
+.ui-dialog__body {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+  padding: var(--space-4) var(--space-6) 0;
+}
+.ui-dialog__foot {
+  flex: none;
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: var(--space-2);
+  padding: var(--space-6) var(--space-6) 0;
+}
+.ui-dialog > :last-child {
+  padding-bottom: var(--space-6);
+}
+
+.ui-confirm[data-presentation='inline'] {
+  padding: var(--space-4) var(--space-4) var(--space-3);
+}
+.ui-confirm__question {
+  margin: 0;
+  color: var(--ink);
+  font: var(--type-title);
+  letter-spacing: var(--track-title);
+  overflow-wrap: anywhere;
+}
+.ui-confirm__consequence {
+  margin: var(--space-1) 0 0;
+  color: var(--ink-2);
+  font: var(--type-ui);
+  letter-spacing: var(--track-ui);
+  overflow-wrap: anywhere;
+}
+.ui-confirm__rows {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  margin: var(--space-4) calc(-1 * var(--space-2)) 0;
+}
+.ui-confirm[data-presentation='dialog'] .ui-confirm__rows {
+  margin-top: 0;
+}
+.ui-confirm__row {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  width: 100%;
+  height: var(--control-md);
+  padding: 0 var(--space-3);
+  border: 0;
+  border-radius: var(--radius-md);
+  background: transparent;
+  /* Both rows carry the same ring, so neither reads as the lesser choice. */
+  box-shadow: inset 0 0 0 var(--hairline) var(--line-strong);
+  color: var(--ink-2);
+  font: var(--type-ui);
+  letter-spacing: var(--track-ui);
+  text-align: left;
+  cursor: default;
+  transition:
+    transform var(--dur-press-up) var(--ease-out),
+    background-color var(--dur-hover) var(--ease-std);
+}
+.ui-confirm__row-label {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.ui-confirm__row > .ui-part-keys {
+  margin-left: auto;
+}
+.ui-confirm__row[data-primary='true'] {
+  background: var(--puck);
+  color: var(--ink);
+  font-weight: 500;
+}
+.ui-confirm__row[data-tone='danger'] {
+  background: var(--stamp-tint);
+  color: var(--stamp-ink);
+}
+/* A destructive pair: the default (Cancel) row keeps its fill but not extra weight, so the two rows weigh the same. */
+.ui-confirm__rows:has(.ui-confirm__row[data-tone='danger']) .ui-confirm__row[data-primary='true'] {
+  font-weight: inherit;
+}
+.ui-confirm__row:focus-visible {
+  outline: var(--focus-width) solid var(--accent);
+  outline-offset: var(--focus-gap);
+}
+.ui-confirm__row:active {
+  transform: scale(var(--press-scale));
+  transition-duration: var(--dur-press-down);
+}
+@media (hover: hover) {
+  .ui-confirm__row:hover {
+    background: var(--hover);
+  }
+  .ui-confirm__row[data-primary='true']:hover {
+    background: var(--puck);
+  }
+  .ui-confirm__row[data-tone='danger']:hover {
+    background: var(--stamp-tint);
+  }
+}
+
+/* ───────────── Puck: one shared thumb, translate + scaleX, never width ───────────── */
+
+.ui-puck {
+  position: relative;
+  display: flex;
+}
+.ui-puck[data-orientation='vertical'] {
+  flex-direction: column;
+}
+.ui-puck__thumb {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: var(--puck-w);
+  height: var(--puck-h);
+  transform: translate(var(--puck-x), var(--puck-y)) scaleX(var(--puck-sx));
+  transform-origin: 0 0;
+  pointer-events: none;
+  transition: transform var(--dur-slide) var(--spring-slide);
+}
+.ui-puck:not([data-ready]) > .ui-puck__thumb {
+  visibility: hidden;
+}
+/* First placement: land in place, no slide in from the corner. */
+.ui-puck[data-instant] > .ui-puck__thumb {
+  transition: none;
+}
+/* Cells follow the thumb in the DOM and are positioned, so they paint above it without a layer. */
+.ui-puck__cell {
+  position: relative;
+}
+.ui-puck__item {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  min-width: 0;
+  border: 0;
+  background: transparent;
+  font: var(--type-ui);
+  letter-spacing: var(--track-ui);
+  white-space: nowrap;
+  cursor: default;
+  transition:
+    transform var(--dur-press-up) var(--ease-out),
+    background-color var(--dur-hover) var(--ease-std),
+    color var(--dur-hover) var(--ease-std);
+}
+.ui-puck__item:focus-visible {
+  outline: var(--focus-width) solid var(--accent);
+  outline-offset: var(--focus-gap);
+}
+.ui-puck__item:active {
+  transform: scale(var(--press-scale));
+  transition-duration: var(--dur-press-down);
+}
+.ui-puck__item:disabled {
+  color: var(--dim);
+}
+.ui-puck__item:disabled .ui-part-icon {
+  color: var(--faint);
+}
+.ui-puck__label {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* segmented: a --sunken track, a --float thumb (one clear step lighter than the track at night) */
+.ui-puck[data-kind='segmented'] {
+  display: inline-flex;
+  padding: var(--space-half);
+  border-radius: var(--radius-md);
+  background: var(--sunken);
+}
+.ui-puck[data-kind='segmented'] > .ui-puck__thumb {
+  border-radius: var(--radius-sm);
+  background: var(--float);
+  box-shadow: var(--elev-puck);
+}
+.ui-puck[data-kind='segmented'] .ui-puck__item {
+  height: var(--control-xs);
+  padding: 0 var(--space-3);
+  border-radius: var(--radius-sm);
+  color: var(--dim);
+}
+.ui-puck[data-kind='segmented'] .ui-puck__item[data-selected='true'] {
+  color: var(--ink);
+  font-weight: 500;
+}
+.ui-puck[data-kind='segmented']:not([data-ready]) .ui-puck__item[data-selected='true'] {
+  background: var(--float);
+  box-shadow: var(--elev-puck);
+}
+
+/* Dark: the options you are not on read one step above --dim on the near-black track. */
+:root[data-theme='dark']
+  .ui-puck[data-kind='segmented']
+  .ui-puck__item:not([data-selected='true']) {
+  color: var(--ink-2);
+}
+
+/* selection: rows with a --puck fill (sidebar, Settings nav) */
+.ui-puck[data-kind='selection'] > .ui-puck__thumb {
+  border-radius: var(--radius-md);
+  background: var(--puck);
+}
+.ui-puck[data-kind='selection'] .ui-puck__cell {
+  display: flex;
+}
+/* The reader is open over this place: it stays marked, with the lighter hover fill instead of the puck, so it reads as where
+   you came from and not as where you are. */
+.aplos-sidebar[data-origin='true'] .ui-puck[data-kind='selection'] > .ui-puck__thumb,
+.aplos-sidebar[data-origin='true']
+  .ui-puck[data-kind='selection']:not([data-ready])
+  .ui-puck__item[data-selected='true'] {
+  background: var(--hover);
+}
+.ui-puck[data-kind='selection'] .ui-puck__item {
+  flex: 1;
+  height: var(--control-sm);
+  padding: 0 var(--space-2);
+  border-radius: var(--radius-md);
+  color: var(--ink-2);
+  text-align: left;
+}
+.ui-puck[data-kind='selection'] .ui-puck__item .ui-part-icon {
+  color: var(--dim);
+}
+.ui-puck[data-kind='selection'] .ui-puck__item[data-selected='true'] {
+  color: var(--ink);
+  font-weight: 500;
+}
+.ui-puck[data-kind='selection'] .ui-puck__item[data-selected='true'] .ui-part-icon {
+  color: var(--ink);
+}
+.ui-puck[data-kind='selection']:not([data-ready]) .ui-puck__item[data-selected='true'] {
+  background: var(--puck);
+}
+.ui-puck__count {
+  min-width: var(--space-5);
+  margin-left: auto;
+  color: var(--dim);
+  font: var(--type-small);
+  letter-spacing: var(--track-small);
+  text-align: right;
+}
+.ui-puck__swatch {
+  display: block;
+  width: var(--space-3);
+  height: var(--space-3);
+  flex: none;
+  margin: 0 var(--space-half);
+  border-radius: var(--radius-xs);
+}
+@media (hover: hover) {
+  .ui-puck[data-kind='segmented'] .ui-puck__item:hover {
+    color: var(--ink);
+  }
+  .ui-puck[data-kind='selection'] .ui-puck__item:hover {
+    background: var(--hover);
+  }
+  .ui-puck[data-kind='selection'] .ui-puck__item:disabled:hover {
+    background: transparent;
+  }
+}
+
+/* ───────────── Toasts (opaque --float, --elev-float, radius 12, up to 440 px) ───────────── */
+
+.ui-toast-stack {
+  position: absolute;
+  left: 50%;
+  bottom: var(--space-6);
+  z-index: var(--z-toast);
+  display: flex;
+  /* Oldest first, the newest at the bottom: the front card of the deck sits nearest the pane edge. */
+  flex-direction: column;
+  /* One column, one width: the stack is at least --toast-max wide and grows to fit its longest toast up to --toast-grow-max
+     (less in a narrow pane), and every toast fills it, so a stack of three is one width; a sender's name is never cut
+     while it fits. */
+  align-items: stretch;
+  width: max-content;
+  min-width: min(var(--toast-max), calc(100% - var(--space-6) * 2));
+  max-width: min(var(--toast-grow-max), calc(100% - var(--space-6) * 2));
+  transform: translateX(-50%);
+  pointer-events: none;
+}
+/* The deck (owner review of #548, 2026-11-17). Every card keeps its place in the list (so the stack keeps one width and
+   the fanned-out list is plain layout); folded, a transform brings each older card down onto the front one
+   (--toast-lift, measured by ToastStack), peeks it up by its depth and scales it back a little. The 8 px gap above each
+   card is part of the card, so the pointer never falls between two cards of the open list. Hover and focus fan it out
+   with the named `close` motion (the FLIP of things that move apart); under reduced motion it is 0 ms, so the deck
+   just switches between its two states. The newest card is last in the DOM, so it paints over the ones behind it. */
+.ui-toast-card {
+  --toast-peek: var(--space-3);
+  --toast-step: 0.05;
+  padding-top: var(--space-2);
+  transform-origin: 50% 100%;
+  transform: translateY(calc(var(--toast-lift, 0px) - var(--toast-depth) * var(--toast-peek)))
+    scale(calc(1 - var(--toast-depth) * var(--toast-step)));
+  transition:
+    transform var(--dur-close) var(--ease-out),
+    opacity var(--dur-close) var(--ease-out);
+  pointer-events: auto;
+}
+/* Folded, the cards behind show only their edge: their words would print through the front card's shadow. */
+.ui-toast-stack:not([data-expanded]) .ui-toast-card:not([data-depth='0']) .ui-toast > * {
+  opacity: 0;
+}
+.ui-toast-card .ui-toast > * {
+  transition: opacity var(--dur-close) var(--ease-out);
+}
+/* Only two cards peek; deeper ones wait unseen until the deck fans out or the cards in front of them leave. */
+.ui-toast-stack:not([data-expanded])
+  .ui-toast-card:not([data-depth='0'], [data-depth='1'], [data-depth='2']),
+.ui-toast-stack:not([data-expanded])
+  .ui-toast-card:not([data-depth='0'], [data-depth='1'], [data-depth='2'])
+  .ui-toast {
+  opacity: 0;
+  pointer-events: none;
+}
+.ui-toast-stack[data-expanded] .ui-toast-card {
+  transform: none;
+}
+.ui-toast {
+  box-sizing: content-box; /* the sizes below are the content; the padding sits outside them */
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  min-height: var(--control-lg);
+  padding: var(--space-1) var(--space-2) var(--space-1) var(--space-4);
+  overflow: hidden;
+  border-radius: var(--radius-lg);
+  background: var(--float);
+  box-shadow: var(--elev-float);
+  color: var(--ink);
+  font: var(--type-ui);
+  letter-spacing: var(--track-ui);
+  pointer-events: auto;
+  animation: ui-toast-in var(--dur-arrive) var(--ease-out) both;
+}
+.ui-toast[data-state='leaving'] {
+  animation: ui-toast-out var(--dur-toast-fade) var(--ease-in) both;
+}
+@keyframes ui-toast-in {
+  from {
+    opacity: 0;
+    transform: translateY(var(--move-arrive));
+  }
+}
+@keyframes ui-toast-out {
+  to {
+    opacity: 0;
+  }
+}
+.ui-toast__icon {
+  display: inline-flex;
+  flex: none;
+  color: var(--dim);
+}
+.ui-toast__icon[data-tone='hill'] {
+  color: var(--hill);
+}
+.ui-toast__icon[data-tone='dusk'] {
+  color: var(--dusk);
+}
+.ui-toast__icon[data-tone='stamp'] {
+  color: var(--stamp-ink);
+}
+.ui-toast__dismiss {
+  display: inline-flex;
+  flex: none;
+}
+.ui-toast__message {
+  flex: 1 1 auto;
+  min-width: 0;
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  overflow: hidden;
+  overflow-wrap: anywhere;
+  /* A two-line message splits evenly, so no lone word hangs on the second line. */
+  text-wrap: balance;
+}
+/* A countdown keeps its number and unit on one line; a long recipient list shortens with an ellipsis. */
+.ui-toast__message[data-countdown] {
+  display: flex;
+  align-items: baseline;
+}
+.ui-toast__lead {
+  flex: 0 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.ui-toast__tail {
+  flex: none;
+  white-space: pre;
+}
+.ui-toast__action {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+  flex: none;
+  height: var(--control-sm);
+  padding: 0 var(--space-2);
+  border: 0;
+  border-radius: var(--radius-md);
+  background: transparent;
+  color: var(--ink-2);
+  font: var(--type-ui);
+  font-weight: 500;
+  letter-spacing: var(--track-ui);
+  white-space: nowrap;
+  cursor: default;
+  transition:
+    transform var(--dur-press-up) var(--ease-out),
+    background-color var(--dur-hover) var(--ease-std),
+    color var(--dur-hover) var(--ease-std);
+}
+/* Message left, actions right: the message fills the row, so every toast's last action ends on the same right edge and
+   the chips line up down a stack. The gap from the message to its first action is one 16 px (the 8 px flex gap plus this
+   8 px); a toast with no actions keeps the same 16 px right inset as one whose last chip ends there (the chip's own
+   8 px padding plus the toast's 8 px). */
+.ui-toast__message + .ui-toast__action {
+  margin-left: var(--space-2);
+}
+/* A toast with buttons keeps its words on one line (the sender gives way with an ellipsis), so "Done · Jordan Park"
+   never wraps beside Remind me and Undo. An error keeps up to two lines: its words are the whole point. */
+.ui-toast[data-actions]:not([data-kind='error']) .ui-toast__message {
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.ui-toast__message:last-child {
+  padding-right: var(--space-2);
+}
+.ui-toast__action:focus-visible {
+  outline: var(--focus-width) solid var(--accent);
+  outline-offset: var(--focus-gap);
+}
+.ui-toast__action:active {
+  transform: scale(var(--press-scale));
+  transition-duration: var(--dur-press-down);
+}
+.ui-toast__drain {
+  position: absolute;
+  right: 0;
+  bottom: 0;
+  left: 0;
+  height: var(--track);
+  background: var(--line-strong);
+  transform: scaleX(var(--drain));
+  transform-origin: 0 50%;
+}
+@media (hover: hover) {
+  .ui-toast__action:hover {
+    background: var(--hover);
+    color: var(--ink);
+  }
+}
+/* A toast's quiet actions ("Set a date", "Remind me if no reply") sit back in --dim so the one keycapped action beside
+   them (Undo Z) stays the loudest thing to reach for. */
+.ui-toast__action:not(:has(.ui-part-kbd)):has(~ .ui-toast__action .ui-part-kbd) {
+  color: var(--dim);
+  font-weight: 400;
+}

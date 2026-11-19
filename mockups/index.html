@@ -1,0 +1,142 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Aplos · Skypaper mockups</title>
+<link rel="stylesheet" href="tokens.css">
+<link rel="stylesheet" href="shell.css">
+<script>
+  (function () {
+    let t = null; try { t = localStorage.getItem('aplos-mock-theme'); } catch {}
+    document.documentElement.dataset.theme = new URLSearchParams(location.search).get('theme') || t || (matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light');
+  })();
+</script>
+<style>
+  body { display: block; place-items: normal; background: var(--shell); min-height: 100vh; }
+  .wrap { max-width: calc(var(--list-w) * 2 + var(--space-10)); margin: 0 auto; padding: var(--space-9) var(--gutter) var(--space-10); }
+  header.top { display: flex; align-items: flex-start; gap: var(--space-6); }
+  header.top .lede { color: var(--ink-2); font: var(--type-base); max-width: 68ch; margin-top: var(--space-2); }
+  header.top .lede + .lede { color: var(--dim); font: var(--type-ui); }
+  .theme { margin-left: auto; flex: none; }
+  h2.area { font: var(--type-small); font-weight: 500; color: var(--dim); margin: var(--space-9) 0 var(--space-3); display: flex; gap: var(--space-2); align-items: baseline; }
+  h2.area span { color: var(--faint); }
+  .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(calc(var(--space-10) * 4.5), 1fr)); gap: var(--space-4); }
+  .card { padding: var(--space-3); display: flex; flex-direction: column; gap: var(--space-3); }
+  .thumb { display: block; position: relative; overflow: hidden; border-radius: var(--radius-md); box-shadow: var(--ring); background: var(--canvas); aspect-ratio: 1440 / 900; }
+  .card { background: var(--canvas); border-radius: var(--radius-lg); box-shadow: var(--elev-pane); }
+  .thumb iframe { position: absolute; top: 0; left: 0; border: 0; transform-origin: 0 0; pointer-events: none; }
+  .thumb:hover { box-shadow: 0 0 0 var(--select-bar) var(--accent); }
+  .card h3 { font: var(--type-base); font-weight: 600; letter-spacing: var(--track-base); display: flex; align-items: baseline; gap: var(--space-2); }
+  .card h3 a:hover { text-decoration: underline; text-decoration-color: var(--line); }
+  .card h3 .ref { margin-left: auto; font: var(--type-small); color: var(--dim); font-weight: 400; }
+  .card p { color: var(--dim); font: var(--type-small); }
+  .states { display: flex; flex-wrap: wrap; gap: var(--space-1); }
+  .states a { height: var(--control-xs); padding: 0 var(--space-2); border-radius: var(--radius-sm); box-shadow: inset 0 0 0 1px var(--line); font: var(--type-small); color: var(--ink-2); display: inline-flex; align-items: center; }
+  .states a:hover { background: var(--hover); color: var(--ink); }
+  .mockbar { display: none; }
+  footer { margin-top: var(--space-10); color: var(--dim); font: var(--type-small); }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header class="top">
+    <div>
+      <h1 class="t-display">Aplos, after the revamp</h1>
+      <p class="lede">Revision 2: calmer, neutral, more room. What changed is in DESIGN-CHANGES.md.</p>
+      <p class="lede">Static mockups of every planned screen of the revamped Aplos. Click a picture to open the screen at real window size. Each screen has its own states, listed under it. Light and dark use the switch on the right, and every screen remembers it.</p>
+      <p class="lede">Inside a screen: J and K move, E is Done, L is Later, Z undoes, Return opens, Space runs the suggested action, ⌘K opens commands, / searches, ? shows every key, and Esc goes back. Hold ⌘ to see key hints. The small bar at the bottom right of each screen switches theme and state.</p>
+    </div>
+    <div class="theme seg" role="tablist" aria-label="Theme">
+      <span class="seg-puck" aria-hidden="true"></span>
+      <button role="tab" data-t="light">Light</button><button role="tab" data-t="dark">Dark</button>
+    </div>
+  </header>
+  <main id="areas"></main>
+  <footer>Mockups only: no real data, no real people. Values DESIGN.md left open are listed in NOTES.md. Screenshots are made with <code class="t-mono">node mockups/shoot.cjs</code>.</footer>
+</div>
+<script src="shell.js"></script>
+<script>
+const AREAS = [
+  ['Onboarding window', '640 × 600, its own window', [
+    ['onboarding-welcome.html', 'Welcome', '§7.11', 'A small full-bleed window: one line, one button. Demo is the small top-right button.', []],
+    ['onboarding-accounts.html', 'Connect an account', '§7.11', 'Google, Microsoft, iCloud or other mail; discovery and the browser wait.', ['choose', 'typed', 'waiting', 'connected', 'icloud']],
+    ['onboarding-ai.html', 'AI provider', '§7.11, plan 30 §4.5', 'Groq by default, your own key, or a model on this Mac; the consent card.', ['groq', 'byok', 'local', 'consent']],
+    ['onboarding-permissions.html', 'Permissions explained', '§7.11 step 4', 'Microphone, notifications and log-in, each optional and plainly explained.', ['default', 'granted']],
+    ['onboarding-drill.html', 'Try the keys', '§7.12', 'A short, skippable key drill inside the sync screen, so progress stays in view.', ['step1', 'step3', 'done']],
+    ['onboarding-sync.html', 'Getting your mail', '§7.12, plan 30 U8', 'Honest first sync: progressing, paused by Google, ready, partial, failed.', ['progress', 'paused', 'ready', 'partial', 'failed']],
+  ]],
+  ['Home and lists', 'the main window, 1440 × 900', [
+    ['home.html', 'Home', '§7.2', 'Do now (with Back from Later), Important updates, Follow up, Low importance. Try E, L, J, K, Z.', ['default', 'no-ai']],
+    ['inbox.html', 'All mail', '§7.4', 'One list, hover actions, X to select several. Return opens the reader.', ['default', 'bulk']],
+    ['later.html', 'Later', '§7.3', 'Grouped by date, Bookmarks as a filter, drag to reschedule.', ['later', 'bookmarks', 'drag']],
+    ['done.html', 'Done', 'new', 'Mail you finished, with H to move one back to Home.', []],
+    ['later-picker.html', 'Later picker', '§6 DatePresets', 'Snooze presets on 1–5 and a date picker.', ['default', 'calendar']],
+    ['demo.html', 'Demo mode', 'plan 30 §4.5 row 8', 'The main window right after "Try demo mail".', []],
+  ]],
+  ['Reading and writing', '', [
+    ['reader.html', 'Reader', '§7.5', 'Sender first, the big summary, one row of actions, then the message. Nothing else.', ['default', 'earlier', 'pending', 'no-ai']],
+    ['reply.html', 'Inline reply', '§7.6', 'A plain reply box under the message, dictation, and a quiet undo-send line.', ['reply', 'reply-all', 'dictating', 'sent']],
+    ['compose.html', 'Compose', '§7.6', 'A calm page: To, a title-sized subject, the text, Send. An AI draft and Polish.', ['new', 'ai-draft', 'polish']],
+  ]],
+  ['Ask, commands and search', '', [
+    ['ask.html', 'Ask dock', '§7.7', 'Ask docked as a second pane: answers in the serif voice, citations, a proposal, Today.', ['answer', 'empty', 'working', 'no-provider', 'today']],
+    ['palette.html', 'Command palette', '§7.9', '⌘K with a context line, groups and keycaps.', ['commands', 'filtered', 'confirm']],
+    ['search.html', 'Search', '§7.9', 'Search is a page: a big field, operator tokens, ordinary rows.', ['results', 'no-match']],
+    ['shortcuts.html', 'Keyboard shortcuts', '§8', 'The ? sheet, generated from one list of commands.', ['default', 'filtered']],
+  ]],
+  ['Empty, error and notice states', '', [
+    ['empty.html', 'Empty states', '§7.14', 'Inbox zero, first mail on its way, no accounts, empty mailboxes.', ['inbox-zero', 'first-mail', 'no-accounts', 'drafts', 'trash', 'spam']],
+    ['errors.html', 'Errors', '§7.15', 'Reconnect, Gmail quota paused, offline, a rejected move, a failed send.', ['reconnect', 'quota', 'offline', 'row-error', 'send-failed']],
+    ['fatal.html', 'Engine unreachable', '§7.15', 'The one full-window error.', []],
+    ['toasts.html', 'Toasts with undo', '§7.13', 'Stacked notices, pending, next-step and offline wording.', ['stack', 'pending', 'remind', 'offline']],
+  ]],
+  ['Calendar', '', [
+    ['calendar-week.html', 'Week', '§7.8', 'Today tinted, the now line, a plan found in mail, overlapping events.', ['default', 'overlap']],
+    ['calendar-day.html', 'Day', '§7.8', 'One day with a details column; an empty day.', ['default', 'empty']],
+    ['calendar-event.html', 'Event and RSVP', '§7.8', 'Event detail and answering an invite.', ['detail', 'rsvp']],
+  ]],
+  ['Settings', '', [
+    ['settings-appearance.html', 'General and appearance', '§7.10', 'Theme, density, key hints and window behaviour.', []],
+    ['settings-accounts.html', 'Accounts', '§7.10', 'Connection state on each row, AI per account, demo mail.', ['default', 'reconnect']],
+    ['settings-ai.html', 'AI', '§7.10', 'Providers and the per-feature model picker: Ask, Summaries, Drafts, Plans, Voice.', ['default', 'testing']],
+    ['settings-keyboard.html', 'Keyboard', '§7.10, §8', 'Every command and its keys, remapping and conflicts.', ['default', 'recording']],
+  ]],
+];
+const theme = () => document.documentElement.dataset.theme;
+function thumbSrc(f, st) { return `${f}?shot=1&theme=${theme()}${st ? '&state=' + st : ''}`; }
+document.getElementById('areas').innerHTML = AREAS.map(([name, sub, items]) => `
+  <h2 class="area">${name}${sub ? ` <span>${sub}</span>` : ''}</h2>
+  <div class="grid">${items.map(([f, title, ref, desc, states]) => `
+    <article class="card">
+      <a class="thumb ${f.startsWith('onboarding') ? 'onb' : ''}" href="${f}" data-f="${f}" data-st="${states[0] || ''}" aria-label="Open ${title}"></a>
+      <h3><a href="${f}">${title}</a><span class="ref">${ref}</span></h3>
+      <p>${desc}</p>
+      ${states.length > 1 ? `<div class="states">${states.map(s => `<a href="${f}?state=${s}">${s}</a>`).join('')}</div>` : ''}
+    </article>`).join('')}</div>`).join('');
+
+// Live, scaled thumbnails (lazy; reloaded on theme change)
+const io = new IntersectionObserver(es => es.forEach(e => { if (e.isIntersecting) { load(e.target); io.unobserve(e.target); } }), { rootMargin: '400px' });
+function load(a) {
+  const onb = a.dataset.f.startsWith('onboarding');
+  const w = onb ? 640 : 1440, h = onb ? 600 : 900;
+  let fr = a.querySelector('iframe');
+  if (!fr) { fr = document.createElement('iframe'); fr.tabIndex = -1; fr.setAttribute('aria-hidden', 'true'); fr.loading = 'lazy'; a.append(fr); }
+  fr.width = w; fr.height = h;
+  const fit = () => { const s = Math.min(a.clientWidth / w, a.clientHeight / h); fr.style.transform = `translate(${(a.clientWidth - w * s) / 2}px, ${(a.clientHeight - h * s) / 2}px) scale(${s})`; };
+  fit(); new ResizeObserver(fit).observe(a);
+  fr.src = thumbSrc(a.dataset.f, a.dataset.st);
+}
+document.querySelectorAll('.thumb').forEach(a => io.observe(a));
+
+// Theme switch (shared with every screen through localStorage)
+const seg = document.querySelector('.theme'), puck = seg.querySelector('.seg-puck');
+function place() { const b = seg.querySelector(`[data-t="${theme()}"]`); seg.querySelectorAll('button').forEach(x => x.setAttribute('aria-selected', x === b)); puck.style.width = b.offsetWidth + 'px'; puck.style.transform = `translateX(${b.offsetLeft - parseFloat(getComputedStyle(seg).paddingLeft)}px)`; puck.style.left = getComputedStyle(seg).paddingLeft; }
+seg.addEventListener('click', e => {
+  const b = e.target.closest('[data-t]'); if (!b) return;
+  Mock.setTheme(b.dataset.t); place();
+  document.querySelectorAll('.thumb iframe').forEach(fr => { const a = fr.parentElement; fr.src = thumbSrc(a.dataset.f, a.dataset.st); });
+});
+addEventListener('DOMContentLoaded', place);
+</script>
+</body>
+</html>

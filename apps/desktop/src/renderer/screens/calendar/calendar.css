@@ -1,0 +1,366 @@
+/* The Calendar screen's own wrappers (DESIGN 7.8; mockups cal.css). Layout only, tokens only: every control, event,
+   grid line and surface is styled by its component in ui/. */
+
+/* The slot is as tall as the pane body, so the hours scroll inside the grid (and open near now) instead of the whole
+   pane scrolling from midnight. */
+.aplos-screen:has(> .cal-screen) {
+  height: 100%;
+}
+
+.cal-screen {
+  height: 100%;
+  min-height: 0;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  padding: 0 var(--space-6);
+}
+
+.cal-screen > .ui-page-head {
+  flex: none;
+}
+
+/* D | W | M sits a little apart from Today and the arrows, as in the mockup. */
+.cal-screen__views {
+  display: inline-flex;
+  margin-left: var(--space-2);
+}
+
+.cal-screen__body,
+.cal-screen__day {
+  flex: 1;
+  min-height: 0;
+  min-width: 0;
+  display: flex;
+  position: relative;
+}
+
+/* The calm panel for an empty day or week (DESIGN 7.14): centred in the visible scroll window on a quiet card
+   (--float with its --elev-float ring, --radius-lg: opaque, so no hour line shows through or touches it). Pointer
+   events pass through except on the card, so a click-drag on the grid around it still creates an event. */
+.cal-screen__empty {
+  position: absolute;
+  inset: 0;
+  z-index: var(--z-sticky);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  pointer-events: none;
+}
+
+.cal-screen__empty-box {
+  box-sizing: border-box;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--space-4);
+  max-width: var(--dock-w);
+  padding: var(--space-6);
+  border-radius: var(--radius-lg);
+  background: var(--float);
+  box-shadow: var(--elev-float);
+  text-align: center;
+  pointer-events: auto;
+}
+
+.cal-screen__empty-lines {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--space-1);
+}
+
+/* Day view: one wide column and the detail rail (calendar-day.html). */
+.cal-screen__day {
+  gap: var(--space-6);
+}
+
+.cal-screen__rail {
+  flex: none;
+  width: var(--dock-w);
+  box-sizing: border-box;
+  min-height: 0;
+  overflow: auto;
+  scrollbar-width: none;
+  padding: var(--space-2) 0 var(--space-6) var(--space-6);
+  box-shadow: inset var(--hairline) 0 0 var(--line);
+}
+
+/* The event popover's content (calendar-event.html: 360 px wide overall; Popover adds its own 16 px inset). */
+.cal-screen__popover {
+  width: calc(var(--dock-w) - var(--space-4) * 2);
+  max-width: calc(100vw - var(--space-10));
+}
+
+/* ---------- The editor (N, E, a drag on an empty hour) ---------- */
+
+.cal-editor {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+  min-width: 0;
+}
+
+.cal-editor__rows {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  align-items: center;
+  gap: var(--space-2) var(--space-4);
+}
+
+.cal-editor__problem {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3);
+}
+
+.cal-editor__controls {
+  display: flex;
+  align-items: center;
+  gap: var(--space-1);
+  min-width: 0;
+}
+
+/* The Day, Time and Calendar values are triggers: a quiet hairline edge gives each a hit boundary, and hover fills it. */
+.cal-editor__controls .ui-button[aria-haspopup] {
+  box-shadow: inset 0 0 0 var(--hairline) var(--line-strong);
+}
+@media (hover: hover) {
+  .cal-editor__controls .ui-button[aria-haspopup]:hover {
+    background: var(--hover);
+  }
+}
+
+.cal-editor__footer {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  width: 100%;
+}
+
+.cal-editor__spacer {
+  flex: 1;
+}
+
+.cal-editor__month {
+  padding: var(--space-3) var(--space-2);
+}
+
+/* ---------- The accounts block under the Calendars list (DESIGN 7.8) ---------- */
+
+.cal-accounts {
+  display: flex;
+  flex-direction: column;
+  padding: 0 var(--space-2);
+}
+
+.cal-accounts__head {
+  display: flex;
+  align-items: center;
+  height: var(--control-sm);
+  font: var(--type-small);
+  font-weight: 500;
+  color: var(--dim);
+}
+
+.cal-accounts__items {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.cal-account {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.cal-account__name {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  min-height: var(--control-sm);
+  font: var(--type-ui);
+  letter-spacing: var(--track-ui);
+  color: var(--ink-2);
+}
+
+.cal-account__dot {
+  flex: none;
+  width: var(--mark-dot);
+  height: var(--mark-dot);
+  margin: 0 var(--space-half);
+  border-radius: var(--radius-xs);
+  background: var(--swatch);
+}
+
+.cal-account__label {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.cal-account__state {
+  padding-left: calc(var(--mark-dot) + var(--space-2) + var(--space-half));
+  font: var(--type-small);
+  letter-spacing: var(--track-small);
+  font-variant-numeric: var(--num-small);
+  color: var(--dim);
+}
+
+.cal-account__action {
+  padding-left: calc(var(--mark-dot) + var(--space-2) + var(--space-half));
+}
+
+/* The action's words start where the state line above starts: the text button's own padding would push them right. */
+.cal-account__action .ui-button {
+  padding-left: 0;
+  padding-right: 0;
+}
+
+.cal-accounts__empty {
+  min-height: var(--control-sm);
+  font: var(--type-small);
+  letter-spacing: var(--track-small);
+  color: var(--dim);
+}
+
+/* The detail's 'Turn on editing' line: one small dim line, hairline above, the Enable editing text button
+   under it — the same pattern as the accounts block's state and action, so hover moves nothing. */
+.cal-editing {
+  margin-top: var(--space-3);
+  padding-top: var(--space-3);
+  border-top: var(--hairline) solid var(--line);
+  font: var(--type-small);
+  letter-spacing: var(--track-small);
+  font-variant-numeric: var(--num-small);
+}
+
+.cal-editing__line {
+  display: block;
+  color: var(--dim);
+}
+
+/* In the editor the note leads the form: no hairline above, none of the detail's spacing. */
+.cal-editor > .cal-editing {
+  margin-top: 0;
+  padding-top: 0;
+  border-top: 0;
+}
+
+/* The action's words start where the line above starts, like the accounts block's action. */
+.cal-editing .ui-button {
+  padding-left: 0;
+  padding-right: 0;
+}
+
+/* The failed-holds line (review19): one quiet line under the page head — dim words and a text action,
+   drawn only while a failed hold exists, so it is never a standing nag. */
+.cal-failed-holds {
+  display: flex;
+  align-items: baseline;
+  gap: var(--space-2);
+  padding: var(--space-2) var(--space-4) var(--space-3);
+  border-bottom: var(--hairline) solid var(--line);
+  font: var(--type-small);
+  letter-spacing: var(--track-small);
+  font-variant-numeric: var(--num-small);
+  color: var(--dim);
+}
+
+.cal-failed-holds .ui-button {
+  padding-left: 0;
+  padding-right: 0;
+}
+
+/* The Review list's rows: 'A calendar change' and its account (the items are content-free), the
+   reason sentence, then the row's actions. */
+.cal-holds {
+  list-style: none;
+  margin: 0;
+  padding: var(--space-2) 0;
+  min-width: 260px;
+  max-width: 340px;
+}
+
+.cal-hold {
+  padding: var(--space-2) var(--space-3);
+}
+
+.cal-hold + .cal-hold {
+  border-top: var(--hairline) solid var(--line);
+}
+
+.cal-hold__title {
+  font: var(--type-ui);
+  letter-spacing: var(--track-ui);
+}
+
+.cal-hold__account {
+  color: var(--dim);
+}
+
+.cal-hold__reason {
+  margin-top: var(--space-half);
+  font: var(--type-small);
+  letter-spacing: var(--track-small);
+  font-variant-numeric: var(--num-small);
+  color: var(--dim);
+}
+
+.cal-hold__actions {
+  display: flex;
+  gap: var(--space-2);
+  margin-top: var(--space-half);
+}
+
+/* What Discard does, next to its buttons: one plain consequence line (review22). */
+.cal-hold__note {
+  margin-top: var(--space-half);
+  font: var(--type-small);
+  letter-spacing: var(--track-small);
+  font-variant-numeric: var(--num-small);
+  color: var(--dim);
+}
+
+.cal-holds__note {
+  margin: 0;
+  padding: var(--space-2) var(--space-3);
+  border-top: var(--hairline) solid var(--line);
+  font: var(--type-small);
+  letter-spacing: var(--track-small);
+  font-variant-numeric: var(--num-small);
+  color: var(--dim);
+}
+
+/* The harness states' notice toast, where the shell's stack would put it: bottom centre, above the pane. */
+.calp-toast {
+  position: absolute;
+  bottom: var(--space-4);
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: var(--z-toast);
+}
+
+/* The harness states' stand-in window and sidebar (CalendarStates): the real sidebar is ui-shell's. */
+.calp-window {
+  position: relative;
+  height: 100%;
+  display: flex;
+  background: var(--shell);
+}
+
+.calp-sidebar {
+  flex: none;
+  width: var(--sidebar-w);
+  box-sizing: border-box;
+  padding: var(--space-4) var(--space-3);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-6);
+}

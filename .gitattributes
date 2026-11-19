@@ -1,0 +1,2 @@
+# plans/STATUS.md is append-only; union-merge keeps both sides of a two-append merge.
+plans/STATUS.md merge=union

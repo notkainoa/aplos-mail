@@ -1,0 +1,8 @@
+<style>
+  @font-face { font-family: "Local Face"; src: local("Helvetica Neue"), local("Arial"); }
+  @font-face { font-family: "Data Face"; src: url(data:font/woff2;base64,d09GMgABAAAAAAA=) format("woff2"); }
+  @font-face { font-family: "Mixed Face"; src: local("Georgia"), url(data:font/woff;base64,d09GRgABAAAAAAA=), url({{CANARY}}/{{ID}}/mixed.woff2); }
+  @font-face { font-family: "Descriptor Face"; src: local("Times New Roman"); ascent-override: 90%; size-adjust: 105%; }
+  body { font-family: "Local Face", "Data Face", Helvetica, Arial, sans-serif; }
+</style>
+<p>Local fonts are fine and should still apply. Web fonts are not fetched.</p>

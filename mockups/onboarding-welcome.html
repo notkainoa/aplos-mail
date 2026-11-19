@@ -1,0 +1,47 @@
+<!doctype html>
+<html lang="en" data-window="onboarding">
+<head>
+<meta charset="utf-8">
+<title>Onboarding · Welcome · Aplos mockup</title>
+<link rel="stylesheet" href="tokens.css">
+<link rel="stylesheet" href="shell.css">
+<script src="shell.js"></script>
+<style>
+  .welcome { display: flex; flex-direction: column; align-items: flex-start; }
+  .welcome .t-display { margin-top: 0; max-width: 16ch; }
+  .welcome .lede { margin-top: var(--space-4); max-width: 40ch; }
+  .welcome .go { margin-top: var(--space-8); }
+</style>
+</head>
+<body>
+<div class="window">
+  <div class="onb">
+    <div class="drag">
+      <span class="traffic"></span>
+      <a class="btn btn-text xs" href="demo.html" data-tip="Load sample mail to look around. Remove it any time in Settings.">Try demo mail</a>
+    </div>
+    <main class="onb-body" aria-labelledby="h">
+      <div class="welcome">
+        <h1 class="t-display" id="h">Mail and calendar, one letter at a time.</h1>
+        <p class="lede">Aplos puts the email that needs you on top, sums each one up in a line, and keeps every action on a key.</p>
+        <div class="go">
+          <a class="btn btn-filled lg" href="onboarding-accounts.html" id="primary" autofocus>Add an account<span class="kbd">Return</span></a>
+        </div>
+      </div>
+    </main>
+    <footer class="onb-foot">
+      <div class="steps" aria-label="Step 1 of 4"><i class="on"></i><i></i><i></i><i></i></div>
+      <span class="note">Setup continues in the background.</span>
+      <div class="btns"><a class="btn btn-text" href="empty.html?state=no-accounts">Skip setup<span class="kbd hint">Esc</span></a></div>
+    </footer>
+  </div>
+</div>
+<script>
+Mock.onKey(e => {
+  if (e.key === 'Enter') { Mock.go('onboarding-accounts.html'); return true; }
+  if (e.key === 'Escape') { Mock.go('empty.html?state=no-accounts'); return true; }
+});
+addEventListener('DOMContentLoaded', () => document.getElementById('primary').focus({ preventScroll: true }));
+</script>
+</body>
+</html>

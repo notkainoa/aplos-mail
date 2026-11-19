@@ -1,0 +1,107 @@
+<!doctype html>
+<html lang="en" data-window="onboarding" data-states="default,granted" data-esc="onboarding-ai.html">
+<head>
+<meta charset="utf-8">
+<title>Onboarding · Voice and permissions · Aplos mockup</title>
+<link rel="stylesheet" href="tokens.css">
+<link rel="stylesheet" href="shell.css">
+<script src="shell.js"></script>
+<style>
+  .onb .onb-body { justify-content: flex-start; padding-top: var(--space-7); }
+  .step { display: flex; flex-direction: column; align-items: flex-start; width: 100%; }
+  .perms { width: 100%; margin-top: var(--space-6); }
+  .perm { position: relative; display: flex; align-items: center; gap: var(--space-4); padding: var(--space-4) 0; }
+  .perm + .perm::before { content: ""; position: absolute; top: 0; left: 0; right: 0; height: var(--hairline); background: var(--line); }
+  .perm > .ic { color: var(--dim); }
+  .perm .txt { flex: 1; min-width: 0; }
+  .perm .t { font: var(--type-base); font-weight: 500; letter-spacing: var(--track-base); color: var(--ink); }
+  .perm .d { font: var(--type-small); color: var(--dim); margin-top: var(--space-half); }
+  .perm .act { flex: none; display: flex; align-items: center; justify-content: flex-end; height: var(--control-sm); }
+  .perm .act .btn { margin-right: calc(-1 * var(--space-3)); }
+  .allowed { display: inline-flex; align-items: center; gap: var(--space-1); font: var(--type-ui); color: var(--dim); }
+  .allowed .ic { width: var(--icon-sm); height: var(--icon-sm); color: var(--hill); }
+  .go-row { display: flex; align-items: center; gap: var(--space-3); margin-top: var(--space-7); }
+  .ask-btn, .done-w { display: none; }
+  html[data-state="default"] .ask-btn { display: inline-flex; }
+  html[data-state="granted"] .done-w { display: inline-flex; }
+</style>
+</head>
+<body>
+<div class="window">
+  <div class="onb">
+    <div class="drag">
+      <span class="traffic"></span>
+      <a class="btn btn-text xs" href="demo.html" data-tip="Load sample mail to look around. Remove it any time in Settings.">Try demo mail</a>
+    </div>
+    <main class="onb-body" aria-labelledby="h">
+        <div class="step">
+          <h1 class="t-heading" id="h">Voice and permissions</h1>
+          <p class="lede">Each of these is optional. Aplos works without them, and you can change any of them later in Settings.</p>
+          <div class="perms">
+            <div class="perm">
+              <svg class="ic"><use href="#i-mic"/></svg>
+              <div class="txt">
+                <div class="t">Microphone</div>
+                <div class="d">Hold A to dictate to Ask, or R to dictate a reply. Speech goes to Groq or OpenAI to become text.</div>
+              </div>
+              <div class="act">
+                <button class="btn btn-text ask-btn" data-ask="mic">Allow…</button>
+                <span class="allowed done-w"><svg class="ic"><use href="#i-check"/></svg>Allowed</span>
+              </div>
+            </div>
+            <div class="perm">
+              <svg class="ic"><use href="#i-bell"/></svg>
+              <div class="txt">
+                <div class="t">Notifications</div>
+                <div class="d">Only for mail that reaches Home. Newsletters and receipts stay quiet.</div>
+              </div>
+              <div class="act">
+                <button class="btn btn-text ask-btn" data-ask="bell">Allow…</button>
+                <span class="allowed done-w"><svg class="ic"><use href="#i-check"/></svg>Allowed</span>
+              </div>
+            </div>
+            <div class="perm">
+              <svg class="ic"><use href="#i-laptop"/></svg>
+              <div class="txt">
+                <div class="t" id="login-l">Open Aplos when you log in</div>
+                <div class="d">Your mail is ready when you sit down.</div>
+              </div>
+              <div class="act"><button class="switch" id="login" role="switch" aria-checked="false" aria-labelledby="login-l"></button></div>
+            </div>
+          </div>
+          <div class="go-row">
+            <button class="btn btn-filled lg" id="primary">Finish setup<span class="kbd">Return</span></button>
+          </div>
+        </div>
+    </main>
+    <footer class="onb-foot">
+      <div class="steps" aria-label="Step 4 of 4"><i class="done"></i><i class="done"></i><i class="done"></i><i class="on"></i></div>
+      <span class="note">Setup continues in the background.</span>
+      <div class="btns"><button class="btn btn-text" id="back">Back<span class="kbd hint">Esc</span></button></div>
+    </footer>
+  </div>
+</div>
+<script>
+(function () {
+  const html = document.documentElement;
+  const $ = id => document.getElementById(id);
+  const sw = $('login');
+  function setSwitch() { sw.setAttribute('aria-checked', String(html.dataset.state === 'granted')); }
+  document.querySelectorAll('[data-ask]').forEach(b => b.addEventListener('click', () => {
+    // macOS would show its own permission sheet here; the mockup treats it as allowed.
+    html.dataset.state = 'granted'; setSwitch();
+  }));
+  sw.addEventListener('click', () => sw.setAttribute('aria-checked', String(sw.getAttribute('aria-checked') !== 'true')));
+  const finish = () => Mock.go('onboarding-sync.html?flow=1');
+  $('primary').addEventListener('click', finish);
+  const back = () => Mock.go('onboarding-ai.html');
+  $('back').addEventListener('click', back);
+  Mock.onKey(e => {
+    if (e.key === 'Escape') { back(); return true; }
+    if (e.key === 'Enter') { if (e.target.closest('button')) return false; finish(); return true; }
+  });
+  addEventListener('DOMContentLoaded', () => { setSwitch(); $('primary').focus({ preventScroll: true }); });
+})();
+</script>
+</body>
+</html>

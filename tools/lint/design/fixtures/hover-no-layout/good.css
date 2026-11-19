@@ -1,0 +1,38 @@
+.row {
+  display: flex;
+  padding: var(--space-2);
+  transition: background-color var(--dur-hover) var(--ease-std);
+}
+
+.row:hover {
+  background: var(--hover);
+  background-color: var(--hover);
+  color: var(--ink);
+  border-color: var(--line-strong);
+  outline-color: var(--accent);
+  fill: var(--ink);
+  stroke: var(--ink);
+  text-decoration-color: var(--ink);
+  box-shadow: var(--elev-card);
+  opacity: 1;
+  visibility: visible;
+  cursor: pointer;
+  --hover-wash: var(--hover);
+  --press-fill: var(--press);
+}
+
+.row:hover .actions {
+  opacity: 1;
+  visibility: visible;
+}
+
+@media (hover: hover) {
+  .link:hover {
+    color: var(--accent);
+  }
+}
+
+.row:focus-visible {
+  outline-width: var(--focus-width);
+  display: flex;
+}

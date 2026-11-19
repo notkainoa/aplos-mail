@@ -1,0 +1,334 @@
+<!doctype html>
+<html lang="en" data-window="main" data-states="answer,empty,working,no-provider,today" data-esc="home.html">
+<head>
+<meta charset="utf-8">
+<title>Ask · Aplos mockup</title>
+<link rel="stylesheet" href="tokens.css">
+<link rel="stylesheet" href="shell.css">
+<script src="shell.js"></script>
+<script src="home-view.js"></script>
+<style>
+  /* ---- which pane shows in which state ---- */
+  .pane { display: none; }
+  html[data-state="answer"] .p-answer, html[data-state="empty"] .p-empty, html[data-state="working"] .p-working,
+  html[data-state="no-provider"] .p-noprov, html[data-state="today"] .p-today { display: block; }
+  html[data-state="today"] .dock-foot { display: none; }
+  .dock-head { padding-left: var(--space-5); }
+  .dock-head .btn-icon { --btn-h: var(--control-sm); }
+  .dock-body { padding-top: var(--space-1); }
+  .ask-field .btn-icon { --btn-h: var(--control-sm); }
+
+  /* ---- answer ---- */
+  .ask-q { margin: var(--space-4) 0 var(--space-3); }
+  .steplog { margin-bottom: var(--space-4); }
+  .steplog summary { list-style: none; display: inline-flex; align-items: center; gap: var(--space-1); font: var(--type-small); color: var(--dim); height: var(--control-xs); border-radius: var(--radius-sm); padding: 0 var(--space-1) 0 0; cursor: default; }
+  .steplog summary::-webkit-details-marker { display: none; }
+  .steplog summary:hover { color: var(--ink-2); }
+  .steplog summary .ic { width: var(--icon-xs); height: var(--icon-xs); }
+  .steplog[open] summary .ic { transform: rotate(90deg); }
+  .steplog ul { font: var(--type-small); color: var(--dim); padding: var(--space-1) 0 var(--space-1) var(--space-4); display: flex; flex-direction: column; gap: var(--space-1); }
+  .cite { border: 0; cursor: default; }
+  .cite:focus-visible { outline: var(--focus-width) solid var(--accent); outline-offset: var(--space-half); }
+  .quote-pop { position: absolute; z-index: 100; width: calc(var(--dock-w) - var(--space-8)); padding: var(--space-3) var(--space-4); pointer-events: none; display: none; }
+  .quote-pop.is-open { display: block; animation: reveal var(--dur-reveal-in) var(--ease-out) both; }
+  .quote-pop .q { font: var(--type-answer); letter-spacing: var(--track-answer); font-variation-settings: "opsz" var(--opsz-answer); color: var(--ink); }
+  .quote-pop .src { margin-top: var(--space-2); font: var(--type-small); color: var(--dim); }
+
+  /* the proposal: the one paper card in the dock */
+  .proposal { margin-top: var(--space-6); padding: var(--space-4); }
+  .proposal .kicker { font: var(--type-small); color: var(--dim); }
+  .proposal .ev { display: flex; align-items: center; gap: var(--space-2); margin-top: var(--space-2); font: var(--type-title); letter-spacing: var(--track-title); color: var(--ink); }
+  .proposal .ev .mk, .ag .mk { width: var(--mark-dot); height: var(--mark-dot); border-radius: 50%; background: var(--c, var(--tag-ember)); flex: none; }
+  .proposal .when { margin: var(--space-half) 0 0 calc(var(--mark-dot) + var(--space-2)); font: var(--type-small); color: var(--dim); }
+  .proposal .acts { display: flex; align-items: center; gap: var(--space-1); margin-top: var(--space-4); }
+  .proposal-done { margin-top: var(--space-5); display: flex; align-items: center; gap: var(--space-2); font: var(--type-ui); color: var(--ink-2); }
+  .proposal-done .ic { color: var(--hill); }
+
+  /* ---- empty ---- */
+  .sugg-list { margin-top: var(--space-1); display: flex; flex-direction: column; gap: var(--space-half); }
+  .sugg, .recent { display: flex; align-items: center; gap: var(--space-2); min-height: var(--control-md); padding: 0 var(--space-3); margin: 0 calc(-1 * var(--space-3)); border-radius: var(--radius-md); font: var(--type-base); letter-spacing: var(--track-base); color: var(--ink); text-align: left; width: calc(100% + var(--space-6)); position: relative; }
+  .sugg:hover, .recent:hover { background: var(--hover); }
+  .sugg.is-cursor, .recent.is-cursor { background: var(--puck); }
+  .sugg.is-cursor::before, .recent.is-cursor::before { content: ""; position: absolute; left: 0; top: var(--space-2); bottom: var(--space-2); width: var(--select-bar); border-radius: var(--select-bar); background: var(--accent); }
+  .recent .t { flex: 1; min-width: 0; color: var(--ink-2); }
+  .recent .at { font: var(--type-small); color: var(--dim); }
+  .group-label { font: var(--type-small); font-weight: 500; color: var(--dim); margin: var(--space-7) 0 var(--space-1); }
+  .group-label:first-child { margin-top: var(--space-4); }
+
+  /* ---- working ---- */
+  .working-line { font: var(--type-base); letter-spacing: var(--track-base); color: var(--dim); margin-top: var(--space-3); }
+  .queued { margin-bottom: var(--space-2); padding: var(--space-2) var(--space-3); border-radius: var(--radius-md); background: var(--raised); }
+  .queued .lbl { font: var(--type-small); color: var(--dim); }
+  .queued .txt { font: var(--type-base); letter-spacing: var(--track-base); color: var(--ink); outline: none; padding: var(--space-half) 0 0; }
+  .queued .txt:focus-visible { outline: none; text-decoration: underline; text-decoration-color: var(--line-strong); text-underline-offset: var(--space-1); }
+  html:not([data-state="working"]) .queued { display: none; }
+
+  /* ---- no provider ---- */
+  .p-noprov .empty-line { padding: var(--space-4) 0; font: var(--type-base); color: var(--ink-2); }
+
+  /* ---- Today: a compact agenda, quiet times left, titles right, colour only as a mark ---- */
+  .today-head { margin-top: var(--space-4); }
+  .today-head .day { font: var(--type-title); letter-spacing: var(--track-title); color: var(--ink); }
+  .today-head .sub { font: var(--type-small); color: var(--dim); margin-top: var(--space-half); }
+  .agenda { margin-top: var(--space-5); display: flex; flex-direction: column; }
+  .ag, .gap, .nowline { display: grid; grid-template-columns: var(--space-10) minmax(0, 1fr); column-gap: var(--space-2); }
+  .ag { padding: var(--space-2) 0; align-items: start; }
+  .ag .time { font: var(--type-small); color: var(--dim); line-height: var(--space-5); }
+  .ag .ev { display: flex; align-items: flex-start; gap: var(--space-2); min-width: 0; }
+  .ag .mk { margin-top: calc((var(--space-5) - var(--mark-dot)) / 2); }
+  .ag .nm { font: var(--type-ui); letter-spacing: var(--track-ui); color: var(--ink); }
+  .ag .sub { font: var(--type-small); color: var(--dim); }
+  .ag.past .nm { color: var(--dim); }
+  .ag.past .mk { opacity: .5; }
+  .ag.next .nm { font-weight: 600; }
+  .gap { align-items: center; min-height: var(--control-md); font: var(--type-small); color: var(--dim); }
+  .gap span:last-child { padding-left: calc(var(--mark-dot) + var(--space-2)); }
+  .nowline { align-items: center; height: var(--space-5); }
+  .nowline .time { font: var(--type-small); font-weight: 500; color: var(--stamp-ink); }
+  .nowline .ln { height: 1px; background: var(--stamp); position: relative; }
+  .nowline .ln::before { content: ""; position: absolute; left: 0; top: calc(-1 * var(--space-half)); width: calc(var(--space-1) + 1px); height: calc(var(--space-1) + 1px); border-radius: 50%; background: var(--stamp); }
+  .open-cal { margin-top: var(--space-5); margin-left: calc(-1 * var(--space-2)); }
+</style>
+</head>
+<body>
+<div class="window">
+  <span class="traffic"></span>
+  <div class="app">
+    <aside class="sidebar" data-active="home"></aside>
+    <main class="main">
+      <header class="toolbar">
+        <div class="tools">
+          <button class="btn btn-icon labelled" id="askBtn" aria-pressed="true" data-tip="Ask about your mail" data-key="⌘J"><svg class="ic"><use href="#i-bubble"/></svg>Ask</button>
+        </div>
+      </header>
+      <div class="workspace">
+        <div class="column">
+          <div class="page-head">
+            <div>
+              <h1 class="page-title">Home</h1>
+              <p class="page-sub">Thursday, October 29 · 9 to handle</p>
+            </div>
+          </div>
+          <div id="home" role="listbox" aria-label="Home"></div>
+        </div>
+      </div>
+      <p class="sr-only" role="status" id="live"></p>
+    </main>
+
+    <aside class="dock" id="dock" aria-label="Ask">
+      <div class="dock-inner">
+        <header class="dock-head">
+          <div class="seg" role="tablist" aria-label="Ask or Today" id="seg">
+            <span class="seg-puck" id="puck" aria-hidden="true"></span>
+            <button role="tab" data-tab="ask" aria-selected="true">Ask</button>
+            <button role="tab" data-tab="today" aria-selected="false">Today</button>
+          </div>
+          <span class="spacer"></span>
+          <button class="btn btn-icon" id="closeDock" data-tip="Close" data-key="⌘J" aria-label="Close"><svg class="ic"><use href="#i-x"/></svg></button>
+        </header>
+
+        <div class="dock-body" id="dockBody">
+          <!-- answer -->
+          <section class="pane p-answer" aria-label="Conversation">
+            <p class="ask-q" id="q1">When is the Hollow Creek design review?</p>
+            <details class="steplog">
+              <summary><svg class="ic"><use href="#i-chevr"/></svg>Read 14 emails from Jordan · 3 steps</summary>
+              <ul><li>Searched mail for “design review”</li><li>Read 14 emails from Jordan and Mina</li><li>Checked your Work and Hollow Creek calendars</li></ul>
+            </details>
+            <div class="ask-a t-answer">
+              <p>Mina’s note puts the design review with you and Jordan at <b>Thursday, 2:00–2:30 PM</b>.<button class="cite" data-pop="1" aria-label="Source 1">[1]</button> Jordan also wants your layout pick by tomorrow.<button class="cite" data-pop="2" aria-label="Source 2">[2]</button> The review isn’t on your calendar yet.</p>
+            </div>
+            <section class="paper proposal settle" id="proposal" aria-label="Proposal">
+              <div class="kicker">Add to Calendar</div>
+              <div class="ev"><i class="mk"></i>Design review</div>
+              <div class="when">Thu 2:00–2:30 PM · Hollow Creek</div>
+              <div class="acts">
+                <button class="btn btn-filled md" id="add">Add<span class="kbd">Return</span></button>
+                <button class="btn btn-text md" id="notnow" data-tip="Not now" data-key="Esc">Not now</button>
+              </div>
+            </section>
+            <p class="proposal-done" id="proposalDone" hidden><svg class="ic"><use href="#i-check"/></svg>Added to Calendar · Thu 2:00–2:30 PM · Hollow Creek</p>
+          </section>
+
+          <!-- empty -->
+          <section class="pane p-empty" aria-label="Suggestions">
+            <div class="group-label">Try asking</div>
+            <div class="sugg-list" id="suggs">
+              <button class="sugg" data-fill="What needs a reply from me today?">What needs a reply from me today?</button>
+              <button class="sugg" data-fill="When am I free tomorrow afternoon?">When am I free tomorrow afternoon?</button>
+              <button class="sugg" data-fill="Summarize this week’s mail from Jordan">Summarize this week’s mail from Jordan</button>
+            </div>
+            <div class="group-label">Recent</div>
+            <div class="sugg-list" id="recents">
+              <button class="recent" data-fill="When is the Hollow Creek design review?"><span class="t ellipsis">When is the Hollow Creek design review?</span><span class="at">9:42 AM</span></button>
+              <button class="recent" data-fill="How much is Drew’s October invoice?"><span class="t ellipsis">How much is Drew’s October invoice?</span><span class="at">Yesterday</span></button>
+              <button class="recent" data-fill="When does the lease renewal need signing?"><span class="t ellipsis">When does the lease renewal need signing?</span><span class="at">Mon</span></button>
+            </div>
+          </section>
+
+          <!-- working -->
+          <section class="pane p-working" aria-label="Working" aria-live="polite">
+            <p class="ask-q" id="q2">When is the Hollow Creek design review?</p>
+            <p class="working-line" id="stepline">Reading 14 emails from Jordan<span class="caret" aria-hidden="true"></span></p>
+          </section>
+
+          <!-- no provider -->
+          <section class="pane p-noprov" aria-label="Ask needs a provider">
+            <div class="empty-line">
+              <p>Ask needs a provider. Choose one in Settings.</p>
+              <a class="link" href="settings-ai.html">Open Settings → AI</a>
+            </div>
+          </section>
+
+          <!-- today -->
+          <section class="pane p-today" aria-label="Today">
+            <div class="today-head">
+              <h2 class="day">Thursday, October 29</h2>
+              <p class="sub">4 events · next at 11:00 AM</p>
+            </div>
+            <div class="agenda">
+              <div class="ag past"><span class="time">9:30 AM</span><div class="ev"><i class="mk" style="--c:var(--tag-sky)"></i><div class="nm">Northwind Dental</div></div></div>
+              <div class="nowline" role="separator" aria-label="Now, 10:00 AM"><span class="time">10:00 AM</span><span class="ln"></span></div>
+              <div class="ag next"><span class="time">11:00 AM</span><div class="ev"><i class="mk" style="--c:var(--tag-hill)"></i><div><div class="nm">Standup</div><div class="sub">Next · Work · 15 min</div></div></div></div>
+              <div class="gap"><span></span><span>Free for 2 h 45 min</span></div>
+              <div class="ag"><span class="time">2:00 PM</span><div class="ev"><i class="mk" style="--c:var(--tag-ember)"></i><div><div class="nm">Design review with Mina and Jordan</div><div class="sub">Hollow Creek · 30 min</div></div></div></div>
+              <div class="gap"><span></span><span>Free for 3 h</span></div>
+              <div class="ag"><span class="time">5:30 PM</span><div class="ev"><i class="mk" style="--c:var(--tag-sky)"></i><div><div class="nm">Climbing with Theo</div><div class="sub">Personal</div></div></div></div>
+            </div>
+            <a class="btn btn-text md open-cal" href="calendar-week.html"><svg class="ic"><use href="#i-calendar"/></svg>Open Calendar<span class="kbd hint">⌃6</span></a>
+          </section>
+        </div>
+
+        <footer class="dock-foot">
+          <div class="queued" id="queued">
+            <div class="lbl">Queued · ⌘Return sends now</div>
+            <div class="txt" contenteditable="true" role="textbox" aria-label="Queued follow-up">And is Mina free then?</div>
+          </div>
+          <div class="ask-field">
+            <textarea id="askIn" rows="1" placeholder="Ask about your mail or calendar" aria-label="Ask"></textarea>
+            <button class="btn btn-icon" id="go" data-tip="Ask" data-key="Return" aria-label="Ask"><svg class="ic"><use href="#i-arrowu"/></svg></button>
+          </div>
+        </footer>
+      </div>
+    </aside>
+  </div>
+  <div class="quote-pop float" id="pop" role="tooltip"></div>
+</div>
+
+<script>
+const html = document.documentElement, dock = document.getElementById('dock');
+const field = document.getElementById('askIn');
+const QUOTES = {
+  1: ['“Can we do the design review Thursday, 2:00 to 2:30? Jordan can join.”', 'Mina Cho · Oct 27 · Hollow Creek review'],
+  2: ['“Can you send me your preference by tomorrow?”', 'Jordan Park · Today, 10:00 AM · A quieter home for the Hollow Creek site'],
+};
+let lastAsk = Mock.state === 'empty' ? 'empty' : 'answer', proposal = 'pending', timer = null;
+const setState = s => { html.dataset.state = s; syncSeg(); };
+const dockOpen = () => !dock.hidden;
+
+/* Ask | Today puck: slides with the slide spring (no width animation on the layout, transform only) */
+function syncSeg() {
+  const seg = document.getElementById('seg'), puck = document.getElementById('puck');
+  const today = html.dataset.state === 'today';
+  seg.querySelectorAll('[role=tab]').forEach(b => b.setAttribute('aria-selected', String((b.dataset.tab === 'today') === today)));
+  const sel = seg.querySelector('[aria-selected="true"]');
+  puck.style.width = sel.offsetWidth + 'px'; puck.style.transform = `translateX(${sel.offsetLeft}px)`;
+  document.getElementById('askBtn').setAttribute('aria-pressed', String(dockOpen()));
+}
+document.getElementById('seg').addEventListener('click', e => {
+  const b = e.target.closest('[data-tab]'); if (!b) return;
+  setState(b.dataset.tab === 'today' ? 'today' : lastAsk);
+});
+function toggle() { Mock.toggleDock(dock); setTimeout(syncSeg, Mock.reduced ? 0 : Mock.dur('dock-out') + 20); }
+document.getElementById('closeDock').onclick = toggle;
+document.getElementById('askBtn').onclick = toggle;
+
+/* Citations: the quoted sentence on hover or focus */
+const pop = document.getElementById('pop');
+document.querySelectorAll('.cite').forEach(c => {
+  const show = () => {
+    const [q, src] = QUOTES[c.dataset.pop];
+    pop.innerHTML = `<p class="q">${q}</p><p class="src">${src}</p>`;
+    const w = document.querySelector('.window').getBoundingClientRect(), r = c.getBoundingClientRect(), z = parseFloat(document.body.style.zoom || 1);
+    pop.classList.add('is-open');
+    const pw = pop.offsetWidth, ph = pop.offsetHeight;
+    const dr = dock.getBoundingClientRect();
+    const left = Math.min(Math.max(r.left, dr.left + 16 * z), dr.right - pw * z - 16 * z);
+    pop.style.left = ((left - w.left) / z) + 'px';
+    pop.style.top = ((r.top - w.top) / z - ph - 8) + 'px';
+  };
+  const hide = () => pop.classList.remove('is-open');
+  c.addEventListener('mouseenter', show); c.addEventListener('mouseleave', hide);
+  c.addEventListener('focus', show); c.addEventListener('blur', hide);
+});
+
+/* Asking: a mock run, steady step line then the answer. Input is never disabled. */
+function ask(q) {
+  if (!q.trim()) return;
+  field.value = '';
+  document.getElementById('q2').textContent = q; document.getElementById('q1').textContent = q;
+  setState('working'); clearTimeout(timer);
+  const steps = ['Reading 14 emails from Jordan', 'Checking your calendars'];
+  const line = document.getElementById('stepline');
+  line.firstChild.textContent = steps[0];
+  timer = setTimeout(() => { line.firstChild.textContent = steps[1]; timer = setTimeout(() => { lastAsk = 'answer'; resetProposal(); setState('answer'); }, 1400); }, 1400);
+}
+function stop() { clearTimeout(timer); lastAsk = 'answer'; setState('answer'); }
+function resetProposal() { proposal = 'pending'; document.getElementById('proposal').hidden = false; document.getElementById('proposalDone').hidden = true; }
+function addProposal() {
+  if (proposal !== 'pending') return; proposal = 'added';
+  document.getElementById('proposal').hidden = true; const d = document.getElementById('proposalDone'); d.hidden = false; d.classList.add('arrive');
+  Mock.toast({ icon: 'check', tone: 'c-hill', text: 'Added to Calendar', actions: [['Undo', 'Z']] });
+}
+function notNow() { if (proposal !== 'pending') return; proposal = 'dismissed'; document.getElementById('proposal').hidden = true; }
+document.getElementById('add').onclick = addProposal; document.getElementById('notnow').onclick = notNow;
+document.getElementById('go').onclick = () => ask(field.value);
+document.querySelectorAll('[data-fill]').forEach(b => b.onclick = () => ask(b.dataset.fill));
+
+/* cursor through suggestions and recent chats with ↑/↓ */
+function moveSugg(d) {
+  const items = [...document.querySelectorAll('.p-empty .sugg, .p-empty .recent')];
+  let i = items.findIndex(x => x.classList.contains('is-cursor'));
+  items.forEach(x => x.classList.remove('is-cursor'));
+  i = Math.max(0, Math.min(items.length - 1, i + d)); items[i].classList.add('is-cursor');
+}
+
+Mock.onKey(e => {
+  const k = e.key, s = html.dataset.state, inField = e.target === field, inQ = e.target.closest('.queued .txt');
+  if (e.metaKey && k === 'Enter') {
+    if (s === 'working') { const t = document.querySelector('.queued .txt').textContent; ask(t); return true; }
+    if (inField && field.value.trim()) { ask(field.value); return true; }
+    return;
+  }
+  if (e.metaKey && k.toLowerCase() === 'n') { field.value = ''; lastAsk = 'empty'; setState('empty'); field.focus(); return true; }
+  if (k === 'Escape') {
+    if (!dockOpen()) { Mock.go('home.html'); return true; }
+    if (s === 'working') { stop(); return true; }                      // stop
+    if (field.value) { field.value = ''; return true; }                // clear
+    if (s === 'answer' && proposal === 'pending') { notNow(); return true; }
+    toggle(); field.blur(); return true;                               // close
+  }
+  if (k === 'Enter' && !e.shiftKey && !e.metaKey) {
+    if (inField && field.value.trim()) { ask(field.value); return true; }
+    if (inQ) return;
+    if (s === 'answer' && proposal === 'pending' && dockOpen()) { addProposal(); return true; }
+    if (s === 'empty' && dockOpen()) { const c = document.querySelector('.p-empty .is-cursor'); if (c) { ask(c.dataset.fill); return true; } }
+    return;
+  }
+  if (inField || inQ) {
+    if (s === 'empty' && inField && !field.value && (k === 'ArrowDown' || k === 'ArrowUp')) { moveSugg(k === 'ArrowDown' ? 1 : -1); return true; }
+    return;
+  }
+  if (e.ctrlKey || e.altKey || e.metaKey) return;
+  if (k === 'A') { if (!dockOpen()) { dock.hidden = false; } setState('today'); return true; }
+  if (k === 'a') { if (!dockOpen()) { dock.hidden = false; setState(lastAsk); } else if (s === 'today') setState(lastAsk); field.focus(); return true; }
+  if (k === 'z' && proposal === 'added') { proposal = 'pending'; resetProposal(); return true; }
+});
+/* the toolbar's ⌘J is handled by the shell; keep the pressed state in sync */
+addEventListener('keydown', e => { if (e.metaKey && e.key.toLowerCase() === 'j') setTimeout(syncSeg, Mock.reduced ? 0 : Mock.dur('dock-out') + 20); }, true);
+
+HomeBackdrop.mount(document.getElementById('home'), { focus: 1, quiet: true, enabled: () => document.activeElement !== field });
+document.fonts.ready.then(syncSeg); syncSeg();
+</script>
+</body>
+</html>

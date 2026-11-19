@@ -1,0 +1,65 @@
+/* Planted violations carry an expect marker; the test requires exactly those lines to be reported. */
+.sky {
+  background: linear-gradient(var(--paper), var(--shell)); /* @expect */
+  background-image: repeating-linear-gradient(45deg, var(--line), var(--paper)); /* @expect */
+  mask-image: radial-gradient(var(--ink), transparent); /* @expect */
+  border-image: conic-gradient(var(--accent), var(--hill)) 1; /* @expect */
+  --stripe: repeating-linear-gradient(90deg, var(--accent), var(--paper)); /* @expect */
+}
+
+.glass {
+  backdrop-filter: blur(20px); /* @expect */
+  -webkit-backdrop-filter: blur(20px); /* @expect */
+}
+
+.post-edge { /* @expect */
+  color: var(--ink);
+}
+
+.hero .airmail-stripe { /* @expect */
+  color: var(--ink);
+}
+
+.skyscene { /* @expect */
+  color: var(--ink);
+}
+
+.sky-scene { /* @expect */
+  color: var(--ink);
+}
+
+.dock-pill { /* @expect */
+  color: var(--ink);
+}
+
+.deck.has-next::before { /* @expect */
+  color: var(--ink);
+}
+
+.low-line { /* @expect */
+  color: var(--ink);
+}
+
+.reader-dock { /* @expect */
+  color: var(--ink);
+}
+
+[class*="airmail"] { /* @expect */
+  color: var(--ink);
+}
+
+.toss {
+  transform: perspective(1400px) rotateY(14deg); /* @expect */
+}
+
+.scene {
+  perspective: 800px; /* @expect */
+}
+
+.rotated { transform: rotate3d(0, 1, 0, 14deg); } /* @expect */
+.axis { rotate: y 14deg; } /* @expect */
+.preserved { transform-style: preserve-3d; } /* @expect */
+.hidden { backface-visibility: hidden; } /* @expect */
+.matrix { transform: matrix3d(1,0,0,0,0,1,0,0,0,0,1,0,0,0,0,1); } /* @expect */
+.lifted { transform: translateZ(4px) scale3d(1, 1, 2); } /* @expect */
+.cameled .readerDock { color: var(--ink); } /* @expect */

