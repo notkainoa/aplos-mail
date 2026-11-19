@@ -168,6 +168,21 @@ export function launchOnce({ spawn, executable, args, env, timeoutMs }) {
   });
 }
 
+/**
+ * True when this Mac would run the executable under Rosetta: it holds no slice for the host's own architecture
+ * (an x64 build checked on Apple silicon, as the release runner does). Translation makes every launch much slower.
+ */
+export const runsTranslated = (executable, arch = process.arch) => {
+  const host = arch === 'arm64' ? 'arm64' : 'x86_64';
+  const lipo = spawnSync('lipo', ['-archs', executable], { encoding: 'utf8' });
+  if (lipo.status !== 0) return false;
+  // System binaries carry `arm64e`, which Apple silicon runs natively as well.
+  return !lipo.stdout
+    .trim()
+    .split(/\s+/)
+    .some(slice => (host === 'arm64' ? slice.startsWith('arm64') : slice === host));
+};
+
 /** True when a process with this name is running (pgrep -x). A second launch would hand off to it. */
 export const processRunning = name => spawnSync('pgrep', ['-x', '--', name]).status === 0;
 
@@ -180,12 +195,16 @@ export async function runLaunchChecks({
   removeDir = dir => rmSync(dir, { recursive: true, force: true }),
   exists = existsSync,
   isRunning = processRunning,
+  translated = runsTranslated(executable),
   only,
 }) {
   const cases = only === 'guard' ? GUARD_CASES : LAUNCH_CASES;
   // A working guard exits in about a second, but the first launch of a freshly built binary can be slow
-  // (macOS checks it), and a guard-mode timeout fails a release run, so give it room.
-  const limit = timeoutMs ?? (only === 'guard' ? 20000 : 8000);
+  // (macOS checks it), and a guard-mode timeout fails a release run, so give it room. Under Rosetta (the x64
+  // build on the Apple silicon release runner) each launch is translated first, which takes far longer, so the
+  // limit grows; what passes is unchanged: the guard must still refuse the switch and exit.
+  const base = only === 'guard' ? 20000 : 8000;
+  const limit = timeoutMs ?? (translated ? base * 6 : base);
   // A running copy would take the single-instance hand-off (and raise its window), so every launch would "exit".
   // The guard subset is exempt: its launches exit before the hand-off, each has its own --user-data-dir (which
   // is what the single-instance lock is keyed on), and a release build must be checkable on a Mac that runs Aplos.
