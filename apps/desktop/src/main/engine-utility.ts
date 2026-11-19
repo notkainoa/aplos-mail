@@ -25,7 +25,7 @@ import {
   type UtilityRequest,
 } from '../host/transports/port';
 import { createCipher } from './keyring';
-import { bundledOAuth } from './oauth-config';
+import { bundledOAuth, oauthEnv } from './oauth-config';
 import { createVault } from './vault';
 
 /**
@@ -148,7 +148,7 @@ export async function realComposeOptions(
     power: bridge.power,
     vault,
     openExternal: async url => void (await bridge.request({ op: 'openExternal', url })),
-    googleClient: () => ({ env: process.env, bundled: bundledOAuth.google }),
+    googleClient: () => ({ env: oauthEnv(process.env), bundled: bundledOAuth.google }),
     // AI keys are read in this process only, from the env thunk at bind time — never in HostFacts, a log
     // field or a window. The vault and saved provider addresses live under dataDir like the token vault.
     aiEnv,

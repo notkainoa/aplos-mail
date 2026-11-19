@@ -1048,6 +1048,14 @@ export const api: DataApi = {
     closeCancel: ((...args: unknown[]) =>
       forward('window', 'closeCancel', args)) as DataApi['window']['closeCancel'],
   },
+  update: {
+    status: ((...args: unknown[]) =>
+      forward('update', 'status', args)) as DataApi['update']['status'],
+    check: ((...args: unknown[]) => forward('update', 'check', args)) as DataApi['update']['check'],
+    restart: ((...args: unknown[]) =>
+      forward('update', 'restart', args)) as DataApi['update']['restart'],
+    later: ((...args: unknown[]) => forward('update', 'later', args)) as DataApi['update']['later'],
+  },
   system: {
     login: ((...args: unknown[]) => forward('system', 'login', args)) as DataApi['system']['login'],
     defaultMail: ((...args: unknown[]) =>

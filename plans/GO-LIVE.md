@@ -17,15 +17,15 @@ This PR makes the new engine run in every build. The first draft of this PR kept
 | 3 | Import of a 0.2.3 user's `aplos.db` | Not needed: no 0.2.x users (owner, 2026-11-18) | — |
 | 4 | Update path from 0.2.3 | Not needed for the same reason; an updated Mac starts fresh on the new engine | — |
 | 5 | Legacy code deletion | Missing; nothing blocks it now (the legacy verify scripts go with it) | L |
-| 6 | OAuth and keychain in release builds | Partial | S, or M with token migration |
-| 7 | Auto-updater | Partial: works in main, no notice in the new UI | S |
+| 6 | OAuth and keychain in release builds | Done: a release build ignores `.env` OAuth overrides (no token migration needed: no users) | — |
+| 7 | Auto-updater | Partial: main works; the new UI shows an "Update ready" notice (no Settings row yet) | S |
 | 8 | `!release` / `releaseBuild` gates | Done: none hides a new feature | — |
 | 9 | Account removal | Missing (another agent is on it) | S–M |
 | 10 | Settings → Mail retention | Partial: the control exists, nothing enforces it | M |
 | 11 | Gmail live smoke → `apps/web/provider-status.json` | Missing | S–M |
 | 12 | Damaged-database path | Missing | M |
 | 13 | Soak and fault injection | Missing soak, partial faults | M–L |
-| 14 | Release checks still drive the legacy engine | Partial | S–M |
+| 14 | Release checks still drive the legacy engine | Partial: `verify:release:real` covers the new engine; `verify-release` stays legacy | S |
 | 15 | "Allow tools on this Mac" (local listener) | Partial: toggle only, no listener | M if it must ship |
 | 16 | AI consent re-ask on upgrade | Not needed: no importer (item 3) | — |
 | 17 | Version number | Missing: still `0.2.3` | S |
@@ -149,3 +149,12 @@ Consent drift re-asks correctly (`ai/impl/consent-methods.ts:45-51`). The upgrad
 ## 17. Version number: missing
 
 The root and desktop `package.json` still say `0.2.3`. The redesign needs its own version before `npm run release` (S).
+
+## 18. Seen while writing `verify:release:real` (not fixed here)
+
+Two things on a packaged new-engine build with the demo mail, found by hand-driving it. Their causes are not traced; the check works around them and says so.
+
+- `Thread/open` on a demo thread answers `internal` ("Something went wrong"). The demo threads are stored with `complete = 0`, so the engine asks the account to fetch the thread whole, and a demo account has no provider to ask.
+- A demo draft sent with `notBefore` now did not reach `sent` within 45 s: the legacy engine delivered demo sends locally, and the check no longer asserts delivery. It asserts the send is accepted, can be undone, and survives a restart.
+
+Either may only matter for demo mail, but "Try demo mail" is the first thing a new user may press, so it is worth an owner decision.

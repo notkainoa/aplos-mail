@@ -24,7 +24,7 @@ import {
   type ThreadFlags,
 } from '@aplos/engine/legacy/provider';
 import { createVault } from './vault';
-import { bundledOAuth, oauthClient, releaseBuild } from './oauth-config';
+import { bundledOAuth, oauthClient, oauthEnv, releaseBuild } from './oauth-config';
 
 export interface MicrosoftOptions extends ProviderEnvironment<Buffer> {
   clientId?: string;
@@ -307,8 +307,9 @@ export async function createMicrosoft(options: MicrosoftOptions): Promise<Micros
   const request = options.fetch ?? fetch,
     clientId =
       options.clientId ??
-      oauthClient(process.env.MICROSOFT_CLIENT_ID, undefined, bundledOAuth.microsoft).clientId;
-  const tenant = options.tenant ?? process.env.MICROSOFT_TENANT ?? 'common';
+      oauthClient(oauthEnv(process.env).MICROSOFT_CLIENT_ID, undefined, bundledOAuth.microsoft)
+        .clientId;
+  const tenant = options.tenant ?? oauthEnv(process.env).MICROSOFT_TENANT ?? 'common';
   if (!/^[\w.-]+$/.test(tenant))
     throw new Error(
       'MICROSOFT_TENANT must be a tenant ID, domain, "common", "organizations" or "consumers".',

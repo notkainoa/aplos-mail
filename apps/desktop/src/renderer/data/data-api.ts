@@ -241,6 +241,17 @@ export interface DataApi {
     /** `Window/closeCancel`: tells main the close could not be prepared, so it re-enables the window. */
     readonly closeCancel: ClientApi['window']['closeCancel'];
   };
+  /** In-app updates, served by main: it downloads quietly and installs only on `restart`. */
+  readonly update: {
+    /** `Update/status`: the update state (disabled, checking, downloading, ready, ...). */
+    readonly status: ClientApi['update']['status'];
+    /** `Update/check`: check for an update now. */
+    readonly check: ClientApi['update']['check'];
+    /** `Update/restart`: restart to install the ready update. */
+    readonly restart: ClientApi['update']['restart'];
+    /** `Update/later`: hide the ready update until the next check or launch. */
+    readonly later: ClientApi['update']['later'];
+  };
   /** macOS facts and permissions, served by main. */
   readonly system: {
     /** `System/login {enabled?}`: read, or set, whether Aplos opens at login. */

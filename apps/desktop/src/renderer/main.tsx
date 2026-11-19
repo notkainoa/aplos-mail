@@ -108,14 +108,23 @@ function serveClose(kind: 'mail' | 'onboarding'): void {
 
 /** Main may ask the mail window to open a screen (first sync's "Open Settings"); typed, so it never takes held app events. */
 async function serveNavigate(): Promise<void> {
-  const [{ listenMainNavigate }, { listenMenuCommands }, { openRoute, runShellCommand }] =
-    await Promise.all([
-      import('./shell/mainNavigate'),
-      import('./shell/menuCommands'),
-      import('./shell'),
-    ]);
+  const [
+    { listenMainNavigate },
+    { listenMenuCommands },
+    { listenUpdates },
+    { openRoute, runShellCommand, pushToast, dismissToast },
+    { api },
+  ] = await Promise.all([
+    import('./shell/mainNavigate'),
+    import('./shell/menuCommands'),
+    import('./shell/updateNotice'),
+    import('./shell'),
+    import('./data'),
+  ]);
   listenMainNavigate(window.aplos, openRoute);
   listenMenuCommands(window.aplos, runShellCommand);
+  // "Update ready · Restart": main downloads quietly and tells every window; nothing installs until Restart.
+  listenUpdates(window.aplos, api.update, { push: pushToast, dismiss: dismissToast });
 }
 
 /** The mail window's stylesheets: the one sheet, the shell, the screens, then the zero-accounts pane's wrappers. */

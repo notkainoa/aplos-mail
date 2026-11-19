@@ -25,6 +25,17 @@ export const bundledOAuth: { google: OAuthClient; microsoft: OAuthClient } = {
   },
 };
 
+/**
+ * The environment OAuth configuration may read. A release build gets an empty one: a `.env` (or a variable inherited
+ * from a launcher) can't swap the client it signs in with, or flip the Testing-mode warning. Development keeps both.
+ */
+export function oauthEnv(
+  env: Readonly<Record<string, string | undefined>>,
+  release: boolean = releaseBuild,
+): Readonly<Record<string, string | undefined>> {
+  return release ? {} : env;
+}
+
 /** An ID set in the environment (.env) wins over the bundled client, together with its own secret; then the bundled one; else none. */
 export function oauthClient(
   envId: string | undefined,
