@@ -485,7 +485,12 @@ function threadWrites(row: Row, index: number, now: number): StoreWrite[] {
       : {}),
     folders: foldersFor(row, account),
   };
-  const writes: StoreWrite[] = [message];
+  // Every demo message and body is stored here, so the thread is complete: `Thread/open` must never ask a provider for
+  // it (a demo account has none, so the open answered `internal`).
+  const writes: StoreWrite[] = [
+    message,
+    { kind: 'thread', accountId: account.id, remoteThreadId: row.key, complete: true },
+  ];
   writes.push({
     kind: 'workflow',
     accountId: account.id,

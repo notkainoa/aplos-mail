@@ -97,6 +97,8 @@ const legacy = join(src, 'legacy');
 const lazyModules = [
   join(src, 'ai', 'demo', 'data.ts'),
   join(src, 'ai', 'demo', 'load.ts'),
+  // Demo sends deliver locally; only the host composition (apps/desktop/src/host/compose.ts) wraps its send port with it.
+  join(src, 'ai', 'demo', 'send.ts'),
   // eng-ai's provider catalogue loads on first use with its working half (the files under `ai/impl/` are lazy by
   // the `lazyDirs` rule below), so the core stays inside budget.
   join(src, 'ai', 'providers.ts'),

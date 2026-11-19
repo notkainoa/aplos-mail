@@ -10,6 +10,7 @@ import {
   type HostFacts,
   type HostPorts,
 } from '@aplos/engine';
+import { withDemoDelivery } from '@aplos/engine/ai/demo/send';
 import { laneFor } from '@aplos/engine/ai/lanes';
 import { createLogger, type LogSink } from '@aplos/engine/diag/log';
 import { hashAddress } from '@aplos/engine/diag/redact';
@@ -495,7 +496,10 @@ function engineOptions(
       ...(blobFiles ? { blobFiles } : {}),
       accounts,
       drafts: accounts,
-      send: options.ports?.send ?? accounts.sendPort,
+      // Demo accounts have no provider: their sends are filed in their own Sent folder (ai/demo/send.ts).
+      send:
+        options.ports?.send ??
+        withDemoDelivery(accounts.sendPort, store, () => options.clock.now()),
       calendar: accounts.calendarPort,
       deadlines: loop,
       ...(options.keys ? { keys: options.keys } : {}),
