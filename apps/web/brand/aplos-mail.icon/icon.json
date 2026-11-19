@@ -1,0 +1,120 @@
+{
+  "fill": {
+    "solid": "srgb:0.02745,0.32157,0.26667,1.00000"
+  },
+  "groups": [
+    {
+      "blur-material": 0.5,
+      "layers": [
+        {
+          "hidden": false,
+          "image-name": "envelope-3-flap.svg",
+          "name": "envelope-3-flap",
+          "position": {
+            "scale": 0.8,
+            "translation-in-points": [40.88295641304603, 81.69490613081939]
+          }
+        }
+      ],
+      "shadow": {
+        "kind": "neutral",
+        "opacity": 1
+      },
+      "translucency": {
+        "enabled": true,
+        "value": 0.5
+      }
+    },
+    {
+      "blur-material": 0.5,
+      "layers": [
+        {
+          "hidden": false,
+          "image-name": "envelope-2-pocket.svg",
+          "name": "envelope-2-pocket",
+          "position": {
+            "scale": 0.8,
+            "translation-in-points": [40.88295641304603, 81.69490613081939]
+          }
+        }
+      ],
+      "lighting": "individual",
+      "shadow": {
+        "kind": "neutral",
+        "opacity": 0
+      },
+      "specular": true,
+      "translucency": {
+        "enabled": true,
+        "value": 0.5
+      }
+    },
+    {
+      "blur-material": 0.5,
+      "layers": [
+        {
+          "glass": false,
+          "hidden": false,
+          "image-name": "envelope-1-body.svg",
+          "name": "envelope-1-body",
+          "position": {
+            "scale": 0.8,
+            "translation-in-points": [40.88295641304603, 81.69490613081939]
+          }
+        }
+      ],
+      "shadow": {
+        "kind": "neutral",
+        "opacity": 1
+      },
+      "specular": true,
+      "translucency": {
+        "enabled": true,
+        "value": 0.5
+      }
+    },
+    {
+      "blur-material": 0.5,
+      "layers": [
+        {
+          "image-name": "envelope-back-3-flap 2.svg",
+          "name": "envelope-back-3-flap 2",
+          "position": {
+            "scale": 0.9,
+            "translation-in-points": [-69.11704358695397, -29.83883102630898]
+          }
+        },
+        {
+          "image-name": "envelope-back-2-pocket 2.svg",
+          "name": "envelope-back-2-pocket 2",
+          "position": {
+            "scale": 0.9,
+            "translation-in-points": [-69.11704358695397, -29.83883102630898]
+          }
+        },
+        {
+          "image-name": "envelope-back-1-body.svg",
+          "name": "envelope-back-1-body",
+          "position": {
+            "scale": 0.9,
+            "translation-in-points": [-69.11704358695397, -29.83883102630898]
+          }
+        }
+      ],
+      "name": "Group",
+      "shadow": {
+        "kind": "neutral",
+        "opacity": 1
+      },
+      "specular": true,
+      "translucency": {
+        "enabled": true,
+        "value": 0.5
+      }
+    }
+  ],
+  "supported-platforms": {
+    "circles": ["watchOS"],
+    "squares": "shared"
+  }
+}

@@ -1,0 +1,76 @@
+/* The privacy policy and the terms: one calm reading column. */
+
+.doc {
+  max-width: 680px;
+  padding: clamp(32px, 6vw, 80px) 0 var(--section-gap);
+}
+
+.doc .draft {
+  color: var(--dim);
+  font-size: 14px;
+}
+
+.doc h1 {
+  margin-top: 12px;
+  font-size: clamp(36px, 5vw, 56px);
+  line-height: 1.08;
+  letter-spacing: -0.024em;
+}
+
+.doc .lead {
+  margin-top: 24px;
+  color: var(--ink);
+  font-size: clamp(19px, 1.8vw, 21px);
+  line-height: 1.55;
+}
+
+.doc h2 {
+  margin-top: 56px;
+  padding-top: 24px;
+  border-top: 1px solid var(--line);
+  font-size: 22px;
+  line-height: 1.25;
+  letter-spacing: -0.014em;
+}
+
+.doc p,
+.doc ul {
+  margin-top: 16px;
+  color: var(--ink-2);
+  line-height: 1.7;
+}
+
+.doc ul {
+  display: grid;
+  gap: 12px;
+  padding-left: 20px;
+}
+
+.doc li::marker {
+  color: var(--dim);
+}
+
+.doc b {
+  color: var(--ink);
+  font-weight: 600;
+}
+
+.doc a {
+  color: var(--link);
+  text-underline-offset: 3px;
+  text-decoration-thickness: 1px;
+  overflow-wrap: anywhere;
+}
+
+.doc code {
+  padding: 1px 6px;
+  border-radius: 4px;
+  background: var(--sunken);
+  color: var(--ink);
+  font:
+    0.86em/1.5 ui-monospace,
+    'SF Mono',
+    Menlo,
+    monospace;
+  overflow-wrap: anywhere;
+}
