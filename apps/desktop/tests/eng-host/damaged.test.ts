@@ -2,6 +2,7 @@ import test, { type TestContext } from 'node:test';
 import assert from 'node:assert/strict';
 import { createHash } from 'node:crypto';
 import {
+  chmodSync,
   closeSync,
   copyFileSync,
   existsSync,
@@ -30,6 +31,8 @@ import {
   LOW_SPACE_REASON,
   LowSpaceError,
   pruneCopies,
+  PURGE_MARK,
+  purgeAfterRemoval,
   RESTORED_SEND_COPY,
   DAMAGED_REASON,
   damagedReport,
@@ -610,7 +613,7 @@ test('a healthy start prunes old copies; a start parked on a damaged file keeps 
   assert.deepEqual(listBackups(dir), [], 'a healthy start removed the 20-day-old backup');
 });
 
-test('deleteLocalCopies removes every backup and damaged copy (account removal calls it)', t => {
+test('deleteLocalCopies removes every backup and damaged copy and leaves the live database', t => {
   const dir = folder(t);
   const path = seededDb(dir);
   const db = openSqlite(path);
@@ -622,4 +625,70 @@ test('deleteLocalCopies removes every backup and damaged copy (account removal c
   assert.deepEqual(listBackups(dir), []);
   assert.equal(existsSync(join(dir, DAMAGED_DIR)), false);
   assert.ok(existsSync(path), 'the live database is not touched');
+});
+
+/** A backup and a damaged copy in `dir`, as a migration and a parked start would leave them. */
+function leaveCopies(dir: string) {
+  writeFileSync(join(dir, 'mail.db.pre-6'), 'backup', { mode: 0o600 });
+  mkdirSync(join(dir, DAMAGED_DIR), { recursive: true });
+  writeFileSync(join(dir, DAMAGED_DIR, 'mail-2026-11-01T00-00-00-000Z.db'), 'copy');
+}
+
+test('removing an account on the desktop host deletes every backup and damaged copy after its rows are gone', async t => {
+  const dir = folder(t);
+  const path = join(dir, 'mail.db');
+  openStore(openSqlite(path), { extensions: laneExtensions(), now: () => T0 }).close();
+  const db = new DatabaseSync(path);
+  db.exec(`INSERT INTO accounts(id, provider, address, capabilities, status, created_at, updated_at)
+    VALUES('acct-1', 'google', 'owner@mail.example', '{}', '{"state":"ok"}', ${T0}, ${T0})`);
+  db.close();
+  const options = await testOptions(dir, fakeClock(T0))(undefined, {
+    request: async () => undefined,
+    power: new (await import('node:events')).EventEmitter(),
+  });
+  const host = await composeEngineHost(options);
+  t.after(() => host.close());
+  leaveCopies(dir);
+  const { handlers } = await import('../../../../packages/engine/src/methods/account');
+  const ctx = {
+    caller: { kind: 'window', scopes: ['admin'] },
+    signal: new AbortController().signal,
+    services: host.engine.services,
+    connectionId: 'c1',
+  } as never;
+  await handlers['Account/disconnect']({ opId: 'rm-1', accountId: 'acct-1' }, ctx);
+  const rows = host.engine.services.store.read(q => q.all('SELECT id FROM accounts'));
+  assert.deepEqual(rows, []);
+  assert.deepEqual(listBackups(dir), [], 'the backup that held the account is gone');
+  assert.equal(existsSync(join(dir, DAMAGED_DIR)), false, 'so is the damaged copy');
+  assert.equal(existsSync(join(dir, PURGE_MARK)), false, 'nothing is left to finish');
+  assert.ok(existsSync(path), 'the live database stays');
+});
+
+test('a purge after a removal that could not finish is finished at the next start, before anything reads a copy', async t => {
+  const dir = folder(t);
+  seededDb(dir);
+  leaveCopies(dir);
+  writeFileSync(join(dir, PURGE_MARK), '');
+  assert.deepEqual(await startOn(dir), { ok: true });
+  assert.deepEqual(listBackups(dir), []);
+  assert.equal(existsSync(join(dir, DAMAGED_DIR)), false);
+  assert.equal(existsSync(join(dir, PURGE_MARK)), false);
+});
+
+test('a purge that fails keeps its mark for the next start; one that works removes it', t => {
+  const dir = folder(t);
+  // A file where the damaged folder should be, inside a read-only folder: the delete fails.
+  const locked = join(dir, 'locked');
+  mkdirSync(join(locked, DAMAGED_DIR), { recursive: true });
+  writeFileSync(join(locked, PURGE_MARK), '');
+  chmodSync(locked, 0o500);
+  try {
+    assert.equal(purgeAfterRemoval(locked), false);
+  } finally {
+    chmodSync(locked, 0o700);
+  }
+  assert.ok(existsSync(join(locked, PURGE_MARK)), 'the next start tries again');
+  assert.equal(purgeAfterRemoval(locked), true);
+  assert.equal(existsSync(join(locked, PURGE_MARK)), false);
 });

@@ -15,6 +15,7 @@ import { openSqlite } from '../host/sqlite';
 import {
   checkAside,
   DAMAGED_REASON,
+  finishPurge,
   isCorruptError,
   LowSpaceError,
   markClosed,
@@ -323,6 +324,8 @@ export function runEngineUtility(parent: UtilityParent, deps: UtilityDeps): void
   }
 
   async function start(init: UtilityInit) {
+    // A purge an account removal could not finish goes first: no check, restore or backup may read those copies.
+    finishPurge(init.dataDir);
     // The file is checked only after an unclean exit, on a copy made first; a corrupt read during open parks the same way.
     if (needsCheck(init.dataDir)) {
       const found = checkAside(init.dataDir, now());

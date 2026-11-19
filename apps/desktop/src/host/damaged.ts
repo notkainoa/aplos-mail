@@ -29,7 +29,9 @@ import type { SqlDatabase } from '@aplos/engine/store/sql';
  * index byte for byte first, then checks the copy read-only; the screen and the report read the copy read-only too.
  *
  * Backups and damaged copies are full plaintext copies of the mailbox: they are written 0600, `pruneCopies` drops them
- * by age after every healthy start, and `deleteLocalCopies` removes them all when an account is removed.
+ * by age after every healthy start, and `purgeAfterRemoval` removes them all once an account removal has deleted the
+ * account's rows (compose.ts, from the removal's forget-sign-in step). A purge that fails leaves `PURGE_MARK`, and the
+ * next start purges before anything else reads a copy (`finishPurge`, engine-utility.ts).
  */
 
 export const DB_FILE = 'mail.db';
@@ -476,11 +478,41 @@ export function pruneCopies(dataDir: string, now: number): void {
 
 /**
  * Removes every pre-migration backup and every damaged copy: they are full copies of the mailbox, so removing an
- * account (or the last one) must not leave them behind. Account removal calls this.
+ * account must not leave them behind. Each copy holds every account, so the other accounts' copies go too (the
+ * Settings confirm says so).
  */
 export function deleteLocalCopies(dataDir: string): void {
   for (const backup of listBackups(dataDir)) rmSync(join(dataDir, backup.name), { force: true });
   rmSync(join(dataDir, DAMAGED_DIR), { recursive: true, force: true });
+}
+
+/** Present while a purge after an account removal has not gone through yet. */
+export const PURGE_MARK = 'copies.purge';
+
+/**
+ * After an account removal deleted the account's rows: every copy goes (`deleteLocalCopies`). Best effort and never
+ * throws. The mark is written first and removed only after the copies are gone, so a failure (or a quit) is finished
+ * by `finishPurge` at the next start. True when every copy is gone.
+ */
+export function purgeAfterRemoval(dataDir: string): boolean {
+  const mark = join(dataDir, PURGE_MARK);
+  try {
+    writeFileSync(mark, '', { mode: 0o600 });
+  } catch {
+    // Without the mark a failed purge is not retried; the copies still go by age (`pruneCopies`).
+  }
+  try {
+    deleteLocalCopies(dataDir);
+    rmSync(mark, { force: true });
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+/** At start, before the damaged check and the migration's backup: finishes a purge an earlier removal left. */
+export function finishPurge(dataDir: string): void {
+  if (existsSync(join(dataDir, PURGE_MARK))) purgeAfterRemoval(dataDir);
 }
 
 /** Starts over: the damaged file goes (its copy stays in `damaged/`), and the next start syncs from the provider. */

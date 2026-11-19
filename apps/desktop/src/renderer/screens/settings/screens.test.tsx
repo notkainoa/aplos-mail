@@ -331,7 +331,10 @@ describe('write failure and destructive steps', () => {
     const confirm = view.confirm as Extract<typeof view.confirm, { kind: 'removeAccount' }>;
     assert.deepEqual(confirm.discards, { sends: 2, calendar: 1 });
     const text = removeAccountConfirm(confirm.address, confirm.discards).consequence;
-    assert.match(text, /deletes its data on this Mac, including backups/);
+    assert.match(
+      text,
+      /on this Mac, including Aplos's backups \(which also removes backups of your other accounts\)/,
+    );
     assert.match(text, /2 failed sends and 1 failed calendar change will be discarded\.$/);
     assert.doesNotMatch(removeAccountConfirm(ALEX.address).consequence, /will be discarded/);
     assert.match(

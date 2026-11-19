@@ -56,7 +56,7 @@ import {
 import { createHttpClient } from './providers/shared/http';
 import { announceMissedReminders } from './reminders';
 import { openSqlite } from './sqlite';
-import { isCorruptError, setAside, writeBackup } from './damaged';
+import { isCorruptError, purgeAfterRemoval, setAside, writeBackup } from './damaged';
 
 /**
  * The composition root of the new engine's host (lane eng-host). Everything the environment decides is injected, so it
@@ -445,6 +445,27 @@ function openDatabaseFile(options: ComposeOptions): StorePort {
   }
 }
 
+/**
+ * Account removal forgets the stored sign-in only after the account's rows are gone (sync/account-remove.ts): from
+ * there no database file Aplos writes holds the account, so every backup and damaged copy, which still do, goes too.
+ * Best effort: a purge that fails is finished at the next start (`finishPurge`), and the sign-in result is unchanged.
+ */
+function purgeOnForget<T extends { forgetAccount?: (...args: never[]) => Promise<void> }>(
+  accounts: T,
+  dataDir: string,
+): T {
+  const forget = accounts.forgetAccount?.bind(accounts);
+  if (!forget) return accounts;
+  accounts.forgetAccount = (async (...args: never[]) => {
+    try {
+      await forget(...args);
+    } finally {
+      purgeAfterRemoval(dataDir);
+    }
+  }) as T['forgetAccount'];
+  return accounts;
+}
+
 /** Runs the steps taken so far, newest first; one that fails does not stop the rest. */
 async function unwind(steps: Undo[]): Promise<void> {
   for (const step of steps.splice(0).reverse()) {
@@ -579,7 +600,7 @@ async function build(options: ComposeOptions, steps: Undo[]): Promise<ComposedHo
   });
   const late = lateStore(raw);
   const loop = createTimerLoop({ clock: options.clock, log });
-  const accounts = buildActors(options, late.port, log, loop);
+  const accounts = purgeOnForget(buildActors(options, late.port, log, loop), options.dataDir);
   steps.push(() => accounts.dispose());
   const starts = createAccountStarts({ host: accounts, store: late.port, log, salt });
   // Runs just before the actors are disposed: no retry may start an actor on a disposed host.
