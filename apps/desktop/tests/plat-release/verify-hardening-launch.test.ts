@@ -248,3 +248,15 @@ test('launch checks, guard subset: only the debug launches, no control, allowed 
   );
   assert.deepEqual(open.statuses, ['FAIL', 'FAIL', 'FAIL']);
 });
+
+test('launch checks: Rosetta detection reads the slices and never guesses translated', () => {
+  const launchModule = vh.runsTranslated ? vh : null;
+  assert.ok(launchModule, 'runsTranslated is exported');
+  // A missing file is not "translated": the normal limits apply and the launch itself reports the problem.
+  assert.equal(vh.runsTranslated('/nowhere/Aplos Mail'), false);
+  if (process.platform === 'darwin') {
+    // /usr/bin/true ships with both slices, so neither host translates it.
+    assert.equal(vh.runsTranslated('/usr/bin/true', 'arm64'), false);
+    assert.equal(vh.runsTranslated('/usr/bin/true', 'x64'), false);
+  }
+});
