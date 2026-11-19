@@ -4,7 +4,7 @@
   "private": true,
   "type": "module",
   "description": "Aplos Mail stand-in engine: the whole v1 contract on in-memory demo data, for the UI, tests and the conformance suite. Test support; never shipped",
-  "license": "UNLICENSED",
+  "license": "MIT",
   "exports": {
     ".": "./src/index.ts",
     "./control": "./src/control.ts"

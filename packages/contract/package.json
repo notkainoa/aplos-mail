@@ -4,7 +4,7 @@
   "private": true,
   "type": "module",
   "description": "Aplos Mail engine contract: zod/mini schemas for every method and frame, the method registry, generated allowlists and the typed client",
-  "license": "UNLICENSED",
+  "license": "MIT",
   "exports": {
     ".": "./src/index.ts",
     "./log/*": "./src/log/*.ts",

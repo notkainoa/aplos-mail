@@ -4,7 +4,7 @@
   "private": true,
   "type": "module",
   "description": "Aplos Mail engine: the platform-neutral core, with no Node or Electron imports",
-  "license": "UNLICENSED",
+  "license": "MIT",
   "exports": {
     ".": "./src/index.ts",
     "./store": "./src/store/index.ts",

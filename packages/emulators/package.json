@@ -4,7 +4,7 @@
   "private": true,
   "type": "module",
   "description": "Test-only provider emulators, fake clock and fault kit for Aplos Mail. Never bundled into the app.",
-  "license": "UNLICENSED",
+  "license": "MIT",
   "exports": {
     ".": "./src/index.ts",
     "./gmail": "./src/gmail/index.ts",
