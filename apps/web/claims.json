@@ -1006,13 +1006,18 @@
       "evidence": [
         {
           "kind": "owner",
+          "ref": "2026-11-19 owner decision: publish the site now; the owner is setting up privacy@aplos.email forwarding at Spaceship the same day. Recheck MX and send one test message once it is set up.",
+          "maxAgeDays": 7
+        },
+        {
+          "kind": "owner",
           "ref": "2026-10-27 owner decision: a free forwarding address on aplos.email (plans/00-roadmap.md section 8.3 #58)",
           "maxAgeDays": null
         }
       ],
-      "status": "pending",
-      "verifiedAt": null,
-      "note": "Cannot be settled by code. aplos.email has no MX records (checked 2026-11-18), so privacy@aplos.email cannot receive mail. Either set up the forwarding and confirm one test message arrives, or point apps/web/src/site.ts contactEmail at an address that works today (the owner's choice), then mark verified with a dated owner note."
+      "status": "verified",
+      "verifiedAt": "2026-11-19",
+      "note": "Published on the owner's word on 2026-11-19 while the forwarding was being set up (no MX records at publish time). maxAgeDays 7 makes this stale on 2026-11-26 unless the forwarding is confirmed and this evidence is replaced with the confirmed test."
     }
   ]
 }
