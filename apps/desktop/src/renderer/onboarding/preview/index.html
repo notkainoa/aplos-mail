@@ -1,0 +1,23 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob: https:; media-src 'self' blob:; connect-src 'self'; font-src 'self' data:">
+<title>Aplos onboarding preview</title>
+<style>
+  /* Development-only gallery. The window's size is main's BrowserWindow (DESIGN 7.11: 640 × 600, minimum 640 × 520),
+     not a design token, so the frame's size lives here and nowhere in the app's CSS. `contain` makes the frame the
+     containing block of the window root, which is fixed to the window. */
+  .onb-frame { position: relative; width: 640px; height: 600px; overflow: hidden; contain: layout paint; }
+  .onb-frame[data-height="520"] { height: 520px; }
+  .onb-index { padding: 24px 32px; }
+  .onb-index li { margin: 4px 0; }
+  .onb-index a { color: var(--accent); }
+</style>
+</head>
+<body>
+<div id="root"></div>
+<script type="module" src="./main.tsx"></script>
+</body>
+</html>

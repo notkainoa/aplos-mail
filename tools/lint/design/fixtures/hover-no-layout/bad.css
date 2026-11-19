@@ -1,0 +1,40 @@
+/* Planted violations carry an expect marker; the test requires exactly those lines to be reported. */
+.row:hover {
+  display: flex; /* @expect */
+  width: 100px; /* @expect */
+  height: var(--row); /* @expect */
+  padding: var(--space-2); /* @expect */
+  margin-left: var(--space-2); /* @expect */
+  transform: translateY(-1px); /* @expect */
+  font-weight: 600; /* @expect */
+  border-width: 2px; /* @expect */
+  gap: var(--space-1); /* @expect */
+  position: relative; /* @expect */
+  content: "E"; /* @expect */
+  inset: 0; /* @expect */
+  letter-spacing: 0.4px; /* @expect */
+  transition: none; /* @expect */
+  background: var(--hover);
+}
+
+.row:hover .actions {
+  display: block; /* @expect */
+  opacity: 1;
+}
+
+.button:is(:hover, :focus-visible) {
+  min-height: var(--control-lg); /* @expect */
+}
+
+@media (hover: hover) {
+  .link:hover {
+    padding-left: var(--space-1); /* @expect */
+    color: var(--accent);
+  }
+}
+
+.card {
+  &:hover {
+    margin: 0; /* @expect */
+  }
+}

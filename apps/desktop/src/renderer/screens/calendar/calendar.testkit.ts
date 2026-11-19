@@ -1,0 +1,257 @@
+/** Shared helpers for the calendar screen's node tests (calendar.test.ts, calendar.review1.test.ts). */
+import { createFixtureEngine, defaultNow } from '@aplos/contract-fixture';
+import { connectDataLayer } from '../../data/connect';
+import { createManualScheduler, createManualTimers } from '../../data/scheduler';
+import { api, setClock, type Account, type Calendar, type Event } from '../../data';
+import { harnessClock } from '../../data/clock';
+import {
+  entriesFor,
+  eventsRange,
+  initialState,
+  periodOf,
+  shownView,
+  type CalendarContext,
+  type CalendarState,
+  type EditorDraft,
+} from './calendar.model';
+import type { EffectPorts, EffectUi } from './effects';
+import { cancelPendingRetries, releaseHeldWrites } from './effects';
+import { demoWorld } from './CalendarStates';
+
+export const NOW = Date.UTC(2026, 9, 29, 17, 0, 0); // the harness's 2026-10-29T10:00 in America/Los_Angeles
+export const THU = '2026-10-29';
+
+export function ctxFor(
+  events = demoWorld.events,
+  plans = demoWorld.plans,
+  calendars = demoWorld.calendars,
+  state?: CalendarState,
+  accounts: readonly Account[] = demoWorld.accounts,
+): CalendarContext {
+  const period = periodOf('week', THU, 0);
+  const entries = entriesFor({
+    events,
+    plans,
+    calendars,
+    solo: state?.solo ?? null,
+    period,
+    planCalendarId: 'work',
+  });
+  return {
+    now: NOW,
+    weekStartsOn: 0,
+    entries,
+    events: new Map(events.map(e => [e.id, e])),
+    plans: new Map(plans.map(p => [p.id, p])),
+    calendars,
+    accounts,
+    loadedThrough: eventsRange(period, NOW).to,
+    defaultCalendarId: 'work',
+    calendarsReady: true,
+    windowReady: true,
+    failedHolds: [],
+  };
+}
+
+/** A context built for the state's own period, as the container builds it. */
+export function ctxAt(
+  state: CalendarState,
+  events: readonly Event[] = demoWorld.events,
+  calendars: readonly Calendar[] = demoWorld.calendars,
+  accounts: readonly Account[] = demoWorld.accounts,
+): CalendarContext {
+  const period = periodOf(shownView(state), state.anchor, 0);
+  const entries = entriesFor({
+    events,
+    plans: [],
+    calendars,
+    solo: state.solo,
+    period,
+    planCalendarId: 'work',
+  });
+  return {
+    now: NOW,
+    weekStartsOn: 0,
+    entries,
+    events: new Map(events.map(e => [e.id, e])),
+    plans: new Map(),
+    calendars,
+    accounts,
+    loadedThrough: eventsRange(period, NOW).to,
+    defaultCalendarId: 'work',
+    calendarsReady: true,
+    windowReady: true,
+    failedHolds: [],
+  };
+}
+
+export const S = (patch: Partial<CalendarState> = {}): CalendarState => ({
+  ...initialState(THU),
+  ...patch,
+});
+
+// ---------------------------------------------------------------------------
+// Writes against the real data layer: opIds, Undo and refusals
+// ---------------------------------------------------------------------------
+
+export const nextTask = () => new Promise<void>(resolve => setImmediate(resolve));
+
+// The real `setTimeout`, captured before any test shims `global.setTimeout` (review7/8/9 do), so a
+// timer hop in `settle` can never be stolen by a capture-only mock.
+const realSetTimeout = setTimeout;
+const timerHop = () => new Promise<void>(resolve => realSetTimeout(resolve, 0));
+
+export async function boot() {
+  const engine = createFixtureEngine({ scenario: 'demo', clock: defaultNow });
+  const scheduler = createManualScheduler();
+  const connection = connectDataLayer({
+    session: engine.connect(),
+    scheduler,
+    timers: createManualTimers(defaultNow),
+  });
+  setClock(harnessClock);
+  await settle(scheduler.flush);
+  const flush = async () => settle(scheduler.flush);
+  return { connection, flush, engine };
+}
+
+export async function settle(flush: () => void) {
+  for (let round = 0; round < 4; round++) {
+    for (let i = 0; i < 5; i++) {
+      await nextTask();
+      flush();
+    }
+    // The stand-in delivers a call's captured frames on a real `setTimeout(0)`, and an unbroken
+    // run of `setImmediate` turns can finish inside its millisecond without that timer ever
+    // firing (the 'stackedWrites roll back in any order' flake: the `cancelled` frame landed only
+    // after the fixed hops ran out). A timer hop waits past its deadline — every timer armed
+    // before it fires first — so rounds also catch timers the deliveries arm in turn.
+    await timerHop();
+    flush();
+  }
+  for (let i = 0; i < 5; i++) {
+    await nextTask();
+    flush();
+  }
+}
+
+/** The module-level write guards start clean between tests, as an unmount leaves them. */
+export function resetWrites(): void {
+  cancelPendingRetries();
+  releaseHeldWrites();
+}
+
+export const calRef = (c: { id: string; name: string }) => ({
+  id: c.id,
+  name: c.name,
+  color: 'sky' as const,
+});
+export const newEvent = (id: string, calendarId: string): Event =>
+  ({
+    id,
+    rev: 1,
+    accountId: 'acct',
+    calendarId,
+    recurring: false,
+    exception: false,
+    title: id,
+    start: { type: 'date', date: '2026-10-30' },
+    end: { type: 'date', date: '2026-10-31' },
+    allDay: true,
+    attendees: [],
+    status: 'confirmed',
+    can: { edit: true, move: true, delete: true, rsvp: false, editGuests: true },
+    sync: 'synced',
+  }) as Event;
+
+export function testUi(): EffectUi & {
+  applied: string[];
+  dropped: string[];
+  /** Entries a held write asked to keep until the window frame after `synced`. */
+  pendingFrame: string[];
+  overrides: Map<string, boolean>;
+  settled: string[];
+  failed: string[];
+  reopened: Array<{ id: string; note: string }>;
+  /** Whether `reopenEditor` reports the editor opened; false makes a conflict fall back to the toast. */
+  reopenOpens: boolean;
+  /** The drafts `restoreEditor` was asked to bring back, with each refusal's sentence. */
+  restored: Array<{ draft: EditorDraft; note: string }>;
+  /** Whether `restoreEditor` reports the editor opened; false makes a times refusal fall back to the toast. */
+  restoreOpens: boolean;
+  /** The event ids `closeDetail` was asked to close. */
+  closedFor: string[];
+  closed: number;
+  /** Bound ahead of the interface (review16): records the entries held for the frame after `synced`. */
+  settleAfterFrame(id: string, writeId: string): void;
+} {
+  const applied: string[] = [];
+  const dropped: string[] = [];
+  const pendingFrame: string[] = [];
+  const overrides = new Map<string, boolean>();
+  const settled: string[] = [];
+  const failed: string[] = [];
+  const reopened: Array<{ id: string; note: string }> = [];
+  const restored: Array<{ draft: EditorDraft; note: string }> = [];
+  const closedFor: string[] = [];
+  let closed = 0;
+  const self = {
+    applied,
+    dropped,
+    pendingFrame,
+    overrides,
+    settled,
+    failed,
+    reopened,
+    reopenOpens: true,
+    restored,
+    restoreOpens: true,
+    closedFor,
+    get closed() {
+      return closed;
+    },
+    optimistic: () => undefined,
+    settle: (id: string) => applied.push(id),
+    settleAfterFrame: (id: string) => pendingFrame.push(id),
+    rollback: (id: string) => dropped.push(id),
+    shown: (id: string, shown: boolean) => void overrides.set(id, shown),
+    shownSettled: (id: string) => settled.push(id),
+    shownFailed: (id: string) => {
+      overrides.delete(id);
+      failed.push(id);
+    },
+    focus: () => undefined,
+    reopenEditor: (eventId: string, note: string) => {
+      reopened.push({ id: eventId, note });
+      return self.reopenOpens;
+    },
+    restoreEditor: (draft: EditorDraft, note: string) => {
+      restored.push({ draft, note });
+      return self.restoreOpens;
+    },
+    closeDetail: (eventId: string) => {
+      closedFor.push(eventId);
+      closed += 1;
+    },
+  };
+  return self;
+}
+
+export function ports(): EffectPorts {
+  return {
+    eventSet: args => api.event.set(args),
+    eventRsvp: args => api.event.rsvp(args),
+    calendarSet: args => api.calendar.set(args),
+    planConfirm: args => api.plan.confirm(args),
+    planDismiss: args => api.plan.dismiss(args),
+    eventHide: args => api.event.hide(args),
+    operationRetry: args => api.operation.retry(args),
+    queueRetry: args => api.queue.retry(args),
+    queueDiscard: args => api.queue.discard(args),
+    enableEditing: () => Promise.resolve(),
+    reconnect: () => undefined,
+    openThread: () => undefined,
+    openUrl: () => undefined,
+    copyText: () => undefined,
+  };
+}

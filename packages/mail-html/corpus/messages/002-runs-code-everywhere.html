@@ -1,0 +1,16 @@
+<div style="font-family:Arial,sans-serif;max-width:560px;margin:0 auto">
+  <h2>Your parcel is waiting</h2>
+  <script>fetch('{{CANARY}}/{{ID}}/script-fetch');new Image().src='{{CANARY}}/{{ID}}/script-image';</script>
+  <p onmouseover="fetch('{{CANARY}}/{{ID}}/onmouseover')">Please confirm the delivery window that suits you best. Hover and click are optional.</p>
+  <p><a href="javascript:fetch('{{CANARY}}/{{ID}}/js-href')">Choose a delivery window</a></p>
+  <img src="x" onerror="fetch('{{CANARY}}/{{ID}}/img-onerror')" alt="">
+  <form id="f" action="{{CANARY}}/{{ID}}/form-post" method="post">
+    <input type="hidden" name="a" value="1">
+    <input type="submit" value="Confirm">
+  </form>
+  <script>document.getElementById('f').submit();</script>
+  <svg xmlns="http://www.w3.org/2000/svg" width="10" height="10"><script>fetch('{{CANARY}}/{{ID}}/svg-script')</script></svg>
+  <iframe src="{{CANARY}}/{{ID}}/iframe" width="0" height="0"></iframe>
+  <iframe srcdoc="&lt;script&gt;fetch('{{CANARY}}/{{ID}}/srcdoc')&lt;/script&gt;" width="0" height="0"></iframe>
+  <p>Thank you for choosing Quayside Couriers.</p>
+</div>

@@ -1,0 +1,26 @@
+<style>
+  .a { background-image: image-set("{{CANARY}}/{{ID}}/set-string-1x.png" 1x, "{{CANARY}}/{{ID}}/set-string-2x.png" 2x); }
+  .b { background-image: image-set(url({{CANARY}}/{{ID}}/set-url-1x.png) 1x, url({{CANARY}}/{{ID}}/set-url-2x.png) 2x); }
+  .c { background-image: -webkit-image-set(url({{CANARY}}/{{ID}}/webkit-set-1x.png) 1x, url({{CANARY}}/{{ID}}/webkit-set-2x.png) 2x); }
+  .d { background-image: -webkit-cross-fade(url({{CANARY}}/{{ID}}/cross-fade-a.png), url({{CANARY}}/{{ID}}/cross-fade-b.png), 50%); }
+  .e { background-image: cross-fade(50% url({{CANARY}}/{{ID}}/cross-fade-c.png), url({{CANARY}}/{{ID}}/cross-fade-d.png)); }
+  .f { background-image: element(#thing); }
+  .g { background-image: -webkit-image-set("{{CANARY}}/{{ID}}/webkit-string.png" 1x); }
+  .h { background-image: image-set(image-set("{{CANARY}}/{{ID}}/nested-set.png" 1x) 1x); }
+  .i { background-image: image-set("{{CANARY}}/{{ID}}/typed.png" type("image/png")); }
+  .j { background-image: IMAGE-SET("{{CANARY}}/{{ID}}/upper-set.png" 1x); }
+  .k { background-image: image-set(
+      "{{CANARY}}/{{ID}}/multi-line.png" 1x
+    ); }
+  .l { background-image: linear-gradient(red, url({{CANARY}}/{{ID}}/gradient-url.png)); }
+  .m { background-image: paint(houdini, url({{CANARY}}/{{ID}}/paint)); }
+  .n { background-image: conic-gradient(red, blue), url({{CANARY}}/{{ID}}/after-gradient.png); }
+  .o { content: image-set("{{CANARY}}/{{ID}}/content-set.png" 1x); }
+  .p { list-style-image: image-set("{{CANARY}}/{{ID}}/list-set.png" 1x); }
+  .q { border-image-source: image-set("{{CANARY}}/{{ID}}/border-set.png" 1x); }
+  .r { mask-image: image-set("{{CANARY}}/{{ID}}/mask-set.png" 1x); }
+  .s { cursor: image-set("{{CANARY}}/{{ID}}/cursor-set.png" 1x) 0 0, auto; }
+</style>
+<p>Retina ready: crisp images on every screen.</p>
+<div class="a b c d e f g h i j k l m n o p q r s">image sets</div>
+<div id="thing">thing</div>

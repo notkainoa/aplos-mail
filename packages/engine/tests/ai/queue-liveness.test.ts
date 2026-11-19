@@ -1,0 +1,627 @@
+import assert from 'node:assert/strict';
+import test from 'node:test';
+import type { EngineMethodName, Frame, Input, Output } from '@aplos/contract';
+import type { LogRecord } from '@aplos/contract/log/events';
+import { createLogger } from '../../src/diag/log';
+import { createEngine, laneExtensions } from '../../src/index';
+import { openStore } from '../../src/store';
+import { AiCallError, type AiChatRequest, type AiTransport } from '../../src/ai/host';
+import { runJobs } from '../../src/ai/impl/runner';
+import { queueSummary } from '../../src/ai/impl/jobs';
+import { RATE_LIMIT_MAX_MS, rateLimitWait } from '../../src/ai/impl/execute';
+import { CHAT_TIMEOUT_MS, LONG_CHAT_TIMEOUT_MS, meteredChat } from '../../src/ai/impl/runtime';
+import { ACCOUNT, accountWrite, folderWrites, msg, tempDb } from '../store/helpers';
+import { manualClock, silentDeadlines } from '../runtime.helpers';
+
+/**
+ * The queue's liveness rules (owner rule, hands-on 2026-11-16): a card shows "Summarizing…" while work is
+ * live, and the space collapses only when AI is off or the request genuinely fails — so a provider call that
+ * stalls forever must fail the job instead of holding the whole `jobs` source open, a gate-off pass settles
+ * every `pending` placeholder, and a transient failure leaves a non-secret reason in the log.
+ */
+
+function stubTransport(opts: {
+  answer?: string;
+  fail?: Error;
+  hang?: boolean;
+}): AiTransport & { calls: AiChatRequest[] } {
+  const calls: AiChatRequest[] = [];
+  return {
+    calls,
+    async chat(req) {
+      calls.push(req);
+      if (opts.hang)
+        // The stall the transport is allowed to produce: the signal is honoured but never settled.
+        await new Promise<void>((_, reject) => {
+          req.signal?.addEventListener('abort', () => reject(new AiCallError('cancelled', 'x')), {
+            once: true,
+          });
+        });
+      if (opts.fail) throw opts.fail;
+      return {
+        content: opts.answer ?? '{"summary":"Ada asked about the invoice.","action":null}',
+        toolCalls: [],
+        usage: { prompt: 42, completion: 21 },
+      };
+    },
+    transcribe: () => Promise.resolve({ text: 'words' }),
+    models: provider => Promise.resolve({ list: [`${provider}-live`], live: true }),
+    check: () => Promise.resolve(),
+    setKey: () => Promise.resolve('keychain' as const),
+    removeKey: () => Promise.resolve('none' as const),
+    keySource: () => 'env' as const,
+  };
+}
+
+async function world(transport?: AiTransport) {
+  const file = tempDb();
+  const clock = manualClock();
+  const store = openStore(file.open(), { now: () => clock.now(), extensions: laneExtensions() });
+  const lines: LogRecord[] = [];
+  const log = createLogger({
+    sink: { write: r => void lines.push(r) },
+    salt: 's',
+    clock,
+    level: 'debug',
+  });
+  const deadlines = silentDeadlines();
+  const engine = await createEngine({
+    store,
+    clock,
+    log,
+    host: {
+      appVersion: '9.9.9',
+      device: { id: 'd', name: 'd' },
+      resident: true,
+      capabilities: { desktop: true },
+    },
+    ports: { deadlines },
+  });
+  engine.services.ai.useTransport(transport ?? stubTransport({}));
+  const window = engine.connect();
+  const call = <M extends EngineMethodName>(method: M, args: Input<M>) =>
+    window.call(method, args) as Promise<Output<M>>;
+  const frames: Frame[] = [];
+  window.subscribe(f => void frames.push(f));
+  return { store, engine, call, frames, lines, deadlines, clock, file };
+}
+
+const seedMail = (w: Awaited<ReturnType<typeof world>>, aiAllowed = true) =>
+  w.engine.services.store.commit({
+    opId: 'seed',
+    origin: 'sync',
+    writes: [
+      { ...accountWrite, aiAllowed },
+      ...folderWrites.map(f => ({ ...f })),
+      msg('m1', 'T-thread', 5, {
+        subject: 'Invoice due Friday',
+        snippet: 'The invoice is due this Friday.',
+      }),
+      msg('m2', 'T-thread', 6),
+    ],
+  });
+
+const consentNow = async (w: Awaited<ReturnType<typeof world>>) => {
+  await w.call('Settings/set', { opId: 'bg', patch: { ai: { background: true } } });
+  const got = await w.call('Consent/get', {});
+  return w.call('Consent/grant', {
+    scope: 'background',
+    version: got.currentVersion ?? got.version,
+    provider: 'groq',
+    model: 'openai/gpt-oss-120b',
+  });
+};
+
+const jobsOf = (w: Awaited<ReturnType<typeof world>>, kind?: string) =>
+  w.engine.services.store.read(q =>
+    q.all<{ kind: string; key: string; state: string; last_error: string | null }>(
+      `SELECT kind, key, state, last_error FROM jobs${kind ? ' WHERE kind = ?' : ''} ORDER BY id`,
+      ...(kind ? [kind] : []),
+    ),
+  );
+
+const threadSummary = async (
+  w: Awaited<ReturnType<typeof world>>,
+  remoteId = 'T-thread',
+  accountId = ACCOUNT,
+) => (await w.call('Thread/get', { ids: [`${accountId}:${remoteId}`] })).list[0].summary;
+
+test('a stalled provider call times the job out and the queue keeps draining', async () => {
+  const w = await world(stubTransport({ hang: true }));
+  seedMail(w);
+  await consentNow(w);
+  queueSummary(w.engine.services, ACCOUNT, 'T-thread');
+  const run = runJobs(w.engine.services, w.clock.now());
+  // The call never settles on its own: the metered bound fires, not the transport.
+  w.clock.advance(CHAT_TIMEOUT_MS);
+  await run;
+  const job = jobsOf(w, 'summary')[0];
+  assert.equal(job.state, 'failed', 'a timeout is a retryable failure, not a stall');
+  assert.match(job.last_error ?? '', /ai\.timeout/);
+  // The non-secret reason reached the log: 'unreachable' classed, 'ai.timeout' recorded, attempt stamped.
+  const line = w.lines.find(l => l.event === 'ai.job.failed');
+  assert.ok(line, 'a failed attempt logs — the card collapse is never silent');
+  assert.equal(line!.data.attempt, 1);
+  // The card collapses: the next try waits out a backoff, and "Summarizing…" shows only while really working.
+  assert.equal((await threadSummary(w)).state, 'failed');
+  // A wake while the job backs off does not raise the placeholder again.
+  queueSummary(w.engine.services, ACCOUNT, 'T-thread');
+  assert.equal((await threadSummary(w)).state, 'failed');
+  // After the backoff the same queue takes the job again — a recovered provider lands the summary.
+  w.engine.services.ai.useTransport(stubTransport({}));
+  w.clock.advance(61_000);
+  await runJobs(w.engine.services, w.clock.now());
+  assert.equal(jobsOf(w, 'summary')[0].state, 'done');
+  assert.equal((await threadSummary(w)).state, 'ready');
+});
+
+test('AI switched off collapses every pending placeholder instead of parking it', async () => {
+  const w = await world(stubTransport({}));
+  seedMail(w);
+  await consentNow(w);
+  queueSummary(w.engine.services, ACCOUNT, 'T-thread');
+  assert.equal((await threadSummary(w)).state, 'pending');
+  // The owner turns background AI off: the gate is closed for every due feature, so the pass pauses — and
+  // the placeholder settles to 'failed' rather than showing "Summarizing…" for as long as AI stays off.
+  await w.call('Settings/set', { opId: 'off', patch: { ai: { background: false } } });
+  await runJobs(w.engine.services, w.clock.now());
+  assert.equal((await threadSummary(w)).state, 'failed');
+});
+
+test('the metered bound is a literal 120 s, aborts the transport signal, and retires its own timer', async () => {
+  assert.equal(
+    CHAT_TIMEOUT_MS,
+    120_000,
+    'the background bound is the literal 120 s the stall test relies on',
+  );
+  const transport = stubTransport({ hang: true });
+  const w = await world(transport);
+  seedMail(w);
+  await consentNow(w);
+  const base = w.clock.pending();
+  const hanging = meteredChat(
+    w.engine.services,
+    { feature: 'summaries', model: { provider: 'groq', model: 'm' }, lane: 'background' },
+    { messages: [{ role: 'user', content: 'sum' }] },
+  );
+  assert.equal(
+    w.clock.pending(),
+    base + 1,
+    'exactly one timer — the bound — arms behind an open call',
+  );
+  w.clock.advance(CHAT_TIMEOUT_MS);
+  await assert.rejects(hanging, (e: unknown) => (e as AiCallError).code === 'unreachable');
+  // The abort reached the transport's own signal, and the engine's timer retired with the call — nothing
+  // stays armed (the advance may have fired timers the engine itself armed, so only the bound's +1 matters).
+  assert.ok(transport.calls[0].signal?.aborted, 'the timed-out call aborts its transport signal');
+  assert.ok(w.clock.pending() <= base, 'the bound retires instead of leaking a timer');
+});
+
+test('a call that settles before the bound retires the timer — nothing stays armed', async () => {
+  const w = await world(stubTransport({}));
+  seedMail(w);
+  await consentNow(w);
+  const base = w.clock.pending();
+  const turn = await meteredChat(
+    w.engine.services,
+    { feature: 'summaries', model: { provider: 'groq', model: 'm' }, lane: 'background' },
+    { messages: [{ role: 'user', content: 'sum' }] },
+  );
+  assert.ok(turn.content);
+  assert.equal(w.clock.pending(), base, 'a landed call leaves no bound timer behind');
+});
+
+test('interactive calls and local providers run on the longer bound', async () => {
+  const transport = stubTransport({ hang: true });
+  const w = await world(transport);
+  const flush = () => new Promise<void>(r => setTimeout(r, 0));
+  const hanging = (call: Parameters<typeof meteredChat>[1]) => {
+    const p = meteredChat(w.engine.services, call, { messages: [{ role: 'user', content: 'x' }] });
+    let settled = false;
+    void p.then(
+      () => (settled = true),
+      () => (settled = true),
+    );
+    return { p, settled: () => settled };
+  };
+  // An interactive call is not cut at 120 s: the owner watches it stream and can cancel it.
+  const ask = hanging({
+    feature: 'ask',
+    model: { provider: 'groq', model: 'm' },
+    lane: 'interactive',
+  });
+  w.clock.advance(CHAT_TIMEOUT_MS);
+  await flush();
+  assert.equal(ask.settled(), false, 'an interactive call outlives the background bound');
+  w.clock.advance(LONG_CHAT_TIMEOUT_MS - CHAT_TIMEOUT_MS);
+  await assert.rejects(ask.p, (e: unknown) => (e as AiCallError).code === 'unreachable');
+  // A local provider on the background lane gets the same leash — a slow local model must get to finish.
+  const local = hanging({
+    feature: 'summaries',
+    model: { provider: 'ollama', model: 'm' },
+    lane: 'background',
+  });
+  w.clock.advance(CHAT_TIMEOUT_MS);
+  await flush();
+  assert.equal(local.settled(), false, 'a local provider outlives the remote bound');
+  w.clock.advance(LONG_CHAT_TIMEOUT_MS - CHAT_TIMEOUT_MS);
+  await assert.rejects(local.p, (e: unknown) => (e as AiCallError).code === 'unreachable');
+});
+
+test('a dailyLimit release settles the placeholder — the card does not spin for the rest of the day', async () => {
+  const w = await world(stubTransport({ fail: new AiCallError('dailyLimit', 'cap') }));
+  seedMail(w);
+  await consentNow(w);
+  queueSummary(w.engine.services, ACCOUNT, 'T-thread');
+  await runJobs(w.engine.services, w.clock.now());
+  // The job keeps its queue slot for tomorrow, but the card's "nothing is coming" is already true.
+  assert.equal(jobsOf(w, 'summary')[0].state, 'queued');
+  assert.equal((await threadSummary(w)).state, 'failed');
+});
+
+test('the daily-cap pause settles every held placeholder', async () => {
+  const w = await world(stubTransport({}));
+  seedMail(w);
+  w.engine.services.store.commit({
+    opId: 'seed2',
+    origin: 'sync',
+    writes: [msg('m3', 'T-two', 7, { subject: 'Second thread' })],
+  });
+  await consentNow(w);
+  // A cap the first summary's recorded usage puts the day over: T-thread's job runs, the catch-up armed by
+  // the settings patch queues T-two, and the spent budget then holds that work past the card's patience.
+  await w.call('Settings/set', {
+    opId: 'cap',
+    patch: { ai: { dailyCap: { enabled: true, tokens: 1 } } },
+  });
+  queueSummary(w.engine.services, ACCOUNT, 'T-thread');
+  await runJobs(w.engine.services, w.clock.now());
+  assert.equal((await threadSummary(w)).state, 'ready');
+  assert.equal((await threadSummary(w, 'T-two')).state, 'failed');
+  const job = jobsOf(w, 'summary').find(j => j.key.includes('T-two'))!;
+  assert.equal(job.state, 'queued', 'the job waits for tomorrow — only the placeholder collapsed');
+});
+
+test('a spent cap settles a held placeholder backlog past one sweep', async () => {
+  const w = await world(stubTransport({}));
+  seedMail(w);
+  await consentNow(w);
+  // 500 pendings — past TWO of the 200-row sweep bounds — across five threads; every one must collapse,
+  // not just the oldest 200 (the pause that force-closes may not fire again until tomorrow, so a backlog
+  // that outlives a single drain pass would keep cards spinning).
+  const writes = ['T-a', 'T-b', 'T-c', 'T-d', 'T-e'].flatMap(remoteId =>
+    Array.from({ length: 100 }, (_, i) => ({
+      kind: 'summary' as const,
+      accountId: ACCOUNT,
+      remoteThreadId: remoteId,
+      inputHash: `orphan-${i}`,
+      model: 'openai/gpt-oss-120b',
+      text: '',
+      action: null,
+      state: 'pending' as const,
+    })),
+  );
+  w.engine.services.store.commit({
+    opId: 'backlog',
+    origin: 'sync',
+    writes: ['T-a', 'T-b', 'T-c', 'T-d', 'T-e'].map((t, i) => msg(`bm${i}`, t, 8 + i)),
+  });
+  w.engine.services.store.commit({ opId: 'pendings', origin: 'system', writes });
+  // A spent day: the next pass pauses the queue instead of running the seeded work.
+  w.engine.services.store.commit({
+    opId: 'spent',
+    origin: 'system',
+    writes: [
+      {
+        kind: 'aiUsage',
+        day: new Date(w.clock.now()).toISOString().slice(0, 10),
+        provider: 'groq',
+        model: 'm',
+        lane: 'background',
+        requests: 1,
+        tokensIn: 150_000,
+        tokensOut: 1,
+      },
+    ],
+  });
+  await runJobs(w.engine.services, w.clock.now());
+  const left = w.engine.services.store.read(q =>
+    q.get<{ c: number }>("SELECT count(*) AS c FROM summaries WHERE state = 'pending'"),
+  );
+  assert.equal(
+    left?.c,
+    0,
+    'every held placeholder settles — no spinning card past the sweep bound',
+  );
+});
+
+test('an open setup session settles held placeholders while it pauses the queue', async () => {
+  const w = await world(stubTransport({}));
+  seedMail(w);
+  await consentNow(w);
+  queueSummary(w.engine.services, ACCOUNT, 'T-thread');
+  assert.equal((await threadSummary(w)).state, 'pending');
+  const { setupId } = await w.call('Setup/begin', { origin: 'onboarding' });
+  try {
+    await runJobs(w.engine.services, w.clock.now());
+    assert.equal((await threadSummary(w)).state, 'failed');
+    assert.equal(jobsOf(w, 'summary')[0].state, 'queued', 'the job waits out the session');
+  } finally {
+    // The session flag is module-global — every other test's runJobs must see it closed.
+    await w.call('Setup/end', { setupId, reason: 'closed' });
+  }
+});
+
+test('a pending placeholder with no live job behind it settles on the next pass', async () => {
+  const w = await world(stubTransport({}));
+  seedMail(w);
+  await consentNow(w);
+  // A placeholder whose job row vanished — an older version's row, a deleted job — must not pin the card.
+  w.engine.services.store.commit({
+    opId: 'orphan',
+    origin: 'system',
+    writes: [
+      {
+        kind: 'summary',
+        accountId: ACCOUNT,
+        remoteThreadId: 'T-thread',
+        inputHash: 'lost',
+        model: 'openai/gpt-oss-120b',
+        text: '',
+        action: null,
+        state: 'pending',
+      },
+    ],
+  });
+  await runJobs(w.engine.services, w.clock.now());
+  // The orphaned row settled; the live pipeline's own summary for the thread still landed.
+  const row = w.engine.services.store.read(q =>
+    q.get<{ state: string }>(
+      `SELECT s.state FROM summaries s JOIN threads t ON t.id = s.thread_id
+       WHERE t.remote_id = ? AND s.input_hash = ?`,
+      'T-thread',
+      'lost',
+    ),
+  );
+  assert.equal(row?.state, 'failed');
+});
+
+test('a classify job that dies settles the placeholder like a summary job', async () => {
+  const w = await world(stubTransport({ fail: new AiCallError('gatePermanent', 'off') }));
+  seedMail(w);
+  await consentNow(w);
+  // `classify` shares the summary singleton key: Ai/request parks the job, queueSummary arms the card.
+  await w.call('Ai/request', { opId: 'r', kind: 'classify', threadId: `${ACCOUNT}:T-thread` });
+  queueSummary(w.engine.services, ACCOUNT, 'T-thread');
+  assert.equal(jobsOf(w, 'classify').length, 1);
+  assert.equal((await threadSummary(w)).state, 'pending');
+  await runJobs(w.engine.services, w.clock.now());
+  assert.equal(jobsOf(w, 'classify')[0].state, 'skipped');
+  assert.equal((await threadSummary(w)).state, 'failed');
+});
+
+test('a pending placeholder with older text goes stale, not empty, when AI is switched off', async () => {
+  const w = await world(stubTransport({}));
+  seedMail(w);
+  await consentNow(w);
+  await runJobs(w.engine.services, w.clock.now());
+  assert.equal((await threadSummary(w)).state, 'ready');
+  // New mail re-pends the thread under a new input hash, carrying the older summary's text.
+  w.engine.services.store.commit({
+    opId: 'reply',
+    origin: 'sync',
+    writes: [msg('m3', 'T-thread', 7, { snippet: 'One more question about Friday.' })],
+  });
+  queueSummary(w.engine.services, ACCOUNT, 'T-thread');
+  assert.equal((await threadSummary(w)).state, 'pending');
+  await w.call('Settings/set', { opId: 'off', patch: { ai: { background: false } } });
+  await runJobs(w.engine.services, w.clock.now());
+  const row = await threadSummary(w);
+  assert.equal(row.state, 'stale');
+  assert.equal(row.text, 'Ada asked about the invoice.');
+});
+
+test('a rate limit pauses the queue: one 429, not every queued job burning its attempts (Home card repro)', async () => {
+  // The 2026-11-17 retest: Groq answered 429 and the runner kept claiming. Every due job spent an attempt in the
+  // same second, the backoffs stayed in lockstep, and the focus card sat on "Summarizing…" for hours.
+  const limited = stubTransport({ fail: new AiCallError('rateLimited', 'slow down', 90_000) });
+  const w = await world(limited);
+  seedMail(w);
+  const many = Array.from({ length: 12 }, (_, i) =>
+    msg(`n${i}`, `T-n${i}`, 10 + i, { subject: `Note ${i}`, snippet: 'A short note.' }),
+  );
+  w.engine.services.store.commit({ opId: 'more', origin: 'sync', writes: many });
+  await consentNow(w);
+  queueSummary(w.engine.services, ACCOUNT, 'T-thread');
+  for (let i = 0; i < 12; i++) queueSummary(w.engine.services, ACCOUNT, `T-n${i}`);
+  assert.equal((await threadSummary(w)).state, 'pending');
+  await runJobs(w.engine.services, w.clock.now());
+  // At most one round (CONCURRENCY) reached the provider before the whole queue paused.
+  assert.ok(limited.calls.length <= 2, `${limited.calls.length} calls under a rate limit`);
+  const rows = w.engine.services.store.read(q =>
+    q.all<{ state: string; attempts: number; next_at: number }>(
+      "SELECT state, attempts, next_at FROM jobs WHERE kind = 'summary'",
+    ),
+  );
+  assert.equal(rows.length, 13);
+  for (const r of rows) {
+    assert.equal(r.state, 'queued');
+    assert.equal(r.attempts, 0, 'a rate limit spends no attempt');
+    assert.ok(r.next_at >= w.clock.now() + 90_000, 'every row waits out the Retry-After');
+  }
+  // Nothing is working during the pause, so no card holds "Summarizing…" — and a wake does not raise it again.
+  assert.equal((await threadSummary(w)).state, 'failed');
+  queueSummary(w.engine.services, ACCOUNT, 'T-thread');
+  assert.equal((await threadSummary(w)).state, 'failed');
+  const line = w.lines.find(l => l.event === 'ai.job.failed');
+  assert.equal((line?.data.error as { reason?: string } | undefined)?.reason, 'ai.rateLimited');
+  // The window reopens: the queue drains and the Home card gets its summary.
+  w.engine.services.ai.useTransport(stubTransport({}));
+  w.clock.advance(91_000);
+  await runJobs(w.engine.services, w.clock.now());
+  assert.equal((await threadSummary(w)).state, 'ready');
+  assert.ok(jobsOf(w, 'summary').every(j => j.state === 'done'));
+});
+
+test('a rate limit pauses only its own feature, and a long Retry-After is capped', async () => {
+  // Only Summaries' provider is limited: the summary prompt gets a six-hour 429, anything else answers.
+  const base = stubTransport({});
+  const limited: AiTransport = {
+    ...base,
+    chat: req =>
+      String(req.messages[0]?.content).startsWith('Summarize')
+        ? Promise.reject(new AiCallError('rateLimited', 'quota', 6 * 3_600_000))
+        : base.chat(req),
+  };
+  const w = await world(limited);
+  seedMail(w);
+  await consentNow(w);
+  w.engine.services.store.commit({
+    opId: 'two',
+    origin: 'sync',
+    writes: [msg('t2', 'T-two', 7, { subject: 'Second', snippet: 'Second note.' })],
+  });
+  // Two summary jobs fill the round's two slots; the due plan job behind them is left to the next round.
+  queueSummary(w.engine.services, ACCOUNT, 'T-thread');
+  queueSummary(w.engine.services, ACCOUNT, 'T-two');
+  // A due job of another feature: a rate-limited Summaries must not hold it back.
+  w.engine.services.store.commit({
+    opId: 'other-feature',
+    origin: 'system',
+    writes: [
+      {
+        kind: 'job',
+        action: 'enqueue',
+        job: { kind: 'plan', key: 'plan:x', priority: 5, payload: '{}', nextAt: w.clock.now() },
+      },
+    ],
+  });
+  await runJobs(w.engine.services, w.clock.now());
+  const rows = w.engine.services.store.read(q =>
+    q.all<{ kind: string; next_at: number }>('SELECT kind, next_at FROM jobs ORDER BY id'),
+  );
+  const summary = rows.find(r => r.kind === 'summary')!;
+  assert.equal(
+    summary.next_at,
+    w.clock.now() + RATE_LIMIT_MAX_MS,
+    'six hours asked, fifteen minutes waited',
+  );
+  // The due plan job is not pushed to Summaries' window (a global pause used to defer it with everything else).
+  assert.ok(
+    rows.find(r => r.kind === 'plan')!.next_at <= w.clock.now(),
+    'Plans keeps its own schedule',
+  );
+  assert.equal(rateLimitWait(Number.NaN), 60_000);
+  assert.equal(rateLimitWait(Number.POSITIVE_INFINITY), 60_000);
+});
+
+test("a rate-limit pause moves the feature's due rows in one bulk defer", async () => {
+  // Post-merge follow-up: pausing used to write one AiJob change row per deferred job — about 202 per pass
+  // on the real account, ~290k a day at the floor. The scoped defer moves them in one UPDATE like pauseDue:
+  // one '*' mark, and each moved row is stamped ai.paused like any other pause.
+  const limited = stubTransport({ fail: new AiCallError('rateLimited', 'slow down', 60_000) });
+  const w = await world(limited);
+  seedMail(w);
+  const many = Array.from({ length: 6 }, (_, i) =>
+    msg(`b${i}`, `T-b${i}`, 10 + i, { subject: `Bulk ${i}`, snippet: 'A note.' }),
+  );
+  w.engine.services.store.commit({ opId: 'bulk', origin: 'sync', writes: many });
+  await consentNow(w);
+  queueSummary(w.engine.services, ACCOUNT, 'T-thread');
+  for (let i = 0; i < 6; i++) queueSummary(w.engine.services, ACCOUNT, `T-b${i}`);
+  const seq = w.engine.services.store.seq();
+  await runJobs(w.engine.services, w.clock.now());
+  const marks = w.engine.services.store.read(q =>
+    q.all<{ id: string }>(
+      "SELECT id FROM changes WHERE seq > ? AND type = 'AiJob' AND id = '*'",
+      seq,
+    ),
+  );
+  assert.equal(marks.length, 1, 'one bulk defer, one * mark');
+  const rows = w.engine.services.store.read(q =>
+    q.all<{ last_error: string | null; n: number }>(
+      "SELECT last_error, COUNT(*) n FROM jobs WHERE kind IN ('summary','classify') GROUP BY last_error",
+    ),
+  );
+  // The two rows that ran into the 429 were requeued with their own wait (last_error untouched); the other
+  // five went through the bulk defer.
+  assert.equal(rows.find(r => r.last_error === 'ai.paused')?.n, 5);
+  assert.equal(rows.find(r => r.last_error === null)?.n, 2);
+  const all = w.engine.services.store.read(q =>
+    q.all<{ next_at: number }>("SELECT next_at FROM jobs WHERE kind = 'summary'"),
+  );
+  for (const r of all)
+    assert.ok(r.next_at >= w.clock.now() + 60_000, 'every row waits out the window');
+});
+
+test('a rate limit keeps the attempt budget a job already spent', async () => {
+  // Post-merge follow-up: a job with two earlier failures keeps attempts=2 across a release — the
+  // provider's wait spends nothing — and the next ordinary failure spends attempt 3, not 1.
+  const failing = stubTransport({ fail: new Error('provider exploded') });
+  const w = await world(failing);
+  seedMail(w);
+  await consentNow(w);
+  queueSummary(w.engine.services, ACCOUNT, 'T-thread');
+  const attempts = () =>
+    w.engine.services.store.read(
+      q =>
+        q.get<{ attempts: number }>("SELECT attempts FROM jobs WHERE kind = 'summary'")!.attempts,
+    );
+  await runJobs(w.engine.services, w.clock.now());
+  assert.equal(attempts(), 1);
+  w.clock.advance(RATE_LIMIT_MAX_MS);
+  await runJobs(w.engine.services, w.clock.now());
+  assert.equal(attempts(), 2);
+  w.engine.services.ai.useTransport(
+    stubTransport({ fail: new AiCallError('rateLimited', 'slow down', 60_000) }),
+  );
+  w.clock.advance(RATE_LIMIT_MAX_MS);
+  await runJobs(w.engine.services, w.clock.now());
+  assert.equal(attempts(), 2, 'a rate limit spends no attempt');
+  w.engine.services.ai.useTransport(failing);
+  w.clock.advance(RATE_LIMIT_MAX_MS);
+  await runJobs(w.engine.services, w.clock.now());
+  assert.equal(attempts(), 3, 'earlier failures were never forgiven');
+});
+
+test('repeated rate limits widen the pause, and a clean pass resets it', async () => {
+  // Post-merge follow-up: at the 60 s floor the queue re-asked ~2,880 times a day. Each consecutive pause
+  // multiplies the wait, so a provider that keeps saying 429 is asked less and less often.
+  const limited = stubTransport({ fail: new AiCallError('rateLimited', 'slow down', undefined) });
+  const w = await world(limited);
+  seedMail(w);
+  await consentNow(w);
+  queueSummary(w.engine.services, ACCOUNT, 'T-thread');
+  const nextAt = () =>
+    w.engine.services.store.read(
+      q => q.get<{ next_at: number }>("SELECT next_at FROM jobs WHERE kind = 'summary'")!.next_at,
+    );
+  await runJobs(w.engine.services, w.clock.now());
+  assert.equal(nextAt() - w.clock.now(), 60_000, 'first pause waits out the floor');
+  w.clock.advance(61_000);
+  await runJobs(w.engine.services, w.clock.now());
+  assert.equal(nextAt() - w.clock.now(), 120_000, 'a second consecutive limit doubles the wait');
+  w.clock.advance(121_000);
+  await runJobs(w.engine.services, w.clock.now());
+  assert.equal(nextAt() - w.clock.now(), 180_000, 'and each further limit waits longer');
+  // The window finally opens: the queue drains and the streak resets to the floor.
+  w.engine.services.ai.useTransport(stubTransport({}));
+  w.clock.advance(181_000);
+  await runJobs(w.engine.services, w.clock.now());
+  assert.equal(jobsOf(w, 'summary')[0].state, 'done');
+  w.engine.services.store.commit({
+    opId: 'again',
+    origin: 'sync',
+    writes: [msg('n9', 'T-n9', 20, { subject: 'Later', snippet: 'A note.' })],
+  });
+  queueSummary(w.engine.services, ACCOUNT, 'T-n9');
+  w.engine.services.ai.useTransport(limited);
+  await runJobs(w.engine.services, w.clock.now());
+  const reopened = w.engine.services.store.read(
+    q =>
+      q.get<{ next_at: number }>(
+        "SELECT next_at FROM jobs WHERE kind = 'summary' AND state IN ('queued','failed')",
+      )!.next_at,
+  );
+  assert.equal(reopened - w.clock.now(), 60_000, 'a clean pass resets the streak to the floor');
+});

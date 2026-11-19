@@ -1,0 +1,17 @@
+<p>Entity edge cases.</p>
+<p>Null: &#0; &#x0; &#x0000; &#00000000000000000; end</p>
+<p>Surrogates: &#xD800; &#xDBFF; &#xDC00; &#xDFFF; &#55296; &#56320; end</p>
+<p>Beyond Unicode: &#1114112; &#x110000; &#x7FFFFFFF; &#99999999999999999999; &#xFFFFFFFFFFFFFFFF; end</p>
+<p>Noncharacters: &#xFFFE; &#xFFFF; &#x1FFFE; &#x10FFFF; &#xFDD0; end</p>
+<p>Windows-1252 remapped: &#128; &#130; &#145; &#146; &#150; &#159; &#x80; &#x9F; end</p>
+<p>C0 controls: &#1; &#2; &#8; &#11; &#12; &#14; &#31; &#127; end</p>
+<p>Whitespace: &#9; &#10; &#13; &#32; &#160; &#x2028; &#x2029; &#x85; end</p>
+<p>Missing semicolons: &#65 &#x41 &amp &lt &gt &quot &nbsp &copy &notin &notit end</p>
+<p>Odd forms: &#X41; &#x; &#; &# &#x41g; &#65a; &AMP; &Amp; &lt;&LT; &ampamp; end</p>
+<p>Long names: &CounterClockwiseContourIntegral; &NotNestedGreaterGreater; &nonexistententity; &fjlig; end</p>
+<p>In attributes: <a href="x?a=1&b=2&copy=3&amp=4&lt=5" title="&#x22;&#34;&quot;&amp;quot;">attr entities</a></p>
+<p>In URL scheme: <a href="&#x6a;&#x61;&#x76;&#x61;&#x73;&#x63;&#x72;&#x69;&#x70;&#x74;&#x3a;fetch('{{CANARY}}/{{ID}}/scheme-hex')">entity scheme</a></p>
+<textarea>&#0; &#xD800; &amp;lt;</textarea>
+<title>&#0; &#xD800;</title>
+<script>var s = "&#0; &#xD800; &lt;";</script>
+<style>/* &#0; &#xD800; */ p { content: "&#0;" }</style>

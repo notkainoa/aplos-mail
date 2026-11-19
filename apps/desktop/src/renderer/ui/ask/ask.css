@@ -1,0 +1,1045 @@
+/* ask family: AskDock, AskTurn, StepLog, Citation, ProposalCard, Palette, SearchField, OperatorToken
+   (DESIGN §6, §7.7, §7.9). Tokens only. Buttons and keycaps are the shared parts defined in compose.css.
+   Mockups: ask.html, palette.html, search.html. */
+
+/* Native control reset at zero specificity, so every rule below wins and no browser chrome shows through. */
+:where(
+  .ui-ask-dock__tab,
+  .ui-ask-dock__input,
+  .ui-ask-dock__queued-text,
+  .ui-step-log__toggle,
+  .ui-citation__chip,
+  .ui-operator-token__remove,
+  .ui-search-field__input,
+  .ui-palette__input,
+  .ui-palette__key-row
+) {
+  appearance: none;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: inherit;
+  font: inherit;
+  letter-spacing: inherit;
+  cursor: default;
+}
+
+/* ---------- AskDock: a second pane ---------- */
+.ui-ask-dock {
+  --ask-dock-w: var(--dock-w);
+  position: relative;
+  display: flex;
+  flex: none;
+  flex-direction: column;
+  width: var(--ask-dock-w);
+  height: 100%;
+  min-height: 0;
+  border-radius: var(--radius-lg);
+  background: var(--canvas);
+  box-shadow: var(--elev-pane);
+  color: var(--ink);
+}
+.ui-ask-dock__resize {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  /* Inside the pane's edge: the dock pane clips overflow, so a handle straddling the edge loses half its grab. */
+  left: 0;
+  z-index: var(--z-sticky);
+  width: var(--space-2);
+  cursor: col-resize;
+  touch-action: none;
+}
+.ui-ask-dock__resize:focus-visible {
+  outline: var(--focus-width) solid var(--accent);
+  outline-offset: var(--focus-gap);
+}
+.ui-ask-dock__head {
+  display: flex;
+  flex: none;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-2);
+  height: var(--pane-head);
+  padding: 0 var(--space-2) 0 var(--space-5);
+}
+.ui-ask-dock__tabs {
+  display: inline-flex;
+  padding: var(--space-half);
+  border-radius: var(--radius-md);
+  background: var(--sunken);
+}
+.ui-ask-dock__tab {
+  height: var(--control-xs);
+  padding: 0 var(--space-3);
+  border-radius: var(--radius-sm);
+  color: var(--dim);
+  font: var(--type-ui);
+  letter-spacing: var(--track-ui);
+  transition:
+    background-color var(--dur-hover) var(--ease-std),
+    color var(--dur-hover) var(--ease-std);
+}
+.ui-ask-dock__tab[aria-selected='true'] {
+  background: var(--float);
+  box-shadow: var(--elev-puck);
+  color: var(--ink);
+  font-weight: 500;
+}
+.ui-ask-dock__tab:focus-visible {
+  outline: var(--focus-width) solid var(--accent);
+  outline-offset: var(--focus-gap);
+}
+.ui-ask-dock__body {
+  flex: 1;
+  min-height: 0;
+  padding: var(--space-1) var(--space-5) var(--space-5);
+  overflow: auto;
+  scrollbar-width: none;
+}
+.ui-ask-dock__foot {
+  flex: none;
+  /* Room for the field's focus ring (width + gap) so it never touches the dock's edge. */
+  padding: var(--space-3) var(--space-4) var(--space-4);
+}
+
+/* empty view */
+.ui-ask-dock__group-label {
+  margin: var(--space-7) 0 var(--space-1);
+  color: var(--dim);
+  font: var(--type-small);
+  font-weight: 500;
+}
+.ui-ask-dock__empty > [role='group']:first-child > .ui-ask-dock__group-label {
+  margin-top: var(--space-4);
+}
+.ui-ask-dock__option {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  min-height: var(--control-md);
+  margin: 0 calc(-1 * var(--space-3));
+  padding: var(--space-1) var(--space-3);
+  border-radius: var(--radius-md);
+  color: var(--ink);
+  font: var(--type-base);
+  letter-spacing: var(--track-base);
+}
+/* A suggestion is a quiet hairline row with its speech-bubble mark; it stays in the dock and never moves on hover. */
+.ui-ask-dock__option[data-kind='suggestion'] {
+  margin-bottom: var(--space-1);
+  box-shadow: inset 0 0 0 var(--hairline) var(--line);
+}
+.ui-ask-dock__option[data-kind='suggestion'] .ui-compose-icon {
+  flex: none;
+  color: var(--dim);
+}
+.ui-ask-dock__option-text {
+  flex: 1;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.ui-ask-dock__option-text[data-recent='true'] {
+  color: var(--ink-2);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.ui-ask-dock__option-time {
+  flex: none;
+  color: var(--dim);
+  font: var(--type-small);
+}
+.ui-ask-dock__option[data-cursor='true'] {
+  background: var(--puck);
+}
+.ui-ask-dock__option[data-cursor='true']::before {
+  content: '';
+  position: absolute;
+  top: var(--space-2);
+  bottom: var(--space-2);
+  left: var(--space-1); /* inside the rounded slab, not on its edge */
+  width: var(--select-bar);
+  border-radius: var(--select-bar);
+  background: var(--accent);
+}
+@media (hover: hover) {
+  .ui-ask-dock__option:hover {
+    background: var(--hover);
+  }
+  .ui-ask-dock__option[data-cursor='true']:hover {
+    background: var(--puck);
+  }
+}
+
+/* no provider: one plain sentence and one button in the empty body, a short line by the field, never a red error */
+.ui-ask-dock__setup {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: var(--space-2);
+  padding-top: var(--space-4);
+}
+.ui-ask-dock__setup > .ui-compose-btn {
+  /* The same small outlined button Settings uses for a row action (Add a key). */
+  height: var(--control-sm);
+  padding: 0 var(--space-3);
+  box-shadow: inset 0 0 0 var(--hairline) var(--line-strong);
+  color: var(--ink-2);
+  font-weight: 500;
+}
+.ui-ask-dock__setup-text {
+  margin: 0;
+  color: var(--ink-2);
+  font: var(--type-base);
+  letter-spacing: var(--track-base);
+}
+/* queued follow-ups and the field */
+.ui-ask-dock__queued {
+  margin-bottom: var(--space-2);
+  padding: var(--space-2) var(--space-3);
+  border-radius: var(--radius-md);
+  background: var(--raised);
+}
+.ui-ask-dock__queued-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-2);
+  color: var(--dim);
+  font: var(--type-small);
+}
+.ui-ask-dock__queued-text {
+  display: block;
+  width: 100%;
+  padding: var(--space-half) 0 0;
+  border: 0;
+  background: none;
+  color: var(--ink);
+  font: var(--type-base);
+  letter-spacing: var(--track-base);
+  field-sizing: content;
+  resize: none;
+}
+.ui-ask-dock__queued-text:focus-visible {
+  outline: var(--focus-width) solid var(--accent);
+  outline-offset: var(--focus-gap);
+}
+.ui-ask-dock__field {
+  min-height: var(--control-lg);
+  padding: var(--space-2) var(--space-2) var(--space-2) var(--space-3);
+  border-radius: var(--radius-lg);
+  background: var(--paper);
+  box-shadow: var(--elev-card);
+}
+.ui-ask-dock__field-row {
+  display: flex;
+  align-items: flex-end;
+  gap: var(--space-2);
+}
+.ui-ask-dock__input {
+  flex: 1;
+  min-width: 0;
+  max-height: calc(var(--space-10) * 2);
+  padding: var(--space-1) 0;
+  border: 0;
+  background: none;
+  color: var(--ink);
+  font: var(--type-base);
+  letter-spacing: var(--track-base);
+  field-sizing: content;
+  resize: none;
+}
+.ui-ask-dock__input::placeholder {
+  color: var(--dim);
+}
+.ui-ask-dock__input:disabled {
+  cursor: default; /* waiting for a key: disabled text is --dim, the placeholder already is */
+}
+/* The ring belongs to the rounded field card, not the bare textarea: it follows the container's
+   --radius-lg with the same focus tokens and no layout shift. */
+.ui-ask-dock__input:focus-visible {
+  outline: none;
+}
+.ui-ask-dock__field:has(.ui-ask-dock__input:focus-visible) {
+  outline: var(--focus-width) solid var(--accent);
+  outline-offset: var(--focus-gap);
+}
+.ui-ask-dock__acts {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  gap: var(--space-half);
+}
+.ui-ask-dock__field .ui-dictation-line {
+  margin-top: var(--space-1);
+}
+
+/* ---------- AskTurn ---------- */
+.ui-ask-turn {
+  margin: var(--space-4) 0 var(--space-6);
+}
+.ui-ask-turn__question {
+  margin: 0 0 var(--space-3);
+  color: var(--ink-2);
+  font: var(--type-base);
+  font-weight: 500;
+  letter-spacing: var(--track-base);
+  overflow-wrap: anywhere;
+}
+.ui-ask-turn__answer {
+  color: var(--ink);
+  font: var(--type-answer);
+  font-variation-settings: 'opsz' var(--opsz-answer);
+  letter-spacing: var(--track-answer);
+  overflow-wrap: anywhere;
+  text-wrap: pretty;
+}
+.ui-ask-turn__answer p {
+  margin: 0;
+}
+.ui-ask-turn__answer p + p,
+.ui-ask-turn__answer p + ol,
+.ui-ask-turn__answer p + ul,
+.ui-ask-turn__answer ol + p,
+.ui-ask-turn__answer ul + p,
+.ui-ask-turn__answer ol + ol,
+.ui-ask-turn__answer ul + ul,
+.ui-ask-turn__answer ol + ul,
+.ui-ask-turn__answer ul + ol {
+  margin-top: var(--space-3);
+}
+.ui-ask-turn__answer ol,
+.ui-ask-turn__answer ul {
+  margin: 0;
+  padding-left: var(--space-5);
+}
+.ui-ask-turn__answer ol {
+  list-style: decimal;
+}
+.ui-ask-turn__answer ul {
+  list-style: disc;
+}
+.ui-ask-turn__answer li + li {
+  margin-top: var(--space-1);
+}
+.ui-ask-turn__answer li::marker {
+  color: var(--dim);
+}
+.ui-ask-turn__answer strong {
+  font-weight: 500;
+}
+.ui-ask-turn__orphan {
+  color: var(--dim);
+  font-family: var(--font-mono);
+}
+.ui-ask-turn__caret {
+  display: inline-block;
+  width: 1px;
+  height: 1em;
+  margin-left: var(--space-half);
+  background: var(--ink);
+  vertical-align: calc(-1 * var(--space-half));
+}
+.ui-ask-turn__sources {
+  margin: var(--space-2) 0 0;
+}
+.ui-ask-turn__no-source,
+.ui-ask-turn__stopped,
+.ui-ask-turn__paused,
+.ui-ask-turn__excluded {
+  margin: var(--space-2) 0 0;
+  color: var(--dim);
+  font: var(--type-small);
+  letter-spacing: var(--track-small);
+}
+.ui-ask-turn__error {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-1) var(--space-2);
+  margin-top: var(--space-3);
+  padding: var(--space-2) var(--space-2) var(--space-2) var(--space-3);
+  border-radius: var(--radius-md);
+  background: var(--stamp-tint);
+  color: var(--ink);
+  font: var(--type-ui);
+  letter-spacing: var(--track-ui);
+}
+.ui-ask-turn__error .ui-compose-icon {
+  color: var(--stamp-ink);
+}
+.ui-ask-turn__error-acts {
+  display: inline-flex;
+  flex-wrap: wrap;
+  gap: var(--space-half);
+  margin-left: auto;
+}
+
+/* ---------- StepLog ---------- */
+.ui-step-log {
+  margin-bottom: var(--space-4);
+  color: var(--dim);
+  font: var(--type-small);
+  letter-spacing: var(--track-small);
+}
+.ui-step-log__current {
+  margin: var(--space-3) 0 0;
+  color: var(--dim);
+  font: var(--type-base);
+  letter-spacing: var(--track-base);
+  overflow-wrap: anywhere;
+}
+.ui-step-log__caret {
+  display: inline-block;
+  width: 1px;
+  height: 1em;
+  margin-left: var(--space-half);
+  background: var(--ink);
+  vertical-align: calc(-1 * var(--space-half));
+}
+.ui-step-log__toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+  max-width: 100%;
+  min-height: var(--control-xs);
+  padding: 0 var(--space-1) 0 0;
+  border-radius: var(--radius-sm);
+  color: var(--dim);
+  font: var(--type-small);
+  text-align: left;
+  transition: color var(--dur-hover) var(--ease-std);
+}
+.ui-step-log__toggle > span {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.ui-step-log__toggle .ui-compose-icon {
+  transition: transform var(--dur-hover) var(--ease-std);
+}
+.ui-step-log[data-state='open'] .ui-step-log__toggle .ui-compose-icon {
+  transform: rotate(90deg);
+}
+.ui-step-log__toggle:focus-visible {
+  outline: var(--focus-width) solid var(--accent);
+  outline-offset: var(--focus-gap);
+}
+@media (hover: hover) {
+  .ui-step-log__toggle:hover {
+    color: var(--ink-2);
+  }
+}
+.ui-step-log__steps {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  margin: 0;
+  padding: var(--space-1) 0 var(--space-1) var(--space-4);
+  list-style: none;
+  overflow-wrap: anywhere;
+}
+.ui-step-log__steps[hidden] {
+  display: none;
+}
+
+/* ---------- Citation ---------- */
+.ui-citation {
+  --shown: 0;
+  position: relative;
+  display: inline;
+}
+.ui-citation__chip {
+  display: inline-flex;
+  align-items: center;
+  height: var(--kbd);
+  margin-left: var(--space-half);
+  padding: 0 var(--space-1);
+  border-radius: var(--radius-xs);
+  background: var(--sunken);
+  color: var(--dim);
+  font: var(--type-caption);
+  font-family: var(--font-mono);
+  letter-spacing: var(--track-caption);
+  vertical-align: var(--space-half);
+  transition: color var(--dur-hover) var(--ease-std);
+  /* The chip draws at --kbd (18); its hit area is the 24 floor. */
+  position: relative;
+}
+.ui-citation__chip::before {
+  content: '';
+  position: absolute;
+  inset: calc((var(--kbd) - var(--control-xs)) / 2) 0;
+}
+.ui-citation__chip:focus-visible {
+  outline: var(--focus-width) solid var(--accent);
+  outline-offset: var(--space-half);
+}
+.ui-citation__quote {
+  position: absolute;
+  bottom: 100%;
+  left: 0;
+  z-index: var(--z-tooltip);
+  display: block;
+  width: calc(var(--ask-dock-w) - var(--space-8));
+  max-width: calc(var(--dock-w-narrow) - var(--space-8));
+  margin-bottom: var(--space-2);
+  padding: var(--space-3) var(--space-4);
+  border-radius: var(--radius-lg);
+  background: var(--paper);
+  box-shadow: var(--elev-float);
+  opacity: var(--shown);
+  visibility: hidden;
+  pointer-events: none;
+  text-align: left;
+  /* `reveal`: opacity, 4 px and .98 (DESIGN §4.8). Hover and focus only flip --shown; nothing moves. */
+  transform: translateY(calc((1 - var(--shown)) * var(--move-reveal)))
+    scale(calc(1 - (1 - var(--shown)) * (1 - var(--scale-reveal))));
+  transform-origin: bottom left;
+  transition:
+    opacity var(--dur-reveal-in) var(--ease-out),
+    transform var(--dur-reveal-in) var(--ease-out),
+    visibility var(--dur-reveal-in) var(--ease-std);
+}
+@supports (position-area: top) {
+  .ui-citation {
+    anchor-name: var(--cite-anchor);
+  }
+  .ui-citation__quote {
+    position: fixed;
+    position-anchor: var(--cite-anchor);
+    position-area: top span-right;
+    position-try-fallbacks: flip-inline;
+    inset: auto;
+  }
+}
+/* Pointer hover is tracked in Citation (data-hover) so the reveal's transform never sits in a :hover rule. */
+.ui-citation[data-hover='true'],
+.ui-citation:focus-within {
+  --shown: 1;
+}
+.ui-citation[data-hover='true'] .ui-citation__quote,
+.ui-citation:focus-within .ui-citation__quote {
+  visibility: visible;
+}
+.ui-citation__text {
+  display: block;
+  color: var(--ink);
+  font: var(--type-base);
+  letter-spacing: var(--track-base);
+  overflow-wrap: anywhere;
+}
+.ui-citation__text + .ui-citation__source {
+  margin-top: var(--space-2);
+}
+.ui-citation__source {
+  display: block;
+  color: var(--dim);
+  font: var(--type-small);
+  letter-spacing: var(--track-small);
+  overflow-wrap: anywhere;
+}
+@media (hover: hover) {
+  .ui-citation__chip:hover {
+    color: var(--accent);
+  }
+}
+
+/* ---------- ProposalCard: the dock's one card ---------- */
+.ui-proposal-card[data-state='pending'] {
+  margin-top: var(--space-6);
+  padding: var(--space-4);
+  border-radius: var(--radius-lg);
+  background: var(--paper);
+  box-shadow: var(--elev-card);
+}
+.ui-proposal-card__kicker {
+  margin: 0;
+  color: var(--dim);
+  font: var(--type-small);
+  letter-spacing: var(--track-small);
+}
+.ui-proposal-card__title {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  margin: var(--space-2) 0 0;
+  color: var(--ink);
+  font: var(--type-title);
+  letter-spacing: var(--track-title);
+}
+.ui-proposal-card__title > span {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.ui-proposal-card__mark {
+  --swatch: var(--tag-sky);
+  flex: none;
+  width: var(--mark-dot);
+  height: var(--mark-dot);
+  border-radius: var(--radius-pill);
+  background: var(--swatch);
+}
+.ui-proposal-card__consequence {
+  margin: var(--space-half) 0 0 calc(var(--mark-dot) + var(--space-2));
+  color: var(--dim);
+  font: var(--type-small);
+  letter-spacing: var(--track-small);
+  overflow-wrap: anywhere;
+}
+.ui-proposal-card__keys {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-1);
+  margin-top: var(--space-4);
+}
+.ui-proposal-card[data-state='applied'] {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  margin: var(--space-5) 0 0;
+  color: var(--ink-2);
+  font: var(--type-ui);
+  letter-spacing: var(--track-ui);
+}
+.ui-proposal-card[data-state='applied'] .ui-compose-icon {
+  color: var(--hill);
+}
+
+/* ---------- OperatorToken: the one pill besides counts ---------- */
+.ui-operator-token {
+  display: inline-flex;
+  align-items: center;
+  max-width: 100%;
+  height: var(--control-xs);
+  padding: 0 var(--space-1) 0 var(--space-2);
+  border-radius: var(--radius-pill);
+  background: var(--accent-wash);
+  color: var(--ink);
+  font: var(--type-small);
+  letter-spacing: var(--track-small);
+}
+.ui-operator-token__op {
+  margin-right: var(--space-1);
+  color: var(--accent);
+  font-weight: 500;
+}
+.ui-operator-token__value {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.ui-operator-token__remove {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  justify-content: center;
+  width: var(--space-4);
+  height: var(--space-4);
+  margin-left: var(--space-1);
+  border-radius: var(--radius-pill);
+  color: var(--dim);
+  transition:
+    background-color var(--dur-hover) var(--ease-std),
+    color var(--dur-hover) var(--ease-std);
+  position: relative;
+}
+/* 16 px drawn, 24 px to hit. */
+.ui-operator-token__remove::before {
+  content: '';
+  position: absolute;
+  inset: calc((var(--space-4) - var(--control-xs)) / 2);
+}
+.ui-operator-token__remove:focus-visible {
+  outline: var(--focus-width) solid var(--accent);
+  outline-offset: var(--focus-gap);
+}
+@media (hover: hover) {
+  .ui-operator-token__remove:hover {
+    background: var(--hover);
+    color: var(--ink);
+  }
+}
+
+/* ---------- SearchField: heading size, accent underline while focused ---------- */
+.ui-search-field {
+  display: block;
+}
+.ui-search-field__title {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  min-height: var(--space-8);
+  /* The 2 px accent underline is a straight bar under the row, so it has no curved ends. */
+  position: relative;
+}
+.ui-search-field__title::after {
+  content: '';
+  position: absolute;
+  right: 0;
+  bottom: calc(-1 * var(--space-half));
+  left: 0;
+  height: var(--space-half);
+  background: var(--accent);
+  opacity: 0;
+  transition: opacity var(--dur-hover) var(--ease-std);
+}
+.ui-search-field__title:focus-within::after {
+  opacity: 1;
+}
+.ui-search-field__title .ui-compose-icon {
+  color: var(--dim);
+}
+.ui-search-field__input {
+  flex: 1;
+  min-width: 0;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--ink);
+  font: var(--type-heading);
+  letter-spacing: var(--track-heading);
+  outline: 0;
+}
+.ui-search-field__input::placeholder {
+  color: var(--dim);
+  /* The heading face is 600; a placeholder at 600 reads as typed text. */
+  font-weight: 400;
+}
+.ui-search-field__meta {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  min-height: var(--control-sm);
+  margin-top: var(--space-3);
+  padding-left: calc(var(--icon) + var(--space-3));
+  color: var(--dim);
+  font: var(--type-small);
+  letter-spacing: var(--track-small);
+}
+.ui-search-field__tokens {
+  display: flex;
+  flex: 1;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-1);
+  min-width: 0;
+}
+.ui-search-field__hint {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-half);
+}
+/* Each operator is a quiet text button: the hint reads as before, and a press puts the token in the field. */
+.ui-search-field__hint > .ui-compose-btn {
+  padding: 0 var(--space-1);
+  color: var(--accent); /* links read as insertable; the "Narrow with" prefix stays plain --dim */
+  font: var(--type-small);
+  font-variant-numeric: var(--num-small);
+  letter-spacing: var(--track-small);
+}
+.ui-search-field__hint > span {
+  margin-right: var(--space-1);
+}
+.ui-search-field__scope {
+  flex: none;
+  margin-left: auto;
+}
+.ui-search-field__meta > .ui-compose-btn {
+  margin-left: auto;
+  margin-right: calc(-1 * var(--space-2));
+  color: var(--dim);
+  font-weight: 400;
+}
+
+/* ---------- Palette: the only overlay ---------- */
+.ui-palette {
+  position: fixed;
+  inset: 0;
+  z-index: var(--z-palette);
+  display: flex;
+  align-items: flex-start;
+  justify-content: center;
+  padding-top: var(--palette-top);
+  background: var(--scrim);
+}
+.ui-palette__panel {
+  width: var(--palette-w);
+  max-width: calc(100% - 2 * var(--space-4));
+  overflow: hidden;
+  border-radius: var(--radius-xl);
+  background: var(--float);
+  box-shadow: var(--elev-float);
+  color: var(--ink);
+}
+.ui-palette__field {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  height: var(--space-9);
+  padding: 0 var(--space-4);
+  box-shadow: 0 var(--hairline) 0 var(--line);
+  transition: box-shadow var(--dur-hover) var(--ease-std);
+}
+.ui-palette__field:focus-within {
+  box-shadow: 0 var(--hairline) 0 var(--accent);
+}
+.ui-palette__field .ui-compose-icon {
+  color: var(--dim);
+}
+.ui-palette__input {
+  flex: 1;
+  min-width: var(--space-10);
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--ink);
+  font: var(--type-base);
+  letter-spacing: var(--track-base);
+  outline: 0;
+}
+.ui-palette__input::placeholder {
+  color: var(--dim);
+}
+.ui-palette__trail {
+  display: flex;
+  flex: 0 1 auto;
+  align-items: center;
+  gap: var(--space-1);
+  min-width: 0;
+  max-width: 50%;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  color: var(--dim);
+  font: var(--type-base);
+}
+.ui-palette__trail li {
+  display: inline-flex;
+  flex: 0 1 auto;
+  align-items: center;
+  gap: var(--space-1);
+  min-width: 0;
+  overflow: hidden;
+  white-space: nowrap;
+}
+.ui-palette__trail li > .ui-compose-icon {
+  flex: none;
+}
+.ui-palette__trail-text {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.ui-palette__context {
+  margin: 0;
+  padding: var(--space-3) var(--space-4) 0;
+  color: var(--dim);
+  font: var(--type-small);
+  letter-spacing: var(--track-small);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.ui-palette__context b {
+  color: var(--ink-2);
+  font-weight: 500;
+}
+.ui-palette__results {
+  max-height: var(--palette-max);
+  padding: var(--space-1) var(--space-2) var(--space-2);
+  overflow: auto;
+}
+.ui-palette__section-label {
+  padding: var(--space-3) var(--space-2) var(--space-1);
+  color: var(--dim);
+  font: var(--type-small);
+  font-weight: 500;
+}
+.ui-palette__section:first-child > .ui-palette__section-label {
+  padding-top: var(--space-2);
+}
+.ui-palette__section-label[data-hidden='true'] {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+.ui-palette__option {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  height: var(--control-md);
+  padding: 0 var(--space-2);
+  border-radius: var(--radius-sm);
+  color: var(--ink);
+  font: var(--type-ui);
+  letter-spacing: var(--track-ui);
+}
+.ui-palette__option .ui-compose-icon {
+  color: var(--dim);
+}
+.ui-palette__option[data-active='true'] {
+  background: var(--puck);
+}
+/* A keycap is --sunken, the same step as the cursor's --puck: on the cursor row it takes the paper plate and a hairline. */
+.ui-palette__option[data-active='true'] .ui-compose-kbd {
+  background: var(--paper);
+  box-shadow: inset 0 0 0 var(--hairline) var(--line-strong);
+}
+.ui-palette__option[data-active='true']::before {
+  content: '';
+  position: absolute;
+  top: var(--space-2);
+  bottom: var(--space-2);
+  left: var(--space-1); /* inside the rounded slab, not on its edge */
+  width: var(--select-bar);
+  border-radius: var(--select-bar);
+  background: var(--accent);
+}
+.ui-palette__label {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.ui-palette__label b {
+  font-weight: 600;
+}
+.ui-palette__right {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  gap: var(--space-2);
+  margin-left: auto;
+}
+.ui-palette__right .ui-compose-kbd + .ui-compose-kbd {
+  margin-left: 0;
+}
+.ui-palette__or {
+  margin: 0 calc(-1 * var(--space-1));
+  color: var(--dim);
+  font: var(--type-small);
+  letter-spacing: var(--track-small);
+}
+.ui-palette__group {
+  color: var(--dim);
+  font: var(--type-small);
+}
+.ui-palette__num {
+  flex: none;
+  width: var(--space-4);
+  color: var(--dim);
+  font: var(--type-small);
+  text-align: center;
+}
+.ui-palette__option[data-active='true'] .ui-palette__num {
+  color: var(--ink-2);
+}
+.ui-palette__icon-gap {
+  flex: none;
+  width: var(--icon);
+  height: var(--icon);
+}
+@media (hover: hover) {
+  .ui-palette__option:hover {
+    background: var(--hover);
+  }
+  .ui-palette__option[data-active='true']:hover {
+    background: var(--puck);
+  }
+}
+.ui-palette__none {
+  margin: 0;
+  padding: var(--space-5) var(--space-4);
+  color: var(--dim);
+  font: var(--type-base);
+  letter-spacing: var(--track-base);
+  overflow-wrap: anywhere;
+}
+
+/* the destructive confirm: Cancel is the default row */
+.ui-palette__confirm {
+  padding: var(--space-4) var(--space-4) var(--space-3);
+}
+.ui-palette__confirm-ask {
+  margin: 0;
+  color: var(--ink);
+  font: var(--type-title);
+  letter-spacing: var(--track-title);
+  overflow-wrap: anywhere;
+}
+.ui-palette__confirm-what {
+  max-width: 52ch;
+  margin: var(--space-1) 0 0;
+  color: var(--ink-2);
+  font: var(--type-ui);
+  letter-spacing: var(--track-ui);
+  overflow-wrap: anywhere;
+}
+.ui-palette__keys {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  margin: var(--space-4) calc(-1 * var(--space-2)) 0;
+}
+.ui-palette__key-row {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  width: 100%;
+  height: var(--control-md);
+  padding: 0 var(--space-3);
+  border-radius: var(--radius-md);
+  color: var(--ink-2);
+  font: var(--type-ui);
+  letter-spacing: var(--track-ui);
+  text-align: left;
+  transition:
+    background-color var(--dur-hover) var(--ease-std),
+    color var(--dur-hover) var(--ease-std);
+}
+.ui-palette__key-row > span:not(.ui-compose-kbd) {
+  flex: 1;
+  min-width: 0;
+}
+.ui-palette__key-row .ui-compose-kbd {
+  margin-left: auto;
+}
+.ui-palette__key-row .ui-compose-icon {
+  color: var(--dim);
+}
+.ui-palette__key-row[data-primary='true'] {
+  background: var(--puck);
+  color: var(--ink);
+  font-weight: 500;
+}
+.ui-palette__key-row[data-tone='danger'],
+.ui-palette__key-row[data-tone='danger'] .ui-compose-icon {
+  color: var(--stamp-ink);
+}
+.ui-palette__key-row:active {
+  transform: scale(var(--press-scale));
+}
+.ui-palette__key-row:focus-visible {
+  outline: var(--focus-width) solid var(--accent);
+  outline-offset: var(--focus-gap);
+}
+@media (hover: hover) {
+  .ui-palette__key-row:hover {
+    background: var(--hover);
+  }
+  .ui-palette__key-row[data-tone='danger']:hover {
+    background: var(--stamp-tint);
+  }
+}

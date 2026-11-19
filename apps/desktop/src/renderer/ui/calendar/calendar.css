@@ -1,0 +1,1710 @@
+/* The calendar family: MiniMonth, CalendarList, CalendarGrid, EventBlock, PlanOutline, NowLine, EventDetail, DatePresets.
+   Tokens only (DESIGN 4). Derived sizes are named once here from tokens: --hour (56 px per hour), --lane-min (44 px),
+   --cap (5 px). Plain first implementation; the motion runtime owns springs, ghosts and holds. */
+
+/* ---------- Family helpers: icon, icon button, button, link, keycap ---------- */
+.ui-cal-icon {
+  width: var(--icon);
+  height: var(--icon);
+  flex: none;
+  stroke-width: var(--icon-stroke);
+}
+
+.ui-cal-icon-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: none;
+  width: var(--control-sm);
+  height: var(--control-sm);
+  border-radius: var(--radius-md);
+  color: var(--dim);
+  transition:
+    transform var(--dur-press-up) var(--ease-out),
+    background-color var(--dur-hover) var(--ease-std),
+    color var(--dur-hover) var(--ease-std);
+}
+
+.ui-cal-icon-button:active {
+  transform: scale(var(--press-scale-icon));
+  transition-duration: var(--dur-press-down);
+  background: var(--press);
+}
+
+.ui-cal-button {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-2);
+  flex: none;
+  height: var(--control-md);
+  padding: 0 var(--space-3);
+  border-radius: var(--radius-md);
+  font: var(--type-ui);
+  font-weight: 500;
+  letter-spacing: var(--track-ui);
+  white-space: nowrap;
+  color: var(--ink-2);
+  transition:
+    transform var(--dur-press-up) var(--ease-out),
+    background-color var(--dur-hover) var(--ease-std),
+    color var(--dur-hover) var(--ease-std);
+}
+
+/* Hover and press tint sit on an overlay so solid fills (accent, event colours) shift with the shared tokens. */
+.ui-cal-button::after,
+.ui-event-block::after,
+.ui-plan-outline::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  pointer-events: none;
+}
+
+.ui-cal-button:active {
+  transform: scale(var(--press-scale));
+  transition-duration: var(--dur-press-down);
+  background: var(--press);
+}
+
+.ui-cal-button[data-variant='filled'] {
+  background: var(--accent);
+  color: var(--accent-ink);
+  box-shadow:
+    inset 0 1px 0 var(--press-hi),
+    inset 0 -1px 0 var(--press-lo);
+}
+
+.ui-cal-button[data-variant='filled']:active {
+  background: var(--accent);
+  box-shadow: inset 0 1px 0 var(--press-lo);
+}
+
+.ui-cal-button[data-variant='filled']:disabled {
+  /* The primary, faded: the accent at 30 % reads as "not yet" on a light and a dark dialog alike (a --sunken well was
+     a pale chip by day and a black one at night). */
+  background: color-mix(in srgb, var(--accent) 30%, transparent);
+  color: var(--dim);
+  box-shadow: none;
+}
+
+.ui-cal-button:disabled {
+  color: var(--dim);
+}
+
+.ui-cal-link {
+  min-width: 0;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  text-align: left;
+  color: var(--accent);
+  text-decoration: underline;
+  text-decoration-thickness: 1px;
+  text-underline-offset: var(--space-half);
+}
+
+.ui-cal-kbd {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: none;
+  min-width: var(--kbd);
+  height: var(--kbd);
+  padding: 0 var(--space-1);
+  border-radius: var(--radius-xs);
+  background: var(--keycap);
+  box-shadow: inset 0 0 0 var(--hairline) var(--line);
+  color: var(--keycap-ink);
+  font: var(--type-caption);
+  letter-spacing: var(--track-caption);
+}
+
+.ui-cal-button[data-variant='filled'] .ui-cal-kbd {
+  /* A hint, not part of the label: a faint plate with a hairline edge on the fill, the label's own colour. */
+  background: color-mix(in srgb, var(--accent-ink) 12%, transparent);
+  box-shadow: inset 0 0 0 var(--hairline) color-mix(in srgb, var(--accent-ink) 32%, transparent);
+  color: var(--accent-ink);
+}
+
+.ui-cal-button[data-variant='filled']:disabled .ui-cal-kbd {
+  background: color-mix(in srgb, var(--accent) 18%, transparent);
+  color: var(--dim);
+}
+
+.ui-cal-icon-button:focus-visible,
+.ui-cal-button:focus-visible,
+.ui-cal-link:focus-visible,
+.ui-mini-month__day:focus-visible,
+.ui-mini-month__nav:focus-visible,
+.ui-calendar-list__item:focus-visible,
+.ui-event-detail__answer:focus-visible,
+.ui-date-presets__time:focus-visible,
+.ui-date-presets__day:focus-visible {
+  outline: var(--focus-width) solid var(--accent);
+  outline-offset: var(--focus-gap);
+}
+
+@media (hover: hover) {
+  .ui-cal-icon-button:hover {
+    background: var(--hover);
+    color: var(--ink);
+  }
+
+  .ui-cal-button:hover:not(:disabled) {
+    background: var(--hover);
+    color: var(--ink);
+  }
+
+  .ui-cal-button[data-variant='filled']:hover:not(:disabled) {
+    background: var(--accent);
+    color: var(--accent-ink);
+  }
+
+  .ui-cal-button[data-variant='filled']:hover:not(:disabled)::after {
+    background: var(--press);
+  }
+}
+
+/* ---------- MiniMonth ---------- */
+.ui-mini-month {
+  padding: 0 var(--space-1);
+  color: var(--ink-2);
+}
+
+.ui-mini-month__head {
+  display: flex;
+  align-items: center;
+  height: var(--control-sm);
+  padding: 0 var(--space-1);
+}
+
+.ui-mini-month__title {
+  flex: 1;
+  min-width: 0;
+  font: var(--type-ui);
+  font-weight: 500;
+  letter-spacing: var(--track-ui);
+  color: var(--ink);
+}
+
+.ui-mini-month__nav {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: var(--control-xs);
+  height: var(--control-xs);
+  border-radius: var(--radius-sm);
+  color: var(--dim);
+  transition:
+    transform var(--dur-press-up) var(--ease-out),
+    background-color var(--dur-hover) var(--ease-std),
+    color var(--dur-hover) var(--ease-std);
+}
+
+.ui-mini-month__nav:active {
+  transform: scale(var(--press-scale-icon));
+  transition-duration: var(--dur-press-down);
+}
+
+.ui-mini-month__table {
+  width: 100%;
+  border-collapse: collapse;
+  text-align: center;
+  font: var(--type-small);
+  letter-spacing: var(--track-small);
+}
+
+.ui-mini-month__table th {
+  height: var(--control-xs);
+  font-weight: 400;
+  color: var(--dim);
+}
+
+.ui-mini-month__table td {
+  height: var(--control-xs);
+  padding: 0;
+}
+
+.ui-mini-month__day {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: var(--control-xs);
+  height: var(--control-xs);
+  border-radius: var(--radius-sm);
+  font: inherit;
+  letter-spacing: inherit;
+  font-variant-numeric: tabular-nums;
+  font-weight: 400;
+  color: var(--ink);
+}
+
+/* Days of the next or previous month: dim beside the in-month ink, so the month edge reads. Only today is heavier. */
+.ui-mini-month__day[data-out='true'] {
+  color: var(--dim);
+}
+
+/* The shown week (or day, or month) is one quiet band behind the digits, rounded only at the ends of each run. */
+.ui-mini-month__table td[data-band] {
+  background: var(--puck);
+}
+.ui-mini-month__table td[data-band='start'],
+.ui-mini-month__table td[data-band='startend'] {
+  border-top-left-radius: var(--radius-sm);
+  border-bottom-left-radius: var(--radius-sm);
+}
+.ui-mini-month__table td[data-band='end'],
+.ui-mini-month__table td[data-band='startend'] {
+  border-top-right-radius: var(--radius-sm);
+  border-bottom-right-radius: var(--radius-sm);
+}
+
+.ui-mini-month__day[data-today='true'] {
+  background: var(--accent);
+  color: var(--accent-ink);
+  font-weight: 600;
+}
+
+@media (hover: hover) {
+  .ui-mini-month__nav:hover {
+    background: var(--hover);
+    color: var(--ink);
+  }
+
+  .ui-mini-month__day:hover:not([data-today='true']) {
+    background: var(--hover);
+  }
+}
+
+/* ---------- CalendarList ---------- */
+.ui-calendar-list__head {
+  display: flex;
+  align-items: center;
+  height: var(--control-sm);
+  padding: 0 var(--space-2);
+  font: var(--type-small);
+  font-weight: 500;
+  color: var(--dim);
+}
+
+.ui-calendar-list__note {
+  padding: 0 var(--space-2) var(--space-1);
+  font: var(--type-small);
+  letter-spacing: var(--track-small);
+  color: var(--dim);
+}
+
+.ui-calendar-list__tag {
+  margin-left: auto;
+  flex: none;
+  font: var(--type-small);
+  letter-spacing: var(--track-small);
+  color: var(--dim);
+}
+
+.ui-calendar-list__items {
+  display: flex;
+  flex-direction: column;
+}
+
+.ui-calendar-list__item {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  width: 100%;
+  height: var(--control-md);
+  padding: 0 var(--space-2);
+  border-radius: var(--radius-md);
+  text-align: left;
+  font: var(--type-ui);
+  letter-spacing: var(--track-ui);
+  color: var(--ink-2);
+  transition: background-color var(--dur-hover) var(--ease-std);
+}
+
+.ui-calendar-list__item[data-state='hidden'] {
+  color: var(--dim);
+}
+
+.ui-calendar-list__swatch {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: none;
+  width: var(--space-3);
+  height: var(--space-3);
+  margin: 0 var(--space-half);
+  border-radius: var(--radius-xs);
+  background: var(--swatch);
+  box-shadow: inset 0 0 0 1px var(--swatch);
+  color: var(--canvas);
+}
+
+.ui-calendar-list__swatch .ui-cal-icon {
+  width: var(--icon-xs);
+  height: var(--icon-xs);
+  stroke-width: calc(var(--icon-stroke) + var(--hairline));
+}
+
+.ui-calendar-list__item[data-state='hidden'] .ui-calendar-list__swatch {
+  background: transparent;
+}
+
+.ui-calendar-list__name {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+@media (hover: hover) {
+  .ui-calendar-list__item:hover {
+    background: var(--hover);
+  }
+}
+
+/* ---------- CalendarGrid ---------- */
+.ui-calendar-grid {
+  --hour: calc(
+    var(--space-9) + var(--space-2)
+  ); /* one hour of grid: 56 px, so 8 AM to 8 PM fits the pane */
+  --gt: var(--space-3); /* room above the first hour line so its label is not clipped */
+  --lane-min: calc(var(--space-8) + var(--space-1)); /* a lane never narrows below 44 px */
+  --hours-w: var(--space-10);
+  --ev-gap: var(--space-half);
+  --drag-source: 0.5; /* the entry being dragged stays behind, dimmed (no token for it yet: see prop_gaps) */
+  flex: 1;
+  height: 100%; /* bounded under a parent that is not a flex column too, so the 24 hours scroll inside it */
+  min-height: 0;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  position: relative;
+  color: var(--ink);
+}
+
+.ui-calendar-grid:focus-visible {
+  outline: none;
+}
+
+.ui-calendar-grid__time {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.ui-calendar-grid__head,
+.ui-calendar-grid__allday,
+.ui-calendar-grid__body {
+  display: grid;
+  grid-template-columns: var(--hours-w) repeat(var(--ncols, 7), minmax(0, 1fr));
+}
+
+.ui-calendar-grid__head {
+  flex: none;
+}
+
+.ui-calendar-grid__dh {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  height: var(--control-lg);
+  padding: 0 var(--space-2);
+  min-width: 0;
+  color: var(--dim);
+  font: var(--type-small);
+  letter-spacing: var(--track-small);
+}
+
+.ui-calendar-grid__num {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: var(--control-xs);
+  height: var(--control-xs);
+  border-radius: var(--radius-sm);
+  font: var(--type-ui);
+  font-weight: 500;
+  letter-spacing: var(--track-ui);
+  font-variant-numeric: tabular-nums;
+  color: var(--ink-2);
+}
+
+.ui-calendar-grid__dh[data-today='true'] {
+  background: var(--today-tint);
+  border-radius: var(--radius-md) var(--radius-md) 0 0;
+}
+
+.ui-calendar-grid__dh[data-today='true'] .ui-calendar-grid__dow {
+  color: var(--ink);
+  font-weight: 500;
+}
+
+.ui-calendar-grid__dh[data-today='true'] .ui-calendar-grid__num {
+  background: var(--accent);
+  color: var(--accent-ink);
+  font-weight: 600;
+}
+
+.ui-calendar-grid__allday {
+  flex: none;
+  padding-bottom: var(--space-1);
+  box-shadow: 0 var(--hairline) 0 var(--line);
+}
+
+.ui-calendar-grid__corner {
+  padding: 0 var(--space-3) 0 0;
+  text-align: right;
+  font: var(--type-caption);
+  letter-spacing: var(--track-caption);
+  color: var(--dim);
+}
+
+.ui-calendar-grid__allday-cell {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-half);
+  min-width: 0;
+  padding: 0 var(--ev-gap);
+}
+
+.ui-calendar-grid__strip {
+  position: relative;
+  height: var(--space-5);
+}
+
+/* Bars take a deeper tint step than a timed tile; dark takes a deeper one still, so a quiet calendar (dusk) is not the
+   same muddy slate as the pane. */
+:root {
+  --bar-step: 1.5;
+}
+:root[data-theme='dark'] {
+  --bar-step: 2;
+}
+
+/* All-day and multi-day bars take a deeper step of their calendar's tint than a timed tile (1.5 times the event fill),
+   so a calendar of a quiet colour still reads as that colour and not as grey. */
+.ui-calendar-grid__strip .ui-event-block[data-kind='event'] {
+  --ev-fill: color-mix(
+    in srgb,
+    var(--cal) calc(var(--event-fill) * var(--bar-step)),
+    var(--canvas)
+  );
+}
+
+/* A multi-day entry reads as one bar: each segment bridges the gap to the next column, and a continuing
+   segment drops its rule, its left corners and its repeated title. */
+.ui-calendar-grid__strip[data-joins-after='true'] {
+  margin-right: calc(-2 * var(--ev-gap));
+}
+
+.ui-calendar-grid__strip[data-joins-after='true'] .ui-event-block {
+  border-top-right-radius: 0;
+  border-bottom-right-radius: 0;
+}
+
+.ui-calendar-grid__strip[data-joins-before='true'] .ui-event-block {
+  border-top-left-radius: 0;
+  border-bottom-left-radius: 0;
+  box-shadow: none;
+}
+
+.ui-calendar-grid__strip[data-joins-before='true'] .ui-event-block > * {
+  visibility: hidden;
+}
+
+.ui-calendar-grid__scroll {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+  scrollbar-width: none;
+  padding-bottom: var(--space-6);
+}
+
+.ui-calendar-grid__scroll:focus-visible {
+  outline: none;
+}
+
+.ui-calendar-grid__body {
+  position: relative;
+  height: calc(var(--gt) + var(--hour) * var(--nhours, 12));
+}
+
+.ui-calendar-grid__hours {
+  position: relative;
+}
+
+.ui-calendar-grid__hour {
+  position: absolute;
+  right: var(--space-3);
+  top: calc(var(--gt) + var(--hour) * var(--h));
+  transform: translateY(-50%);
+  font: var(--type-caption);
+  letter-spacing: var(--track-caption);
+  font-variant-numeric: tabular-nums;
+  color: var(--dim);
+  white-space: nowrap;
+}
+
+.ui-calendar-grid__col {
+  position: relative;
+  min-width: 0;
+  box-shadow: inset var(--hairline) 0 0 var(--line);
+}
+
+.ui-calendar-grid__col:last-child {
+  box-shadow:
+    inset var(--hairline) 0 0 var(--line),
+    inset calc(-1 * var(--hairline)) 0 0 var(--line);
+}
+
+.ui-calendar-grid__col[data-today='true'] {
+  background-color: var(--today-tint);
+}
+/* One day is one column: tinting all of it says nothing, so the day view keeps only the date's accent badge. */
+.ui-calendar-grid[data-view='day']
+  :is(.ui-calendar-grid__col, .ui-calendar-grid__dh)[data-today='true'] {
+  background: none;
+}
+
+/* The track is the hour grid: its top is the first hour line, so pointer position maps straight to time. */
+.ui-calendar-grid__track {
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: var(--gt);
+  height: calc(var(--hour) * var(--nhours, 12));
+}
+
+.ui-calendar-grid__line {
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: calc(var(--hour) * var(--h));
+  height: var(--hairline);
+  background: var(--line);
+  pointer-events: none;
+}
+
+.ui-calendar-grid__slot {
+  position: absolute;
+  top: calc(var(--hour) * var(--s) + var(--hairline));
+  height: max(var(--space-5), calc(var(--hour) * var(--d) - var(--ev-gap) * 2));
+  left: calc(100% * var(--lane, 0) / var(--lanes, 1) + var(--ev-gap));
+  width: calc(100% / var(--lanes, 1) - var(--ev-gap) * 2);
+}
+
+/* Two overlapping tiles in a week's narrow column split 60/40, so the later one keeps about 60 px and the first reads in
+   about 90, instead of two 70 px tiles that both cut their titles. A day column has room for an even split. */
+.ui-calendar-grid[data-view='week'] .ui-calendar-grid__slot[data-pair='true'] {
+  left: calc(60% * var(--lane, 0) + var(--ev-gap));
+  width: calc(60% - 20% * var(--lane, 0) - var(--ev-gap) * 2);
+}
+
+/* Folded cluster: the kept lanes share the width left of the "+N" stack (--lanes counts only them). */
+.ui-calendar-grid__slot[data-beside='true'] {
+  left: calc(
+    (100% - var(--lane-min) - var(--ev-gap)) * var(--lane, 0) / var(--lanes, 1) + var(--ev-gap)
+  );
+  width: calc((100% - var(--lane-min) - var(--ev-gap)) / var(--lanes, 1) - var(--ev-gap) * 2);
+}
+
+.ui-calendar-grid__slot[data-kind='stack'] {
+  left: auto;
+  right: var(--ev-gap);
+  width: var(--lane-min);
+}
+
+.ui-calendar-grid__slot[data-kind='stack'][data-alone='true'] {
+  left: var(--ev-gap);
+  width: auto;
+}
+
+.ui-calendar-grid__slot[data-dragging='true'] {
+  opacity: var(--drag-source);
+}
+
+.ui-calendar-grid__strip .ui-event-block,
+.ui-calendar-grid__strip .ui-plan-outline {
+  position: absolute;
+}
+
+.ui-calendar-grid__resize {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  height: var(--space-1);
+  cursor: ns-resize;
+}
+
+.ui-calendar-grid__drag {
+  position: absolute;
+  top: calc(var(--hour) * var(--s) + var(--hairline));
+  height: max(var(--space-5), calc(var(--hour) * var(--d) - var(--ev-gap) * 2));
+  left: var(--ev-gap);
+  right: var(--ev-gap);
+  padding: var(--space-half) var(--space-2);
+  border-radius: var(--radius-sm);
+  background: color-mix(in srgb, var(--cal) var(--event-fill), var(--canvas));
+  box-shadow: var(--elev-lift);
+  outline: var(--focus-width) solid var(--accent);
+  font: var(--type-small);
+  letter-spacing: var(--track-small);
+  color: var(--ink-2);
+  pointer-events: none;
+}
+
+.ui-calendar-grid__empty {
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: var(--hour);
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  padding: 0 var(--space-4);
+  font: var(--type-base);
+  letter-spacing: var(--track-base);
+  color: var(--dim);
+}
+
+.ui-calendar-grid__empty[data-view='month'],
+.ui-calendar-grid__empty[data-view='agenda'] {
+  position: static;
+  padding: var(--space-4) 0;
+}
+
+/* ---------- EventBlock and PlanOutline ---------- */
+.ui-event-block,
+.ui-plan-outline {
+  --ev-fill: color-mix(
+    in srgb,
+    var(--cal) var(--event-fill),
+    var(--canvas)
+  ); /* over the canvas, so grid lines never cross the text */
+  --ev-line: calc(var(--space-4) + var(--space-half)); /* the 18 px `small` line */
+  --ev-free: calc(var(--hour) * var(--d, 1) - var(--ev-gap) * 2 - var(--space-half) * 2);
+  --title-lines: max(1, round(down, calc((var(--ev-free) - var(--ev-line)) / var(--ev-line)), 1));
+  --title-lines-solo: max(1, round(down, calc(var(--ev-free) / var(--ev-line)), 1));
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  width: 100%;
+  height: 100%;
+  min-width: 0;
+  overflow: hidden;
+  text-align: left;
+  padding: var(--space-half) var(--space-2) var(--space-half)
+    calc(var(--space-2) + var(--select-bar));
+  border-radius: var(--radius-sm);
+  color: var(--ink);
+  transition: background-color var(--dur-hover) var(--ease-std);
+}
+
+.ui-event-block[data-kind='event'] {
+  background: var(--ev-fill);
+  box-shadow: inset var(--select-bar) 0 0 var(--cal); /* the 2 px leading rule */
+  /* A tile cut off by the top of the grid keeps its title in sight: `clip` (unlike `hidden`) makes no scroll box, so
+     the title sticks to the scroller's top edge while the rest of the tile scrolls away under it. */
+  overflow: clip;
+}
+.ui-event-block[data-kind='event'] .ui-event-block__title {
+  position: sticky;
+  top: 0;
+}
+
+.ui-event-block__title,
+.ui-event-block__time,
+.ui-plan-outline__title {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font: var(--type-small);
+  letter-spacing: var(--track-small);
+}
+
+.ui-event-block__title,
+.ui-plan-outline__title {
+  font-weight: 500;
+  color: var(--ink);
+}
+
+.ui-event-block__time {
+  color: var(--dim);
+}
+
+:root[data-theme='dark'] .ui-event-block__time {
+  color: var(--ink-2); /* --dim is 4.4:1 on a 20 % dark tint; one step up passes */
+}
+
+.ui-event-block[data-density='one'],
+.ui-event-block[data-density='tiny'],
+.ui-event-block[data-density='allday'],
+.ui-plan-outline[data-density='one'] {
+  flex-direction: row;
+  align-items: center;
+  gap: var(--space-2);
+  padding-top: 0;
+  padding-bottom: 0;
+}
+
+/* The compact start time shows only when the tile is wide enough to keep the whole title beside it. */
+.ui-event-block[data-compact-time='true'] {
+  container-type: inline-size;
+}
+.ui-event-block__time[data-compact='true'] {
+  margin-left: calc(
+    -1 * var(--space-1)
+  ); /* "Weekly sync · 9:00 AM": the dot sits close to the title, not a gap away */
+}
+@container (max-width: 7.5rem) {
+  .ui-event-block__time[data-compact='true'] {
+    display: none;
+  }
+}
+.ui-event-block[data-density='one'] .ui-event-block__time,
+.ui-event-block[data-density='tiny'] .ui-event-block__time {
+  flex: none;
+}
+
+/* Titles take the lines the tile has. `--ev-free` is the tile's height inside its padding (the slot's `--d` hours of
+   grid), `--ev-line` one `small` line, so a tall tile wraps a long title over many lines and a short one over one or
+   two, never one line with the tile empty below it. The time (or "From mail") line is taken off first. */
+
+:is(
+  .ui-event-block[data-density='full'] .ui-event-block__title,
+  .ui-plan-outline[data-density='full'] .ui-plan-outline__title
+) {
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  -webkit-line-clamp: var(--title-lines);
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
+
+/* Crowded lanes (overlapping entries share the column): the title takes one line, cut with an ellipsis, and the start
+   time sits on the second (council 2, round 5: a wrapped name over two lines read as clutter). A tile of 90 minutes or
+   more has lines to spare, so it keeps its whole time range and the title takes the lines left. */
+:is(
+  .ui-event-block[data-crowded='true'],
+  .ui-calendar-grid__slot[data-beside='true'] .ui-event-block
+)[data-density='full'] {
+  padding-left: calc(var(--space-1) + var(--select-bar));
+  padding-right: var(--space-1);
+}
+
+:is(
+    .ui-event-block[data-crowded='true'],
+    .ui-calendar-grid__slot[data-beside='true'] .ui-event-block
+  )[data-density='full']:not([data-tall='true'])
+  .ui-event-block__title {
+  -webkit-line-clamp: 1;
+}
+/* Round 7: a name too long for one line of a crowded tile wraps to two and the time line steps aside (the whole range is in the
+   tooltip and the detail), so the name is never cut to "Design…" with a free second line under it. */
+:is(
+    .ui-event-block[data-crowded='true'],
+    .ui-calendar-grid__slot[data-beside='true'] .ui-event-block
+  )[data-density='full'][data-long-title='true']:not([data-tall='true'])
+  .ui-event-block__title {
+  -webkit-line-clamp: 2;
+}
+:is(
+    .ui-event-block[data-crowded='true'],
+    .ui-calendar-grid__slot[data-beside='true'] .ui-event-block
+  )[data-density='full'][data-long-title='true']:not([data-tall='true'])
+  .ui-event-block__time {
+  display: none;
+}
+
+.ui-event-block[data-selected='true'],
+.ui-plan-outline[data-selected='true'],
+.ui-event-block:focus-visible,
+.ui-plan-outline:focus-visible {
+  outline: var(--focus-width) solid var(--accent);
+  outline-offset: 0;
+  position: relative;
+}
+
+/* A plan from mail: dashed 1 px outline, its calendar's tint and a label until it is confirmed. */
+.ui-plan-outline {
+  background: var(--ev-fill);
+  outline: 1px dashed var(--control-edge);
+  outline-offset: calc(-1 * 1px);
+  padding-left: var(--space-2);
+}
+
+.ui-plan-outline__from {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+  font: var(--type-small);
+  letter-spacing: var(--track-small);
+  color: var(--dim);
+}
+
+:root[data-theme='dark'] .ui-plan-outline__from {
+  color: var(--ink-2); /* the same one-step lift the time line takes on a 20 % dark tint */
+}
+
+.ui-plan-outline__from .ui-cal-icon {
+  width: var(--icon-sm);
+  height: var(--icon-sm);
+}
+
+/* The "+N" stack: quiet, it opens the entries it folds. */
+.ui-event-block[data-kind='stack'] {
+  align-items: center;
+  justify-content: flex-start;
+  padding: var(--space-half) 0 0;
+  background: var(--raised);
+  box-shadow: inset 0 0 0 1px var(--line-strong);
+  font: var(--type-small);
+  font-weight: 500;
+  letter-spacing: var(--track-small);
+  color: var(--ink-2);
+}
+
+.ui-event-block__count {
+  font-variant-numeric: tabular-nums;
+}
+
+@media (hover: hover) {
+  .ui-event-block:hover::after,
+  .ui-plan-outline:hover::after {
+    background: var(--hover);
+  }
+
+  .ui-event-block[data-kind='stack']:hover {
+    color: var(--ink);
+  }
+}
+
+/* ---------- NowLine ---------- */
+.ui-now-line[data-variant='grid'] {
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: calc(var(--hour) * (var(--now) - var(--grid-first, 8)));
+  height: 1px;
+  background: var(--stamp);
+  pointer-events: none;
+}
+
+.ui-now-line[data-variant='grid']::before {
+  content: '';
+  position: absolute;
+  left: calc(-1 * (var(--space-1) + 1px) / 2);
+  top: calc(-1 * (var(--space-1) + 1px) / 2 + var(--hairline) / 2);
+  width: calc(var(--space-1) + 1px);
+  height: calc(var(--space-1) + 1px);
+  border-radius: var(--radius-xs);
+  background: var(--stamp);
+}
+
+.ui-now-line[data-variant='agenda'] {
+  display: grid;
+  grid-template-columns: var(--space-10) minmax(0, 1fr);
+  column-gap: var(--space-2);
+  align-items: center;
+  height: var(--space-5);
+}
+
+.ui-now-line__time {
+  font: var(--type-small);
+  font-weight: 500;
+  letter-spacing: var(--track-small);
+  color: var(--stamp-ink);
+}
+
+.ui-now-line__rule {
+  position: relative;
+  height: 1px;
+  background: var(--stamp);
+}
+
+.ui-now-line__rule::before {
+  content: '';
+  position: absolute;
+  left: 0;
+  top: calc(-1 * var(--space-half));
+  width: calc(var(--space-1) + 1px);
+  height: calc(var(--space-1) + 1px);
+  border-radius: var(--radius-xs);
+  background: var(--stamp);
+}
+
+/* ---------- Month ---------- */
+.ui-calendar-grid__month {
+  /* A week row is never shorter than its day number and three entries, so no entry is clipped; a short pane scrolls. */
+  --month-row: calc(var(--control-xs) * 4 + var(--space-half) + var(--space-1) * 2);
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  padding-bottom: var(--space-6);
+  display: grid;
+  grid-template-rows: max-content repeat(var(--month-weeks, 6), minmax(var(--month-row), 1fr));
+  position: relative;
+}
+
+.ui-calendar-grid__mrow {
+  display: grid;
+  grid-template-columns: repeat(7, minmax(0, 1fr));
+  min-height: 0;
+}
+
+.ui-calendar-grid__mev[data-active='true'],
+.ui-event-block[data-active='true'] {
+  outline: var(--focus-width) solid var(--accent);
+  outline-offset: 0;
+}
+
+.ui-calendar-grid__mh {
+  padding: var(--space-2);
+  font: var(--type-small);
+  letter-spacing: var(--track-small);
+  color: var(--dim);
+}
+
+.ui-calendar-grid__mcell {
+  min-width: 0;
+  overflow: hidden;
+  padding: var(--space-1) var(--space-1) 0;
+  box-shadow:
+    inset var(--hairline) 0 0 var(--line),
+    inset 0 var(--hairline) 0 var(--line);
+}
+
+/* The last column closes with the same right hairline as the week grid's. */
+.ui-calendar-grid__mcell:last-child {
+  box-shadow:
+    inset var(--hairline) 0 0 var(--line),
+    inset 0 var(--hairline) 0 var(--line),
+    inset calc(-1 * var(--hairline)) 0 0 var(--line);
+}
+
+.ui-calendar-grid__mcell[data-today='true'] {
+  background: var(--today-tint);
+}
+
+.ui-calendar-grid__mnum {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: var(--control-xs);
+  height: var(--control-xs);
+  margin-bottom: var(--space-half);
+  border-radius: var(--radius-sm);
+  font: var(--type-small);
+  letter-spacing: var(--track-small);
+  font-variant-numeric: tabular-nums;
+  font-weight: 600; /* in-month digits carry weight, so the month edge reads against the dim 400 digits beside it */
+  color: var(--ink);
+}
+
+.ui-calendar-grid__mcell[data-out='true'] .ui-calendar-grid__mnum {
+  font-weight: 400;
+  color: var(--dim);
+}
+
+/* The last week row closes the grid with a bottom hairline. */
+.ui-calendar-grid__mrow:last-child .ui-calendar-grid__mcell {
+  box-shadow:
+    inset var(--hairline) 0 0 var(--line),
+    inset 0 var(--hairline) 0 var(--line),
+    inset 0 calc(-1 * var(--hairline)) 0 var(--line);
+}
+
+.ui-calendar-grid__mrow:last-child .ui-calendar-grid__mcell:last-child {
+  box-shadow:
+    inset var(--hairline) 0 0 var(--line),
+    inset 0 var(--hairline) 0 var(--line),
+    inset calc(-1 * var(--hairline)) 0 0 var(--line),
+    inset 0 calc(-1 * var(--hairline)) 0 var(--line);
+}
+
+.ui-calendar-grid__mcell[data-today='true'] .ui-calendar-grid__mnum {
+  background: var(--accent);
+  color: var(--accent-ink);
+  font-weight: 600;
+}
+
+.ui-calendar-grid__mev {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  width: 100%;
+  height: var(--control-xs);
+  min-width: 0;
+  padding: 0 var(--space-1);
+  border-radius: var(--radius-sm);
+  text-align: left;
+  font: var(--type-small);
+  letter-spacing: var(--track-small);
+  color: var(--ink);
+  transition: background-color var(--dur-hover) var(--ease-std);
+}
+
+.ui-calendar-grid__mev i {
+  flex: none;
+  width: var(--mark-dot);
+  height: var(--mark-dot);
+  border-radius: var(--radius-xs);
+  background: var(--cal);
+}
+
+.ui-calendar-grid__mev[data-kind='plan'] i {
+  background: transparent;
+  box-shadow: inset 0 0 0 1px var(--cal);
+}
+
+.ui-calendar-grid__mev span {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.ui-calendar-grid__mev[data-more='true'] {
+  color: var(--dim);
+}
+
+.ui-calendar-grid__mev[aria-pressed='true'] {
+  outline: var(--focus-width) solid var(--accent);
+  outline-offset: 0;
+}
+
+/* A gap where a bar sits in another cell of the week, so every bar keeps one height across its span. */
+.ui-calendar-grid__mgap {
+  height: var(--control-xs);
+}
+
+/* A multi-day entry is one bar through its week row: its calendar's tint and 2 px leading rule, each cell bridging the
+   cell padding to the next, and a continuing cell drops the rule, its left corners and its repeated title. */
+.ui-calendar-grid__mev[data-bar='true'] {
+  --ev-fill: color-mix(
+    in srgb,
+    var(--cal) calc(var(--event-fill) * var(--bar-step)),
+    var(--canvas)
+  );
+  --bridge: 0px;
+  width: calc(100% + var(--bridge));
+  padding-left: var(--space-2);
+  background: var(--ev-fill);
+  box-shadow: inset var(--select-bar) 0 0 var(--cal);
+}
+.ui-calendar-grid__mev[data-bar='true'] i {
+  display: none;
+}
+.ui-calendar-grid__mev[data-bar='true'][data-joins-after='true'] {
+  --bridge: var(--space-1);
+  border-top-right-radius: 0;
+  border-bottom-right-radius: 0;
+}
+.ui-calendar-grid__mev[data-bar='true'][data-joins-before='true'] {
+  --bridge: var(--space-1);
+  margin-left: calc(-1 * var(--space-1));
+  border-top-left-radius: 0;
+  border-bottom-left-radius: 0;
+  box-shadow: none;
+}
+.ui-calendar-grid__mev[data-bar='true'][data-joins-before='true'][data-joins-after='true'] {
+  --bridge: calc(2 * var(--space-1));
+}
+.ui-calendar-grid__mev[data-bar='true'][data-joins-before='true'] span {
+  visibility: hidden;
+}
+
+@media (hover: hover) {
+  .ui-calendar-grid__mev:hover {
+    background: var(--hover);
+  }
+}
+
+/* ---------- Agenda: the narrow-pane list and the Today tab ---------- */
+.ui-calendar-grid__full,
+.ui-calendar-grid__today {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+  scrollbar-width: none;
+  padding-bottom: var(--space-6);
+}
+
+.ui-calendar-grid__day {
+  margin-top: var(--space-5);
+}
+
+.ui-calendar-grid__day-title,
+.ui-calendar-grid__today-day {
+  font: var(--type-title);
+  letter-spacing: var(--track-title);
+  color: var(--ink);
+}
+
+.ui-calendar-grid__today-head {
+  margin-top: var(--space-4);
+}
+
+.ui-calendar-grid__today-sub {
+  margin-top: var(--space-half);
+  font: var(--type-small);
+  letter-spacing: var(--track-small);
+  color: var(--dim);
+}
+
+.ui-calendar-grid__ag-list {
+  display: flex;
+  flex-direction: column;
+  margin-top: var(--space-2);
+}
+
+.ui-calendar-grid__ag {
+  display: grid;
+  grid-template-columns: var(--space-10) minmax(0, 1fr);
+  column-gap: var(--space-2);
+  align-items: start;
+  width: 100%;
+  padding: var(--space-2) 0;
+  text-align: left;
+  border-radius: var(--radius-sm);
+  transition: background-color var(--dur-hover) var(--ease-std);
+}
+
+.ui-calendar-grid__ag[aria-pressed='true'] {
+  outline: var(--focus-width) solid var(--accent);
+  outline-offset: 0;
+}
+
+.ui-calendar-grid__ag-time {
+  font: var(--type-small);
+  letter-spacing: var(--track-small);
+  font-variant-numeric: tabular-nums;
+  color: var(--dim);
+  line-height: var(--space-5);
+}
+
+.ui-calendar-grid__ag-event {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--space-2);
+  min-width: 0;
+}
+
+.ui-calendar-grid__ag-event i {
+  flex: none;
+  width: var(--mark-dot);
+  height: var(--mark-dot);
+  margin-top: calc((var(--space-5) - var(--mark-dot)) / 2);
+  border-radius: var(--radius-xs);
+  background: var(--cal);
+}
+
+.ui-calendar-grid__ag-event i[data-plan='true'] {
+  background: transparent;
+  box-shadow: inset 0 0 0 1px var(--cal);
+}
+
+.ui-calendar-grid__ag-text {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.ui-calendar-grid__ag-name {
+  font: var(--type-ui);
+  letter-spacing: var(--track-ui);
+  color: var(--ink);
+  overflow-wrap: anywhere;
+}
+
+.ui-calendar-grid__ag-sub {
+  font: var(--type-small);
+  letter-spacing: var(--track-small);
+  color: var(--dim);
+  overflow-wrap: anywhere;
+}
+
+.ui-calendar-grid__ag[data-state='next'] .ui-calendar-grid__ag-name {
+  font-weight: 600;
+}
+
+.ui-calendar-grid__gap,
+.ui-calendar-grid__earlier {
+  display: grid;
+  grid-template-columns: var(--space-10) minmax(0, 1fr);
+  column-gap: var(--space-2);
+  align-items: center;
+  min-height: var(--control-md);
+  font: var(--type-small);
+  letter-spacing: var(--track-small);
+  color: var(--dim);
+}
+
+.ui-calendar-grid__gap span:last-child,
+.ui-calendar-grid__earlier span:last-child {
+  padding-left: calc(var(--mark-dot) + var(--space-2));
+}
+
+@media (hover: hover) {
+  .ui-calendar-grid__ag:hover {
+    background: var(--hover);
+  }
+}
+
+/* ---------- EventDetail ---------- */
+.ui-event-detail {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  color: var(--ink-2);
+  font: var(--type-ui);
+  letter-spacing: var(--track-ui);
+}
+
+.ui-event-detail__head {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--space-1);
+}
+
+.ui-event-detail__title {
+  flex: 1;
+  min-width: 0;
+  padding-top: var(--space-half);
+  font: var(--type-title);
+  letter-spacing: var(--track-title);
+  color: var(--ink);
+  overflow-wrap: anywhere;
+}
+
+.ui-event-detail__head .ui-cal-icon-button {
+  margin-top: calc(-1 * var(--space-half));
+}
+
+.ui-event-detail__head .ui-cal-icon-button:last-child {
+  margin-right: calc(-1 * var(--space-2));
+}
+
+.ui-event-detail__when {
+  margin-top: var(--space-half);
+  font: var(--type-small);
+  letter-spacing: var(--track-small);
+  color: var(--dim);
+}
+
+.ui-event-detail__rows {
+  display: flex;
+  flex-direction: column;
+  margin-top: var(--space-3);
+}
+
+.ui-event-detail__rows li {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  min-height: var(--control-sm);
+  min-width: 0;
+  color: var(--ink);
+}
+
+.ui-event-detail__rows li > .ui-cal-icon {
+  color: var(--dim);
+}
+
+.ui-event-detail__mark {
+  display: flex;
+  justify-content: center;
+  flex: none;
+  width: var(--icon);
+}
+
+.ui-event-detail__mark i {
+  display: block;
+  width: var(--mark-dot);
+  height: var(--mark-dot);
+  border-radius: var(--radius-xs);
+  background: var(--swatch);
+}
+
+.ui-event-detail__ellipsis {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.ui-event-detail__label {
+  margin: var(--space-4) 0 var(--space-1);
+  font: var(--type-small);
+  font-weight: 500;
+  letter-spacing: var(--track-small);
+  color: var(--dim);
+}
+
+.ui-event-detail__label-note {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+  margin-left: var(--space-2);
+}
+
+.ui-event-detail__label-note .ui-cal-icon {
+  width: var(--icon-sm);
+  height: var(--icon-sm);
+}
+
+.ui-event-detail__plan {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: var(--space-3);
+  margin-top: var(--space-3);
+}
+
+.ui-event-detail__note {
+  font: var(--type-small);
+  letter-spacing: var(--track-small);
+  color: var(--dim);
+}
+
+.ui-event-detail__rsvp {
+  margin-top: var(--space-4);
+  padding-top: var(--space-1);
+  box-shadow: 0 calc(-1 * var(--hairline)) 0 var(--line);
+}
+
+.ui-event-detail__rsvp .ui-event-detail__label {
+  margin-top: var(--space-3);
+}
+
+.ui-event-detail__rsvp-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3);
+}
+
+/* Yes | Maybe | No on a sunken track with nothing chosen until you choose. */
+.ui-event-detail__answers {
+  display: inline-flex;
+  padding: var(--space-half);
+  border-radius: var(--radius-md);
+  background: var(--sunken);
+}
+
+.ui-event-detail__answer {
+  min-width: var(--space-8);
+  height: var(--control-xs);
+  padding: 0 var(--space-3);
+  border-radius: var(--radius-sm);
+  font: var(--type-ui);
+  letter-spacing: var(--track-ui);
+  color: var(--dim);
+  transition:
+    background-color var(--dur-hover) var(--ease-std),
+    color var(--dur-hover) var(--ease-std);
+}
+
+.ui-event-detail__answer[data-checked='true'] {
+  background: var(--paper);
+  box-shadow: var(--elev-puck);
+  color: var(--ink);
+  font-weight: 500;
+}
+
+.ui-event-detail__guests li {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  min-height: var(--control-sm);
+  color: var(--ink);
+}
+
+.ui-event-detail__guest {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.ui-event-detail__role {
+  margin-left: var(--space-1);
+  font: var(--type-small);
+  color: var(--dim);
+}
+
+.ui-event-detail__status {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+  margin-left: auto;
+  flex: none;
+  font: var(--type-small);
+  color: var(--dim);
+}
+
+.ui-event-detail__status .ui-cal-icon {
+  width: var(--icon-sm);
+  height: var(--icon-sm);
+}
+
+.ui-event-detail__guests li[data-status='none'] .ui-event-detail__status {
+  color: var(--ink-2);
+}
+
+.ui-event-detail__description {
+  margin-top: var(--space-4);
+  max-width: 46ch;
+  color: var(--ink-2);
+  overflow-wrap: anywhere;
+}
+
+@media (hover: hover) {
+  .ui-event-detail__answer:hover:not([data-checked='true']) {
+    color: var(--ink);
+  }
+}
+
+/* ---------- DatePresets ---------- */
+.ui-date-presets__outside,
+.ui-date-presets {
+  --l-menu: 10; /* used until the shared --z-menu layer token lands; it wins once defined */
+}
+
+.ui-date-presets__outside {
+  position: fixed;
+  inset: 0;
+  z-index: var(--z-menu, var(--l-menu));
+}
+
+.ui-date-presets {
+  position: fixed;
+  z-index: calc(var(--z-menu, var(--l-menu)) + 1);
+  left: var(--anchor-x, 0);
+  top: calc(var(--anchor-y, 0) + var(--space-1));
+  width: calc(var(--menu-min) + var(--space-9));
+  padding: var(--space-1);
+  border-radius: var(--radius-lg);
+  background: var(--float);
+  box-shadow: var(--elev-float);
+  color: var(--ink);
+  font: var(--type-ui);
+  letter-spacing: var(--track-ui);
+}
+
+.ui-date-presets__menu:focus-visible {
+  outline: none;
+}
+
+.ui-date-presets__label {
+  padding: var(--space-2) var(--space-2) var(--space-1);
+  font: var(--type-small);
+  font-weight: 500;
+  letter-spacing: var(--track-small);
+  color: var(--dim);
+}
+
+.ui-date-presets__item {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  height: var(--control-md);
+  padding: 0 var(--space-2);
+  border-radius: var(--radius-sm);
+  color: var(--ink);
+  transition: background-color var(--dur-hover) var(--ease-std);
+}
+
+.ui-date-presets__item[data-active='true'] {
+  background: var(--puck);
+}
+
+.ui-date-presets__item > .ui-cal-icon {
+  color: var(--dim);
+}
+
+.ui-date-presets__num {
+  width: var(--space-4);
+  flex: none;
+  text-align: center;
+  font: var(--type-small);
+  color: var(--dim);
+}
+
+.ui-date-presets__item[data-active='true'] .ui-date-presets__num {
+  color: var(--ink);
+}
+
+.ui-date-presets__text {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.ui-date-presets__aside {
+  flex: none;
+  margin-left: auto;
+  padding-left: var(--space-3);
+  font: var(--type-small);
+  color: var(--dim);
+  white-space: nowrap;
+}
+
+.ui-date-presets__kbd {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: none;
+  min-width: var(--kbd);
+  height: var(--kbd);
+  padding: 0 var(--space-1);
+  margin-left: var(--space-1);
+  border-radius: var(--radius-xs);
+  background: var(--keycap);
+  box-shadow: inset 0 0 0 var(--hairline) var(--line);
+  color: var(--keycap-ink);
+  font: var(--type-caption);
+  letter-spacing: var(--track-caption);
+}
+
+.ui-date-presets__text + .ui-date-presets__kbd {
+  margin-left: auto;
+}
+
+.ui-date-presets__sep {
+  height: var(--hairline);
+  margin: var(--space-1) var(--space-2);
+  background: var(--line);
+}
+
+.ui-date-presets__calendar {
+  padding: var(--space-2) var(--space-2) var(--space-1);
+}
+
+.ui-date-presets__month {
+  display: flex;
+  align-items: center;
+  height: var(--control-sm);
+  padding-left: var(--space-1);
+}
+
+.ui-date-presets__month b {
+  flex: 1;
+  font: var(--type-ui);
+  font-weight: 500;
+  letter-spacing: var(--track-ui);
+}
+
+.ui-date-presets__month .ui-cal-icon-button {
+  width: var(--control-xs);
+  height: var(--control-xs);
+}
+
+.ui-date-presets__dow,
+.ui-date-presets__week {
+  display: grid;
+  grid-template-columns: repeat(7, minmax(0, 1fr));
+}
+
+.ui-date-presets__dow span {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: var(--space-6);
+  font: var(--type-caption);
+  letter-spacing: var(--track-caption);
+  color: var(--dim);
+}
+
+.ui-date-presets__week > span {
+  display: flex;
+}
+
+.ui-date-presets__day {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+  height: var(--control-sm);
+  border-radius: var(--radius-md);
+  font: var(--type-ui);
+  letter-spacing: var(--track-ui);
+  font-variant-numeric: tabular-nums;
+  color: var(--ink);
+}
+
+.ui-date-presets__day[data-out='true'] {
+  color: var(--dim);
+}
+
+.ui-date-presets__day[data-picked='true'] {
+  background: var(--accent);
+  color: var(--accent-ink);
+  font-weight: 500;
+}
+
+.ui-date-presets__foot {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  margin-top: var(--space-1);
+  padding: var(--space-2) 0 var(--space-1);
+  box-shadow: 0 calc(-1 * var(--hairline)) 0 var(--line);
+}
+
+.ui-date-presets__foot .ui-cal-button {
+  flex: none;
+  gap: var(--space-1);
+  padding: 0 var(--space-2);
+}
+
+.ui-date-presets__time {
+  flex: 0 1 auto;
+  min-width: 0;
+  margin-right: auto;
+  height: var(--control-sm);
+  padding: 0 var(--space-1) 0 var(--space-2);
+  border-radius: var(--radius-md);
+  background: var(--canvas);
+  box-shadow: inset 0 0 0 1px var(--line-strong);
+  font: var(--type-ui);
+  letter-spacing: var(--track-ui);
+  color: var(--ink);
+}
+
+@media (hover: hover) {
+  .ui-date-presets__item:hover:not([data-active='true']) {
+    background: var(--hover);
+  }
+
+  .ui-date-presets__day:hover:not([data-picked='true']) {
+    background: var(--hover);
+  }
+}
+
+/* ScopeChooser: which occurrences of a repeating event a change touches (DESIGN 7.8, freeze finding FR-21). */
+.ui-scope-chooser {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  padding: var(--space-4);
+}
+.ui-scope-chooser__question {
+  color: var(--ink);
+  font: var(--type-title);
+  letter-spacing: var(--track-title);
+}
+.ui-scope-chooser__rows {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2);
+}

@@ -1,0 +1,7 @@
+<style>
+  @layer x { html { height: calc(100% + 50px) !important } }
+  @layer y, z;
+  @layer z { html, body { min-height: calc(100% + 50px) !important; block-size: calc(100% + 50px) !important } }
+  @layer { body { position: absolute !important; inset: 0 0 -50px 0 !important; writing-mode: vertical-lr !important } }
+</style>
+<p>A layered !important rule beats an unlayered one, so the reading rules live in the first layer.</p>

@@ -1,0 +1,16 @@
+<p>Responsive images in a short note.</p>
+<img src="{{CANARY}}/{{ID}}/base.jpg" srcset="{{CANARY}}/{{ID}}/small.jpg 480w, {{CANARY}}/{{ID}}/medium.jpg 800w, {{CANARY}}/{{ID}}/large.jpg 1200w" sizes="(max-width: 600px) 480px, 800px" width="600" height="300" alt="srcset image">
+<img srcset="{{CANARY}}/{{ID}}/only-srcset-1x.jpg 1x, {{CANARY}}/{{ID}}/only-srcset-2x.jpg 2x" alt="srcset only">
+<picture>
+  <source media="(min-width: 800px)" srcset="{{CANARY}}/{{ID}}/picture-wide.webp" type="image/webp">
+  <source media="(min-width: 400px)" srcset="{{CANARY}}/{{ID}}/picture-mid.jpg 1x, {{CANARY}}/{{ID}}/picture-mid-2x.jpg 2x">
+  <img src="{{CANARY}}/{{ID}}/picture-fallback.jpg" width="400" height="200" alt="picture">
+</picture>
+<picture><source srcset="{{CANARY}}/{{ID}}/picture-only-source.avif"><img alt="no src on the img"></picture>
+<img src="data:image/gif;base64,R0lGODlhAQABAAAAACw=" srcset="{{CANARY}}/{{ID}}/srcset-over-data.jpg 1x" alt="">
+<img srcset="{{CANARY}}/{{ID}}/comma,in,name.jpg 1x" alt="">
+<img srcset="
+   {{CANARY}}/{{ID}}/srcset-newlines-1.jpg 1x ,
+   {{CANARY}}/{{ID}}/srcset-newlines-2.jpg 2x" alt="">
+<img src="x" srcset="javascript:fetch('{{CANARY}}/{{ID}}/srcset-js') 1x, {{CANARY}}/{{ID}}/srcset-after-js.jpg 2x" alt="">
+<link rel="preload" as="image" imagesrcset="{{CANARY}}/{{ID}}/preload-imagesrcset.jpg 1x" imagesizes="100vw">

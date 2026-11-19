@@ -1,0 +1,24 @@
+# Lane card: ui-calendar (feature 6, Calendar)
+
+**Goal.** Build the Calendar screen (day, week, month and agenda views, event detail, RSVP, repeating-event edits with a scope chooser, create, move and resize) on demo data from the stand-in engine, in the approved "quiet paper" design. `prov-cal` (recurrence module, Google Calendar adapter, `Event/*` methods) is already merged, so the screen talks to the contract's `Calendar/*` and `Event/*` methods through the renderer data layer. Nothing here touches live Google: RSVP and writes are verified on demo and emulated data only.
+
+**Start from.** `origin/revamp`. Branch `rv/thread/ui-calendar`. Earlier work lives on `origin/rv/ui-calendar/calendar` (e99d324a, green on an old base) and `origin/rv/ui-calendar/wip-review1` (bee5d4cb, partial review fixes, not green): salvage its `screens/calendar/**` model, keys and tests, and adapt them to today's `ui/calendar/**` components and `renderer/data` hooks. Findings to honour: `git show origin/rv/thread/ui-screens:plans/ui-screens/handoff/review1-ui-calendar.md`. Do not copy its `ui/**` changes; UI-core owns those.
+
+**Owned paths** (`plans/OWNERS.md`). `apps/desktop/src/renderer/screens/calendar/**`. The shell (sidebar slot for MiniMonth and Calendars list, route), `renderer/ui/**` (EventBlock, TimeGrid, MiniMonth, ...), `renderer/data/**` and the contract belong to others: need a change, post a REQUEST in `plans/STATUS.md`.
+
+**Read only these.** `plans/DESIGN.md` 7.8 (Calendar), 7.14 empty states, 7.15 error states, 5 input rules, 8 keyboard map, 10 microcopy; `mockups/calendar-{week,day,event}.html`; `plans/30-ui-revamp.md` calendar sections (U7); `apps/desktop/src/renderer/ui/README.md`; `renderer/data/README.md`; `renderer/screens/home/` as the pattern to follow.
+
+**Design rules.** Cards option A where cards appear, calm Notion/Redakt feel, roomy type, ink blue only for the one main action, no sky gradient, no airmail stripe, never a sparkle, wand or star glyph for AI, hover never shifts layout. Empty states carry real substance (what the day is for, next event, a way to add one), not a blank grid.
+
+**Honest status.** The sidebar slot (MiniMonth + Calendars list) is wired through the shell's `useSidebarSlot` and `api.event.hide` drives the ⋯ menu's Hide in Aplos (both landed in PR #271); the standalone harness still draws the same `calendarSidebar` props in an aside. Meeting links open through `api.shell.open` (PR #266, main's `external()` gate); only an https link is ever handed on. "All events" (scope `series`) on a repeating event is always offered: `Event/set` sends the occurrence id and the fields the user sees, and the engine applies start/end as a wall-clock shift of the master (engine DECIDED 2026-11-04); the optimistic overlay mirrors that shift on every loaded occurrence — the stand-in applies it for real (engine #290), and `calendar.review6.test.ts` verifies the settled window against it end to end. Nothing else in this lane is waiting on another lane.
+
+**Done criteria.**
+1. Harness states, light and dark, two sizes, no serious axe violation: week (default, overlap, 3+ overlap "+N" stack), day (default, empty day), month, agenda (narrow pane under 720 px), event detail with RSVP unanswered / answered / Send reply disabled until chosen, repeating-event edit scope chooser ("this event" / "all events" first), create by drag, move, resize, all-day events, now-line, today column, Calendars list toggles, loading, and error states.
+2. Behaviour tests: D/W/M switch views; T goes to today; arrows move the period; Y/M/N answer only while an unanswered invite is open (otherwise M is Month); Delete only on persisted events; scope chooser appears for repeating events and passes the chosen scope; Escape closes detail; one Undo toast per write, undone by opId.
+3. All times pass through the contract's event time shapes (`utc`, `date`, `floating`) with the harness clock; tests run with a fixed `TZ`.
+4. `npm run check` green from the repo root; `apps/desktop` tests for the lane pass; headless only.
+5. Owner-ready shots (light + dark) and a short keyboard walkthrough in `~/.local/share/aplos-mail-review/ui-calendar/<sha>/`, then `READY-FOR-OWNER | F6` in `plans/STATUS.md`. Stop for approval before the deep review and PR (roadmap 12).
+
+**Not in this lane.** Live Google writes or RSVP (live runs, owner present), CalDAV and Graph calendars (round 2), the "From mail" plan extraction UI beyond showing a dashed plan block.
+
+**Models.** SWE-2 (`acpRegistry_devin`, `swe-2-high`) builds models, containers, CSS, tests and harness states; several candidates for visual hill-climbing (roadmap 5.1c), keep the best by score. Sonnet for visual judgment, the screenshots-to-owner review and ONE final review pass. Opus only for security, auth, storage, send or contract.

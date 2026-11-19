@@ -1,0 +1,23 @@
+/* Planted violations carry an expect marker; the test requires exactly those lines to be reported. */
+.rating::after {
+  content: "★"; /* @expect */
+}
+
+.sparkle::before {
+  content: "\2728"; /* @expect */
+}
+
+.star-outline::before {
+  content: "☆ rated"; /* @expect */
+}
+
+.robot::before {
+  content: "🤖"; /* @expect */
+}
+
+.wand {
+  --glyph: "🪄"; /* @expect */
+  list-style: "\2605 "; /* @expect */
+  content: "sparkles"; /* @expect */
+  content: "wand.and.stars"; /* @expect */
+}

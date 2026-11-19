@@ -1,0 +1,165 @@
+/* The onboarding window's own wrappers (DESIGN 7.11). Layout only, tokens only: every control, the strip, the
+   footer, the dashes and the step's scrolling body are the onboarding family's (ui/onboarding/onboarding.css).
+   The app entry imports this file after ui/styles.css; TSX never imports CSS. */
+
+/* STOPGAP (REQUEST ui-foundation): the onboarding family's CSS has no native-control reset, unlike ask.css and
+   compose.css, so its buttons showed browser borders and fills and its title, lede and facts kept the browser's
+   margins. This is the same zero-specificity reset those families carry, scoped to the family's own classes, so every
+   rule of the family still wins. Delete it once ui/onboarding/onboarding.css has it. */
+:where(
+  .ui-onb-button,
+  .ui-choice-row,
+  .ui-choice-row__link,
+  .ui-onboarding-step__title,
+  .ui-onboarding-step__lede,
+  .ui-consent-card__facts,
+  .ui-consent-card__note
+) {
+  appearance: none;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: inherit;
+  font: inherit;
+  letter-spacing: inherit;
+}
+
+/* The window is the step: full-bleed white paper, nothing around it. */
+.onb-window {
+  position: fixed;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  background: var(--canvas);
+}
+
+/* A stack of quiet rows (ChoiceRow): hairlines come from the rows, the stack only spans the column. */
+.onb-rows {
+  display: flex;
+  flex-direction: column;
+  width: 100%;
+  min-width: 0;
+}
+
+/* A caption over its rows ("Or choose a provider"): closer to its rows than the step's own spacing. */
+.onb-group {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  width: 100%;
+  min-width: 0;
+  margin-top: var(--space-2);
+}
+
+/* A field with the one line that belongs to it (a notice, the Keychain line). */
+.onb-field-block {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  width: 100%;
+  min-width: 0;
+}
+
+/* Several fields in a column (local server addresses behind More options). */
+.onb-fields {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+  width: 100%;
+  min-width: 0;
+  padding-top: var(--space-2);
+}
+
+/* A part that should span the step's column (the OAuth wait track, an error line). */
+.onb-wide {
+  width: 100%;
+  min-width: 0;
+}
+
+/* The mail window's list column for the zero-accounts and first-mail preview states: min(720px, 100% − 2 gutters),
+   centred in the pane (DESIGN 4.3; the app's own rule lives in screens/screens.css, which the gallery does not load).
+   It fills the pane body's height as a flex column, so a state can centre itself like inbox zero does. */
+.onb-list-column {
+  box-sizing: border-box;
+  display: flex;
+  flex-direction: column;
+  width: min(var(--list-w), calc(100% - 2 * var(--gutter)));
+  min-height: 100%;
+  margin: 0 auto;
+  min-width: 0;
+}
+
+/* The zero-accounts block: the display line, one sentence on what Aplos does, three quiet rows, the one filled
+   "Add an account" with "Try demo mail" as a text button, and the small privacy line. It centres itself in the pane
+   inside a reading measure, like inbox zero (`safe` so a taller block anchors at the top and scrolls inside the
+   pane body instead of clipping its headline); with no height to fill it draws at its natural size. */
+/* The slot only has a min-height, so it becomes a column the block's flex: 1 can fill. */
+.aplos-screen:has(> .onb-zero) {
+  display: flex;
+  flex-direction: column;
+}
+
+.onb-zero {
+  flex: 1;
+  box-sizing: border-box;
+  display: flex;
+  flex-direction: column;
+  justify-content: safe center;
+  width: 100%;
+  max-width: 60ch;
+  min-height: 100%;
+  margin: 0 auto;
+  padding: var(--space-8) var(--space-4);
+  color: var(--ink);
+}
+
+.onb-zero__head {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+  max-width: 44ch;
+}
+
+.onb-zero__rows {
+  margin-top: var(--space-7);
+}
+
+.onb-zero__actions {
+  display: flex;
+  align-items: center;
+  gap: var(--space-4);
+  margin-top: var(--space-7);
+}
+
+.onb-zero__notice {
+  margin-top: var(--space-4);
+}
+
+.onb-zero > .ui-text[data-variant='small'] {
+  margin-top: var(--space-5);
+}
+
+/* Reduced motion: the indeterminate runner's animation is paused at its first keyframe, off the track, so the bar
+   reads empty. It rests centred instead — a 30 % segment at translateX(117%) sits mid-track and still reads as
+   indeterminate, where flush-left would read as 30 % progress (hill-climb winner: accounts-waiting B). */
+@media (prefers-reduced-motion: reduce) {
+  .ui-progress-segments__runner {
+    animation: none;
+    transform: translateX(117%);
+  }
+}
+:root[data-motion='reduced'] .ui-progress-segments__runner {
+  animation: none;
+  transform: translateX(117%);
+}
+
+/* The found-provider row is the mockup's "tall" row (onboarding-accounts.html .row-q.tall): the icon and the
+   status sit at the top, aligned with the name, not centred across the two lines. */
+#onb-found-google {
+  align-items: flex-start;
+}
+#onb-found-google .ui-choice-row__icon {
+  margin-top: var(--space-half);
+}

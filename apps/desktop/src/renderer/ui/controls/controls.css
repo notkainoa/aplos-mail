@@ -1,0 +1,440 @@
+/* controls: Switch, Checkbox, SwatchPicker, TextField, ShortcutSheet (DESIGN 4.1, 6, 11).
+   Tokens only. Hover changes colour and fill, nothing else. */
+
+/* ---------- Switch: 30 x 18, the thumb rides --spring-thumb ---------- */
+.ui-switch {
+  position: relative;
+  flex: none;
+  width: var(--switch-w);
+  height: var(--switch-h);
+  padding: 0;
+  border: 0;
+  border-radius: var(--radius-pill);
+  background: var(--line-strong);
+  box-shadow: inset 0 0 0 1px var(--control-edge);
+  cursor: default;
+  transition:
+    background-color var(--dur-hover) var(--ease-std),
+    box-shadow var(--dur-hover) var(--ease-std);
+}
+/* the track is shorter than 24 px; the hit area is not */
+.ui-switch::before {
+  content: '';
+  position: absolute;
+  inset-block: calc(var(--space-half) * -2);
+  inset-inline: 0;
+}
+.ui-switch-thumb {
+  position: absolute;
+  top: var(--switch-pad);
+  left: var(--switch-pad);
+  width: var(--switch-thumb);
+  height: var(--switch-thumb);
+  border-radius: var(--radius-pill);
+  background: var(--paper);
+  box-shadow: var(--elev-thumb);
+  transition: transform var(--dur-thumb) var(--spring-thumb);
+}
+.ui-switch[data-state='on'] {
+  background: var(--accent);
+  box-shadow: none;
+}
+.ui-switch[data-state='on'] .ui-switch-thumb {
+  transform: translateX(calc(var(--switch-w) - var(--switch-thumb) - 2 * var(--switch-pad)));
+}
+/* Dark: the off track is the 3:1 control edge as a solid fill, so the whole switch reads against the pane, not only a
+   hairline round a 1.4:1 fill. The thumb stays --paper, a clear step darker than the track. */
+:root[data-theme='dark'] .ui-switch:not([data-state='on'], :disabled, [aria-disabled='true']) {
+  background: var(--control-edge);
+  box-shadow: none;
+}
+.ui-switch:focus-visible {
+  outline: var(--focus-width) solid var(--accent);
+  outline-offset: var(--focus-gap);
+}
+.ui-switch:disabled,
+.ui-switch[aria-disabled='true'] {
+  background: var(--sunken);
+  box-shadow: inset 0 0 0 1px var(--faint);
+}
+.ui-switch:disabled[data-state='on'],
+.ui-switch[aria-disabled='true'][data-state='on'] {
+  background: var(--faint);
+  box-shadow: none;
+}
+.ui-switch:disabled {
+  pointer-events: none;
+}
+
+/* ---------- Checkbox ---------- */
+.ui-checkbox {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-2);
+  min-width: var(--control-xs);
+  min-height: var(--control-xs);
+  padding: 0;
+  border: 0;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--ink-2);
+  font: var(--type-ui);
+  letter-spacing: var(--track-ui);
+  text-align: start;
+  cursor: default;
+}
+.ui-checkbox-box {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  justify-content: center;
+  width: var(--space-4);
+  height: var(--space-4);
+  border-radius: var(--radius-xs);
+  background: transparent;
+  color: var(--accent-ink);
+  box-shadow: inset 0 0 0 1px var(--control-edge);
+  transition:
+    transform var(--dur-press-up) var(--ease-out),
+    background-color var(--dur-hover) var(--ease-std),
+    box-shadow var(--dur-hover) var(--ease-std);
+}
+.ui-checkbox[data-state='checked'] .ui-checkbox-box,
+.ui-checkbox[data-state='mixed'] .ui-checkbox-box {
+  background: var(--accent);
+  box-shadow: none;
+}
+.ui-checkbox-label {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.ui-checkbox:active .ui-checkbox-box {
+  transform: scale(var(--press-scale));
+  transition-duration: var(--dur-press-down), var(--dur-hover), var(--dur-hover);
+}
+.ui-checkbox:focus-visible {
+  outline: var(--focus-width) solid var(--accent);
+  outline-offset: var(--focus-gap);
+}
+.ui-checkbox:disabled {
+  color: var(--dim);
+  pointer-events: none;
+}
+.ui-checkbox:disabled .ui-checkbox-box {
+  box-shadow: inset 0 0 0 1px var(--faint);
+}
+.ui-checkbox:disabled[data-state='checked'] .ui-checkbox-box,
+.ui-checkbox:disabled[data-state='mixed'] .ui-checkbox-box {
+  background: var(--faint);
+  box-shadow: none;
+}
+@media (hover: hover) {
+  .ui-checkbox[data-state='unchecked']:hover:not(:disabled) .ui-checkbox-box {
+    background: var(--hover);
+  }
+}
+
+/* ---------- SwatchPicker ---------- */
+.ui-swatch-picker {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding: var(--space-half);
+}
+.ui-swatch {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  justify-content: center;
+  width: var(--control-xs);
+  height: var(--control-xs);
+  padding: 0;
+  border: 0;
+  background: transparent;
+  cursor: default;
+}
+.ui-swatch-dot {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: var(--space-5);
+  height: var(--space-5);
+  border-radius: var(--radius-pill);
+  background: var(--swatch);
+  color: var(--fill-ink);
+  transition:
+    transform var(--dur-press-up) var(--ease-out),
+    box-shadow var(--dur-hover) var(--ease-std);
+}
+.ui-swatch[data-state='selected'] .ui-swatch-dot {
+  box-shadow:
+    0 0 0 var(--space-half) var(--canvas),
+    0 0 0 calc(var(--space-half) * 2) var(--ink);
+}
+.ui-swatch:focus-visible {
+  outline: none;
+}
+.ui-swatch:focus-visible .ui-swatch-dot {
+  outline: var(--focus-width) solid var(--accent);
+  outline-offset: calc(var(--space-1) + var(--focus-gap));
+}
+.ui-swatch:active .ui-swatch-dot {
+  transform: scale(var(--press-scale));
+  transition-duration: var(--dur-press-down), var(--dur-hover);
+}
+.ui-swatch:disabled {
+  pointer-events: none;
+}
+.ui-swatch:disabled .ui-swatch-dot {
+  background: var(--faint);
+}
+@media (hover: hover) {
+  .ui-swatch[data-state='idle']:hover:not(:disabled) .ui-swatch-dot {
+    box-shadow: 0 0 0 var(--space-half) var(--line-strong);
+  }
+}
+
+/* ---------- TextField ---------- */
+.ui-text-field {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  min-width: 0;
+}
+.ui-text-field-label {
+  color: var(--ink);
+  font: var(--type-ui);
+  font-weight: 500;
+  letter-spacing: var(--track-ui);
+}
+.ui-text-field-box {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  height: var(--control-md);
+  padding: 0 var(--space-3);
+  border-radius: var(--radius-md);
+  background: var(--sunken);
+  color: var(--dim);
+  box-shadow: inset 0 0 0 1px var(--line-strong);
+  transition: box-shadow var(--dur-hover) var(--ease-std);
+}
+.ui-text-field[data-size='lg'] .ui-text-field-box {
+  height: var(--control-lg);
+}
+.ui-text-field-input {
+  flex: 1;
+  min-width: 0;
+  padding: 0;
+  border: 0;
+  background: none;
+  outline: none;
+  color: var(--ink);
+  font: var(--type-base);
+  letter-spacing: var(--track-base);
+}
+.ui-text-field[data-mono='true'] .ui-text-field-input {
+  font-family: var(--font-mono);
+}
+.ui-text-field-input::placeholder {
+  color: var(--dim);
+}
+/* Esc clears the search field; the browser's own clear button would be a second, unlabelled control */
+.ui-text-field-input::-webkit-search-cancel-button {
+  appearance: none;
+}
+.ui-text-field-keys {
+  display: inline-flex;
+  flex: none;
+}
+.ui-text-field-box:focus-within {
+  outline: var(--focus-width) solid var(--accent);
+  outline-offset: var(--focus-gap);
+  box-shadow: none; /* one ring: the outline, not the outline around a second edge */
+  background: transparent; /* and one signal: the ring says focus, so the well's fill steps aside (it read heavy at night) */
+}
+.ui-text-field[data-state='invalid'] .ui-text-field-box {
+  box-shadow: inset 0 0 0 1px var(--stamp-ink);
+}
+.ui-text-field[data-state='disabled'] .ui-text-field-input {
+  color: var(--dim);
+}
+.ui-text-field[data-state='readonly'] .ui-text-field-box {
+  background: var(--raised);
+}
+.ui-text-field-error {
+  margin: 0;
+  display: flex;
+  align-items: flex-start;
+  gap: var(--space-1);
+  color: var(--stamp-ink);
+  font: var(--type-small);
+  letter-spacing: var(--track-small);
+}
+.ui-text-field-error .ui-icon {
+  margin-top: var(--space-half);
+}
+@media (hover: hover) {
+  .ui-text-field:not([data-state='disabled'], [data-state='invalid'])
+    .ui-text-field-box:hover:not(:focus-within) {
+    box-shadow: inset 0 0 0 1px var(--control-edge);
+  }
+}
+
+/* ---------- ShortcutSheet: a dialog, three columns, fixed height ---------- */
+.ui-shortcut-sheet {
+  position: fixed;
+  inset: 0;
+  z-index: var(--z-dialog);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--scrim);
+}
+.ui-shortcut-sheet-dialog {
+  display: flex;
+  flex-direction: column;
+  width: min(calc(100vw - var(--space-6) * 2), calc(var(--space-10) * 17));
+  height: min(calc(100vh - var(--space-6) * 2), calc(var(--space-10) * 11));
+  overflow: hidden;
+  border-radius: var(--radius-xl);
+  background: var(--float);
+  color: var(--ink-2);
+  box-shadow: var(--elev-dialog);
+  animation: ui-shortcut-settle var(--dur-settle-in) var(--ease-out) both;
+}
+@keyframes ui-shortcut-settle {
+  from {
+    opacity: 0;
+    transform: translateY(var(--move-settle)) scale(var(--scale-settle));
+  }
+}
+.ui-shortcut-sheet-head {
+  display: flex;
+  flex: none;
+  align-items: center;
+  gap: var(--space-4);
+  height: var(--space-10);
+  padding: 0 var(--space-3) 0 var(--space-8);
+}
+.ui-shortcut-sheet-heading {
+  min-width: 0;
+}
+.ui-shortcut-sheet-title {
+  margin: 0;
+  color: var(--ink);
+  font: var(--type-title);
+  letter-spacing: var(--track-title);
+}
+.ui-shortcut-sheet-sub {
+  margin: 0;
+  color: var(--dim);
+  font: var(--type-small);
+  letter-spacing: var(--track-small);
+}
+.ui-shortcut-sheet-filter {
+  margin-left: auto;
+  width: calc(var(--space-10) * 4);
+}
+.ui-shortcut-sheet-body {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+  /* 24 px under the last row, and the list stops 16 px above the dialog's edge on a hairline: a row cut there reads as
+     scrolled, not as broken (DESIGN allows no fade gradient). */
+  margin-bottom: var(--space-4);
+  padding: var(--space-2) var(--space-8) var(--space-6);
+  box-shadow: inset 0 calc(-1 * var(--hairline)) 0 var(--line);
+}
+/* A thin bar that stays drawn (macOS hides an overlay bar until the list moves, and the sheet is longer than it first shows):
+   the visible cue that more waits below, since DESIGN allows no fade. */
+.ui-shortcut-sheet-body::-webkit-scrollbar {
+  width: var(--space-2);
+}
+.ui-shortcut-sheet-body::-webkit-scrollbar-track {
+  background: transparent;
+}
+.ui-shortcut-sheet-body::-webkit-scrollbar-thumb {
+  border-radius: var(--radius-xs);
+  background: var(--line-strong);
+}
+/* While more waits below the fold the edge is a firmer hairline: the scroll's end cue (DESIGN allows no fade). */
+.ui-shortcut-sheet-body[data-more='below'] {
+  box-shadow: inset 0 calc(-1 * var(--hairline)) 0 var(--line-strong);
+}
+.ui-shortcut-sheet-body:focus-visible {
+  outline: none;
+}
+.ui-shortcut-sheet-cols {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  /* 32 px between columns, so the widest row ("Send a queued follow-up now · while queued") stays on one line and every
+     column keeps the 28 px grid the first view is trimmed to. */
+  column-gap: var(--space-7);
+  align-items: start;
+}
+.ui-shortcut-group + .ui-shortcut-group {
+  /* A whole row (28 px), so every column's rows sit on one 28 px grid and the first view can end between rows. */
+  margin-top: var(--control-sm);
+}
+.ui-shortcut-group + .ui-shortcut-group .ui-shortcut-group-label {
+  /* A hairline on the heading's top edge (the 28 px gap is above it), so the groups read as groups. */
+  box-shadow: 0 calc(-1 * var(--hairline)) 0 var(--line);
+}
+.ui-shortcut-group-label {
+  margin: 0;
+  display: flex;
+  align-items: center;
+  height: var(--control-sm);
+  color: var(--dim);
+  font: var(--type-small);
+  font-weight: 500;
+  letter-spacing: var(--track-small);
+}
+.ui-shortcut-list {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.ui-shortcut-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  column-gap: var(--space-2);
+  min-height: var(--control-sm);
+  font: var(--type-ui);
+  letter-spacing: var(--track-ui);
+}
+.ui-shortcut-label {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.ui-shortcut-note {
+  color: var(--dim);
+  font: var(--type-small);
+  letter-spacing: var(--track-small);
+}
+.ui-shortcut-keys {
+  display: inline-flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: var(--space-1);
+  white-space: nowrap;
+}
+.ui-shortcut-sheet-dialog mark {
+  margin: 0 calc(-1 * var(--space-half));
+  padding: 0 var(--space-half);
+  border-radius: var(--radius-xs);
+  background: var(--accent-wash);
+  color: var(--ink);
+  font-weight: 500;
+}
+.ui-shortcut-sheet-empty {
+  margin: 0;
+  padding: var(--space-8) 0;
+  color: var(--dim);
+  font: var(--type-base);
+  letter-spacing: var(--track-base);
+  overflow-wrap: anywhere;
+}

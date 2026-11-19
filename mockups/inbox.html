@@ -1,0 +1,103 @@
+<!doctype html>
+<html lang="en" data-window="main" data-states="default,bulk">
+<head>
+<meta charset="utf-8">
+<title>All mail · Aplos mockup</title>
+<link rel="stylesheet" href="tokens.css">
+<link rel="stylesheet" href="shell.css">
+<script src="shell.js"></script>
+</head>
+<body>
+<div class="window">
+  <span class="traffic"></span>
+  <div class="app">
+    <aside class="sidebar" data-active="all"></aside>
+    <main class="main">
+      <header class="toolbar">
+        <div class="bulk" id="bulk" hidden>
+          <span class="count-label"><span id="nsel">3</span> selected</span>
+          <button class="btn btn-text" data-tip="Done" data-key="E">Done<span class="kbd hint">E</span></button>
+          <button class="btn btn-text" data-tip="Later" data-key="L">Later<span class="kbd hint">L</span></button>
+          <button class="btn btn-text" data-tip="Trash" data-key="#">Trash<span class="kbd hint">#</span></button>
+          <button class="btn btn-icon" data-tip="More: bookmark, move, mark unread" data-key="." aria-label="More"><svg class="ic"><use href="#i-more"/></svg></button>
+          <button class="btn btn-icon" id="clear" data-tip="Clear selection" data-key="Esc" aria-label="Clear selection"><svg class="ic"><use href="#i-x"/></svg></button>
+        </div>
+        <div class="tools">
+          <a class="btn btn-icon labelled" href="ask.html" data-tip="Ask about your mail" data-key="A"><svg class="ic"><use href="#i-bubble"/></svg>Ask</a>
+        </div>
+      </header>
+      <div class="workspace">
+        <div class="column">
+          <div class="page-head">
+            <div>
+              <h1 class="page-title">All mail</h1>
+              <p class="page-sub">214 emails · 4 unread</p>
+            </div>
+          </div>
+          <div class="list" id="list" data-list role="listbox" aria-label="All mail"></div>
+        </div>
+      </div>
+    </main>
+  </div>
+</div>
+<script>
+// [group, sender, line, date, flags, account]  flags: u unread, a attachment, b bookmark, r replied
+const MAIL = [
+  ['Today', 'Jordan Park', 'Two layout directions for the Hollow Creek site are ready, and Jordan wants your pick by tomorrow', '10:00 AM', 'ua', 'hill'],
+  ['Today', 'Fern & Field Co-op', 'Your Thursday vegetable box is packed. Pickup after 4 PM at the side door', '9:12 AM', 'u', 'sky'],
+  ['Today', 'Mina Cho', 'Shared the Hollow Creek type samples. Nothing needed from you yet', '8:40 AM', 'a', 'hill'],
+  ['Yesterday', 'Drew Bell', 'October illustrations are finished. Approve the $1,840 invoice to close out the month', 'Wed', 'ua', 'hill'],
+  ['Yesterday', 'Maple Library', 'Two holds are waiting at the front desk until Saturday', 'Wed', 'u', 'sky'],
+  ['Yesterday', 'Parcel Trail', 'Your order shipped and arrives Monday between 9 AM and noon', 'Wed', '', 'sky'],
+  ['Yesterday', 'Priya Raman', 'Needs the revised deck today, before Friday’s review', 'Wed', 'b', 'hill'],
+  ['Earlier this week', 'Leah Okafor', 'Lunch for six on Friday. Asks you to pick somewhere quiet', 'Tue', '', 'sky'],
+  ['Earlier this week', 'Rowan Pottery', 'A seat opened in the Tuesday evening wheel class. Reply by Sunday', 'Tue', '', 'sky'],
+  ['Earlier this week', 'Field Notes', 'Issue 42: five walking routes for short autumn days', 'Tue', '', 'sky'],
+  ['Earlier this week', 'Sami Haddad', 'The lease renewal needs your signature by November 4. Rent stays the same', 'Mon', 'a', 'sky'],
+  ['Earlier this week', 'Cedar Market', 'Receipt for your order of October 26, $63.18', 'Mon', '', 'sky'],
+  ['Earlier in October', 'Studio Kettle', 'You sent the signed statement of work. No reply yet', 'Oct 24', 'ar', 'hill'],
+  ['Earlier in October', 'Northwind Dental', 'Cleaning on Thursday at 9:30 AM. Confirm or reschedule', 'Oct 22', '', 'sky'],
+  ['Earlier in October', 'Theo Lindqvist', 'Photos from the ridge hike, 38 of them, including the one with the fog', 'Oct 22', 'a', 'sky'],
+  ['Earlier in October', 'Hollow Creek Trust', 'Board minutes for October. The trail budget passed', 'Oct 21', 'a', 'hill'],
+  ['Earlier in October', 'Ana Ruiz', 'Thanks for covering Saturday at the garden', 'Oct 21', 'r', 'sky'],
+  ['Earlier in October', 'City Water', 'Your bill is ready: $41.20, due November 10', 'Oct 20', '', 'sky'],
+  ['Earlier in October', 'Owen Park', 'Birthday dinner for Mom on November 7 at 7, at the usual place', 'Oct 19', '', 'sky'],
+];
+const ic = Mock.icon;
+const list = document.getElementById('list');
+let g = '', h = '';
+MAIL.forEach(([grp, who, line, date, f, acct], i) => {
+  if (grp !== g) { h += `<div class="date-head">${grp}</div>`; g = grp; }
+  h += `<div class="row ${f.includes('u') ? 'unread' : ''} ${i === 2 ? 'is-cursor' : ''}" data-row data-href="reader.html" role="option">
+    <span class="dot"></span><span class="pick">${ic('check')}</span>
+    <span class="sender ellipsis">${who}</span>
+    <span class="line"><span class="ellipsis">${line}</span></span>
+    <span class="meta">${f.includes('r') ? ic('reply') : ''}${f.includes('b') ? ic('bookmark') : ''}${f.includes('a') ? ic('paperclip') : ''}<span class="mark" style="background:var(--tag-${acct})" title="${acct === 'hill' ? 'alex@fernworks.studio' : 'alex.moreno@gmail.com'}"></span><span>${date}</span></span>
+    <span class="row-actions">
+      <button class="btn btn-icon" data-act="done" data-tip="Done" data-key="E" aria-label="Done">${ic('check')}</button>
+      <button class="btn btn-icon" data-act="later" data-tip="Later" data-key="L" aria-label="Later">${ic('clock')}</button>
+      <button class="btn btn-icon" data-act="trash" data-tip="Trash" data-key="#" aria-label="Trash">${ic('trash')}</button>
+      <button class="btn btn-icon" data-tip="More" data-key="." aria-label="More">${ic('more')}</button>
+    </span>
+  </div>`;
+});
+list.innerHTML = h;
+document.querySelectorAll('#bulk .btn-text').forEach((b, i) => b.insertAdjacentHTML('afterbegin', ic(['check', 'clock', 'trash'][i])));
+document.addEventListener('picks', e => {
+  const n = e.detail.n;
+  document.getElementById('bulk').hidden = n === 0;
+  document.getElementById('nsel').textContent = n;
+});
+document.getElementById('clear').onclick = () => Mock.onKey && document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
+if (Mock.state === 'bulk') {
+  addEventListener('DOMContentLoaded', () => {
+    const rs = [...list.querySelectorAll('[data-row]')];
+    [3, 4, 5].forEach(i => { rs[i].classList.add('is-picked'); });
+    list.classList.add('has-picks');
+    Mock.setCursor(list, rs[5], { noScroll: true });
+    document.dispatchEvent(new CustomEvent('picks', { detail: { list, n: 3 } }));
+  });
+}
+</script>
+</body>
+</html>

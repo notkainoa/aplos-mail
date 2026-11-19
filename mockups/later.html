@@ -1,0 +1,184 @@
+<!doctype html>
+<html lang="en" data-window="main" data-states="later,bookmarks,drag" data-esc="home.html">
+<head>
+<meta charset="utf-8">
+<title>Later · Aplos mockup</title>
+<link rel="stylesheet" href="tokens.css">
+<link rel="stylesheet" href="shell.css">
+<script src="shell.js"></script>
+<style>
+  .grp + .grp { margin-top: var(--group-gap); }
+  .grp .section-head .ic { color: var(--dim); }
+  .grp .section-head .target { margin-left: auto; display: none; font: var(--type-small); color: var(--dim); }
+  .grp .section-head.overdue .label, .grp .section-head.overdue .ic { color: var(--stamp-ink); }
+  .row .meta .chip { margin-right: var(--space-half); }
+  .row .meta .when { color: var(--dim); }
+  .row .meta .when + .chip { margin-left: var(--space-1); }
+
+  /* drag: every group becomes a labelled drop target, one row is lifted (§7.3) */
+  html[data-state="drag"] .grp.can-drop { margin-left: calc(-1 * var(--space-2)); margin-right: calc(-1 * var(--space-2)); padding: 0 var(--space-2) var(--space-1); border-radius: var(--radius-lg); background: var(--hover); box-shadow: inset 0 0 0 var(--hairline) var(--line); }
+  html[data-state="drag"] .grp.can-drop .section-head { padding-left: var(--space-3); }
+  html[data-state="drag"] .grp.can-drop .target { display: inline; }
+  html[data-state="drag"] .grp.is-over { background: var(--accent-wash); box-shadow: inset 0 0 0 1px var(--accent); }
+  html[data-state="drag"] .grp.is-over .target { color: var(--ink); font-weight: 500; }
+  html[data-state="drag"] .grp.no-drop .label, html[data-state="drag"] .grp.no-drop .n { color: var(--dim); }
+  html[data-state="drag"] .grp.no-drop .section-head.overdue .label, html[data-state="drag"] .grp.no-drop .section-head.overdue .ic { color: var(--stamp-ink); }
+  .row.is-lifted { position: absolute; left: var(--space-3); right: calc(-1 * var(--space-3)); z-index: 40; transform: scale(1.02); cursor: grabbing; pointer-events: none; }
+  .row.is-lifted .dot { background: none; display: flex; align-items: center; justify-content: center; width: auto; height: auto; }
+  .row.is-lifted .dot .ic { color: var(--dim); }
+  .slot-held { height: var(--row); border-radius: var(--radius-md); box-shadow: inset 0 0 0 var(--hairline) var(--line); }
+  .slot-drop { background: var(--accent-wash); }
+</style>
+</head>
+<body>
+<div class="window">
+  <span class="traffic"></span>
+  <div class="app">
+    <aside class="sidebar" data-active="later" data-counts='{"later":9}'></aside>
+    <main class="main">
+      <header class="toolbar">
+        <div class="tools">
+          <a class="btn btn-icon labelled" href="ask.html" data-tip="Ask about your mail" data-key="A"><svg class="ic"><use href="#i-bubble"/></svg>Ask</a>
+        </div>
+      </header>
+      <div class="workspace">
+        <div class="column">
+          <div class="page-head">
+            <div>
+              <h1 class="page-title">Later</h1>
+              <p class="page-sub" id="sub">9 emails · 2 overdue</p>
+            </div>
+            <div class="actions">
+              <div class="seg" role="tablist" aria-label="Later view">
+                <span class="seg-puck" id="puck"></span>
+                <button role="tab" data-v="later" aria-selected="true">Later</button>
+                <button role="tab" data-v="bookmarks" aria-selected="false">Bookmarks</button>
+              </div>
+            </div>
+          </div>
+          <div class="list" id="list" data-list role="listbox" aria-label="Later"></div>
+        </div>
+      </div>
+    </main>
+  </div>
+</div>
+<script>
+const ic = Mock.icon;
+// [who, line, due chip, unread, bookmarked]
+const GROUPS = [
+  { id: 'overdue', label: 'Overdue', icon: true, drop: null, rows: [
+    ['Priya Raman', 'Send the revised Q4 deck so Priya can review it before Friday.', 'Yesterday', 1, 1],
+    ['Drew Bell', 'Approve the $1,840 invoice for October illustrations.', 'Tue, Oct 27', 0, 0],
+  ] },
+  { id: 'today', label: 'Today', drop: 'Today, 6:00 PM', rows: [
+    ['Northwind Dental', 'Confirm or reschedule the cleaning.', 'Today, 5:00 PM', 0, 0],
+    ['Leah Okafor', 'Pick a quiet lunch spot for six on Friday.', 'Today, 6:00 PM', 1, 0],
+  ] },
+  { id: 'week', label: 'This week', drop: 'Tomorrow, 8:00 AM', rows: [
+    ['Jordan Park', 'Choose a layout direction for the Hollow Creek site.', 'Fri, 8:00 AM', 0, 1],
+    ['Maple Library', 'Two holds wait at the front desk until Saturday.', 'Sat, 9:00 AM', 0, 0],
+    ['Rowan Pottery', 'Reply to keep your seat in the Tuesday wheel class.', 'Sun, 10:00 AM', 0, 0],
+  ] },
+  { id: 'someday', label: 'Someday', drop: 'Someday', rows: [
+    ['Field Notes', 'Issue 42: five walking routes for short autumn days.', 'Someday', 0, 0],
+    ['Ana Ruiz', 'Plan the winter rota at the community garden.', 'Someday', 0, 0],
+  ] },
+];
+const MARKS = [
+  ['Priya Raman', 'Needs the revised deck today, before Friday’s review', 'Wed', 'hill'],
+  ['Sami Haddad', 'The lease renewal needs your signature by November 4', 'Mon', 'sky'],
+  ['Jordan Park', 'Two layout directions are ready. Pick one by tomorrow', '10:00 AM', 'hill'],
+  ['Studio Kettle', 'You sent the signed statement of work. No reply yet', 'Oct 24', 'hill'],
+  ['Mina Cho', 'Shared the Hollow Creek type samples. Nothing needed yet', '8:40 AM', 'hill'],
+  ['City Water', 'Your bill is ready: $41.20, due November 10', 'Oct 20', 'sky'],
+  ['Owen Park', 'Birthday dinner for Mom on November 7 at 7', 'Oct 19', 'sky'],
+];
+const list = document.getElementById('list');
+const actions = `<span class="row-actions">
+  <button class="btn btn-icon" data-act="done" data-tip="Done" data-key="E" aria-label="Done">${ic('check')}</button>
+  <a class="btn btn-icon" href="later-picker.html" data-tip="Change date" data-key="D" aria-label="Change date">${ic('clock')}</a>
+  <button class="btn btn-icon" data-act="trash" data-tip="Trash" data-key="#" aria-label="Trash">${ic('trash')}</button>
+  <button class="btn btn-icon" data-tip="More" data-key="." aria-label="More">${ic('more')}</button>
+</span>`;
+const laterRow = (g, [who, line, due, unread, mark], extra = '') =>
+  `<div class="row ${unread ? 'unread' : ''} ${extra}" data-row data-href="reader.html" role="option">
+    <span class="dot"></span><span class="sender ellipsis">${who}</span>
+    <span class="line"><span class="ellipsis">${line}</span></span>
+    <span class="meta">${mark ? ic('bookmark') : ''}<span class="chip ${g.id === 'overdue' ? 'overdue' : 'due'}">${ic('clock')}${due}</span></span>${actions}
+  </div>`;
+
+function renderLater() {
+  const drag = Mock.state === 'drag';
+  list.innerHTML = GROUPS.map(g => {
+    const n = g.rows.length - (drag && g.id === 'someday' ? 1 : 0);
+    let rows = g.rows.map((r, i) => (drag && g.id === 'someday' && i === 0) ? `<div class="slot-held"></div>` : laterRow(g, r) + (drag && g.id === 'week' && i === 0 ? `<div class="slot-held slot-drop" id="drop"></div>` : '')).join('');
+    const cls = drag ? (g.drop ? 'can-drop' : 'no-drop') + (g.id === 'week' ? ' is-over' : '') : '';
+    return `<section class="grp ${cls}" data-grp="${g.id}">
+      <div class="section-head ${g.id === 'overdue' ? 'overdue' : ''}">${g.icon ? ic('clock') : ''}<span class="label">${g.label}</span><span class="n">${n}</span>${g.drop ? `<span class="target">${g.drop}</span>` : ''}</div>${rows}
+    </section>`;
+  }).join('');
+  if (drag) {
+    // the lifted row hovers over the This week group (§7.3: lift, every group a labelled target)
+    const src = GROUPS[3].rows[0], over = document.getElementById('drop');
+    list.insertAdjacentHTML('beforeend', `<div class="row paper lift is-lifted" id="lifted" aria-label="Moving ${src[0]}">
+      <span class="dot">${ic('grip')}</span><span class="sender ellipsis">${src[0]}</span>
+      <span class="line"><span class="ellipsis">${src[1]}</span></span>
+      <span class="meta"><span class="chip due">${ic('clock')}Tomorrow, 8:00 AM</span></span></div>`);
+    const l = document.getElementById('lifted');
+    l.style.top = over.offsetTop + 'px';
+  }
+}
+function renderBookmarks() {
+  list.innerHTML = `<div class="section-head"><span class="label">Bookmarked</span><span class="n">${MARKS.length}</span></div>` + MARKS.map(([who, line, date, acct]) =>
+    `<div class="row" data-row data-href="reader.html" role="option">
+      <span class="dot"></span><span class="sender ellipsis">${who}</span>
+      <span class="line"><span class="ellipsis">${line}</span></span>
+      <span class="meta">${ic('bookmark')}<span class="mark" style="background:var(--tag-${acct})"></span><span>${date}</span></span>
+      <span class="row-actions">
+        <button class="btn btn-icon" data-act="done" data-tip="Done" data-key="E" aria-label="Done">${ic('check')}</button>
+        <button class="btn btn-icon" data-tip="Remove bookmark" data-key="B" aria-label="Remove bookmark">${ic('bookmark')}</button>
+        <button class="btn btn-icon" data-act="trash" data-tip="Trash" data-key="#" aria-label="Trash">${ic('trash')}</button>
+        <button class="btn btn-icon" data-tip="More" data-key="." aria-label="More">${ic('more')}</button>
+      </span>
+    </div>`).join('');
+}
+function render() {
+  const v = Mock.state === 'bookmarks' ? 'bookmarks' : 'later';
+  list.setAttribute('aria-label', v === 'bookmarks' ? 'Bookmarks' : 'Later');
+  (v === 'later' ? renderLater : renderBookmarks)();
+  const c = Mock.rows(list)[0]; if (c && Mock.state !== 'drag') Mock.setCursor(list, c, { noScroll: true });
+  document.getElementById('sub').textContent = v === 'bookmarks' ? `${MARKS.length} bookmarked emails` : '9 emails · 2 overdue';
+  puck(v);
+}
+function puck(v) {
+  document.querySelectorAll('.seg button').forEach(b => b.setAttribute('aria-selected', String(b.dataset.v === v)));
+  const b = document.querySelector(`.seg button[data-v="${v}"]`), p = document.getElementById('puck');
+  p.style.width = b.offsetWidth + 'px'; p.style.transform = `translateX(${b.offsetLeft}px)`;
+}
+// Empty groups don't render (§7.3); counts follow the rows
+function refreshGroups() {
+  list.querySelectorAll('.grp').forEach(g => {
+    const n = [...g.querySelectorAll('[data-row]')].filter(r => !r.classList.contains('is-gone') && !r.classList.contains('is-held')).length;
+    g.hidden = n === 0; g.querySelector('.section-head .n').textContent = n;
+  });
+}
+list.addEventListener('triage', () => setTimeout(refreshGroups, 520));
+list.addEventListener('undo', refreshGroups);
+
+document.addEventListener('DOMContentLoaded', () => {
+  render();
+  document.querySelectorAll('.seg button').forEach(b => b.addEventListener('click', () => {
+    const v = b.dataset.v;
+    document.documentElement.dataset.state = v; Mock.state = v;
+    history.replaceState(null, '', `later.html?state=${v}`);
+    render();
+  }));
+  document.fonts.ready.then(() => puck(Mock.state === 'bookmarks' ? 'bookmarks' : 'later'));
+});
+Mock.onKey(e => {
+  if (e.metaKey || e.ctrlKey || e.altKey || e.target.closest('input,textarea')) return;
+  if (e.key === 'b' && Mock.state === 'bookmarks') { Mock.toast({ icon: 'bookmark', text: 'Bookmark removed', actions: [['Undo', 'Z']] }); return true; }
+});
+</script>
+</body>
+</html>

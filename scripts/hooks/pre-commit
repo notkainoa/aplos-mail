@@ -1,0 +1,49 @@
+#!/bin/sh
+# Pre-commit: Prettier --check and ESLint on the staged files only (a few seconds).
+# Skips a tool, with one line, when it or its config is missing, so worktrees without
+# the tools installed are never blocked.
+root=$(git rev-parse --show-toplevel) || exit 0
+cd "$root" || exit 0
+
+staged() {
+  git diff --cached --name-only --diff-filter=ACM | grep -E "$1"
+}
+
+run_on() {
+  # run_on <files> <command...>: pass the files as separate arguments, safe for spaces.
+  files=$1
+  shift
+  printf '%s\n' "$files" | tr '\n' '\0' | xargs -0 "$@"
+}
+
+has_prettier_config() {
+  for config in .prettierrc .prettierrc.* prettier.config.*; do
+    [ -f "$config" ] && return 0
+  done
+  return 1
+}
+
+status=0
+
+if [ ! -x node_modules/.bin/prettier ] || ! has_prettier_config; then
+  echo "pre-commit: prettier or its config is missing, skipping the format check"
+else
+  # eslint-suppressions.json is written by ESLint (no final newline) and is not Prettier-formatted.
+  files=$(staged '\.(ts|tsx|js|jsx|mjs|cjs|mts|cts|json|css|html|ya?ml)$' | grep -v -x -e 'eslint-suppressions.json' -e 'stylelint-suppressions.json')
+  if [ -n "$files" ]; then
+    run_on "$files" node_modules/.bin/prettier --check --ignore-unknown --no-error-on-unmatched-pattern \
+      || { echo "pre-commit: run 'npx prettier --write <files>' and re-stage"; status=1; }
+  fi
+fi
+
+if [ ! -x node_modules/.bin/eslint ] || [ ! -f eslint.config.mjs ]; then
+  echo "pre-commit: eslint or its config is missing, skipping lint"
+else
+  files=$(staged '\.(ts|tsx|js|jsx|mjs|cjs|mts|cts)$')
+  if [ -n "$files" ]; then
+    # Fixing a suppressed violation must not fail the commit; 'npm run lint:prune' tidies the file.
+    run_on "$files" node_modules/.bin/eslint --no-warn-ignored --pass-on-unpruned-suppressions || status=1
+  fi
+fi
+
+exit $status

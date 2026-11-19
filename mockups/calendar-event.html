@@ -1,0 +1,122 @@
+<!doctype html>
+<html lang="en" data-window="main" data-states="detail,rsvp" data-esc="calendar-week.html">
+<head>
+<meta charset="utf-8">
+<title>Calendar, event · Aplos mockup</title>
+<link rel="stylesheet" href="tokens.css">
+<link rel="stylesheet" href="shell.css">
+<link rel="stylesheet" href="cal.css">
+<script src="shell.js"></script>
+<script src="cal.js"></script>
+</head>
+<body>
+<div class="window">
+  <span class="traffic"></span>
+  <div class="app">
+    <aside class="sidebar" data-active="calendar" data-extra="calendar"></aside>
+    <main class="main">
+      <header class="toolbar">
+        <div class="tools">
+          <button class="btn btn-icon" data-tip="New event" data-key="N" aria-label="New event"><svg class="ic"><use href="#i-plus"/></svg></button>
+          <a class="btn btn-icon labelled" href="ask.html" data-tip="Ask about your mail" data-key="A"><svg class="ic"><use href="#i-bubble"/></svg>Ask</a>
+        </div>
+      </header>
+      <div class="workspace cal-ws">
+        <div class="page-head">
+          <div>
+            <h1 class="page-title keep">October 2026</h1>
+            <p class="page-sub">October 25 – 31</p>
+          </div>
+          <div class="actions">
+            <a class="btn btn-text" href="calendar-week.html">Today<span class="kbd hint">T</span></a>
+            <a class="btn btn-icon" href="calendar-week.html" aria-label="Previous week" data-tip="Previous week" data-key="K"><svg class="ic"><use href="#i-chevl"/></svg></a>
+            <a class="btn btn-icon" href="calendar-week.html" aria-label="Next week" data-tip="Next week" data-key="J"><svg class="ic"><use href="#i-chevr"/></svg></a>
+            <div class="seg" role="tablist" aria-label="View">
+              <button role="tab" aria-selected="false" aria-label="Day" data-go="calendar-day.html" data-tip="Day" data-key="D">D</button>
+              <button role="tab" aria-selected="true" aria-label="Week" data-tip="Week" data-key="W">W</button>
+              <button role="tab" aria-selected="false" aria-label="Month" data-go="calendar-week.html?view=month" data-tip="Month" data-key="M">M</button>
+            </div>
+          </div>
+        </div>
+        <div class="cal" id="cal"></div>
+      </div>
+      <p class="sr-only" role="status" id="live"></p>
+    </main>
+  </div>
+</div>
+<script>
+const mount = document.getElementById('cal');
+let answered = Mock.state !== 'rsvp';
+let pop = null;
+const ic = Mock.icon;
+const ANSWERS = [['yes', 'Yes', 'Y', 'going'], ['maybe', 'Maybe', 'M', 'maybe'], ['no', 'No', 'N', 'declined']];
+let answer = answered ? 'yes' : null;   // nothing is preselected on an unanswered invite
+
+function rsvpBlock() {
+  return `<div class="d-rsvp">
+    <h3 class="d-label">Going?</h3>
+    <div class="row-flex">
+      <div class="seg" id="rsvp" role="tablist" aria-label="Your answer">${ANSWERS.map(([id, l, k]) => `<button role="tab" data-answer="${id}" aria-selected="false" data-tip="${l}" data-key="${k}">${l}</button>`).join('')}</div>
+      <button class="btn btn-filled md" id="send" disabled>Send reply<span class="kbd">Return</span></button>
+    </div>
+  </div>`;
+}
+function popHTML(ev) {
+  const st = ANSWERS.find(a => a[0] === answer);
+  Cal.INFO.q4.guests[2][1] = answered && st ? st[3] : 'none';
+  return Cal.detail(ev, { close: true, rsvp: answered ? '' : rsvpBlock(), noDesc: true });
+}
+function place() {
+  const body = mount.querySelector('.cal-body');
+  const evEl = mount.querySelector('.ev[data-id="q4"]');
+  const p = Cal.pos(evEl, body);
+  const gap = parseFloat(Mock.css('--space-2'));
+  pop.style.left = Math.max(0, p.x - pop.offsetWidth - gap) + 'px';
+  pop.style.top = Math.max(0, Math.min(p.y - gap, body.offsetHeight - pop.offsetHeight)) + 'px';
+}
+function render() {
+  Cal.week(mount, { start: Cal.weekStart(Cal.TODAY), selected: 'q4' });
+  const ev = Cal.findEvent('q4');
+  pop = document.createElement('div');
+  pop.className = 'pop float reveal';
+  pop.setAttribute('role', 'dialog'); pop.setAttribute('aria-label', 'Q4 review');
+  pop.innerHTML = popHTML(ev);
+  mount.querySelector('.cal-body').append(pop);
+  place();
+  Cal.initSegs();
+  document.getElementById('live').textContent = answered ? 'Q4 review, Friday 11:00 AM. You are going.' : 'Q4 review, Friday 11:00 AM. Invite from Priya Raman. Going?';
+}
+function choose(id) {
+  answer = id;
+  const seg = document.getElementById('rsvp'); if (!seg) return;
+  Cal.segSelect(seg, seg.querySelector(`[data-answer="${id}"]`));
+  document.getElementById('send').disabled = false;
+}
+function send() {
+  if (!answer) return;
+  answered = true;
+  Mock.toast({ icon: 'check', tone: 'c-hill', text: `Reply sent to Priya: ${ANSWERS.find(a => a[0] === answer)[1]}`, actions: [['Undo', 'Z']] });
+  render();
+}
+document.addEventListener('click', e => {
+  const a = e.target.closest('[data-answer]'); if (a) { choose(a.dataset.answer); return; }
+  if (e.target.closest('#send')) { send(); return; }
+  if (e.target.closest('[data-open-invite]')) { e.preventDefault(); Mock.go('reader.html'); return; }
+  if (e.target.closest('[data-close]')) { Mock.go('calendar-week.html'); return; }
+  const g = e.target.closest('[data-go]'); if (g) { Mock.go(g.dataset.go); return; }
+});
+Mock.onKey(e => {
+  const k = e.key;
+  if (e.metaKey || e.ctrlKey || e.altKey) return;
+  if (e.target.closest('input,textarea')) return;
+  if (!answered && /^[ymnYMN]$/.test(k)) { choose({ y: 'yes', m: 'maybe', n: 'no' }[k.toLowerCase()]); return true; }
+  if (k === 'Enter' && !answered && answer) { send(); return true; }
+  if (k === 'o') { Mock.go('reader.html'); return true; }
+  if (k === 'd') { Mock.go('calendar-day.html'); return true; }
+  if (k === 'w' || k === 't') { Mock.go('calendar-week.html'); return true; }
+  if (k === 'm') { Mock.go('calendar-week.html?view=month'); return true; }
+});
+render();
+</script>
+</body>
+</html>

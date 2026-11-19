@@ -1,0 +1,1426 @@
+/* The list family (DESIGN §4.1, §4.4, §4.9, §5 rules 6, 7, 17, §6, §7.2–7.4, §7.14, §7.15).
+   Mockups: home.html, home-view.js, inbox.html, done.html, later.html, errors.html, empty.html.
+   Tokens only. Hover lives under (hover: hover) and changes colour, fill, shadow or visibility only.
+   Also holds the private button, keycap and icon parts the reader family reuses until buttons-keys lands. */
+
+/* ---------- Private parts: icon, keycap, button ---------- */
+
+.ui-list-icon {
+  flex: none;
+  width: var(--icon);
+  height: var(--icon);
+  stroke-width: var(--icon-stroke);
+}
+.ui-list-icon[data-size='sm'] {
+  width: var(--icon-sm);
+  height: var(--icon-sm);
+}
+.ui-list-icon[data-size='xs'] {
+  width: var(--icon-xs);
+  height: var(--icon-xs);
+}
+
+.ui-list-sr {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+
+.ui-list-kbd {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  justify-content: center;
+  min-width: var(--kbd);
+  height: var(--kbd);
+  padding: 0 var(--space-1);
+  border-radius: var(--radius-xs);
+  background-color: var(--keycap);
+  box-shadow: inset 0 0 0 var(--hairline) var(--line);
+  color: var(--keycap-ink);
+  font: var(--type-caption);
+  letter-spacing: var(--track-caption);
+}
+/* While ⌘ is held the command's key overlays the button's corner; it never takes space (DESIGN §8). */
+.ui-list-kbd[data-reveal='badge'] {
+  position: absolute;
+  top: calc(-1 * var(--space-1));
+  right: calc(-1 * var(--space-1));
+  background-color: var(--ink);
+  color: var(--canvas);
+  pointer-events: none;
+}
+
+.ui-list-btn {
+  --ui-btn-h: var(--control-sm);
+  box-sizing: border-box;
+  position: relative;
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  justify-content: center;
+  gap: calc(var(--space-1) + var(--space-half));
+  max-width: 100%;
+  height: var(--ui-btn-h);
+  margin: 0;
+  padding: 0 var(--space-3);
+  border: 0;
+  border-radius: var(--radius-md);
+  background-color: transparent;
+  color: var(--ink-2);
+  font: var(--type-ui);
+  font-weight: 500;
+  letter-spacing: var(--track-ui);
+  white-space: nowrap;
+  cursor: default;
+  transition:
+    transform var(--dur-press-up) var(--ease-out),
+    background-color var(--dur-hover) var(--ease-std),
+    color var(--dur-hover) var(--ease-std),
+    box-shadow var(--dur-hover) var(--ease-std);
+}
+.ui-list-btn[data-size='md'] {
+  --ui-btn-h: var(--control-md);
+}
+.ui-list-btn__label {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.ui-list-btn:active {
+  transform: scale(var(--press-scale));
+  transition-duration: var(--dur-press-down);
+}
+.ui-list-btn:focus-visible,
+.ui-chip__open:focus-visible,
+.ui-chip__remove:focus-visible {
+  outline: var(--focus-width) solid var(--accent);
+  outline-offset: var(--focus-gap);
+}
+.ui-list-btn[data-variant='text'] .ui-list-icon {
+  color: var(--dim);
+}
+.ui-list-btn[data-variant='icon'],
+.ui-list-btn[data-label-hidden='true'] {
+  width: var(--ui-btn-h);
+  padding: 0;
+  color: var(--dim);
+}
+.ui-list-btn[data-variant='icon']:active,
+.ui-list-btn[data-label-hidden='true']:active {
+  transform: scale(var(--press-scale-icon));
+}
+/* A keycap inside a label-hidden button widens it (the narrow focus letter's icon plus its cap). */
+.ui-list-btn[data-label-hidden='true']:has(> .ui-list-kbd) {
+  width: auto;
+  padding: 0 var(--space-2);
+}
+/* The one filled button: ink blue, a 1 px top highlight and bottom shade that swap on press. */
+.ui-list-btn[data-variant='filled'] {
+  background-color: var(--accent);
+  color: var(--accent-ink);
+  box-shadow:
+    inset 0 1px 0 var(--press-hi),
+    inset 0 calc(-1 * 1px) 0 var(--press-lo);
+}
+.ui-list-btn[data-variant='filled']:active {
+  box-shadow: inset 0 1px 0 var(--press-lo);
+}
+.ui-focus-letter[data-demoted='true'] .ui-list-kbd {
+  /* Under a modal (the Low sheet) the card dims and holds its layout: the keys stay in their places, unseen, so the
+     buttons never slide. */
+  visibility: hidden;
+}
+.ui-list-key-word {
+  /* "Hold" names the gesture, not part of the label ("Mark all 3 done"): a hairline divider and 8 px of air set it and
+     its keycap apart from the words before it (owner review of #548, 2026-11-17). */
+  margin-left: var(--space-1);
+  padding-left: var(--space-2);
+  box-shadow: inset var(--hairline) 0 0 var(--line-strong);
+  color: inherit;
+  font: var(--type-caption);
+  letter-spacing: var(--track-caption);
+}
+.ui-list-btn[data-variant='filled'] .ui-list-key-word {
+  /* on the accent fill the divider takes the keycap plate's own edge */
+  box-shadow: inset var(--hairline) 0 0 color-mix(in srgb, var(--accent-ink) 32%, transparent);
+}
+.ui-list-btn[data-variant='filled'] .ui-list-kbd {
+  /* A hint, not part of the label: a faint plate with a hairline edge on the fill, the label's own colour. */
+  background: color-mix(in srgb, var(--accent-ink) 12%, transparent);
+  box-shadow: inset 0 0 0 var(--hairline) color-mix(in srgb, var(--accent-ink) 32%, transparent);
+  color: var(--accent-ink);
+}
+.ui-list-btn[data-tone='danger'],
+.ui-list-btn[data-tone='danger'] .ui-list-icon {
+  color: var(--stamp-ink);
+}
+/* In light, the pinned bar's Later and Done caps (--sunken on --paper, 1.1:1) take one step more: a deeper plate, a
+   hairline edge and the --ink-2 glyph. Dark keeps the plain cap. */
+:root:not([data-theme='dark'])
+  .ui-reader-actions
+  .ui-list-btn:not([data-variant='filled'])
+  .ui-list-kbd:not([data-reveal='badge']) {
+  background-color: color-mix(in srgb, var(--ink) 9%, var(--paper));
+  box-shadow: inset 0 0 0 var(--hairline) var(--line-strong);
+  color: var(--ink-2);
+}
+.ui-list-btn:disabled {
+  color: var(--dim);
+}
+.ui-list-btn:disabled .ui-list-icon {
+  color: var(--faint);
+}
+.ui-list-btn:disabled .ui-list-kbd {
+  color: var(--dim);
+}
+.ui-list-btn[data-variant='filled']:disabled {
+  /* the primary, faded: the same by day and at night */
+  background-color: color-mix(in srgb, var(--accent) 30%, transparent);
+  box-shadow: none;
+}
+
+@media (hover: hover) {
+  .ui-list-btn[data-variant='text']:hover,
+  .ui-list-btn[data-variant='icon']:hover,
+  .ui-list-btn[data-label-hidden='true']:hover {
+    background-color: var(--hover);
+    color: var(--ink);
+  }
+  .ui-list-btn[data-variant='text']:hover .ui-list-icon {
+    color: var(--ink);
+  }
+  .ui-list-btn[data-tone='danger']:hover,
+  .ui-list-btn[data-tone='danger']:hover .ui-list-icon {
+    background-color: var(--stamp-tint);
+    color: var(--stamp-ink);
+  }
+  /* A spread larger than half the height fills the whole button with the hover tint, no gradient. */
+  .ui-list-btn[data-variant='filled']:hover {
+    box-shadow:
+      inset 0 1px 0 var(--press-hi),
+      inset 0 calc(-1 * 1px) 0 var(--press-lo),
+      inset 0 0 0 var(--control-lg) var(--hover);
+  }
+  .ui-list-btn:disabled:hover {
+    background-color: transparent;
+    color: var(--dim);
+  }
+}
+
+/* ---------- Chip ---------- */
+
+.ui-chip {
+  box-sizing: border-box;
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  gap: var(--space-1);
+  max-width: 100%;
+  height: var(--control-xs);
+  padding: 0 var(--space-2);
+  border-radius: var(--radius-sm);
+  background-color: var(--raised);
+  /* A hairline edge, so a chip stays a chip on a hovered or cursor row (--puck), whose fill is close to --raised. */
+  box-shadow: inset 0 0 0 var(--hairline) var(--line);
+  color: var(--ink-2);
+  font: var(--type-small);
+  letter-spacing: var(--track-small);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+/* A due chip is as it was before UI council 2 (owner review of #548, 2026-11-17): no edge, the clock and the short words,
+   inline before the subject. */
+.ui-chip[data-kind='due'] {
+  box-shadow: none;
+}
+.ui-chip .ui-list-icon {
+  color: var(--dim);
+}
+:root[data-theme='dark'] .ui-chip[data-kind='attachment'] .ui-list-icon {
+  color: var(--ink-2); /* the download mark and the file icon read on --raised at night */
+}
+.ui-chip__text {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.ui-chip[data-overdue='true'],
+.ui-chip[data-overdue='true'] .ui-list-icon {
+  background-color: var(--stamp-tint);
+  color: var(--stamp-ink);
+}
+.ui-chip[data-overdue='true'] .ui-list-icon {
+  background-color: transparent;
+}
+/* Later (DESIGN 7.3): the return time on the right carries the one overdue colour, so the due chip before the
+   summary keeps its words and clock but sheds the tint (the section label and that chip already say overdue). */
+.ui-list-row[data-layout='later'] .ui-list-row__line .ui-chip[data-overdue='true'] {
+  background-color: var(--raised);
+}
+/* Later's return time is plain secondary text with its clock, right-aligned at the row's right edge. The column takes the
+   width of its own words on every row (round 7: a fixed 176 px column left ~90 px empty while subjects truncated), so a
+   subject keeps all the room the date does not use. A return is a fact about the row, not a tag on it, so it carries no
+   chip fill; overdue turns it --stamp-ink. */
+.ui-list-row__back {
+  display: contents;
+}
+.ui-list-row[data-layout='later'] .ui-list-row__meta .ui-list-row__back {
+  display: flex;
+  flex: none;
+  justify-content: flex-end;
+}
+.ui-list-row__back .ui-chip {
+  padding: 0;
+  background-color: transparent;
+  box-shadow: none;
+  color: var(--dim);
+}
+.ui-list-row__back .ui-chip[data-overdue='true'] {
+  background-color: transparent;
+  color: var(--stamp-ink);
+}
+.ui-chip[data-kind='label'][data-color] {
+  box-shadow: inset 0 0 0 1px var(--swatch);
+}
+
+.ui-chip[data-kind='attachment'] {
+  gap: var(--space-2);
+  height: var(--control-md);
+  padding: 0;
+  border-radius: var(--radius-md);
+  font: var(--type-ui);
+  letter-spacing: var(--track-ui);
+}
+.ui-chip__open {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  min-width: 0;
+  height: 100%;
+  margin: 0;
+  padding: 0 var(--space-3) 0 var(--space-2);
+  border: 0;
+  border-radius: var(--radius-md);
+  background-color: transparent;
+  color: inherit;
+  font: inherit;
+  letter-spacing: inherit;
+  cursor: default;
+  transition: background-color var(--dur-hover) var(--ease-std);
+}
+.ui-chip__name {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.ui-chip__size {
+  flex: none;
+  color: var(--dim);
+  font: var(--type-small);
+  font-variant-numeric: var(--num-small);
+  letter-spacing: var(--track-small);
+}
+.ui-chip[data-state='failed'] {
+  padding-right: var(--space-1);
+  background-color: var(--stamp-tint);
+  color: var(--stamp-ink);
+}
+.ui-chip[data-state='failed'] .ui-list-icon {
+  color: var(--stamp-ink);
+}
+.ui-chip__error {
+  flex: none;
+}
+
+.ui-chip[data-kind='operator'] {
+  padding: 0 var(--space-1) 0 var(--space-2);
+  border-radius: var(--radius-pill);
+  color: var(--ink);
+}
+.ui-chip__operator {
+  color: var(--ink-2);
+  font-weight: 500;
+}
+.ui-chip__remove {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: var(--space-4);
+  height: var(--space-4);
+  margin: 0;
+  padding: 0;
+  border: 0;
+  border-radius: var(--radius-xs);
+  background-color: transparent;
+  color: var(--dim);
+  cursor: default;
+  transition:
+    background-color var(--dur-hover) var(--ease-std),
+    color var(--dur-hover) var(--ease-std);
+}
+
+@media (hover: hover) {
+  .ui-chip__open:hover {
+    background-color: var(--hover);
+  }
+  .ui-chip__remove:hover {
+    background-color: var(--hover);
+    color: var(--ink);
+  }
+}
+
+/* ---------- Commit chip and edge (static; ui-shell draws `commit`) ---------- */
+
+.ui-commit-chip {
+  position: absolute;
+  top: var(--space-4);
+  right: var(--space-4);
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+  height: var(--commit-chip);
+  padding: 0 var(--space-2);
+  border-radius: var(--radius-sm);
+  color: var(--fill-ink);
+  font: var(--type-ui);
+  font-weight: 500;
+  letter-spacing: var(--track-ui);
+  white-space: nowrap;
+  pointer-events: none;
+}
+.ui-commit-chip .ui-list-icon {
+  color: inherit;
+}
+.ui-commit-chip[data-kind='done'] {
+  background-color: var(--hill);
+}
+.ui-commit-chip[data-kind='later'] {
+  background-color: var(--dusk);
+}
+.ui-commit-chip[data-kind='trash'] {
+  background-color: var(--stamp);
+}
+
+.ui-commit-edge {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  width: var(--commit-edge);
+  transform-origin: top;
+  pointer-events: none;
+}
+.ui-commit-edge[data-side='right'] {
+  right: 0;
+}
+.ui-commit-edge[data-side='left'] {
+  left: 0;
+}
+.ui-commit-edge[data-kind='done'] {
+  background-color: var(--hill);
+}
+.ui-commit-edge[data-kind='later'] {
+  background-color: var(--dusk);
+}
+.ui-commit-edge[data-kind='trash'] {
+  background-color: var(--stamp);
+}
+
+/* ---------- Empty line ---------- */
+
+.ui-empty-line {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: var(--space-4);
+  padding: var(--space-6) var(--space-3);
+  color: var(--dim);
+  font: var(--type-ui);
+  letter-spacing: var(--track-ui);
+}
+.ui-empty-line__copy {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  max-width: 100%;
+}
+/* The one muted mark above the line; never in a circle. */
+.ui-empty-line__copy > .ui-list-icon {
+  color: var(--faint);
+}
+:root[data-theme='dark'] .ui-empty-line__copy > .ui-list-icon {
+  color: var(--dim); /* --faint is 3.6:1 here; the mark takes the AA text step */
+}
+.ui-empty-line__text,
+.ui-empty-line__detail {
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+/* The sentence is primary text and the hint under it is secondary, in every place. */
+.ui-empty-line__text {
+  color: var(--ink);
+}
+.ui-empty-line__detail {
+  font: var(--type-small);
+  letter-spacing: var(--track-small);
+}
+.ui-empty-line__actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2);
+}
+/* A quiet way out ("Clear search", "Write a message"): a text button in the muted ink of either theme; hover still
+   brings it up to --ink like any text button (owner review of #548, 2026-11-17). */
+.ui-empty-line__actions[data-quiet='true'] .ui-list-btn[data-variant='text']:not(:hover) {
+  color: var(--dim);
+}
+/* The slot only has a min-height, so it becomes a column the pane line can grow in (the one-by-one slot does the
+   same in screens/home/oneByOne.css). */
+.aplos-screen:has(> .ui-empty-line[data-placement='pane']) {
+  display: flex;
+  flex-direction: column;
+}
+/* In the pane the line centres both ways; `safe` keeps a taller block anchored at the top where it can scroll.
+   No sky, no card, no icon in a circle. */
+.ui-empty-line[data-placement='pane'] {
+  box-sizing: border-box;
+  align-items: center;
+  justify-content: safe center;
+  flex: 1 0 auto;
+  gap: var(--space-4);
+  min-height: 100%;
+  padding: var(--pane-head) var(--space-8) var(--space-10);
+  text-align: center;
+}
+.ui-empty-line[data-placement='pane'] .ui-empty-line__copy {
+  align-items: center;
+  gap: var(--space-2);
+}
+.ui-empty-line[data-placement='pane'] .ui-empty-line__actions {
+  justify-content: center;
+}
+/* Inbox zero keeps the `display` role, calmer (owner review 2026-11-05). */
+.ui-empty-line[data-size='display'] .ui-empty-line__copy {
+  gap: var(--space-3);
+}
+.ui-empty-line[data-size='display'] .ui-empty-line__text {
+  color: var(--ink);
+  font: var(--type-display);
+  letter-spacing: var(--track-display);
+  text-wrap: balance;
+}
+.ui-empty-line[data-size='display'] .ui-empty-line__detail {
+  font: var(--type-base);
+  letter-spacing: var(--track-base);
+}
+
+/* ---------- Error line ---------- */
+
+.ui-error-line {
+  box-sizing: border-box;
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  min-width: 0;
+  color: var(--ink);
+  font: var(--type-ui);
+  letter-spacing: var(--track-ui);
+}
+.ui-error-line .ui-list-icon {
+  color: var(--stamp-ink);
+}
+.ui-error-line__text {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.ui-error-line__actions {
+  display: flex;
+  flex: none;
+  align-items: center;
+  gap: var(--space-1);
+  margin-left: auto;
+}
+.ui-error-line[data-placement='column'],
+.ui-error-line[data-placement='dock'],
+.ui-error-line[data-placement='settings'] {
+  padding: var(--space-2) var(--space-2) var(--space-2) var(--space-3);
+  border-radius: var(--radius-md);
+  background-color: var(--stamp-tint);
+}
+.ui-error-line[data-placement='column'] {
+  margin-top: var(--space-8);
+}
+.ui-error-line[data-placement='row'] {
+  color: var(--stamp-ink);
+  font: inherit;
+  letter-spacing: inherit;
+}
+.ui-error-line[data-placement='row'] .ui-error-line__text {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.ui-error-line[data-placement='row'] .ui-error-line__actions {
+  margin-left: 0;
+}
+.ui-error-line[data-placement='checklist'] {
+  font: var(--type-small);
+  letter-spacing: var(--track-small);
+}
+
+/* ---------- ListBox, ListGroup, SectionHeader ---------- */
+
+.ui-list-box {
+  position: relative;
+  border-radius: var(--radius-md);
+}
+/* The listbox is a focus container, not a control: the cursor row (puck fill plus accent bar) is
+   the focus marker, so the box itself never draws a ring. */
+.ui-list-box:focus-visible {
+  outline: none;
+}
+
+.ui-list-group + .ui-list-group,
+.ui-list-group + .ui-low-band,
+.ui-low-band + .ui-list-group,
+.ui-focus-slot + .ui-list-group {
+  /* One gap between Home's sections (DESIGN 7.2 pins none), the Low band included. */
+  margin-top: var(--group-gap);
+}
+.ui-list-group .ui-list-group {
+  margin-top: var(--space-5);
+}
+
+.ui-section-header {
+  box-sizing: border-box;
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  min-width: 0;
+  height: var(--control-sm);
+  margin: 0 0 var(--space-1);
+  /* Left: the label starts on the rows' sender and the focus letter's text (24 px in). Right: the section's action ends on
+     the rows' dates (12 px in). One left and one right edge for every section header of every list. */
+  padding: 0 var(--space-3) 0 var(--space-6);
+  color: var(--ink);
+  font: var(--type-ui);
+  letter-spacing: var(--track-ui);
+}
+.ui-section-header__label {
+  min-width: 0;
+  overflow: hidden;
+  color: var(--ink);
+  font-weight: 600;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.ui-section-header__count {
+  flex: none;
+  color: var(--dim);
+  font-variant-numeric: tabular-nums;
+}
+.ui-section-header__new {
+  flex: none;
+  color: var(--dim);
+  font: var(--type-small);
+  letter-spacing: var(--track-small);
+}
+.ui-section-header__target {
+  flex: none;
+  margin-left: auto;
+  color: var(--dim);
+  font: var(--type-small);
+  letter-spacing: var(--track-small);
+  white-space: nowrap;
+}
+.ui-section-header__target[data-drop='over'] {
+  color: var(--ink);
+  font-weight: 500;
+}
+.ui-section-header__action {
+  display: inline-flex;
+  flex: none;
+  /* The button's own 12 px inset is the header's right edge: the words end where the rows' dates end. */
+  margin-right: calc(-1 * var(--space-3));
+  margin-left: auto;
+}
+.ui-section-header__target + .ui-section-header__action {
+  margin-left: 0;
+}
+.ui-section-header__action .ui-list-btn {
+  color: var(--dim);
+  font-weight: 400;
+}
+.ui-section-header[data-variant='sub'] .ui-section-header__label,
+.ui-section-header[data-variant='sub'] .ui-section-header__count {
+  color: var(--dim);
+  font: var(--type-small);
+  letter-spacing: var(--track-small);
+}
+.ui-section-header[data-variant='sub'] .ui-section-header__label {
+  font-weight: 500;
+}
+.ui-section-header[data-tone='overdue'],
+.ui-section-header[data-tone='overdue'] .ui-section-header__label,
+.ui-section-header[data-tone='overdue'] .ui-list-icon {
+  color: var(--stamp-ink);
+}
+.ui-section-header[data-drop='unavailable'] .ui-section-header__label,
+.ui-section-header[data-drop='unavailable'] .ui-section-header__count {
+  color: var(--dim);
+}
+
+@media (hover: hover) {
+  .ui-section-header__action .ui-list-btn:hover {
+    color: var(--ink);
+  }
+}
+
+/* ---------- ListRow ---------- */
+
+.ui-list-row {
+  --ui-row-base: var(--canvas);
+  --ui-sender-w: var(--sender-w);
+  --ui-date-w: auto;
+  --ui-actions: 0;
+  box-sizing: border-box;
+  position: relative;
+  display: grid;
+  /* The lead column is 8 px (it only holds the bulk-pick box, which overhangs it), so a sender starts 24 px in: on the
+     same x as the focus letter's text above it. */
+  grid-template-columns: var(--space-2) var(--ui-sender-w) minmax(0, 1fr) var(--ui-date-w);
+  align-items: center;
+  column-gap: var(--space-3);
+  height: var(--row);
+  padding: 0 var(--space-3) 0 var(--space-1);
+  border-radius: var(--radius-md);
+  background-color: transparent;
+  color: var(--ink-2);
+  font: var(--type-base);
+  letter-spacing: var(--track-base);
+  cursor: default;
+  user-select: none;
+  transition: background-color var(--dur-hover) var(--ease-std);
+}
+.ui-list-row[data-density='roomy'] {
+  height: var(--row-roomy);
+}
+.ui-list-row[data-density='compact'] {
+  height: var(--row-compact);
+}
+.ui-list-row[data-layout='home'] {
+  --ui-sender-w: var(--sender-w-home);
+}
+.ui-list-row[data-layout='done'] {
+  /* Sized for the worst row: three marks, the check and a dated stamp ("Oct 22, 2025"). */
+  --ui-date-w: calc(var(--space-10) * 2 + var(--space-7) + var(--space-3));
+}
+
+.ui-list-row__lead {
+  display: flex;
+  align-items: center;
+  justify-content: flex-start;
+  overflow: visible;
+}
+.ui-list-row__pick {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: var(--space-4);
+  height: var(--space-4);
+  border-radius: var(--radius-xs);
+  box-shadow: inset 0 0 0 1px var(--control-edge);
+  color: var(--accent-ink);
+}
+.ui-list-row[data-picked='true'] .ui-list-row__pick {
+  background-color: var(--accent);
+  box-shadow: none;
+}
+
+.ui-list-row__sender {
+  min-width: 0;
+  overflow: hidden;
+  color: var(--ink-2);
+  font-weight: 400;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.ui-list-row[data-unread='true'] .ui-list-row__sender {
+  color: var(--ink);
+  font-weight: 600;
+}
+
+.ui-list-row__line {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  min-width: 0;
+  color: var(--dim);
+}
+.ui-list-row[data-unread='true'] .ui-list-row__line {
+  color: var(--ink-2);
+}
+.ui-list-row[data-unread='true'] .ui-list-row__primary {
+  /* Unread reads in weight, not in a dot: a 500 line under the 600 sender (owner decision 2026-11-13). */
+  font-weight: 500;
+}
+.ui-list-row__primary,
+.ui-list-row__secondary {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.ui-list-row__tag {
+  flex: none;
+  color: var(--dim);
+  font-weight: 500;
+}
+.ui-list-row__primary {
+  flex: 1 1 auto;
+}
+.ui-list-row__primary[data-has-secondary='true'] {
+  /* One calm line: the subject at its own width (at most 60 % of the line, so the summary always keeps a share), then
+     the muted summary, which takes the rest and ends in an ellipsis (owner decision 2026-11-16). */
+  flex: 0 1 auto;
+  max-width: 60%;
+  /* The subject outranks its summary: --ink-2 beside the summary's --dim, read or unread. */
+  color: var(--ink-2);
+}
+.ui-list-row__secondary {
+  /* Never a lone dot: at the narrowest window the subject gives way first, so the summary keeps room for a few words. */
+  flex: 1 1 0;
+  min-width: 4rem;
+  color: var(--dim);
+}
+.ui-list-row__sep {
+  /* The " · " between the subject and its summary: its own flex item, so it follows the line's direction (RTL too)
+     and a screen reader skips it. */
+  flex: none;
+  color: var(--dim);
+}
+.ui-list-row__hit {
+  /* Bold, a soft wash and a hairline underline in a reduced-strength accent (a full-strength one read like a link),
+     so a match shows on the plain row, on the cursor row's --puck and on an already bold subject, in both themes
+     (the wash alone is under 1.1:1 on --puck). */
+  border-radius: var(--radius-xs);
+  background: var(--accent-wash);
+  color: var(--ink);
+  font-weight: 600;
+  text-decoration: underline;
+  text-decoration-color: color-mix(in srgb, var(--accent) 45%, transparent);
+  text-decoration-thickness: var(--hairline);
+  text-underline-offset: var(--space-half);
+  -webkit-box-decoration-break: clone;
+  box-decoration-break: clone;
+}
+
+.ui-list-row__meta {
+  position: relative;
+  align-self: stretch;
+  display: flex;
+  /* At least as wide as the hover actions, so the overlay covers only the date column. */
+  min-width: calc(var(--ui-actions) * (var(--control-sm) + var(--space-half)) + var(--space-3));
+  align-items: center;
+  justify-content: flex-end;
+  gap: var(--space-2);
+  color: var(--dim);
+  font: var(--type-small);
+  letter-spacing: var(--track-small);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+.ui-list-row__mark {
+  display: inline-flex;
+  color: var(--faint);
+}
+.ui-list-row__stamp {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  gap: var(--space-1);
+}
+.ui-list-row__stamp-mark {
+  display: inline-flex;
+  /* The check's foot sits on the date's baseline: centred in its box it rides 2 px high. */
+  transform: translateY(var(--space-half));
+}
+.ui-list-row__stamp .ui-list-icon {
+  /* Every row in Done is done, so the check is quiet (DESIGN 7.4's "quiet check"), not the green of a fresh completion. */
+  color: var(--faint);
+}
+
+/* Hover actions overlay the date column and never reflow the row. They sit in the meta cell and are at least
+   as wide as it, so no half glyph or chip shows beside them. The outer layer is the pane colour, the inner
+   layer repeats the row's own fill, so the overlay matches the row in every state. */
+.ui-list-row__actions {
+  position: absolute;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  display: flex;
+  justify-content: flex-end;
+  min-width: 100%;
+  background-color: var(--ui-row-base);
+  visibility: hidden;
+}
+.ui-list-row__actions-fill {
+  display: flex;
+  flex: 1 0 auto;
+  align-items: center;
+  justify-content: flex-end;
+  gap: var(--space-half);
+  padding-left: var(--space-3);
+}
+/* Done: the stamp column has a fixed width; the actions sit left of the stamp, which stays visible. The stamp
+   keeps its size; the marks before them (replied, bookmark, attachment) shrink and clip first, so a
+   crowded row never spills over the summary. The meta cell itself is not clipped, so the hover actions still show. */
+.ui-list-row[data-layout='done'] .ui-list-row__mark {
+  flex: 0 1 auto;
+  min-width: 0;
+  overflow: hidden;
+}
+.ui-list-row[data-layout='done'] .ui-list-row__meta {
+  min-width: 0;
+}
+.ui-list-row[data-layout='done'] .ui-list-row__actions {
+  right: calc(100% + var(--space-3));
+  min-width: 0;
+}
+
+.ui-list-row__underlay {
+  box-sizing: border-box;
+  position: absolute;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  left: 0;
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding: 0 var(--space-4);
+  border-radius: var(--radius-md);
+  color: var(--fill-ink);
+  font: var(--type-ui);
+  font-weight: 500;
+  letter-spacing: var(--track-ui);
+}
+.ui-list-row__underlay[hidden] {
+  display: none;
+}
+.ui-list-row__underlay[data-side='left'] {
+  justify-content: flex-end;
+}
+.ui-list-row__underlay[data-kind='done'] {
+  background-color: var(--hill);
+}
+.ui-list-row__underlay[data-kind='later'] {
+  background-color: var(--dusk);
+}
+.ui-list-row__underlay[data-kind='trash'] {
+  background-color: var(--stamp);
+}
+
+/* Row hover takes the cursor's fill (--puck, one step above --hover) so a pointer pass reads at a glance. The
+   cursor row keeps its 2 px bar, so hover and cursor stay distinguishable. */
+@media (hover: hover) {
+  .ui-list-row:hover {
+    background-color: var(--puck);
+  }
+  .ui-list-row:hover .ui-list-row__actions {
+    visibility: visible;
+  }
+  .ui-list-row:hover .ui-list-row__actions-fill {
+    background-color: var(--puck);
+  }
+}
+
+/* The keyboard cursor is neutral: --puck plus a 2 px accent bar on the leading edge. */
+.ui-list-row[data-cursor='true'],
+.ui-list-row[data-cursor='true'] .ui-list-row__actions-fill {
+  background-color: var(--puck);
+}
+.ui-list-row[data-cursor='true']::before {
+  content: '';
+  position: absolute;
+  top: var(--space-3);
+  bottom: var(--space-3);
+  left: var(--space-1); /* inside the rounded slab, not on its edge */
+  width: var(--select-bar);
+  border-radius: var(--radius-pill);
+  background-color: var(--accent);
+}
+/* While rows are picked the pick box fills the lead column, so the bar moves to the slab's edge and clears it. */
+.ui-list-row[data-cursor='true'][data-picking='true']::before {
+  left: 0;
+}
+/* --accent-wash is for bulk-picked rows only. */
+.ui-list-row[data-picked='true'],
+.ui-list-row[data-picked='true'] .ui-list-row__actions-fill {
+  background-color: var(--accent-wash);
+}
+.ui-focus-letter[data-picked='true'] {
+  background-color: var(--accent-wash);
+}
+/* The sender steps right once the card is picked, so the mark and the name keep the row's 12 px gap. */
+.ui-focus-letter[data-picked='true'] .ui-focus-letter__meta {
+  padding-left: var(--space-2);
+}
+/* The same pick mark a row shows, in the card's left padding. */
+.ui-focus-letter__pick {
+  position: absolute;
+  top: var(--space-5);
+  left: var(--space-1);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: var(--space-4);
+  height: var(--space-4);
+  border-radius: var(--radius-xs);
+  background-color: var(--accent);
+  color: var(--accent-ink);
+}
+.ui-list-row[data-state='rejected'],
+.ui-list-row[data-state='rejected'] .ui-list-row__actions-fill {
+  background-color: var(--stamp-tint);
+}
+.ui-list-row[data-state='rejected'] .ui-list-row__sender {
+  color: var(--ink);
+}
+.ui-list-row[data-lifted='true'] {
+  background-color: var(--paper);
+  box-shadow: var(--elev-lift);
+  transform: scale(var(--scale-lift));
+}
+
+/* ---------- Focus slot and focus letter ---------- */
+
+.ui-focus-slot {
+  position: relative;
+  height: var(--focus-letter);
+  /* The slot's own bottom margin is the card's air above the first row; sections stay a group gap apart. */
+  margin: var(--space-2) 0 var(--space-5);
+}
+.ui-list-row + .ui-focus-slot {
+  /* The letter takes a row's place under the cursor: the 4 px the section header's margin gave the first one is the same
+     4 px here, so everything below keeps its y as the cursor walks (j/k) and never jumps. */
+  margin-top: var(--space-1);
+}
+.ui-focus-slot[data-density='roomy'] {
+  height: var(--focus-letter-roomy);
+}
+.ui-focus-slot[data-density='compact'] {
+  height: var(--focus-letter-compact);
+}
+
+.ui-focus-letter {
+  box-sizing: border-box;
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  /* 24 px left and 12 px right: the text starts where a row's sender starts and the date ends where a row's date ends. */
+  padding: var(--space-5) var(--space-3) var(--space-4) var(--space-6);
+  /* The letter's own width decides which secondary parts the action row shows (see the container queries below). */
+  container-type: inline-size;
+  overflow: hidden;
+  border-radius: var(--radius-lg);
+  background-color: var(--paper);
+  box-shadow: var(--elev-card);
+  color: var(--ink);
+  cursor: default;
+}
+.ui-focus-letter__meta {
+  display: flex;
+  flex: none;
+  align-items: center;
+  /* The date chip is 24 px tall: the row keeps that height without it, so the card never shifts by 2 px. */
+  min-height: var(--control-xs);
+  gap: var(--space-2);
+  min-width: 0;
+}
+.ui-focus-letter__sender {
+  min-width: 0;
+  overflow: hidden;
+  color: var(--ink);
+  font: var(--type-base);
+  font-weight: 600;
+  letter-spacing: var(--track-base);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.ui-focus-letter__date {
+  flex: none;
+  margin-left: auto;
+  color: var(--dim);
+  font: var(--type-small);
+  letter-spacing: var(--track-small);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+.ui-focus-letter .ui-summary,
+.ui-focus-letter .ui-summary-placeholder {
+  flex: none;
+  margin-top: var(--space-2);
+}
+/* A summary lands in place of the placeholder: opacity only, no layout (owner decision 2026-11-13). */
+.ui-focus-letter__summary[data-arrive='true']:not(:has(.ui-summary__lead)),
+.ui-focus-letter__summary[data-arrive='true'] .ui-summary__text {
+  animation: ui-summary-arrive var(--dur-arrive) var(--ease-out) both;
+}
+@keyframes ui-summary-arrive {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+/* No summary coming: the slot fits the card (sender and date, the subject, the buttons) with no blank gap. */
+.ui-focus-slot[data-fit='content'] {
+  height: auto;
+}
+.ui-focus-slot[data-fit='content'] .ui-focus-letter {
+  height: auto;
+}
+.ui-focus-slot[data-fit='content'] .ui-focus-letter__actions {
+  margin-top: var(--space-4);
+}
+
+/* ---------- Summary placeholder: two soft lines and a label in the two-line space ---------- */
+
+.ui-summary-placeholder {
+  display: flex;
+  flex-direction: column;
+  font: var(--type-summary);
+  color: var(--dim);
+}
+.ui-summary-placeholder__row {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  height: 1lh;
+}
+.ui-summary-placeholder__bar {
+  flex: 0 1 auto;
+  min-width: 0;
+  height: var(--space-3);
+  border-radius: var(--radius-sm);
+  background-color: var(--line);
+  /* Only the lines breathe; the label stays at full contrast. */
+  animation: ui-summary-placeholder-breathe var(--dur-breathe) var(--ease-inout) infinite alternate;
+  animation-play-state: var(--play-breathe);
+}
+.ui-summary-placeholder__bar[data-width='long'] {
+  width: 90%;
+}
+.ui-summary-placeholder__bar[data-width='short'] {
+  width: 65%;
+}
+.ui-summary-placeholder__label {
+  min-width: 0;
+  overflow: hidden;
+  font: var(--type-small);
+  letter-spacing: var(--track-small);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+@keyframes ui-summary-placeholder-breathe {
+  from {
+    opacity: var(--breathe-lo);
+  }
+  to {
+    opacity: var(--breathe-hi);
+  }
+}
+.ui-focus-letter .ui-error-line {
+  margin-top: var(--space-1);
+}
+.ui-focus-letter[data-state='rejected'] .ui-summary {
+  -webkit-line-clamp: 1;
+}
+.ui-focus-letter__actions {
+  display: flex;
+  flex: none;
+  align-items: center;
+  gap: var(--space-1);
+  min-width: 0;
+  margin-top: auto;
+}
+.ui-focus-letter__suggest {
+  display: inline-flex;
+  flex: 0 1 auto;
+  /* The main action keeps its label: it only gives way (label ellipsis) after every secondary hint has gone. */
+  min-width: calc(2 * var(--control-md));
+  margin-right: auto;
+}
+/* A Done lane puts Later first (← Later, Done →): the pair sits at the right, as Later and Done do on a Reply lane. */
+.ui-focus-letter__actions[data-primary='done'] > .ui-list-btn:first-child {
+  margin-left: auto;
+}
+.ui-focus-letter__actions[data-primary='done'] .ui-focus-letter__suggest {
+  margin-right: 0;
+}
+.ui-focus-letter__suggest .ui-list-btn {
+  flex: 0 1 auto;
+  min-width: 0;
+}
+.ui-focus-letter__actions > .ui-list-btn {
+  flex: none;
+}
+
+/* A narrow pane (the letter's own width, not the window's) gives up the secondary parts in a fixed order, so the main
+   action never collapses: Later and Done lose their key hints, then their words (icon only), and last the main
+   action's own hint. The widths are the actions row's content width at which the next part would no longer fit. */
+@container (max-width: 24.5rem) {
+  .ui-focus-letter__actions
+    .ui-list-btn:not([data-variant='filled'])
+    .ui-list-kbd:not([data-reveal='badge']) {
+    display: none;
+  }
+}
+@container (max-width: 20rem) {
+  .ui-focus-letter__actions .ui-list-btn:not([data-variant='filled']) {
+    width: var(--ui-btn-h);
+    padding: 0;
+  }
+  .ui-focus-letter__actions .ui-list-btn:not([data-variant='filled']) .ui-list-btn__label {
+    display: none;
+  }
+}
+@container (max-width: 15rem) {
+  .ui-focus-letter__actions .ui-list-btn[data-variant='filled'] .ui-list-kbd {
+    display: none;
+  }
+}
+
+/* ---------- Low-importance band ---------- */
+
+.ui-low-band {
+  box-sizing: border-box;
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  min-width: 0;
+  height: var(--row);
+  margin-top: var(--space-2);
+  /* Its label starts where a row's sender does (4 + the 8 px lead column + the 12 px gap). */
+  padding: 0 var(--space-3) 0 calc(var(--space-1) + var(--space-2) + var(--space-3));
+  border-radius: var(--radius-md);
+  background-color: var(--raised);
+  font: var(--type-base);
+  letter-spacing: var(--track-base);
+  cursor: default;
+  user-select: none;
+  transition: box-shadow var(--dur-hover) var(--ease-std);
+}
+.ui-low-band[data-density='roomy'] {
+  height: var(--row-roomy);
+}
+.ui-low-band[data-density='compact'] {
+  height: var(--row-compact);
+}
+.ui-low-band__label {
+  flex: none;
+  color: var(--ink-2);
+  font-weight: 500;
+  white-space: nowrap;
+}
+.ui-low-band__senders {
+  display: flex;
+  min-width: 0;
+  color: var(--dim);
+  white-space: pre;
+}
+.ui-low-band__names {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+/* "and N more" never ellipsizes away (DESIGN §7.2). */
+.ui-low-band__more {
+  flex: none;
+}
+.ui-low-band__count {
+  flex: none;
+  margin-left: auto;
+  color: var(--dim);
+  font: var(--type-small);
+  letter-spacing: var(--track-small);
+  font-variant-numeric: tabular-nums;
+}
+.ui-low-band[data-cursor='true']::before {
+  content: '';
+  position: absolute;
+  top: var(--space-3);
+  bottom: var(--space-3);
+  left: var(--space-1); /* inside the rounded slab, not on its edge */
+  width: var(--select-bar);
+  border-radius: var(--radius-pill);
+  background-color: var(--accent);
+}
+
+@media (hover: hover) {
+  /* A spread larger than half the band's height lays the hover tint over --raised, no gradient. */
+  .ui-low-band:hover {
+    box-shadow: inset 0 0 0 var(--row-roomy) var(--hover);
+  }
+}
+
+/* ---------- Low-importance sheet (plain dialog frame) ---------- */
+
+.ui-low-sheet {
+  box-sizing: border-box;
+  position: fixed;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  left: 0;
+  z-index: var(--z-dialog);
+  display: grid;
+  place-items: center;
+  padding: var(--space-8);
+}
+.ui-low-sheet__scrim {
+  position: absolute;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  left: 0;
+  background-color: var(--scrim);
+}
+.ui-low-sheet__panel {
+  box-sizing: border-box;
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  width: min(var(--reader-w), 100%);
+  max-height: 100%;
+  padding: var(--space-5) var(--space-4) var(--space-4);
+  border-radius: var(--radius-xl);
+  background-color: var(--float);
+  box-shadow: var(--elev-dialog);
+  color: var(--ink);
+}
+.ui-low-sheet__panel:focus-visible {
+  outline: none;
+}
+.ui-low-sheet__panel .ui-list-row {
+  --ui-row-base: var(--paper);
+}
+/* The sheet's slab is a rounded run of rows on the paper card: the cursor bar sits well inside it, clear of the curve. */
+.ui-low-sheet__row .ui-list-row[data-cursor='true']::before {
+  left: var(--space-2);
+}
+.ui-low-sheet__head {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding: 0 var(--space-1) var(--space-3) var(--space-3);
+}
+.ui-low-sheet__title {
+  margin: 0;
+  font: var(--type-title);
+  letter-spacing: var(--track-title);
+}
+.ui-low-sheet__count {
+  color: var(--dim);
+  font: var(--type-ui);
+  letter-spacing: var(--track-ui);
+  font-variant-numeric: tabular-nums;
+}
+.ui-low-sheet__close {
+  display: inline-flex;
+  margin-left: auto;
+}
+.ui-low-sheet__body {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow: auto;
+  /* Room for the listbox's focus ring inside the scroller, which would otherwise clip it. */
+  padding: calc(var(--focus-width) + var(--focus-gap));
+}
+.ui-low-sheet__bar {
+  display: flex;
+  flex: none;
+  align-items: center;
+  gap: var(--space-3);
+  min-height: var(--control-sm);
+  margin-top: var(--space-2);
+  padding: var(--space-3) var(--space-1) 0 var(--space-3);
+  box-shadow: 0 calc(-1 * var(--hairline)) 0 var(--line);
+  box-sizing: content-box;
+}
+.ui-low-sheet__all {
+  position: relative;
+  display: inline-flex;
+  flex: none;
+  margin-left: auto;
+}
+/* The hold's progress: a lighter wash grows left to right over the filled button, transform only, on its own layer. */
+.ui-low-sheet__all::after {
+  content: '';
+  position: absolute;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  left: 0;
+  border-radius: var(--radius-md);
+  background-color: color-mix(in srgb, var(--accent-ink) 22%, transparent);
+  opacity: 0;
+  pointer-events: none;
+  transform: scaleX(0);
+  transform-origin: left center;
+}
+.ui-low-sheet__all[data-holding='true']::after {
+  opacity: 1;
+  transform: scaleX(1);
+  transition: transform var(--dur-hold-all) var(--ease-linear);
+}
+@media (prefers-reduced-motion: reduce) {
+  .ui-low-sheet__all[data-holding='true']::after {
+    transition: none;
+  }
+}
+.ui-low-sheet__bar-text {
+  display: grid;
+  flex: 1 1 auto;
+  min-width: 0;
+}
+.ui-low-sheet__bar-text > * {
+  grid-area: 1 / 1;
+}
+.ui-low-sheet__preview {
+  display: -webkit-box;
+  min-width: 0;
+  margin: 0;
+  overflow: hidden;
+  color: var(--ink-2);
+  font: var(--type-small);
+  letter-spacing: var(--track-small);
+  overflow-wrap: anywhere;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 1;
+  /* One line is always reserved, so a hovered row's preview never changes the bar's height. */
+  min-height: 1lh;
+}
+
+/* ---------- Home cleared: one small muted line where the "Do now" label sits (owner review of #548) ---------- */
+
+/* The line is a section label's box (.ui-section-header: its height, margin and left edge), in the small role and the
+   muted ink, so it sits exactly where "Do now" would. The Low band keeps its place below it, one group gap down. */
+.aplos-home-cleared__line {
+  color: var(--dim);
+  font: var(--type-small);
+  font-variant-numeric: var(--num-small);
+  letter-spacing: var(--track-small);
+}
+.aplos-home-cleared + .ui-low-band {
+  margin-top: var(--group-gap);
+}

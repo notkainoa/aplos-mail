@@ -1,0 +1,14 @@
+<style>
+  .hero { background: url(cid:hero@mail.example); }
+  .bg { background-image: url("cid:bg@mail.example"); }
+  .set { background-image: image-set("cid:hero@mail.example" 1x, "{{CANARY}}/{{ID}}/cid-set-remote.png" 2x); }
+  .missing { background: url(cid:nothere@mail.example); }
+  .mixed { background: url(cid:hero@mail.example), url({{CANARY}}/{{ID}}/cid-mixed-remote.png); }
+  @font-face { font-family: f; src: url(cid:hero@mail.example); }
+  @import url(cid:bg@mail.example);
+</style>
+<p>Inline attachments in styles and graphics.</p>
+<div class="hero bg set missing mixed" style="background:url(cid:hero@mail.example)">cid backgrounds</div>
+<svg><image href="cid:hero@mail.example" width="10" height="10"/><image xlink:href="cid:bg@mail.example" width="10" height="10"/></svg>
+<video poster="cid:hero@mail.example"></video>
+<link rel="stylesheet" href="cid:bg@mail.example">

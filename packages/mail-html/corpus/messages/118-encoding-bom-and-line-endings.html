@@ -1,0 +1,25 @@
+﻿<p>Line ending message, with a byte order mark before the first tag.</p>﻿
+<p>CR only:line twoline three</p>
+<p>CRLF:
+line two
+line three</p>
+<p>LF CR (reversed):
+line two</p>
+<p>NEL, LS and PS: ab c d</p>
+<pre>
+CR in pre:line two
+	tab and CRLF
+last line</pre>
+<imgsrc="{{CANARY}}/{{ID}}/cr-in-tag"alt="">
+<img
+src="{{CANARY}}/{{ID}}/crlf-in-tag"
+alt="">
+<a href="{{CANARY}}/{{ID}}/cr-in-href">cr in an address</a>
+<a href="{{CANARY}}/{{ID}}/lf-in-
+href">lf in an address</a>
+<a href="java
+script:fetch('{{CANARY}}/{{ID}}/crlf-scheme')">crlf in the scheme</a>
+<style>.a {background:
+url({{CANARY}}/{{ID}}/crlf-in-css)}</style>
+<!--<img src="{{CANARY}}/{{ID}}/cr-in-comment">-->
+﻿﻿p﻿>BOM inside a tag name</p>

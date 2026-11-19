@@ -1,0 +1,45 @@
+{
+  "name": "eslint-suppressions-main",
+  "allowedPaths": ["apps/desktop/src/main/**", "eslint-suppressions.json"],
+  "gates": [
+    {
+      "name": "lint",
+      "command": "npm run lint",
+      "timeoutSec": 900
+    },
+    {
+      "name": "typecheck",
+      "command": "npm run typecheck",
+      "timeoutSec": 600
+    },
+    {
+      "name": "test",
+      "command": "npm test",
+      "timeoutSec": 1500
+    },
+    {
+      "name": "test-engine",
+      "command": "npm run test:engine",
+      "timeoutSec": 1500
+    }
+  ],
+  "scorers": [
+    {
+      "name": "suppressions",
+      "command": "node scripts/audit/hillclimb/scorers/eslint-suppressions.mjs --scope \"apps/desktop/src/main/**\"",
+      "weight": 1,
+      "noRegress": true,
+      "timeoutSec": 300
+    }
+  ],
+  "attempt": {
+    "agent": "swe-2",
+    "model": "swe-2-high",
+    "brief": "Remove ESLint suppressions in the allowed files by fixing the underlying code, not by editing lint config or adding disable comments. After fixing, prune with npm run lint:prune so eslint-suppressions.json shrinks honestly. Behaviour must not change.",
+    "timeoutSec": 1800
+  },
+  "attemptsPerRound": 3,
+  "roundLimit": 3,
+  "stopAfterNoGain": 2,
+  "maxConcurrent": 3
+}

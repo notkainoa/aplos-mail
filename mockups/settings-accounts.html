@@ -1,0 +1,66 @@
+<!doctype html>
+<html lang="en" data-window="main" data-states="default,reconnect" data-esc="home.html">
+<head>
+<meta charset="utf-8">
+<title>Settings, Accounts · Aplos mockup</title>
+<link rel="stylesheet" href="tokens.css">
+<link rel="stylesheet" href="shell.css">
+<link rel="stylesheet" href="settings.css">
+<script src="shell.js"></script>
+<script src="settings.js"></script>
+</head>
+<body>
+<div class="window">
+  <span class="traffic"></span>
+  <div class="app">
+    <aside class="sidebar" id="sb" data-active="settings" data-accounts="all"></aside>
+    <main class="main">
+      <header class="toolbar">
+        <div class="tools">
+          <a class="btn btn-icon labelled" href="ask.html" data-tip="Ask about your mail" data-key="A"><svg class="ic"><use href="#i-bubble"/></svg>Ask</a>
+        </div>
+      </header>
+      <div class="workspace set-ws">
+        <div class="settings">
+          <nav class="nav snav" id="snav"></nav>
+          <div class="scontent" id="content"></div>
+        </div>
+      </div>
+    </main>
+  </div>
+</div>
+<script>
+S.nav('Accounts');
+const reconnect = Mock.state === 'reconnect';
+document.getElementById('sb').dataset.status = reconnect ? 'reconnect' : 'synced';
+const ic = Mock.icon;
+const SW = [['sky', '--tag-sky', 'Sky'], ['hill', '--tag-hill', 'Hill'], ['stamp', '--tag-stamp', 'Stamp'], ['dusk', '--tag-dusk', 'Dusk'], ['sand', '--tag-sand', 'Sand'], ['ember', '--tag-ember', 'Ember']];
+const swatches = (id, cur) => `<div class="swatches" role="radiogroup" aria-label="Colour">${SW.map(([k, v, n]) => `<button class="swatch" role="radio" aria-checked="${k === cur}" aria-label="${n}" data-swatch="${id}:${k}" style="--c:var(${v})">${ic('check')}</button>`).join('')}</div>`;
+const ACCTS = [
+  { id: 'g', name: 'alex.moreno@gmail.com', prov: 'Google', mark: '--tag-sky', col: 'sky', ai: true, bad: reconnect },
+  { id: 'f', name: 'alex@fernworks.studio', prov: 'Fastmail · IMAP', mark: '--tag-hill', col: 'hill', ai: false },
+];
+const acctRow = a => `<div class="srow has-h">
+    <div><div class="l acct-name"><span class="mk" style="background:var(${a.mark})"></span><b>${a.name}</b><span class="prov">${a.prov}</span></div>
+      <div class="h ${a.bad ? 'bad' : ''}">${a.bad ? ic('alert') + 'Google needs you to sign in again.' : 'Connected · synced 2 min ago'}</div></div>
+    <div class="c">${a.bad ? `<button class="btn btn-filled md">Reconnect</button>` : `<button class="btn btn-text md">Remove</button>`}</div>
+  </div>`;
+const acctOpts = a => S.group(a.name,
+  S.row({ label: 'Use this mail for AI', hint: 'Off means nothing from it is sent to a provider.', control: S.sw('ai-' + a.id, a.ai, 'Use ' + a.name + ' mail for AI') }) +
+  S.row({ label: 'Colour', control: swatches(a.id, a.col) }));
+document.getElementById('content').innerHTML = S.page('Accounts', 'The mailboxes Aplos reads, and what each is allowed to do.') +
+  S.group('Accounts', ACCTS.map(acctRow).join('') +
+    S.row({ label: 'Add an account', hint: 'Google, iCloud, Fastmail or any IMAP mailbox.', control: `<button class="btn btn-text md">${ic('plus')}Add account</button>` })) +
+  ACCTS.map(acctOpts).join('') +
+  S.group('Demo mail', S.row({ label: 'Demo mail', hint: 'Sample mail and events. Nothing here is real.', control: `<button class="btn btn-text md" data-demo="load">Load</button><button class="btn btn-text md" data-demo="reset">Reset</button><button class="btn btn-text md" data-demo="remove">Remove</button>` }));
+document.addEventListener('click', e => {
+  const s = e.target.closest('[data-swatch]');
+  if (s) { const g = s.closest('.swatches'); g.querySelectorAll('.swatch').forEach(x => x.setAttribute('aria-checked', String(x === s))); const [id, k] = s.dataset.swatch.split(':'); document.querySelectorAll('.acct-name .mk')[id === 'g' ? 0 : 1].style.background = `var(--tag-${k})`; return; }
+  const d = e.target.closest('[data-demo]');
+  if (d) Mock.toast({ icon: 'check', text: { load: 'Demo mail loaded', reset: 'Demo mail reset', remove: 'Demo mail removed' }[d.dataset.demo], actions: d.dataset.demo === 'remove' ? [['Undo', 'Z']] : [] });
+  if (e.target.closest('.btn-filled')) Mock.toast({ icon: 'refresh', text: 'Opening Google sign-in' });
+});
+
+</script>
+</body>
+</html>

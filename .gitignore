@@ -1,7 +1,8 @@
 .env
-node_modules/
+node_modules
 dist/
 release/
+release-check/
 .DS_Store
 *.log
 .env.*
@@ -9,3 +10,4 @@ release/
 coverage/
 artifacts/
 .vercel
+.stryker-tmp/

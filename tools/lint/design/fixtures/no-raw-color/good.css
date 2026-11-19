@@ -1,0 +1,26 @@
+.tokens {
+  color: var(--ink);
+  background: var(--paper);
+  border: 1px solid var(--line);
+  border-color: var(--line-strong);
+  fill: currentColor;
+  stroke: currentcolor;
+  outline-color: transparent;
+  box-shadow: var(--elev-card);
+  text-decoration-color: inherit;
+}
+
+.mix {
+  background: color-mix(in srgb, var(--ink) 8%, transparent);
+  border-color: color-mix(in srgb, var(--accent) 50%, var(--paper));
+  --wash: color-mix(in srgb, var(--hill) 12%, transparent);
+}
+
+.not-colours {
+  background: none;
+  background-image: url(#gradient-id);
+  mask: url("#clip");
+  content: "#fff";
+  transition: color var(--dur-hover) var(--ease-std);
+  border-style: solid;
+}

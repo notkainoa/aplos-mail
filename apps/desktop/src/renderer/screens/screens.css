@@ -1,0 +1,88 @@
+@import url('./reader/reader.css');
+@import url('./compose/compose.css');
+@import url('./home/oneByOne.css');
+@import url('./calendar/calendar.css');
+@import url('./search/search.css');
+@import url('./settings/settings.css');
+
+/* The list column (DESIGN 4.3): min(720px, 100% - 2 gutters), centred in the pane, with room under the last row. */
+.aplos-list-column {
+  box-sizing: border-box;
+  width: min(var(--list-w), calc(100% - 2 * var(--gutter)));
+  margin: 0 auto;
+  padding-bottom: var(--space-10);
+}
+
+/* An empty Later or Bookmarks keeps its Later | Bookmarks switch at the top, but the empty line centres in the whole
+   pane like every other list's (owner decision 2026-11-05, DECISIONS.md): the switch and the line share one grid cell,
+   so the line sits exactly where Spam's does and the switch floats over it. */
+.aplos-screen:has(> .aplos-list-column > .ui-empty-line[data-placement='pane']) {
+  display: flex;
+  flex-direction: column;
+}
+.aplos-list-column:has(> .ui-empty-line[data-placement='pane']) {
+  display: grid;
+  flex: 1 0 auto;
+  grid-template-columns: minmax(0, 1fr);
+  grid-template-rows: minmax(0, 1fr);
+  padding-bottom: 0;
+}
+.aplos-list-column > .ui-empty-line[data-placement='pane'],
+.aplos-list-column:has(> .ui-empty-line[data-placement='pane']) > .ui-page-head {
+  grid-area: 1 / 1;
+}
+.aplos-list-column:has(> .ui-empty-line[data-placement='pane']) > .ui-page-head {
+  position: relative;
+  z-index: var(--z-sticky);
+  align-self: start;
+}
+
+/* Bookmarks sit inside Later's column. */
+.aplos-list-column .aplos-list-column {
+  width: auto;
+  margin: 0;
+  padding: 0;
+}
+
+/* ---------- Narrow panes (the Ask dock open at the minimum window) ----------
+   Nothing in a Home row squashes or covers another part: rows keep their trailing icons at their own width, give the
+   sender a floor, and clip the middle column, which holds the summary and the due chip. (The focus letter's own
+   narrow-pane behaviour lives with the component, in ui/list/list.css.) Every selector starts at `.aplos-list-column`,
+   so only the screens' own lists are touched, never the shared component styles (the Low sheet, the gallery). */
+
+.aplos-list-column .ui-list-row {
+  grid-template-columns:
+    var(--space-2) minmax(var(--space-9), var(--ui-sender-w)) minmax(0, 1fr)
+    var(--ui-date-w);
+}
+.aplos-list-column .ui-list-row__line {
+  overflow: hidden;
+}
+
+/* Home keeps the edges it had before UI council 2 (owner review of #548, 2026-11-17): a 16 px lead column (the row's
+   sender sits 8 px right of the focus card's text), the 148 px Home sender column, labels 12 px in with their action
+   8 px from the right, the focus card's 20 px right inset and the Low band's label on the rows' sender. The keyboard
+   cursor's own rule (the card takes a row's place and nothing below moves, list.css) is kept. */
+.aplos-list-column[data-screen='home'] .ui-list-row {
+  grid-template-columns:
+    var(--space-4) minmax(var(--space-9), var(--ui-sender-w)) minmax(0, 1fr)
+    var(--ui-date-w);
+}
+.aplos-list-column[data-screen='home'] .ui-list-row__lead {
+  justify-content: center;
+}
+.aplos-list-column[data-screen='home'] .ui-section-header {
+  padding: 0 var(--space-3);
+}
+.aplos-list-column[data-screen='home'] .ui-section-header__action {
+  margin-right: calc(-1 * var(--space-2));
+}
+.aplos-list-column[data-screen='home'] .ui-focus-letter {
+  padding-right: var(--space-5);
+}
+.aplos-list-column[data-screen='home'] .ui-low-band {
+  padding-left: calc(var(--space-4) + var(--space-1) + var(--space-3));
+}
+.aplos-list-column .ui-list-row__meta > * {
+  flex: none;
+}

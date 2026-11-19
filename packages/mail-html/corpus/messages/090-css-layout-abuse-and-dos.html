@@ -1,0 +1,31 @@
+<style>
+  html, body { width: 99999999px !important; height: 99999999px !important; }
+  .wide { width: 2000000000px; height: 2000000000px; }
+  .tall { height: 999999999px; }
+  .font { font-size: 9999999px; }
+  .blur { filter: blur(100000px); backdrop-filter: blur(100000px); }
+  .scale { transform: scale(1000000) rotate(1turn); }
+  .zoom { zoom: 1000; }
+  .spin { animation: spin 1ms linear infinite; }
+  @keyframes spin { to { transform: rotate(1turn); } }
+  .shadow { box-shadow: 0 0 99999px 99999px red, 0 0 99999px 99999px blue, 0 0 99999px 99999px green; }
+  .grid { display: grid; grid-template-columns: repeat(99999, 1fr); grid-template-rows: repeat(99999, 1fr); }
+  .cols { column-count: 99999; columns: 1px; }
+  .counter { counter-reset: a 999999999; content: counter(a); }
+  .print { }
+  @media print { body { display: none !important; } }
+  .z { position: fixed; inset: 0; z-index: 2147483647; background: #fff; }
+  .mixed { mix-blend-mode: difference; isolation: isolate; will-change: transform, opacity, filter; }
+  .text-overflow { text-shadow: 0 0 99999px red; -webkit-text-stroke: 99999px red; }
+  .outline { outline: 99999px solid red; outline-offset: 99999px; }
+  .margin { margin: -99999px; }
+  * { cursor: none !important; user-select: none !important; }
+  :root { color-scheme: dark; }
+</style>
+<p>Layout stress test: this paragraph is the only real content.</p>
+<div class="wide tall font blur scale zoom spin shadow grid cols counter print z mixed text-overflow outline margin">stressed</div>
+<table style="width:99999999px"><tr><td style="width:99999999px;height:99999999px"></td></tr></table>
+<textarea cols="99999" rows="99999"></textarea>
+<div style="width:1e9px;height:1e9px;font-size:1e9px;line-height:1e9">scientific notation sizes</div>
+<img width="100000" height="100000" src="data:image/gif;base64,R0lGODlhAQABAAAAACw=" alt="">
+<marquee style="font-size:1000px">marquee</marquee>

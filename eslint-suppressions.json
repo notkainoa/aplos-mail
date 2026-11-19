@@ -1,0 +1,805 @@
+{
+  "apps/desktop/scripts/ask-live.ts": {
+    "aplos/boundaries": {
+      "count": 2
+    }
+  },
+  "apps/desktop/scripts/build-dmg-background.cjs": {
+    "@typescript-eslint/no-require-imports": {
+      "count": 4
+    }
+  },
+  "apps/desktop/scripts/emulation/providers.ts": {
+    "@typescript-eslint/no-unused-expressions": {
+      "count": 2
+    },
+    "complexity": {
+      "count": 1
+    }
+  },
+  "apps/desktop/scripts/emulation/session.ts": {
+    "aplos/boundaries": {
+      "count": 1
+    }
+  },
+  "apps/desktop/scripts/mailbox-benchmark.ts": {
+    "aplos/boundaries": {
+      "count": 4
+    }
+  },
+  "apps/desktop/scripts/quality/cases.ts": {
+    "aplos/boundaries": {
+      "count": 4
+    }
+  },
+  "apps/desktop/scripts/verify-large-mailbox.mjs": {
+    "@typescript-eslint/no-unused-expressions": {
+      "count": 1
+    },
+    "no-useless-escape": {
+      "count": 10
+    }
+  },
+  "apps/desktop/scripts/verify-release.mjs": {
+    "@typescript-eslint/no-unused-expressions": {
+      "count": 1
+    }
+  },
+  "apps/desktop/src/main/ai-keys.ts": {
+    "aplos/boundaries": {
+      "count": 2
+    },
+    "no-control-regex": {
+      "count": 1
+    }
+  },
+  "apps/desktop/src/main/anthropic.ts": {
+    "aplos/boundaries": {
+      "count": 3
+    }
+  },
+  "apps/desktop/src/main/caldav.ts": {
+    "@typescript-eslint/no-explicit-any": {
+      "count": 1
+    },
+    "aplos/boundaries": {
+      "count": 2
+    }
+  },
+  "apps/desktop/src/main/demo.ts": {
+    "aplos/boundaries": {
+      "count": 1
+    }
+  },
+  "apps/desktop/src/main/engine-host.ts": {
+    "aplos/boundaries": {
+      "count": 2
+    }
+  },
+  "apps/desktop/src/main/engine-rpc.ts": {
+    "aplos/boundaries": {
+      "count": 1
+    }
+  },
+  "apps/desktop/src/main/google.ts": {
+    "@typescript-eslint/no-explicit-any": {
+      "count": 1
+    },
+    "@typescript-eslint/no-unused-vars": {
+      "count": 1
+    },
+    "aplos/boundaries": {
+      "count": 2
+    },
+    "complexity": {
+      "count": 1
+    },
+    "max-lines": {
+      "count": 1
+    }
+  },
+  "apps/desktop/src/main/groq.ts": {
+    "aplos/boundaries": {
+      "count": 5
+    }
+  },
+  "apps/desktop/src/main/ical.ts": {
+    "complexity": {
+      "count": 1
+    }
+  },
+  "apps/desktop/src/main/imap-index.ts": {
+    "aplos/boundaries": {
+      "count": 1
+    }
+  },
+  "apps/desktop/src/main/imap-session.ts": {
+    "aplos/boundaries": {
+      "count": 1
+    }
+  },
+  "apps/desktop/src/main/imap.ts": {
+    "aplos/boundaries": {
+      "count": 2
+    },
+    "complexity": {
+      "count": 3
+    },
+    "max-lines": {
+      "count": 1
+    }
+  },
+  "apps/desktop/src/main/jmap.ts": {
+    "@typescript-eslint/no-explicit-any": {
+      "count": 3
+    },
+    "aplos/boundaries": {
+      "count": 2
+    },
+    "complexity": {
+      "count": 5
+    },
+    "max-lines": {
+      "count": 1
+    }
+  },
+  "apps/desktop/src/main/llm.ts": {
+    "@typescript-eslint/no-explicit-any": {
+      "count": 1
+    },
+    "@typescript-eslint/no-unused-vars": {
+      "count": 1
+    },
+    "aplos/boundaries": {
+      "count": 1
+    },
+    "complexity": {
+      "count": 2
+    },
+    "no-useless-escape": {
+      "count": 1
+    }
+  },
+  "apps/desktop/src/main/memory-stage.ts": {
+    "aplos/boundaries": {
+      "count": 4
+    }
+  },
+  "apps/desktop/src/main/microsoft.ts": {
+    "@typescript-eslint/no-explicit-any": {
+      "count": 2
+    },
+    "@typescript-eslint/no-unused-vars": {
+      "count": 4
+    },
+    "aplos/boundaries": {
+      "count": 2
+    },
+    "max-lines": {
+      "count": 1
+    },
+    "prefer-const": {
+      "count": 1
+    }
+  },
+  "apps/desktop/src/main/native-methods.ts": {
+    "complexity": {
+      "count": 1
+    },
+    "no-control-regex": {
+      "count": 1
+    }
+  },
+  "apps/desktop/src/main/ollama.ts": {
+    "@typescript-eslint/no-explicit-any": {
+      "count": 1
+    },
+    "aplos/boundaries": {
+      "count": 3
+    }
+  },
+  "apps/desktop/src/main/preload.ts": {
+    "aplos/boundaries": {
+      "count": 1
+    }
+  },
+  "apps/desktop/src/main/providers.ts": {
+    "aplos/boundaries": {
+      "count": 3
+    }
+  },
+  "apps/desktop/src/main/server.ts": {
+    "aplos/boundaries": {
+      "count": 1
+    }
+  },
+  "apps/desktop/src/main/service.ts": {
+    "aplos/boundaries": {
+      "count": 4
+    }
+  },
+  "apps/desktop/src/main/store.ts": {
+    "aplos/boundaries": {
+      "count": 3
+    }
+  },
+  "apps/desktop/src/main/updater.ts": {
+    "@typescript-eslint/no-require-imports": {
+      "count": 1
+    }
+  },
+  "apps/desktop/src/main/updates.ts": {
+    "@typescript-eslint/no-explicit-any": {
+      "count": 1
+    },
+    "aplos/boundaries": {
+      "count": 1
+    }
+  },
+  "apps/desktop/src/main/windows.ts": {
+    "aplos/boundaries": {
+      "count": 1
+    }
+  },
+  "apps/desktop/src/main/workflow-crypto.ts": {
+    "aplos/boundaries": {
+      "count": 1
+    }
+  },
+  "apps/desktop/src/main/workflow-sync.ts": {
+    "aplos/boundaries": {
+      "count": 3
+    },
+    "complexity": {
+      "count": 1
+    }
+  },
+  "apps/desktop/src/renderer/legacy/App.tsx": {
+    "@typescript-eslint/no-unused-expressions": {
+      "count": 1
+    },
+    "@typescript-eslint/no-unused-vars": {
+      "count": 2
+    },
+    "complexity": {
+      "count": 4
+    },
+    "max-lines": {
+      "count": 1
+    },
+    "react-hooks/exhaustive-deps": {
+      "count": 12
+    }
+  },
+  "apps/desktop/src/renderer/legacy/Ask.tsx": {
+    "complexity": {
+      "count": 1
+    },
+    "max-lines": {
+      "count": 1
+    },
+    "react-hooks/exhaustive-deps": {
+      "count": 6
+    }
+  },
+  "apps/desktop/src/renderer/legacy/Calendar.tsx": {
+    "complexity": {
+      "count": 2
+    },
+    "max-lines": {
+      "count": 1
+    },
+    "react-hooks/exhaustive-deps": {
+      "count": 11
+    }
+  },
+  "apps/desktop/src/renderer/legacy/Compose.tsx": {
+    "aplos/no-dangerous-html": {
+      "count": 1
+    },
+    "complexity": {
+      "count": 2
+    },
+    "max-lines": {
+      "count": 1
+    },
+    "react-hooks/exhaustive-deps": {
+      "count": 6
+    }
+  },
+  "apps/desktop/src/renderer/legacy/Reader.tsx": {
+    "@typescript-eslint/no-unused-expressions": {
+      "count": 2
+    },
+    "@typescript-eslint/no-unused-vars": {
+      "count": 2
+    },
+    "aplos/no-dangerous-html": {
+      "count": 2
+    },
+    "complexity": {
+      "count": 1
+    },
+    "max-lines": {
+      "count": 1
+    },
+    "react-hooks/exhaustive-deps": {
+      "count": 6
+    }
+  },
+  "apps/desktop/src/renderer/legacy/Settings.tsx": {
+    "@typescript-eslint/no-unused-vars": {
+      "count": 3
+    }
+  },
+  "apps/desktop/src/renderer/legacy/components/AddAccount.tsx": {
+    "aplos/boundaries": {
+      "count": 2
+    },
+    "complexity": {
+      "count": 1
+    }
+  },
+  "apps/desktop/src/renderer/legacy/components/AiSettings.tsx": {
+    "complexity": {
+      "count": 2
+    },
+    "react-hooks/exhaustive-deps": {
+      "count": 1
+    }
+  },
+  "apps/desktop/src/renderer/legacy/components/ApiKey.tsx": {
+    "complexity": {
+      "count": 1
+    },
+    "react-hooks/exhaustive-deps": {
+      "count": 1
+    }
+  },
+  "apps/desktop/src/renderer/legacy/components/DomainCheck.tsx": {
+    "aplos/boundaries": {
+      "count": 1
+    }
+  },
+  "apps/desktop/src/renderer/legacy/components/MailList.tsx": {
+    "complexity": {
+      "count": 2
+    },
+    "max-lines": {
+      "count": 1
+    },
+    "react-hooks/exhaustive-deps": {
+      "count": 3
+    }
+  },
+  "apps/desktop/src/renderer/legacy/components/Overlays.tsx": {
+    "@typescript-eslint/no-unused-vars": {
+      "count": 1
+    },
+    "react-hooks/exhaustive-deps": {
+      "count": 2
+    }
+  },
+  "apps/desktop/src/renderer/legacy/icons.tsx": {
+    "@typescript-eslint/no-explicit-any": {
+      "count": 1
+    },
+    "@typescript-eslint/no-unused-vars": {
+      "count": 1
+    }
+  },
+  "apps/desktop/src/renderer/legacy/mailBody.ts": {
+    "complexity": {
+      "count": 1
+    }
+  },
+  "apps/desktop/src/renderer/legacy/summaryText.ts": {
+    "@typescript-eslint/no-unused-vars": {
+      "count": 1
+    }
+  },
+  "apps/desktop/src/renderer/legacy/ui/Popover.tsx": {
+    "react-hooks/exhaustive-deps": {
+      "count": 1
+    }
+  },
+  "apps/desktop/src/renderer/legacy/ui/Tabs.tsx": {
+    "react-hooks/exhaustive-deps": {
+      "count": 2
+    }
+  },
+  "apps/desktop/src/renderer/legacy/ui/Toast.tsx": {
+    "react-hooks/exhaustive-deps": {
+      "count": 1
+    }
+  },
+  "apps/desktop/src/renderer/legacy/ui/motion.ts": {
+    "@typescript-eslint/no-explicit-any": {
+      "count": 2
+    }
+  },
+  "apps/desktop/src/renderer/onboarding/connect.ts": {
+    "complexity": {
+      "count": 1
+    }
+  },
+  "apps/desktop/src/renderer/onboarding/firstSync/model.ts": {
+    "complexity": {
+      "count": 2
+    }
+  },
+  "apps/desktop/src/renderer/onboarding/flow.ts": {
+    "complexity": {
+      "count": 1
+    }
+  },
+  "apps/desktop/src/renderer/onboarding/reconnect/reconnect.model.ts": {
+    "complexity": {
+      "count": 1
+    }
+  },
+  "apps/desktop/src/renderer/onboarding/steps/ai.model.ts": {
+    "complexity": {
+      "count": 2
+    }
+  },
+  "apps/desktop/tests/accounts.test.ts": {
+    "aplos/boundaries": {
+      "count": 2
+    }
+  },
+  "apps/desktop/tests/ai-keys.test.ts": {
+    "aplos/boundaries": {
+      "count": 1
+    }
+  },
+  "apps/desktop/tests/ask-agent.test.ts": {
+    "@typescript-eslint/no-explicit-any": {
+      "count": 1
+    },
+    "@typescript-eslint/no-unused-vars": {
+      "count": 1
+    },
+    "aplos/boundaries": {
+      "count": 4
+    }
+  },
+  "apps/desktop/tests/ask-calendar.test.ts": {
+    "@typescript-eslint/no-unused-vars": {
+      "count": 2
+    },
+    "aplos/boundaries": {
+      "count": 1
+    }
+  },
+  "apps/desktop/tests/ask-providers.test.ts": {
+    "@typescript-eslint/no-explicit-any": {
+      "count": 8
+    },
+    "aplos/boundaries": {
+      "count": 6
+    },
+    "max-lines": {
+      "count": 1
+    }
+  },
+  "apps/desktop/tests/caldav.test.ts": {
+    "aplos/boundaries": {
+      "count": 1
+    },
+    "max-lines": {
+      "count": 1
+    }
+  },
+  "apps/desktop/tests/calendar-motion.test.ts": {
+    "aplos/boundaries": {
+      "count": 3
+    }
+  },
+  "apps/desktop/tests/calendar-time.test.ts": {
+    "aplos/boundaries": {
+      "count": 1
+    }
+  },
+  "apps/desktop/tests/calendar.test.ts": {
+    "aplos/boundaries": {
+      "count": 2
+    }
+  },
+  "apps/desktop/tests/date-label.test.ts": {
+    "aplos/boundaries": {
+      "count": 1
+    }
+  },
+  "apps/desktop/tests/devices.test.ts": {
+    "aplos/boundaries": {
+      "count": 2
+    }
+  },
+  "apps/desktop/tests/discover.test.ts": {
+    "aplos/boundaries": {
+      "count": 2
+    }
+  },
+  "apps/desktop/tests/duplicates.test.ts": {
+    "aplos/boundaries": {
+      "count": 2
+    }
+  },
+  "apps/desktop/tests/emulation.test.ts": {
+    "@typescript-eslint/no-explicit-any": {
+      "count": 1
+    },
+    "aplos/boundaries": {
+      "count": 1
+    }
+  },
+  "apps/desktop/tests/engine-host.test.ts": {
+    "aplos/boundaries": {
+      "count": 1
+    }
+  },
+  "apps/desktop/tests/engine.test.ts": {
+    "@typescript-eslint/no-explicit-any": {
+      "count": 1
+    },
+    "aplos/boundaries": {
+      "count": 5
+    }
+  },
+  "apps/desktop/tests/imap-session.test.ts": {
+    "aplos/boundaries": {
+      "count": 1
+    }
+  },
+  "apps/desktop/tests/imap.test.ts": {
+    "@typescript-eslint/no-explicit-any": {
+      "count": 4
+    },
+    "@typescript-eslint/no-this-alias": {
+      "count": 1
+    },
+    "aplos/boundaries": {
+      "count": 2
+    },
+    "max-lines": {
+      "count": 1
+    }
+  },
+  "apps/desktop/tests/integrations.test.ts": {
+    "@typescript-eslint/no-explicit-any": {
+      "count": 6
+    },
+    "aplos/boundaries": {
+      "count": 1
+    }
+  },
+  "apps/desktop/tests/jmap.test.ts": {
+    "@typescript-eslint/no-explicit-any": {
+      "count": 12
+    },
+    "aplos/boundaries": {
+      "count": 2
+    },
+    "complexity": {
+      "count": 1
+    },
+    "max-lines": {
+      "count": 1
+    }
+  },
+  "apps/desktop/tests/live.test.ts": {
+    "aplos/boundaries": {
+      "count": 2
+    }
+  },
+  "apps/desktop/tests/mailbox.test.ts": {
+    "aplos/boundaries": {
+      "count": 3
+    }
+  },
+  "apps/desktop/tests/microsoft.test.ts": {
+    "@typescript-eslint/no-explicit-any": {
+      "count": 5
+    },
+    "aplos/boundaries": {
+      "count": 2
+    },
+    "complexity": {
+      "count": 1
+    },
+    "max-lines": {
+      "count": 1
+    }
+  },
+  "apps/desktop/tests/queue.test.ts": {
+    "@typescript-eslint/no-explicit-any": {
+      "count": 3
+    },
+    "aplos/boundaries": {
+      "count": 2
+    }
+  },
+  "apps/desktop/tests/service.test.ts": {
+    "@typescript-eslint/no-explicit-any": {
+      "count": 1
+    },
+    "aplos/boundaries": {
+      "count": 1
+    },
+    "max-lines": {
+      "count": 1
+    }
+  },
+  "apps/desktop/tests/suggested-action.test.ts": {
+    "aplos/boundaries": {
+      "count": 2
+    }
+  },
+  "apps/desktop/tests/summary-text.test.ts": {
+    "aplos/boundaries": {
+      "count": 2
+    }
+  },
+  "apps/desktop/tests/sync-safety.test.ts": {
+    "aplos/boundaries": {
+      "count": 2
+    }
+  },
+  "apps/desktop/tests/ui-onboard/firstSync.helpers.ts": {
+    "complexity": {
+      "count": 1
+    }
+  },
+  "apps/desktop/tests/updates.test.ts": {
+    "aplos/boundaries": {
+      "count": 1
+    }
+  },
+  "apps/desktop/tests/workflow-sync.test.ts": {
+    "aplos/boundaries": {
+      "count": 2
+    }
+  },
+  "apps/desktop/tests/workflow.test.ts": {
+    "aplos/boundaries": {
+      "count": 2
+    }
+  },
+  "apps/web/scripts/check-claims.mjs": {
+    "complexity": {
+      "count": 2
+    },
+    "no-irregular-whitespace": {
+      "count": 2
+    }
+  },
+  "apps/web/scripts/check-web-external.mjs": {
+    "complexity": {
+      "count": 3
+    },
+    "max-lines": {
+      "count": 1
+    },
+    "no-control-regex": {
+      "count": 3
+    }
+  },
+  "packages/emulators/src/gmail/generate.ts": {
+    "complexity": {
+      "count": 1
+    }
+  },
+  "packages/emulators/src/gmail/mime.ts": {
+    "no-control-regex": {
+      "count": 1
+    }
+  },
+  "packages/emulators/src/gmail/oauth.ts": {
+    "complexity": {
+      "count": 1
+    }
+  },
+  "packages/emulators/src/kit/faults.ts": {
+    "@typescript-eslint/no-unused-vars": {
+      "count": 1
+    }
+  },
+  "packages/emulators/tests/fidelity-probes.test.ts": {
+    "@typescript-eslint/no-explicit-any": {
+      "count": 2
+    }
+  },
+  "packages/emulators/tests/gmail-batch.test.ts": {
+    "@typescript-eslint/no-explicit-any": {
+      "count": 1
+    }
+  },
+  "packages/emulators/tests/gmail-fields.test.ts": {
+    "@typescript-eslint/no-explicit-any": {
+      "count": 1
+    }
+  },
+  "packages/emulators/tests/gmail-helpers.ts": {
+    "@typescript-eslint/no-explicit-any": {
+      "count": 4
+    }
+  },
+  "packages/emulators/tests/gmail-history.test.ts": {
+    "@typescript-eslint/no-explicit-any": {
+      "count": 6
+    }
+  },
+  "packages/emulators/tests/gmail-mailbox-api.test.ts": {
+    "@typescript-eslint/no-explicit-any": {
+      "count": 7
+    }
+  },
+  "packages/emulators/tests/kit-faults.test.ts": {
+    "@typescript-eslint/no-explicit-any": {
+      "count": 2
+    }
+  },
+  "packages/emulators/tests/legacy-gmail-d1.test.ts": {
+    "aplos/boundaries": {
+      "count": 1
+    }
+  },
+  "packages/engine/src/legacy/agent.ts": {
+    "complexity": {
+      "count": 1
+    }
+  },
+  "packages/engine/src/legacy/ask.ts": {
+    "complexity": {
+      "count": 1
+    }
+  },
+  "packages/engine/src/legacy/discover.ts": {
+    "@typescript-eslint/no-explicit-any": {
+      "count": 1
+    },
+    "max-lines": {
+      "count": 1
+    }
+  },
+  "packages/engine/src/legacy/dns.ts": {
+    "no-control-regex": {
+      "count": 1
+    }
+  },
+  "packages/engine/src/legacy/merge.ts": {
+    "complexity": {
+      "count": 1
+    }
+  },
+  "packages/engine/src/legacy/service.ts": {
+    "@typescript-eslint/no-explicit-any": {
+      "count": 11
+    },
+    "complexity": {
+      "count": 4
+    },
+    "max-lines": {
+      "count": 1
+    }
+  },
+  "packages/engine/src/legacy/workflow.ts": {
+    "@typescript-eslint/no-explicit-any": {
+      "count": 1
+    }
+  },
+  "scripts/audit/format-equivalence.mjs": {
+    "@typescript-eslint/no-unused-vars": {
+      "count": 1
+    }
+  },
+  "scripts/audit/owners-check.mjs": {
+    "complexity": {
+      "count": 2
+    },
+    "prefer-const": {
+      "count": 1
+    }
+  }
+}

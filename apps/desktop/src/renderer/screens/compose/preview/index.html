@@ -1,0 +1,39 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width,initial-scale=1" />
+    <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:">
+    <title>Aplos Compose preview</title>
+    <style>
+      /* Development-only gallery for the recipient type-ahead: the gray shell and one white pane. */
+      html,
+      body,
+      #root {
+        height: 100%;
+        margin: 0;
+      }
+      .cmp-frame {
+        display: flex;
+        height: 100%;
+        background: var(--shell);
+      }
+      .cmp-frame .ui-pane {
+        flex: 1;
+      }
+      .cmp-card {
+        width: 640px;
+        margin: 64px auto;
+      }
+      .cmp-note {
+        margin-top: 24px;
+        font: 13px/20px system-ui;
+        color: var(--dim);
+      }
+    </style>
+  </head>
+  <body>
+    <div id="root"></div>
+    <script type="module" src="./main.tsx"></script>
+  </body>
+</html>

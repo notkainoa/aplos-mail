@@ -1,0 +1,25 @@
+{
+  "name": "@aplos/contract-fixture",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Aplos Mail stand-in engine: the whole v1 contract on in-memory demo data, for the UI, tests and the conformance suite. Test support; never shipped",
+  "license": "MIT",
+  "exports": {
+    ".": "./src/index.ts",
+    "./control": "./src/control.ts"
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit && tsc --noEmit -p tsconfig.test.json",
+    "test": "tsx --test \"tests/**/*.test.ts\""
+  },
+  "dependencies": {
+    "@aplos/contract": "*"
+  },
+  "devDependencies": {
+    "@types/node": "^24.0.0",
+    "esbuild": "^0.27.0",
+    "tsx": "^4.20.0",
+    "typescript": "^5.9.0"
+  }
+}

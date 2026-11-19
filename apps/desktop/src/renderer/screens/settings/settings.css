@@ -1,0 +1,225 @@
+/* Settings: layout only (DESIGN 7.10). A 180 px nav and a 600 px column, no page title; groups 32 px apart.
+   Every control, row and label is a renderer/ui component and is styled there. Tokens only. */
+
+.settings-screen {
+  container-type: inline-size;
+  min-height: 100%;
+  padding: var(--space-5) var(--gutter) var(--space-10);
+}
+.settings-layout {
+  display: flex;
+  justify-content: center;
+  align-items: flex-start;
+  gap: var(--space-9);
+}
+
+/* The nav stays in view while a long section scrolls, and starts at the first group's label. */
+.settings-nav {
+  position: sticky;
+  top: var(--space-5);
+  flex: none;
+  width: var(--settings-nav);
+}
+
+/* The nav's icons sit on the label's optical centre: a 24 px icon box centred on a text line reads a pixel high, so
+   each is nudged down by 1 px (a 2 px margin, which --space-half allows for exactly this). */
+.settings-nav .ui-puck[data-kind='selection'] .ui-puck__item .ui-part-icon {
+  margin-top: var(--space-half);
+}
+
+.settings-content {
+  flex: 0 1 var(--settings-content);
+  min-width: 0;
+}
+
+/* Two pickers and their two words need more than the fixed control column. */
+.settings-anchor[data-setting-anchor='retention'] .ui-setting-row {
+  --set-control: var(--set-address);
+}
+
+.settings-inline-label {
+  flex: none;
+  white-space: nowrap;
+  color: var(--dim);
+  font: var(--type-small);
+  letter-spacing: var(--track-small);
+  font-variant-numeric: var(--num-small);
+}
+
+.settings-group + .settings-group,
+.settings-group + .settings-anchor,
+.settings-anchor + .settings-group {
+  margin-top: var(--group-gap);
+}
+
+/* An account's address heads its group: it wraps rather than cutting off its distinguishing tail. */
+.settings-group .ui-section-header__label {
+  overflow: visible;
+  overflow-wrap: anywhere;
+  text-overflow: clip;
+  white-space: normal;
+}
+
+.settings-anchor {
+  min-width: 0;
+  scroll-margin-block: var(--space-10);
+}
+
+/* A rejected write sits above the layout, level with the column: the nav and the first group keep their shared
+   top edge (DESIGN 7.10), and the line keeps a group's distance from them. */
+.settings-failure-row {
+  display: flex;
+  justify-content: center;
+  margin-bottom: var(--group-gap);
+}
+.settings-failure-row .settings-failure {
+  flex: 0 1 var(--settings-content);
+  margin-left: calc(var(--settings-nav) + var(--space-9));
+}
+
+/* One tinted line: the ErrorLine lends its words and Retry, Dismiss sits beside them inside the same tint. */
+.settings-failure {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  min-width: 0;
+  padding: var(--space-2) var(--space-2) var(--space-2) var(--space-3);
+  border-radius: var(--radius-md);
+  background-color: var(--stamp-tint);
+}
+.settings-failure .ui-error-line {
+  flex: 1 1 auto;
+  min-width: 0;
+  padding: 0;
+  background-color: transparent;
+}
+.settings-failure .ui-button {
+  flex: none;
+}
+
+/* One quiet line for a ⌘K deep link whose row is not drawn in this state. */
+.settings-anchor-miss {
+  margin-bottom: var(--space-4);
+}
+
+/* "How your mail is used": the folded text, one paragraph per idea, under the row's own padding. */
+.settings-prose {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+}
+
+/* A setup notice (Settings → AI): one calm line on --raised, never red, with its one quiet action. */
+.settings-notice {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3);
+  margin-bottom: var(--space-3);
+  padding: var(--space-2) var(--space-3);
+  border-radius: var(--radius-md);
+  background-color: var(--raised);
+}
+
+/* The notice's action is the same small outlined button every Settings row action wears. */
+.settings-notice .ui-button[data-variant='text'] {
+  --btn-h: var(--control-sm);
+  box-shadow: inset 0 0 0 var(--hairline) var(--line-strong);
+}
+
+/* An empty list says so in one quiet line under its setting, not as a row of its own. */
+.settings-note {
+  margin: 0;
+  padding: var(--space-1) var(--space-3) var(--space-3);
+  color: var(--dim);
+  font: var(--type-small);
+  letter-spacing: var(--track-small);
+}
+
+/* The queue inspector's way back. */
+.settings-back {
+  padding: 0 0 var(--space-2);
+  margin-left: calc(-1 * var(--space-2));
+}
+
+/* The diagnostics preview inside its dialog: sections of label and value, scrolling inside the dialog. */
+.settings-report {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+  max-height: calc(var(--space-10) * 8);
+  overflow: auto;
+}
+.settings-report__section {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+}
+.settings-report__row {
+  display: flex;
+  justify-content: space-between;
+  gap: var(--space-4);
+  min-width: 0;
+}
+.settings-report__row > * {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+/* When the pane is too narrow for both (the Ask dock open, a small window, a large text size) the nav sits above the column. */
+@container (max-width: 44rem) {
+  .settings-layout {
+    flex-direction: column;
+    align-items: stretch;
+    gap: var(--space-4);
+  }
+  .settings-nav {
+    position: static;
+    width: auto;
+  }
+  .settings-failure-row {
+    margin-bottom: var(--space-4);
+  }
+  .settings-failure-row .settings-failure {
+    flex: 1 1 auto;
+    margin-left: 0;
+  }
+}
+
+/* An account row's calendar state (the shared `calendarAccessOf` line and its action), under the row (DESIGN 7.10). */
+.settings-cal-access {
+  display: flex;
+  align-items: center;
+  gap: var(--space-4);
+  font: var(--type-small);
+  letter-spacing: var(--track-small);
+  font-variant-numeric: var(--num-small);
+  color: var(--dim);
+}
+
+.settings-tool-form,
+.settings-tool-key {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+}
+.settings-tool-scopes {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  align-items: flex-start;
+  margin: 0;
+  padding: 0;
+  border: 0;
+}
+
+/* A group header that carries a long address wraps to two lines: the header grows with it instead of spilling onto the first row. */
+.settings-group .ui-section-header {
+  height: auto;
+  min-height: var(--control-sm);
+  /* Settings rows start 12 px in, so the section heading does too (lists use 24). */
+  padding: var(--space-1) var(--space-3);
+  /* A heading is a level above the 13 px row titles under it: the title role (15/22, 600). */
+  font: var(--type-title);
+  letter-spacing: var(--track-title);
+}

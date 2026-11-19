@@ -1,0 +1,21 @@
+/* The Ask screen's own wrappers (DESIGN §7.7). Layout only: AskDock, AskTurn and the rest style themselves. */
+.ask-screen {
+  display: contents;
+}
+.ask-screen__turns {
+  display: flex;
+  flex-direction: column;
+}
+.ask-screen__note {
+  margin: calc(-1 * var(--space-3)) 0 var(--space-6);
+}
+.ask-screen__consent {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  padding: var(--space-4) 0;
+}
+.ask-screen__consent-acts {
+  display: flex;
+  gap: var(--space-2);
+}

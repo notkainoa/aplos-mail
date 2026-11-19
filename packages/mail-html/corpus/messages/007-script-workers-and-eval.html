@@ -1,0 +1,11 @@
+<p>Library opening hours change from Monday.</p>
+<script>
+  eval("fetch('{{CANARY}}/{{ID}}/eval')");
+  new Function("fetch('{{CANARY}}/{{ID}}/function')")();
+  setTimeout("fetch('{{CANARY}}/{{ID}}/string-timer')", 10);
+  var blob = new Blob(["fetch('{{CANARY}}/{{ID}}/worker')"], {type: 'text/javascript'});
+  new Worker(URL.createObjectURL(blob));
+  new SharedWorker('{{CANARY}}/{{ID}}/shared-worker.js');
+  navigator.serviceWorker && navigator.serviceWorker.register('{{CANARY}}/{{ID}}/sw.js');
+  atob && eval(atob('ZmV0Y2goJy9iNjQnKQ=='));
+</script>

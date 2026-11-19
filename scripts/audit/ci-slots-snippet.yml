@@ -1,0 +1,47 @@
+# Job snippet for .github/workflows/ci.yml (plan 40 Q3 deliverable 2). The ci.yml owner pastes it
+# under `jobs:`. It runs on the same triggers as the rest of the workflow (pushes to revamp) and
+# needs `permissions: contents: read` at workflow level (or add the block below to the job).
+#
+# Each slot runs `npm run <name>` when the root package.json has that script, and otherwise
+# prints "pending: <name> (owner: <lane>)" and passes. test:perf is not here: it runs on the
+# owner's Mac (packaged build, shared-runner noise) and has no Linux slot.
+#
+# Slots that are still pending are listed in the run's job summary (slot.mjs appends to
+# $GITHUB_STEP_SUMMARY), so a green run shows what did not run. This file is the durable copy.
+#
+# Pinned: actions/checkout v7.0.1, actions/setup-node v7.1.0 (resolved with gh on 2026-10-27).
+  slots:
+    name: slots
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 24.21.0
+          cache: npm
+      - run: npm ci
+      - name: summary heading
+        run: echo '### Pending slots (listed when the owning lane has not landed its script)' >> "$GITHUB_STEP_SUMMARY"
+      # The slots run in sequence; a failing slot does not hide the ones after it.
+      - name: slot check:openapi
+        run: node scripts/audit/slot.mjs check:openapi
+      - name: slot check:tokens
+        if: ${{ !cancelled() }}
+        run: node scripts/audit/slot.mjs check:tokens
+      - name: slot check:contrast
+        if: ${{ !cancelled() }}
+        run: node scripts/audit/slot.mjs check:contrast
+      - name: slot check:identity
+        if: ${{ !cancelled() }}
+        run: node scripts/audit/slot.mjs check:identity
+      - name: slot test:visual
+        if: ${{ !cancelled() }}
+        run: node scripts/audit/slot.mjs test:visual
+      - name: budget register
+        if: ${{ !cancelled() }}
+        run: npm run check:budgets

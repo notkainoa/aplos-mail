@@ -1,0 +1,39 @@
+/* The one-by-one view (DESIGN 7.2): one email at a time as the reader's own card (screens/reader), under the pane header. */
+/* The slot only has a min-height, so the view's own 100% would resolve to auto and leave the letter at the top. */
+.aplos-screen:has(> .aplos-one-by-one) {
+  height: 100%;
+}
+
+.aplos-one-by-one {
+  box-sizing: border-box;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  min-height: 100%;
+  /* The header sits above the content; the extra space under the letter lifts it a little above centre. */
+  padding: var(--pane-head) 0 var(--space-10);
+}
+
+/* The email card (the reader's own letter): it fills the pane under the header and rests its pinned bar on the bottom edge. */
+.aplos-one-by-one:has(> .aplos-one-by-one__card) {
+  justify-content: flex-start;
+  padding: 0;
+}
+/* The card takes focus when a menu or Why closes on it; it is a container, not a control, so it shows no ring. */
+.aplos-one-by-one__card:focus-visible {
+  outline: none;
+}
+.aplos-one-by-one__card {
+  display: flex;
+  flex: 1 0 auto;
+  flex-direction: column;
+}
+
+/* "Why it's here" could not be read: one line inside the popover. */
+.aplos-why-failed {
+  margin: 0;
+  padding: var(--space-3) var(--space-4);
+  color: var(--dim);
+  font: var(--type-ui);
+  letter-spacing: var(--track-ui);
+}

@@ -1,0 +1,115 @@
+{
+  "kind": "calendar#events",
+  "etag": "\"p33k9n2k8k9k9k0n\"",
+  "summary": "Recorded fixture",
+  "updated": "2026-11-06T10:00:00.000Z",
+  "timeZone": "America/Los_Angeles",
+  "accessRole": "owner",
+  "nextSyncToken": "CKiA9b2n9f8CEAiA9b2n9f8CGAE=",
+  "items": [
+    {
+      "kind": "calendar#event",
+      "etag": "\"3520049123456789\"",
+      "id": "standup-series-1",
+      "status": "confirmed",
+      "htmlLink": "https://www.google.com/calendar/event?eid=fixture",
+      "created": "2026-10-01T16:00:00.000Z",
+      "updated": "2026-11-01T16:00:00.000Z",
+      "summary": "Daily standup",
+      "creator": { "email": "self@example.test", "self": true },
+      "organizer": { "email": "self@example.test", "self": true },
+      "start": { "dateTime": "2026-11-09T09:00:00-08:00", "timeZone": "America/Los_Angeles" },
+      "end": { "dateTime": "2026-11-09T09:30:00-08:00", "timeZone": "America/Los_Angeles" },
+      "recurrence": ["RRULE:FREQ=DAILY;COUNT=10"],
+      "iCalUID": "standup-series-1@google.com",
+      "sequence": 0,
+      "reminders": { "useDefault": true }
+    },
+    {
+      "kind": "calendar#event",
+      "etag": "\"3520049123456790\"",
+      "id": "standup-series-1_20261110T170000Z",
+      "status": "confirmed",
+      "htmlLink": "https://www.google.com/calendar/event?eid=fixture2",
+      "created": "2026-11-02T16:00:00.000Z",
+      "updated": "2026-11-05T16:00:00.000Z",
+      "summary": "Daily standup (moved)",
+      "creator": { "email": "self@example.test", "self": true },
+      "organizer": { "email": "self@example.test", "self": true },
+      "start": { "dateTime": "2026-11-10T11:00:00-08:00", "timeZone": "America/Los_Angeles" },
+      "end": { "dateTime": "2026-11-10T11:30:00-08:00", "timeZone": "America/Los_Angeles" },
+      "recurringEventId": "standup-series-1",
+      "originalStartTime": {
+        "dateTime": "2026-11-10T09:00:00-08:00",
+        "timeZone": "America/Los_Angeles"
+      },
+      "iCalUID": "standup-series-1_20261110T170000Z@google.com",
+      "sequence": 0
+    },
+    {
+      "kind": "calendar#event",
+      "etag": "\"3520049123456791\"",
+      "id": "allday-offsite-1",
+      "status": "confirmed",
+      "htmlLink": "https://www.google.com/calendar/event?eid=fixture3",
+      "created": "2026-10-15T16:00:00.000Z",
+      "updated": "2026-10-20T16:00:00.000Z",
+      "summary": "Team offsite",
+      "creator": { "email": "self@example.test", "self": true },
+      "organizer": { "email": "self@example.test", "self": true },
+      "start": { "date": "2026-11-12" },
+      "end": { "date": "2026-11-14" },
+      "transparency": "transparent",
+      "iCalUID": "allday-offsite-1@google.com",
+      "sequence": 0
+    },
+    {
+      "kind": "calendar#event",
+      "etag": "\"3520049123456792\"",
+      "id": "meet-sync-1",
+      "status": "confirmed",
+      "htmlLink": "https://www.google.com/calendar/event?eid=fixture4",
+      "created": "2026-10-20T16:00:00.000Z",
+      "updated": "2026-11-01T16:00:00.000Z",
+      "summary": "1:1 sync",
+      "location": "Meet",
+      "creator": { "email": "self@example.test", "self": true },
+      "organizer": { "email": "self@example.test", "self": true },
+      "start": { "dateTime": "2026-11-11T14:00:00-08:00", "timeZone": "America/Los_Angeles" },
+      "end": { "dateTime": "2026-11-11T14:30:00-08:00", "timeZone": "America/Los_Angeles" },
+      "conferenceData": {
+        "entryPoints": [
+          {
+            "entryPointType": "video",
+            "uri": "https://meet.google.com/abc-defg-hij",
+            "label": "meet.google.com/abc-defg-hij"
+          }
+        ],
+        "conferenceSolution": { "key": { "type": "hangoutsMeet" }, "name": "Google Meet" }
+      },
+      "hangoutLink": "https://meet.google.com/abc-defg-hij",
+      "attendees": [
+        { "email": "other@example.test", "responseStatus": "accepted" },
+        {
+          "email": "self@example.test",
+          "self": true,
+          "responseStatus": "accepted",
+          "organizer": true
+        }
+      ],
+      "iCalUID": "meet-sync-1@google.com",
+      "sequence": 0
+    },
+    {
+      "kind": "calendar#event",
+      "etag": "\"3520049123456793\"",
+      "id": "standup-series-1_20261111T170000Z",
+      "status": "cancelled",
+      "recurringEventId": "standup-series-1",
+      "originalStartTime": {
+        "dateTime": "2026-11-11T09:00:00-08:00",
+        "timeZone": "America/Los_Angeles"
+      }
+    }
+  ]
+}

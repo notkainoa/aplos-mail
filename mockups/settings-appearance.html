@@ -1,0 +1,61 @@
+<!doctype html>
+<html lang="en" data-window="main" data-states="default" data-esc="home.html">
+<head>
+<meta charset="utf-8">
+<title>Settings, General · Aplos mockup</title>
+<link rel="stylesheet" href="tokens.css">
+<link rel="stylesheet" href="shell.css">
+<link rel="stylesheet" href="settings.css">
+<script src="shell.js"></script>
+<script src="settings.js"></script>
+</head>
+<body>
+<div class="window">
+  <span class="traffic"></span>
+  <div class="app">
+    <aside class="sidebar" id="sb" data-active="settings" data-accounts="all"></aside>
+    <main class="main">
+      <header class="toolbar">
+        <div class="tools">
+          <a class="btn btn-icon labelled" href="ask.html" data-tip="Ask about your mail" data-key="A"><svg class="ic"><use href="#i-bubble"/></svg>Ask</a>
+        </div>
+      </header>
+      <div class="workspace set-ws">
+        <div class="settings">
+          <nav class="nav snav" id="snav"></nav>
+          <div class="scontent" id="content"></div>
+        </div>
+      </div>
+    </main>
+  </div>
+</div>
+<script>
+S.nav('General');
+const stored = (() => { try { return localStorage.getItem('aplos-mock-theme'); } catch { return null; } })();
+const hints = document.documentElement.classList.contains('show-hints');
+document.getElementById('content').innerHTML = S.page('General', 'How Aplos looks and behaves on this Mac.') +
+  S.group('Appearance',
+    S.row({ label: 'Theme', hint: 'Light, dark, or match the system.', control: S.seg('theme', [['light', 'Light'], ['dark', 'Dark'], ['system', 'System']], stored === 'light' || stored === 'dark' ? stored : 'system') }) +
+    S.row({ label: 'Density', hint: 'How much room each row gets.', control: S.seg('density', [['roomy', 'Roomy'], ['comfortable', 'Normal'], ['compact', 'Compact']], 'comfortable') })) +
+  S.group('Keys and gestures',
+    S.row({ label: 'Show all key hints', hint: 'Keep every shortcut visible next to its button.', control: S.sw('hints', hints, 'Show all key hints') }) +
+    S.row({ label: 'Swipe direction', hint: 'Which way Done goes on Home and one by one.', control: S.select('swipe', 'Right is Done', ['Right is Done', 'Left is Done'], 'Swipe direction') })) +
+  S.group('Window',
+    S.row({ label: 'Minimised sidebar', hint: 'Hide the sidebar until you press [.', control: S.sw('mini', false, 'Minimised sidebar') }) +
+    S.row({ label: 'Open Aplos at login', hint: 'Starts quietly so your mail is already in.', control: S.sw('login', true, 'Open Aplos at login') }) +
+    S.row({ label: 'Keep Aplos in the menu bar', hint: 'Mail keeps syncing after the window closes.', control: S.sw('menubar', true, 'Keep Aplos in the menu bar') }));
+S.initSegs();
+document.addEventListener('settings:seg', e => {
+  if (e.detail.id !== 'theme') return;
+  const v = e.detail.v;
+  if (v === 'system') { Mock.setTheme(matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light'); try { localStorage.removeItem('aplos-mock-theme'); } catch {} }
+  else Mock.setTheme(v);
+  S.initSegs();
+});
+document.addEventListener('settings:switch', e => {
+  if (e.detail.id === 'hints') document.documentElement.classList.toggle('show-hints', e.detail.on);
+});
+
+</script>
+</body>
+</html>

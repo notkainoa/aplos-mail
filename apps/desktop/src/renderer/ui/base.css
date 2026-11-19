@@ -1,0 +1,162 @@
+/* The Paper base layer (DESIGN 4 and 11): the generated tokens, the bundled
+   fonts, then document-wide type, focus, selection and wrapping rules.
+   No component styles live here; those are in ui/<family>/<family>.css,
+   imported after this file by ui/styles.css.
+   - The theme-switch helper (:root[data-theme-switching] turns transitions off
+     for one frame) is generated in tokens.css; set the attribute from TS.
+   - Increase Contrast and reduced motion are handled by the tokens themselves.
+   - The caret is left to the platform: its blink is never altered. */
+
+@import url('./generated/tokens.css');
+@import url('../../../assets/fonts/fonts.css');
+
+/* The root keeps the platform's font size, so 1rem stays 16px and follows the
+   user's zoom and text size: every rem token is px/16 (DESIGN 11.6). Never set
+   font or font-size on html or :root; the type lives on body. */
+html {
+  color: var(--ink);
+  background-color: var(--shell);
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  text-rendering: optimizeLegibility;
+}
+
+body {
+  margin: 0;
+  font: var(--type-base);
+  letter-spacing: var(--track-base);
+}
+
+/* Controls take the document's type instead of the platform's. */
+button,
+input,
+select,
+textarea {
+  font: inherit;
+  letter-spacing: inherit;
+  color: inherit;
+}
+
+/* Buttons start bare and each component draws its own, so the platform's raised
+   button never shows (DESIGN 4.6: filled, text and icon only). :where() keeps this
+   at zero specificity, so any component rule wins. */
+:where(button) {
+  margin: 0;
+  padding: 0;
+  border: 0;
+  background: none;
+  text-align: inherit;
+  appearance: none;
+}
+
+/* The native-control reset (zero specificity, so any component rule wins). Every family starts from the same
+   bare elements: border-box sizing, no list bullets or indent, no heading or paragraph margins, and plain
+   fieldsets. Each component draws its own spacing from tokens. */
+:where(*, *::before, *::after) {
+  box-sizing: border-box;
+}
+
+/* Keycaps were drawn as `min-width: var(--kbd)` plus padding, which is content-box sizing, in every family. They
+   keep it, so the global reset does not narrow every keycap by its padding. */
+:where(kbd, [class*='kbd']) {
+  box-sizing: content-box;
+}
+
+:where(ul, ol) {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+:where(h1, h2, h3, h4, h5, h6, p, figure, blockquote, dl, dd) {
+  margin: 0;
+}
+
+:where(fieldset) {
+  min-width: 0;
+  margin: 0;
+  padding: 0;
+  border: 0;
+}
+
+:where(legend) {
+  padding: 0;
+}
+
+/* Numbers that line up use tabular figures (DESIGN 4.3). This is only the
+   fallback for elements nobody styles: `font: var(--type-<role>)` resets
+   font-variant-numeric, so a component rule that sets a type role on a time,
+   count or keycap writes the figures itself, after the font, e.g.
+   `font: var(--type-small); font-variant-numeric: var(--num-small);`. */
+time,
+kbd,
+table {
+  font-variant-numeric: tabular-nums;
+}
+
+/* One focus ring everywhere (DESIGN 4.6, 11): 2px accent with a 2px gap, 3px
+   under Increase Contrast through --focus-width. Pointer focus shows no ring. */
+:focus-visible {
+  outline: var(--focus-width) solid var(--accent);
+  outline-offset: var(--focus-gap);
+}
+
+:focus:not(:focus-visible) {
+  outline: none;
+}
+
+/* Selected text turns ink on the accent tint. --selection is opaque (the
+   accent mixed into the pane), so the pair holds on every surface and fill,
+   including the filled button, today's badge and hill, dusk and stamp chips. */
+::selection {
+  background-color: var(--selection);
+  color: var(--ink);
+}
+
+/* Summaries and prose wrap pretty; display lines and headings balance
+   (DESIGN 4.3). Balance comes second so a display or heading line written as a
+   <p> or <div> still balances: through Text's display and heading variants or
+   the .ui-display and .ui-heading hooks. */
+:where(p, li, dd, blockquote, figcaption, .ui-summary) {
+  text-wrap: pretty;
+}
+
+:where(
+  h1,
+  h2,
+  h3,
+  h4,
+  h5,
+  h6,
+  .ui-display,
+  .ui-heading,
+  .ui-text[data-variant='display'],
+  .ui-text[data-variant='heading']
+) {
+  text-wrap: balance;
+}
+
+/* +0.005em tracking on non-Retina displays (DESIGN 4.3): every --track-<role>
+   adds --track-boost. */
+@media (max-resolution: 1.5dppx) {
+  :root {
+    --track-boost: var(--track-boost-lowres);
+  }
+}
+
+/* A keycap's modifier marks (ChordText): at keycap size the system face draws ⌃ as a bare caret and ⌥ as a tilde, so
+   they take a touch more size and weight, sit on the keycap's centre line, and keep a hair of air before the next
+   mark, which keeps ⌘⇧↩ from smearing. */
+.ui-key-mod {
+  display: inline-block;
+  font: var(--type-ui);
+  font-family:
+    system-ui,
+    -apple-system,
+    BlinkMacSystemFont,
+    sans-serif;
+  font-weight: 600;
+  line-height: inherit;
+  vertical-align: middle;
+  margin-inline-end: var(--space-half);
+}

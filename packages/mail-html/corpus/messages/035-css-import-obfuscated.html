@@ -1,0 +1,21 @@
+<style>
+  @\69mport url({{CANARY}}/{{ID}}/escape-first-letter.css);
+  @im\70ort url({{CANARY}}/{{ID}}/escape-mid.css);
+  @IMPORT url({{CANARY}}/{{ID}}/upper.css);
+  @ImPoRt url({{CANARY}}/{{ID}}/mixed.css);
+  @import/**/url({{CANARY}}/{{ID}}/comment-sep.css);
+  @import/**/"{{CANARY}}/{{ID}}/comment-sep-string.css";
+  @/**/import url({{CANARY}}/{{ID}}/comment-after-at.css);
+  @import
+    url({{CANARY}}/{{ID}}/newline.css)
+  ;
+  @media all { @import url({{CANARY}}/{{ID}}/inside-media.css); }
+  @import url({{CANARY}}/{{ID}}/no-semicolon.css)
+</style>
+<p>Treasurer's report: the accounts are balanced.</p>
+<style media="screen">@import url({{CANARY}}/{{ID}}/second-style.css);</style>
+<style type="text/css">@import url({{CANARY}}/{{ID}}/typed-style.css);</style>
+<style type="text/x-unknown">@import url({{CANARY}}/{{ID}}/unknown-type.css);</style>
+<style nonce="abc">@import url({{CANARY}}/{{ID}}/nonce.css);</style>
+<STYLE>@import url({{CANARY}}/{{ID}}/upper-tag.css);</STYLE>
+<style>@charset "utf-7"; @import url({{CANARY}}/{{ID}}/charset-first.css);</style>

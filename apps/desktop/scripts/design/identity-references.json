@@ -1,0 +1,101 @@
+{
+  "$description": "Identity reference colours for check-contrast.mjs --identity (DESIGN 2.3, 4.1 and 12.4). Gate: every target token, in both themes, must sit at least `threshold` ΔE00 from every colour in `references`, which is exactly DESIGN 12.4's list: Avec's four colours plus the brand and link blues of Spark, Missive (including its dark shade), Mimestream (link), Airmail, Shortwave, Canary and Apple (system blue) from identity-collision-audit.md section 4. `advisoryReferences` holds every other colour in the identity audit's de2000.py; each target and advisory target is printed with its nearest advisory colour and never gated. An entry in `exceptions` (a gated distance under the threshold) needs a `decision` and a `reviewBy` date (YYYY-MM-DD); the check fails once that date has passed. Sources: tools/identity-audit/de2000.py in aplos-research and research/email-clients/gaps/identity-collision-audit.md section 4. Names describe other products' colours so they can be avoided; nothing here is used in the app.",
+  "threshold": 8.5,
+  "targets": ["{color.accent}", "{color.hill}", "{color.dusk}", "{color.stamp}"],
+  "advisoryTargets": {
+    "$description": "Printed with their nearest colour from both lists but not gated: DESIGN 12.4 limits the gate to the accent and commit colours. Whether tag colours join the gate is on the owner's decision list (tag-sky light is 3.76 from Mimestream's icon deep blue, dark 6.57 from Airmail's Mac icon ring).",
+    "tokens": ["{tag.sky}", "{tag.sand}", "{tag.ember}"]
+  },
+  "notAvec": {
+    "$description": "DESIGN 2.3 checks 2 and 3: the accent at least 10 from Avec's blue, and the Done colour at least 10 from Avec's greens, in both themes.",
+    "minimum": 10,
+    "checks": [
+      { "token": "{color.accent}", "references": ["#0050ff"] },
+      { "token": "{color.hill}", "references": ["#07aa04", "#03ce4c"] }
+    ]
+  },
+  "shell": {
+    "$description": "DESIGN 2.3 check 1: the shell is cool-neutral, Lab b* below 0 in both themes.",
+    "token": "{color.shell}",
+    "maxB": 0
+  },
+  "exceptions": [],
+  "references": [
+    {
+      "name": "Avec brand blue",
+      "hex": "#0050ff",
+      "source": "DESIGN 12.4; audit section 4; de2000.py"
+    },
+    {
+      "name": "Avec done green",
+      "hex": "#07aa04",
+      "source": "DESIGN 12.4; audit section 4; de2000.py"
+    },
+    { "name": "Avec site green", "hex": "#03ce4c", "source": "DESIGN 12.4; de2000.py" },
+    { "name": "Avec sky", "hex": "#36b7ff", "source": "DESIGN 12.4; de2000.py" },
+    { "name": "Spark site CTA", "hex": "#205eff", "source": "audit section 4; de2000.py" },
+    { "name": "Spark link", "hex": "#006ee5", "source": "audit section 4; de2000.py" },
+    { "name": "Spark icon", "hex": "#1f8cf4", "source": "audit section 4; de2000.py" },
+    { "name": "Spark hero light", "hex": "#2cb6ff", "source": "audit section 4; de2000.py" },
+    { "name": "Missive brand", "hex": "#2266ed", "source": "audit section 4; de2000.py" },
+    { "name": "Missive brand-dark", "hex": "#1c42b1", "source": "audit section 4; de2000.py" },
+    { "name": "Mimestream link", "hex": "#0068da", "source": "audit section 4; de2000.py" },
+    { "name": "Airmail App Store band", "hex": "#146ae9", "source": "audit section 4" },
+    {
+      "name": "Airmail icon ring (iOS, deep)",
+      "hex": "#047ff9",
+      "source": "audit section 4; de2000.py"
+    },
+    { "name": "Airmail Mac icon ring", "hex": "#48b5f0", "source": "audit section 4; de2000.py" },
+    { "name": "Shortwave primary", "hex": "#356aff", "source": "audit section 4; de2000.py" },
+    { "name": "Canary blue", "hex": "#1e35e5", "source": "audit section 4; de2000.py" },
+    {
+      "name": "Apple system blue (light)",
+      "hex": "#007aff",
+      "source": "audit section 4; de2000.py"
+    },
+    { "name": "Apple system blue (dark)", "hex": "#0a84ff", "source": "audit section 4; de2000.py" }
+  ],
+  "advisoryReferences": [
+    { "name": "Missive green-600", "hex": "#2b8e3f", "source": "audit section 4; de2000.py" },
+    { "name": "Mimestream control accent", "hex": "#007aff", "source": "de2000.py" },
+    { "name": "Mimestream icon deep", "hex": "#1571c5", "source": "de2000.py" },
+    { "name": "Mimestream icon pale", "hex": "#a9d8f5", "source": "audit section 4; de2000.py" },
+    { "name": "Mimestream system green", "hex": "#64ca56", "source": "de2000.py" },
+    { "name": "Airmail icon ring (iOS, light)", "hex": "#02c3fe", "source": "de2000.py" },
+    { "name": "Airmail icon pale", "hex": "#bee6fc", "source": "de2000.py" },
+    {
+      "name": "Airmail 2014 icon stripe red",
+      "hex": "#ea2e1a",
+      "source": "audit section 4; de2000.py"
+    },
+    {
+      "name": "Airmail 2014 icon stripe navy",
+      "hex": "#3b3b64",
+      "source": "audit section 4; de2000.py"
+    },
+    { "name": "Shortwave swipe green (approx)", "hex": "#2fb35a", "source": "de2000.py" },
+    { "name": "Canary medium slate", "hex": "#5b6eff", "source": "de2000.py" },
+    { "name": "Canary vibrant-blue", "hex": "#7ce2ff", "source": "de2000.py" },
+    { "name": "Canary swipe-blue", "hex": "#b1e9ff", "source": "de2000.py" },
+    { "name": "Apple Mail icon pale", "hex": "#a9dbfe", "source": "audit section 4; de2000.py" },
+    { "name": "HEY blurple", "hex": "#5522fa", "source": "de2000.py" },
+    { "name": "HEY cobalt", "hex": "#0074e4", "source": "de2000.py" },
+    { "name": "HEY sky", "hex": "#b6dbff", "source": "audit section 4; de2000.py" },
+    { "name": "HEY green", "hex": "#299850", "source": "audit section 4; de2000.py" },
+    { "name": "Notion CTA blue", "hex": "#0075de", "source": "de2000.py" },
+    { "name": "Superhuman purple", "hex": "#714cb6", "source": "de2000.py" },
+    { "name": "Spike purple", "hex": "#854dff", "source": "de2000.py" },
+    { "name": "Edison icon", "hex": "#0081fc", "source": "de2000.py" },
+    {
+      "name": "Aplos v0.2 app blue",
+      "hex": "#0682fe",
+      "source": "audit section 4; de2000.py (today's accent, kept so Paper reads as new)"
+    },
+    {
+      "name": "Aplos v0.2 green",
+      "hex": "#0a9c0a",
+      "source": "audit section 4; de2000.py (today's green)"
+    }
+  ]
+}

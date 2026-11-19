@@ -1,0 +1,129 @@
+{
+  "$schema": "https://unpkg.com/knip@6.42.1/schema.json",
+  // This file feeds the knip hill-climb scorer (scripts/audit/hillclimb/scorers/knip.mjs),
+  // which runs knip in --production mode by default and in default (test-inclusive) mode
+  // with --include-tests. Production entry/project patterns carry the `!` suffix; patterns
+  // without it are development-only and leave the production graph entirely. `!` is a no-op
+  // in default mode, so one config serves both.
+  "workspaces": {
+    ".": {
+      // Repo-root workspace: everything here is tooling (audit scripts, lint tools, repo
+      // tests, root config files), none of it ships — deliberately no `!` patterns, so the
+      // root contributes nothing to the production run.
+      "entry": ["scripts/**/*.mjs", "tools/**/*.{mjs,ts}", "tests/**/*.{ts,mts}", "*.{mjs,cjs}"],
+      "project": ["scripts/**/*.mjs", "tools/**/*.{mjs,ts}", "tests/**/*.{ts,mts}"],
+      // Tooling deps are loaded by mechanism (tsx preload, c8/stryker wrappers, CLIs), not
+      // by static imports, so knip would otherwise call them unused.
+      "ignoreDependencies": [
+        "tsx",
+        "typescript",
+        "c8",
+        "knip",
+        "dependency-cruiser",
+        "@stryker-mutator/core",
+        "@stryker-mutator/instrumenter"
+      ],
+      // The command test runner is resolved by Stryker's built-in runner name, not an import.
+      "ignoreUnresolved": ["@stryker-mutator/command-runner"]
+    },
+    "apps/desktop": {
+      // Production entries: the vite HTML entry and the five real runtime entry points
+      // (electron main, the engine child process, preload, the local server, the renderer
+      // entry). scripts/tests/vite.config are development-only.
+      "entry": [
+        "index.html!",
+        "src/main/electron.ts!",
+        "src/main/engine-process.ts!",
+        "src/main/preload.ts!",
+        "src/main/server.ts!",
+        "src/renderer/main.tsx!",
+        "scripts/**/*.{ts,mts,mjs,cjs}",
+        "tests/**/*.ts",
+        "vite.config.ts"
+      ],
+      "project": [
+        "src/**/*.{ts,tsx,mts,cts,css}!",
+        "scripts/**/*.{ts,mts,mjs,cjs}",
+        "tests/**/*.{ts,mts}"
+      ],
+      // Today's renderer under src/renderer/legacy is being replaced; it still ships but its
+      // dead-code shape is out of scope for the climb, so findings there stay suppressed.
+      "ignore": ["**/legacy/**"],
+      // Imported by the bundled @aplos/mail-html, not by desktop code: build-main.mjs keeps
+      // third-party packages external, so they must ship from app.asar's node_modules
+      // (tests/eng-contract/real-ports.test.ts walks the list).
+      "ignoreDependencies": ["domhandler", "@csstools/css-tokenizer"]
+    },
+    "apps/web": {
+      // Production entries: the three static entry pages. vite.config and scripts are
+      // development-only.
+      "entry": [
+        "index.html!",
+        "privacy/index.html!",
+        "download/index.html!",
+        "vite.config.ts",
+        "scripts/**/*.mjs"
+      ],
+      "project": ["src/**/*.{ts,tsx,js,jsx}!", "scripts/**/*.mjs"]
+    },
+    "packages/engine": {
+      // Production entries: the package's real public surface (index, host ports, the store
+      // barrel) plus legacy/, which still ships. src/store/*.ts and src/diag/*.ts are NOT
+      // entries — every one of those modules is reachable from index/ports through the
+      // import graph, and as entries they would hide real dead-code findings.
+      // tests/bench/scripts are development-only entries.
+      "entry": [
+        "src/index.ts!",
+        "src/ports.ts!",
+        "src/store/index.ts!",
+        "src/legacy/*.ts!",
+        "tests/**/*.ts",
+        "bench/**/*.ts",
+        "scripts/**/*.{ts,mjs}"
+      ],
+      "project": ["src/**/*.ts!", "tests/**/*.ts", "bench/**/*.ts"],
+      "ignore": ["**/legacy/**"]
+    },
+    "packages/contract": {
+      // Production entries: the package's public surface including the per-topic barrels
+      // (client, log) and generated/, which is shipped output consumed via imports and by
+      // external readers, so it must count as entry, not as findable dead code.
+      "entry": [
+        "src/index.ts!",
+        "src/access.ts!",
+        "src/allowlists.ts!",
+        "src/contract-error.ts!",
+        "src/legacy-methods.ts!",
+        "src/rules.ts!",
+        "src/client/index.ts!",
+        "src/log/*.ts!",
+        "src/legacy/*.ts!",
+        "generated/**/*!",
+        "scripts/**/*.{ts,mjs}",
+        "tests/**/*.ts"
+      ],
+      "project": ["src/**/*.ts!", "generated/**/*!", "tests/**/*.ts"],
+      "ignore": ["**/legacy/**"]
+    },
+    "packages/contract-fixture": {
+      // Test support package, never shipped — but it is imported by shipped dev/demo paths
+      // (renderer standin, engine demo data), so its exports-map files stay `!`-marked
+      // entries; only its exports that nothing at all uses get flagged.
+      "entry": ["src/index.ts!", "src/control.ts!", "tests/**/*.ts"],
+      "project": ["src/**/*.ts!", "tests/**/*.ts"]
+    },
+    "packages/emulators": {
+      // Production entries: the emulated provider packages behind the package exports map;
+      // they ship because demo mode and tests load them through normal imports.
+      "entry": [
+        "src/index.ts!",
+        "src/gmail/index.ts!",
+        "src/gcal/index.ts!",
+        "src/kit/index.ts!",
+        "tests/**/*.ts",
+        "scripts/**/*.{ts,mjs}"
+      ],
+      "project": ["src/**/*.ts!", "tests/**/*.ts"]
+    }
+  }
+}

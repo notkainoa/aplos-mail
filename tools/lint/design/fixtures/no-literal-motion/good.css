@@ -1,0 +1,19 @@
+.tokens {
+  transition: color var(--dur-hover) var(--ease-std), background-color var(--dur-hover) var(--ease-std);
+  transition: transform var(--dur-slide) var(--spring-slide);
+  transition: opacity var(--dur-settle-in) var(--ease-out);
+  transition: none;
+  transition-property: opacity, transform;
+  animation: breathe var(--dur-breathe) var(--ease-inout) infinite;
+  animation-duration: calc(var(--dur-flight) * 2);
+  animation-timing-function: var(--ease-carry);
+  animation-iteration-count: 1;
+  animation-fill-mode: forwards;
+  transition-delay: 0s;
+}
+
+.not-motion {
+  --lines: 2;
+  --delay-steps: 3;
+  line-height: var(--lh);
+}

@@ -1,0 +1,29 @@
+{
+  "name": "@aplos/contract",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Aplos Mail engine contract: zod/mini schemas for every method and frame, the method registry, generated allowlists and the typed client",
+  "license": "MIT",
+  "exports": {
+    ".": "./src/index.ts",
+    "./log/*": "./src/log/*.ts",
+    "./client": "./src/client/index.ts",
+    "./allowlists": "./src/allowlists.ts",
+    "./access": "./src/access.ts",
+    "./measure": "./src/measure.ts",
+    "./contract-error": "./src/contract-error.ts",
+    "./legacy-methods": "./src/legacy-methods.ts",
+    "./generated/openapi.json": "./generated/openapi.json",
+    "./rules": "./src/rules.ts",
+    "./legacy/*": "./src/legacy/*.ts"
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit && tsc --noEmit -p tsconfig.test.json",
+    "generate": "tsx scripts/generate.ts",
+    "test": "tsx --test tests/*.test.ts tests/conformance/*.test.ts"
+  },
+  "dependencies": {
+    "zod": "^4.6.7"
+  }
+}

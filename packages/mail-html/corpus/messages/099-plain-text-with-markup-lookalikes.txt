@@ -1,0 +1,13 @@
+This must stay text. The next lines contain markup written literally.
+
+<script>fetch('{{CANARY}}/{{ID}}/plain-text-script')</script>
+<img src=x onerror=alert(1)>
+<img src="{{CANARY}}/{{ID}}/plain-text-img">
+<a href="javascript:fetch('{{CANARY}}/{{ID}}/plain-text-javascript')">link</a>
+<script>alert(1)</script>
+<style>@import url({{CANARY}}/{{ID}}/plain-text-import);</style>
+<meta http-equiv="refresh" content="0;url={{CANARY}}/{{ID}}/plain-text-refresh">
+&lt;b&gt;entities stay as typed&lt;/b&gt; &amp;amp; &#60;i&#62;
+{{CANARY}}/{{ID}}/plain-text-bare-url
+http://{{CANARY_HOST}}/plain-text-bare-host
+</plain> <title> <textarea> <plaintext> ]]> --> <!--
