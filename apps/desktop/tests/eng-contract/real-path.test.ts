@@ -35,11 +35,36 @@ test('the real path keeps no state mirror in main', () => {
   }
 });
 
-test('APLOS_ENGINE=real is opt-in and never in a release build', () => {
-  assert.equal(realEngineRequested({}, false), false);
-  assert.equal(realEngineRequested({ APLOS_ENGINE: 'legacy' }, false), false);
-  assert.equal(realEngineRequested({ APLOS_ENGINE: 'real' }, false), true);
-  assert.equal(realEngineRequested({ APLOS_ENGINE: 'real' }, true), false);
+const fresh = { legacyMail: false, newStore: false };
+const upgraded = { legacyMail: true, newStore: false };
+const moved = { legacyMail: true, newStore: true };
+const newOnly = { legacyMail: false, newStore: true };
+
+test('the real engine is the default in every build, on a fresh folder or one already on mail.db', () => {
+  for (const release of [false, true]) {
+    assert.equal(realEngineRequested({}, release, fresh), true);
+    assert.equal(realEngineRequested({}, release, newOnly), true);
+    assert.equal(realEngineRequested({}, release, moved), true);
+  }
+});
+
+test('a folder with 0.2.x mail and no mail.db keeps the legacy engine, so nothing is hidden before the importer', () => {
+  assert.equal(realEngineRequested({}, true, upgraded), false);
+  assert.equal(realEngineRequested({}, false, upgraded), false);
+  // Release builds ignore the environment: it can neither force the new engine onto 0.2.x mail nor force legacy.
+  assert.equal(realEngineRequested({ APLOS_ENGINE: 'real' }, true, upgraded), false);
+  assert.equal(realEngineRequested({ APLOS_ENGINE: 'legacy' }, true, fresh), true);
+  assert.equal(realEngineRequested({ APLOS_ENGINE: 'legacy' }, true, moved), true);
+});
+
+test('APLOS_ENGINE=legacy or =real overrides the rule outside a release build only', () => {
+  for (const folder of [fresh, upgraded, moved, newOnly]) {
+    assert.equal(realEngineRequested({ APLOS_ENGINE: 'legacy' }, false, folder), false);
+    assert.equal(realEngineRequested({ APLOS_ENGINE: 'real' }, false, folder), true);
+  }
+  // Any other value is the default rule, never a third engine.
+  assert.equal(realEngineRequested({ APLOS_ENGINE: 'new' }, false, fresh), true);
+  assert.equal(realEngineRequested({ APLOS_ENGINE: 'new' }, false, upgraded), false);
 });
 
 test('real path: a window gets its own port, Session/get answers, main validates compose through Draft/get', async t => {

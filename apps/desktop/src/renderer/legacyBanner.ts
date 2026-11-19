@@ -13,6 +13,17 @@ export const LEGACY_BANNER_ID = 'aplos-legacy-banner';
 export const LEGACY_BANNER_TEXT =
   'This is the old version of Aplos. Start the app with APLOS_ENGINE=real to see the new one.';
 
+/**
+ * A production build runs the old version only on a Mac whose 0.2.x mail has not moved to the new engine yet (main's
+ * `realEngineRequested`). A release ignores `APLOS_ENGINE`, so its line names no variable.
+ */
+export const LEGACY_BANNER_TEXT_PRODUCTION =
+  'This is the old version of Aplos. It stays until your mail can move to the new one.';
+
+/** The banner's line: the developer hint in a development build, the plain one otherwise. */
+export const legacyBannerText = (dev: boolean) =>
+  dev ? LEGACY_BANNER_TEXT : LEGACY_BANNER_TEXT_PRODUCTION;
+
 const STYLE_ID = `${LEGACY_BANNER_ID}-style`;
 
 const STYLE = `
@@ -59,6 +70,7 @@ export interface BannerDocument {
 /** Puts the banner on the page (once) and returns whether it added it. */
 export function mountLegacyBanner(
   doc: BannerDocument = document as unknown as BannerDocument,
+  text: string = LEGACY_BANNER_TEXT,
 ): boolean {
   if (doc.getElementById(LEGACY_BANNER_ID)) return false;
   const style = doc.createElement('style');
@@ -68,7 +80,7 @@ export function mountLegacyBanner(
   const banner = doc.createElement('div');
   banner.id = LEGACY_BANNER_ID;
   banner.setAttribute('role', 'status');
-  banner.textContent = LEGACY_BANNER_TEXT;
+  banner.textContent = text;
   doc.body.prepend(banner);
   doc.body.setAttribute('data-legacy-banner', '');
   return true;

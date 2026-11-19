@@ -90,7 +90,8 @@ async function launch() {
   port = listener.address().port;
   await new Promise(r => listener.close(r));
   const log = await open(join(dataDir, 'desktop.log'), 'a');
-  const env = { ...process.env, APLOS_DATA_DIR: dataDir };
+  // This suite drives the legacy engine (`state.get`), no longer the default: pinned until the legacy code goes.
+  const env = { ...process.env, APLOS_DATA_DIR: dataDir, APLOS_ENGINE: 'legacy' };
   delete env.ELECTRON_RUN_AS_NODE;
   child = spawn(
     executable,

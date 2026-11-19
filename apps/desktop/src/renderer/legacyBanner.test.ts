@@ -8,6 +8,8 @@ import { test } from 'node:test';
 import {
   LEGACY_BANNER_ID,
   LEGACY_BANNER_TEXT,
+  LEGACY_BANNER_TEXT_PRODUCTION,
+  legacyBannerText,
   mountLegacyBanner,
   type BannerDocument,
 } from './legacyBanner';
@@ -62,6 +64,15 @@ test('the banner is one plain-English status line at the top of the page, added 
   assert.equal(page.head.length, 1);
 });
 
+test('a production build names no environment variable: a release ignores APLOS_ENGINE', () => {
+  assert.equal(legacyBannerText(true), LEGACY_BANNER_TEXT);
+  assert.equal(legacyBannerText(false), LEGACY_BANNER_TEXT_PRODUCTION);
+  assert.doesNotMatch(LEGACY_BANNER_TEXT_PRODUCTION, /APLOS_|[✨✦★☆⭐🪄]/u);
+  const page = fakeDocument();
+  mountLegacyBanner(page.doc, LEGACY_BANNER_TEXT_PRODUCTION);
+  assert.equal(page.nodes[0]!.textContent, LEGACY_BANNER_TEXT_PRODUCTION);
+});
+
 test('the banner styles use the legacy tokens only: no colour of its own, no sparkle', () => {
   const page = fakeDocument();
   mountLegacyBanner(page.doc);
@@ -84,7 +95,10 @@ function bodyOf(source: string, name: string): string {
 
 test('only bootLegacy mounts the banner; the new roots (real engine or stand-in) never do', () => {
   const main = readFileSync(new URL('./main.tsx', import.meta.url), 'utf8');
-  assert.match(bodyOf(main, 'bootLegacy'), /mountLegacyBanner\(\)/);
+  assert.match(
+    bodyOf(main, 'bootLegacy'),
+    /mountLegacyBanner\(undefined, legacyBannerText\(import\.meta\.env\.DEV\)\)/,
+  );
   for (const name of ['boot', 'bootOnboarding', 'serveClose', 'serveNavigate', 'connectEngine'])
     assert.doesNotMatch(bodyOf(main, name), /mountLegacyBanner/, `${name} does not mount it`);
   assert.equal(main.match(/mountLegacyBanner\(/g)?.length, 1, 'one call site in all of main.tsx');

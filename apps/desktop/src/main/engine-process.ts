@@ -9,7 +9,7 @@ import { startEngineUtility } from './engine-utility';
 /**
  * Entry point of the engine's utility process. Sync, the database and AI requests run here so a large
  * mailbox never blocks the windows; the main process keeps the keychain, links and notifications.
- * Forked with `REAL_ENGINE_ARG` (`APLOS_ENGINE=real`, contract-4) it runs the new engine instead (`engine-utility.ts`).
+ * Forked with `REAL_ENGINE_ARG` (the default engine, contract-4) it runs the new engine instead (`engine-utility.ts`).
  */
 function serveLegacy() {
   const parent = process.parentPort;

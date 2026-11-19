@@ -118,7 +118,7 @@ const loopMonitor = createLoopMonitor({
  */
 function wakeEngine() {
   if (pause.active() || processState.state === 'parked') return;
-  // The real engine (APLOS_ENGINE=real) gets the power event itself; its host dedupes wakes (host/power.ts).
+  // The real engine (the default) gets the power event itself; its host dedupes wakes (host/power.ts).
   if (realPath) return realEngine.wake();
   if (!service) return;
   void service.invoke('sync', { auto: true }).catch(() => {});

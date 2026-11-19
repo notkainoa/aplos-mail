@@ -7,6 +7,7 @@ import {
   safeStorage,
   utilityProcess,
 } from 'electron';
+import { existsSync } from 'node:fs';
 import { join } from 'node:path';
 import { connectEngine, type EngineInit } from './engine-rpc';
 import { KeyringError, createCipher, loadDataKey, migrateCredentials } from './keyring';
@@ -24,8 +25,20 @@ import { releaseBuild } from './oauth-config';
 import { bootRealEngine, realEngine } from './engine-real';
 import { registerMailScheme } from './mail-protocol';
 
-/** `APLOS_ENGINE=real` (never in a release build): the new engine in its utility process, no state mirror in main. */
-const realPath = realEngineRequested(process.env, releaseBuild);
+/** The engine's data folder: the test or development override, else the app's own folder. */
+const dataFolder = () => dataDirOverride ?? app.getPath('userData');
+/** What `realEngineRequested` needs from the folder: plain file checks, nothing opened or written. */
+function folderFacts(dir: string) {
+  return {
+    legacyMail: existsSync(join(dir, 'aplos.db')) || existsSync(join(dir, 'state.json')),
+    newStore: existsSync(join(dir, 'mail.db')),
+  };
+}
+/**
+ * The new engine in its utility process, no state mirror in main: the default, except on a folder that still holds
+ * 0.2.x mail and no `mail.db` (no importer yet; see `realEngineRequested`).
+ */
+const realPath = realEngineRequested(process.env, releaseBuild, folderFacts(dataFolder()));
 // The sealed mail frame's scheme (html-5): registered at import, before app ready as Electron requires, and only on the
 // real path. The legacy path registers no scheme, so Chromium does not know `aplos-mail:` there.
 if (realPath) registerMailScheme();
@@ -174,7 +187,7 @@ function restartEngine(init: EngineInit, lastError?: unknown) {
 }
 /** `noteExit` counts an engine stop toward the park (lifecycle.ts); the legacy path keeps its own restart dialog. */
 async function bootEngine(hooks: { noteExit(): boolean; noteRestart?(): void }) {
-  const dataDir = dataDirOverride ?? app.getPath('userData');
+  const dataDir = dataFolder();
   // Folders an opened attachment left in the temp directory in earlier sessions (either engine path).
   void sweepAttachmentTemp().catch(() => undefined);
   if (realPath)

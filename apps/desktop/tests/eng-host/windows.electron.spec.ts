@@ -9,7 +9,7 @@ test('startup opens exactly one hidden window and test hooks are exposed', async
   const aplos = await launchAplos({ env: { APLOS_ONBOARDING_WINDOW: '0' } });
   try {
     const window = await aplos.app.firstWindow();
-    await expect(window.locator('.app-shell')).toBeAttached();
+    await expect(window.locator('#root > *')).toBeAttached();
     expect(
       await aplos.app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows().length),
     ).toBe(1);
@@ -30,7 +30,7 @@ test('window.open is denied: no second window opens and none is visible', async 
   const aplos = await launchAplos({ env: { APLOS_ONBOARDING_WINDOW: '0' } });
   try {
     const page = await aplos.app.firstWindow();
-    await expect(page.locator('.app-shell')).toBeAttached();
+    await expect(page.locator('#root > *')).toBeAttached();
     await page.evaluate(() => {
       window.open('https://docs.example/page');
       window.open('mailto:someone@docs.example');
@@ -64,7 +64,7 @@ test('R2H-5: a renderer permission request and an openExternal call reach no sys
   const aplos = await launchAplos({ env: { APLOS_ONBOARDING_WINDOW: '0' } });
   try {
     const window = await aplos.app.firstWindow();
-    await expect(window.locator('.app-shell')).toBeAttached();
+    await expect(window.locator('#root > *')).toBeAttached();
     const outcome = await aplos.app.evaluate(async ({ shell, systemPreferences }) => {
       await shell.openExternal('https://accounts.example/o/oauth2?state=probe');
       return {
