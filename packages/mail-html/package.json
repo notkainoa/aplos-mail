@@ -4,7 +4,7 @@
   "private": true,
   "type": "module",
   "description": "Aplos Mail's email HTML sanitizer: a pure-JS, parser-based allowlist (no DOM, no Node), bundled outside the engine core",
-  "license": "UNLICENSED",
+  "license": "MIT",
   "exports": {
     ".": "./src/index.ts",
     "./frame": "./src/frame/index.ts",
