@@ -66,6 +66,8 @@ await build({
   ...bannerOptions(process.env),
 });
 await copyFile('assets/icon.png', 'dist/main/icon.png');
+for (const name of ['trayTemplate.png', 'trayTemplate@2x.png'])
+  await copyFile(`assets/${name}`, `dist/main/${name}`);
 
 // Universal (arm64 + x86_64) so both release architectures get a working helper.
 if (process.platform === 'darwin') {
