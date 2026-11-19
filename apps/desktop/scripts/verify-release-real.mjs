@@ -8,7 +8,7 @@ import { createServer } from 'node:net';
 
 // The new-engine twin of verify-release.mjs: exercises the shipped renderer, preload, main process and the NEW engine
 // (the default in every build) on a packaged build, with a throwaway data folder and the original demo mail only.
-// It adds no account and sends nothing outside the folder: the demo accounts deliver locally. verify-release.mjs stays
+// It adds no account and sends nothing outside the folder: the demo accounts deliver locally (to their own Sent). verify-release.mjs stays
 // pinned to the legacy engine until that code is deleted.
 //
 // The app runs in test mode (APLOS_TEST=1): windows load but are never shown, no Dock icon, nothing system-wide, so it is
@@ -238,65 +238,93 @@ try {
     // The undo is the contract's own call: the thread is back where it was.
     assert.deepEqual(await inboxIds(), before);
   });
-  await check('a thread lists its messages and a message reads back', async () => {
-    const ids = (await client.call('View/query', { spec: { kind: 'thread', threadId: first } }))
-      .ids;
-    assert.ok(ids.length > 0);
-    const message = (await client.call('Message/get', { ids: [ids[0]] })).list[0];
-    assert.ok(message && message.subject.length > 0);
-  });
-  const fields = () => ({
+  await check(
+    'a demo thread opens complete, lists its messages and a message reads back',
+    async () => {
+      // The reader's own call when a thread opens (ReaderLetter.tsx). A demo thread is complete locally, so this asks no
+      // provider; it used to answer `internal`, which the reader swallowed.
+      const opened = await client.call('Thread/open', { threadId: first });
+      assert.equal(opened.complete, true, 'a demo thread opens complete');
+      const ids = (await client.call('View/query', { spec: { kind: 'thread', threadId: first } }))
+        .ids;
+      assert.ok(ids.length > 0);
+      const message = (await client.call('Message/get', { ids: [ids[0]] })).list[0];
+      assert.ok(message && message.subject.length > 0);
+    },
+  );
+  const fields = subject => ({
     accountId: accountIds[0],
     mode: 'new',
     to: [{ address: 'reader@verification.example', name: 'Reader' }],
     cc: [],
     bcc: [],
-    subject: 'Release smoke message',
+    subject,
     html: '<p>Original synthetic release verification.</p>',
     attachments: [],
     signature: false,
   });
+  const sentIds = async () =>
+    (await client.call('View/query', { spec: { kind: 'mailbox', role: 'sent' } })).ids;
+  const submit = async (d, notBefore) =>
+    (
+      await client.call('Submission/set', {
+        opId: opId('send'),
+        action: { type: 'send', draftId: d.id, revision: d.revision, notBefore },
+      })
+    ).submission;
   let draft;
   let submissionId;
-  await check('draft save, send later, Undo and a queued send', async () => {
-    draft = (await client.call('Draft/set', { opId: opId('draft'), fields: fields() })).draft;
-    assert.equal(draft.subject, 'Release smoke message');
-    const queued = (
-      await client.call('Submission/set', {
-        opId: opId('send'),
-        action: {
-          type: 'send',
-          draftId: draft.id,
-          revision: draft.revision,
-          notBefore: Date.now() + 60_000,
-        },
-      })
-    ).submission;
-    assert.ok(['queued', 'scheduled'].includes(queued.state), `state ${queued.state}`);
-    const undone = (
-      await client.call('Submission/set', {
-        opId: opId('unsend'),
-        action: { type: 'undo', submissionId: queued.id },
-      })
-    ).submission;
-    assert.ok(['cancelled', 'undone'].includes(undone.state), `state ${undone.state}`);
-    // A due send of a demo draft did not reach `sent` within 45 s in a packaged run (demo accounts hand a message to no
-    // provider), so this check does not assert delivery. The send still has to be accepted and survive a restart, which
-    // is what a user's queued mail relies on.
-    const later = (
-      await client.call('Submission/set', {
-        opId: opId('send'),
-        action: {
-          type: 'send',
-          draftId: draft.id,
-          revision: draft.revision,
-          notBefore: Date.now() + 3_600_000,
-        },
-      })
-    ).submission;
-    assert.ok(['queued', 'scheduled'].includes(later.state), `state ${later.state}`);
-    submissionId = later.id;
-  });
+  await check(
+    'draft save, send later, Undo, then a demo send reaches sent and is filed in Sent',
+    async () => {
+      const smoke = (
+        await client.call('Draft/set', {
+          opId: opId('draft'),
+          fields: fields('Release smoke message'),
+        })
+      ).draft;
+      assert.equal(smoke.subject, 'Release smoke message');
+      const queued = await submit(smoke, Date.now() + 60_000);
+      assert.ok(['queued', 'scheduled'].includes(queued.state), `state ${queued.state}`);
+      const undone = (
+        await client.call('Submission/set', {
+          opId: opId('unsend'),
+          action: { type: 'undo', submissionId: queued.id },
+        })
+      ).submission;
+      assert.ok(['cancelled', 'undone'].includes(undone.state), `state ${undone.state}`);
+      // Demo accounts deliver locally (packages/engine/src/ai/demo/send.ts): the send settles `sent` and the message is
+      // filed in the account's own Sent folder. Nothing leaves the Mac.
+      const before = await sentIds();
+      const now = await submit(smoke, Date.now());
+      const sent = await until(async () => {
+        const row = (await client.call('Submission/get', { ids: [now.id] })).list[0];
+        assert.ok(
+          row && !['failed', 'suspended', 'uncertain'].includes(row.state),
+          `state ${row?.state}`,
+        );
+        return row.state === 'sent' && row;
+      }, 'the demo send reaching sent');
+      assert.equal(sent.state, 'sent');
+      const added = (await sentIds()).filter(id => !before.includes(id));
+      assert.equal(added.length, 1, 'the sent message is in Sent');
+      assert.equal(
+        (await client.call('Thread/get', { ids: added })).list[0]?.subject,
+        'Release smoke message',
+      );
+      assert.equal((await client.call('Thread/open', { threadId: added[0] })).complete, true);
+      // A second draft held for an hour: the queued send has to survive a restart, as a user's queued mail does.
+      draft = (
+        await client.call('Draft/set', {
+          opId: opId('draft'),
+          fields: fields('Release queued message'),
+        })
+      ).draft;
+      const later = await submit(draft, Date.now() + 3_600_000);
+      assert.ok(['queued', 'scheduled'].includes(later.state), `state ${later.state}`);
+      submissionId = later.id;
+    },
+  );
   const settings = await client.call('Settings/get');
   const wanted = settings.ui.density === 'roomy' ? 'compact' : 'roomy';
   await check('settings save and invalid requests fail without damaging stored mail', async () => {
@@ -356,7 +384,7 @@ try {
       );
       assert.equal(
         (await client.call('Draft/get', { ids: [draft.id] })).list[0]?.subject,
-        'Release smoke message',
+        'Release queued message',
       );
       assert.equal(readdirSync(dataDir).includes('aplos.db'), false);
     },

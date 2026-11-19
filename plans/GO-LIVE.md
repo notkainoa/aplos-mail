@@ -150,11 +150,13 @@ Consent drift re-asks correctly (`ai/impl/consent-methods.ts:45-51`). The upgrad
 
 The root and desktop `package.json` still say `0.2.3`. The redesign needs its own version before `npm run release` (S).
 
-## 18. Seen while writing `verify:release:real` (not fixed here)
+## 18. Seen while writing `verify:release:real` (fixed)
 
-Two things on a packaged new-engine build with the demo mail, found by hand-driving it. Their causes are not traced; the check works around them and says so.
+Two things looked broken on a packaged new-engine build with the demo mail. Both were real engine bugs, not artifacts of how the script called the engine: the script makes the same calls the renderer does (`Thread/open` from `ReaderLetter.tsx`, `Submission/set` with `notBefore` from the composer's `session.ts`), and both reproduced on the real composed engine (`compose.ts`) with no Electron.
 
-- `Thread/open` on a demo thread answers `internal` ("Something went wrong"). The demo threads are stored with `complete = 0`, so the engine asks the account to fetch the thread whole, and a demo account has no provider to ask.
-- A demo draft sent with `notBefore` now did not reach `sent` within 45 s: the legacy engine delivered demo sends locally, and the check no longer asserts delivery. It asserts the send is accepted, can be undone, and survives a restart.
+- **`Thread/open` on a demo thread answered `internal`.** The demo dataset stored its threads as partial (`complete = 0`, the default for a new thread), so `Thread/open` asked the account's provider for the whole thread, and a demo account has none (`account demo-work is not started`). The reader calls `Thread/open` with `.catch(() => undefined)`, so the mail still showed and hands-on testing looked fine; the error was silent on every open. Fix: the demo dataset marks each thread complete (`packages/engine/src/ai/demo/data.ts`), since every demo message and body is stored locally.
+- **A demo send never reached `sent`.** The new engine had no demo delivery: the real send port answers `accountNotStarted` for an account with no provider, which the outbox treats as a transient pause and re-asks forever (the row sat `queued`, then would have gone `suspended`). The legacy engine and the contract fixture both settle a demo send `sent` and file it in Sent, and the owner approved the send states on that behaviour. Fix: `withDemoDelivery` (`packages/engine/src/ai/demo/send.ts`) wraps the send port in the host composition. For a demo account it files the message in the account's own Sent folder as a complete thread (or in the thread it replies to) and answers the receipt; `findSent` reads the store. Real accounts reach the real port unchanged. Nothing leaves the Mac. The module is not imported by the engine core, so the startup bundle is unchanged (468,555 of 470,000 bytes).
 
-Either may only matter for demo mail, but "Try demo mail" is the first thing a new user may press, so it is worth an owner decision.
+Tests: `apps/desktop/tests/eng-contract/demo-real-path.test.ts` (the real composed engine over real MessagePorts: every demo inbox thread opens complete; a send with Undo reaches `sent`, shows in Sent, opens, and its draft leaves Drafts; both fail without the fix) and `packages/engine/tests/ai/demo-send.test.ts` (filed once on a retry, a reply joins its thread, `findSent`, real accounts pass through). `verify:release:real` now asserts both: the demo thread opens complete, and a send after Undo reaches `sent` and is in Sent; a second draft held for an hour still checks that a queued send survives a restart.
+
+Not changed: demo drafts and triage stay local only, as before (there is no provider to sync them to).
