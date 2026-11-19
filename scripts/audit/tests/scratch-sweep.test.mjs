@@ -207,10 +207,18 @@ describe('scratch-sweep.mjs', () => {
     const { root, sweep } = fixture();
     const sockPath = join(root, 'aplos-scratch-sock-abc123');
     const server = createServer();
-    await new Promise((resolve, reject) => {
-      server.once('error', reject);
-      server.listen(sockPath, resolve);
-    });
+    // Bound by a relative name from inside the fixture: macOS caps a socket address at 104 bytes, and
+    // the full path under a runner's long TMPDIR is longer than that.
+    const cwd = process.cwd();
+    process.chdir(root);
+    try {
+      await new Promise((resolve, reject) => {
+        server.once('error', reject);
+        server.listen('aplos-scratch-sock-abc123', resolve);
+      });
+    } finally {
+      process.chdir(cwd);
+    }
     t.after(() => server.close());
     assert.equal(lstatSync(sockPath).isSocket(), true);
     const { removed, kept } = sweep({
