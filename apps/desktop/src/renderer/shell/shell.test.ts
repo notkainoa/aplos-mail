@@ -22,7 +22,7 @@ import { PaletteHost } from '../screens/palette';
 import { NOTCH_W, paneHeader, Shell, ShellLayout, shellCommands } from './Shell';
 import { failureReason, flowEnded, reconnectKey } from './SheetHost';
 import { toSyncStatus } from './status-map';
-import { StatusHost } from './StatusHost';
+import { StatusHost, UPGRADING_REASON } from './StatusHost';
 import { ToastHostView } from './ToastHost';
 import { MAIL_PLACES, TOP_PLACES, placeCounts } from './nav';
 
@@ -121,6 +121,28 @@ test('the reconnect line shows within 24 hours of reconnectBy, with Reconnect no
   const html = renderToStaticMarkup(createElement(StatusHost));
   assert.match(html, /Gmail will ask you to reconnect (today|tomorrow) at /);
   assert.match(html, />Reconnect now</);
+});
+
+test('while main says the engine is updating the database, the slot says so; ready clears it', async () => {
+  const { connection } = await boot('demo');
+  const session = connection.layer.session;
+  const engine = (state: 'connecting' | 'ready', reasonCode?: string) =>
+    session.frame({
+      frame: 'desktop',
+      event: {
+        type: 'engine',
+        state,
+        at: HARNESS_NOW_MS,
+        ...(reasonCode ? { reasonCode, message: 'Updating your mailbox…' } : {}),
+      },
+    });
+  engine('connecting', UPGRADING_REASON);
+  assert.match(renderToStaticMarkup(createElement(StatusHost)), /Updating your mailbox…/);
+  engine('connecting');
+  assert.doesNotMatch(renderToStaticMarkup(createElement(StatusHost)), /Updating your mailbox/);
+  engine('connecting', UPGRADING_REASON);
+  engine('ready');
+  assert.doesNotMatch(renderToStaticMarkup(createElement(StatusHost)), /Updating your mailbox/);
 });
 
 test('a reconnect more than a day away shows nothing', async () => {

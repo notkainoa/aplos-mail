@@ -441,3 +441,38 @@
   gap: var(--space-2);
   margin-top: var(--space-7);
 }
+/* The damaged mail database: what is only on this Mac, a quiet list above the three ways out. */
+.ui-fatal-screen__local {
+  width: min(100%, 26rem);
+  margin-top: var(--space-6);
+  padding: var(--space-4) var(--space-5);
+  border: var(--hairline) solid var(--line);
+  border-radius: var(--radius-md);
+  text-align: left;
+}
+.ui-fatal-screen__local-title {
+  margin: 0;
+  color: var(--dim);
+  font: var(--type-small);
+  letter-spacing: var(--track-small);
+}
+.ui-fatal-screen__local-list {
+  margin: var(--space-2) 0 0;
+  padding: 0;
+  list-style: none;
+}
+.ui-fatal-screen__local-list li,
+.ui-fatal-screen__local-none {
+  margin: var(--space-1) 0 0;
+  color: var(--ink);
+  font: var(--type-ui);
+  letter-spacing: var(--track-ui);
+}
+.ui-fatal-screen__confirm {
+  max-width: 30rem;
+  margin: var(--space-6) 0 0;
+  color: var(--ink-2);
+  font: var(--type-base);
+  letter-spacing: var(--track-base);
+  text-wrap: pretty;
+}

@@ -969,6 +969,8 @@ export const api: DataApi = {
   engine: {
     restart: ((...args: unknown[]) =>
       forward('engine', 'restart', args)) as DataApi['engine']['restart'],
+    recover: ((...args: unknown[]) =>
+      forward('engine', 'recover', args)) as DataApi['engine']['recover'],
   },
   diagnostics: {
     preview: ((...args: unknown[]) =>

@@ -329,6 +329,8 @@ export interface DataApi {
   readonly engine: {
     /** `Engine/restart`: "Restart engine" on the unreachable FatalScreen and "Try again" when parked; `useConnection` reports the outcome. */
     readonly restart: ClientApi['engine']['restart'];
+    /** `Engine/recover` (main): the damaged-database screen's facts and its Export report, Restore backup and Rebuild. */
+    readonly recover: ClientApi['engine']['recover'];
   };
   /** The content-free diagnostics bundle (ARCH 11). */
   readonly diagnostics: {

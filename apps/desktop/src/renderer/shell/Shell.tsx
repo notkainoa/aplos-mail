@@ -256,6 +256,89 @@ export function FatalHost({ kind }: { readonly kind: 'unreachable' | 'parked' })
   );
 }
 
+type Recover = Awaited<ReturnType<typeof api.engine.recover>>;
+
+/**
+ * The damaged mail database (plan 10 Decision 6): main parked the engine and set the file aside. The screen reads what
+ * exists only on this Mac and the newest backup from `Engine/recover`, then exports the report, or restores or rebuilds
+ * after asking once (main relaunches Aplos for those). A failure says so in a toast.
+ */
+export function DamagedHost() {
+  const [facts, setFacts] = useState<Recover | undefined>();
+  const [busy, setBusy] = useState<'export' | 'restore' | 'rebuild' | undefined>();
+  const [confirm, setConfirm] = useState<'restore' | 'rebuild' | undefined>();
+  const [failed, setFailed] = useState(false);
+  useEffect(() => {
+    let live = true;
+    Promise.resolve()
+      .then(() => api.engine.recover({ action: 'inspect' }))
+      .then(
+        next => live && setFacts(next),
+        () => live && setFailed(true),
+      );
+    return () => {
+      live = false;
+    };
+  }, []);
+  const backup = facts?.backups[0];
+  const run = (action: 'export' | 'restore' | 'rebuild') => {
+    setBusy(action);
+    Promise.resolve()
+      .then(() =>
+        api.engine.recover(
+          action === 'restore' && backup ? { action, backup: backup.name } : { action },
+        ),
+      )
+      .then(next => {
+        setFacts(next);
+        if (action === 'export' && next.saved) notify('damaged-export', 'Report saved');
+        // Restore and Rebuild relaunch Aplos: the screen stays as it is until then.
+        if (action !== 'export') return;
+        setBusy(undefined);
+      })
+      .catch((error: unknown) => {
+        const message = (error as { message?: unknown })?.message;
+        notify(
+          'damaged-failed',
+          typeof message === 'string' && message ? message : DAMAGED_FAILED_COPY,
+        );
+        setBusy(undefined);
+      });
+  };
+  const localOnly = facts?.localOnly ?? (failed ? UNREAD_LOCAL : undefined);
+  return (
+    <div className="aplos-shell">
+      <Pane kind="main" label="Aplos">
+        <FatalScreen
+          kind="damaged"
+          {...(localOnly
+            ? {
+                damaged: {
+                  localOnly,
+                  ...(backup ? { backup: { at: backup.at } } : {}),
+                  ...(busy ? { busy } : {}),
+                  ...(confirm ? { confirm } : {}),
+                  onExport: () => run('export'),
+                  onRestore: () => (confirm === 'restore' ? run('restore') : setConfirm('restore')),
+                  onRebuild: () => (confirm === 'rebuild' ? run('rebuild') : setConfirm('rebuild')),
+                  onCancel: () => setConfirm(undefined),
+                },
+              }
+            : {})}
+          restarting={false}
+          onRestart={noop}
+          onDiagnostics={noop}
+        />
+        <ToastHost />
+      </Pane>
+    </div>
+  );
+}
+
+const DAMAGED_FAILED_COPY = 'That did not work. Your data is unchanged.';
+const UNREAD_LOCAL = { drafts: null, scheduled: null, workflow: null, changes: null };
+const noop = () => undefined;
+
 /** Props for `ShellLayout`. */
 export interface ShellLayoutProps {
   readonly screen: Screen;
@@ -553,6 +636,9 @@ function ShellFrame({ renderScreen, renderDock }: ShellProps) {
   );
 }
 
+/** main's reason code when the engine parked on a damaged mail database (`host/damaged.ts DAMAGED_REASON`). */
+const DAMAGED_REASON = 'store.corrupt';
+
 /** The shell: fatal when the engine is gone or parked, otherwise the sidebar, the pane and the singletons. */
 export function Shell(props: ShellProps) {
   const connection = useConnection();
@@ -561,6 +647,8 @@ export function Shell(props: ShellProps) {
   useEffect(() => {
     if (fatal) closeSheet();
   }, [fatal]);
+  if (connection.state === 'parked' && connection.reasonCode === DAMAGED_REASON)
+    return <DamagedHost />;
   if (connection.state === 'unreachable' || connection.state === 'parked')
     return <FatalHost kind={connection.state} />;
   return <ShellFrame {...props} />;

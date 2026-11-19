@@ -240,6 +240,8 @@ export class SessionStore {
           },
           error => {
             if (!current()) return;
+            // A parked engine (main said so) stays parked: its port is refused, which is not "unreachable".
+            if (this.connection.state === 'parked') return;
             const body = toErrorBody(error);
             this.setConnection({
               state: 'unreachable',

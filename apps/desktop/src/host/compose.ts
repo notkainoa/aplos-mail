@@ -56,6 +56,7 @@ import {
 import { createHttpClient } from './providers/shared/http';
 import { announceMissedReminders } from './reminders';
 import { openSqlite } from './sqlite';
+import { isCorruptError, purgeAfterRemoval, setAside, writeBackup } from './damaged';
 
 /**
  * The composition root of the new engine's host (lane eng-host). Everything the environment decides is injected, so it
@@ -78,6 +79,12 @@ export interface ComposeOptions {
   dataDir: string;
   /** Opens the SQLite file with the host's pragmas. Default: `openSqlite`. */
   openDatabase?: (path: string) => SqlDatabase;
+  /** Free bytes on the data folder's disk, checked before a migration's backup. Default: `statfs`. */
+  freeBytes?: (dir: string) => number | undefined;
+  /** Called just before the pre-migration backup and the migration, which may take minutes on a large mailbox. */
+  onUpgrade?: () => void;
+  /** Called once the backup and migration returned (only after `onUpgrade`). */
+  onUpgraded?: () => void;
   /** The network. Every Google call, token refresh and sign-in exchange goes through it. */
   fetch: typeof fetch;
   clock: Clock;
@@ -411,17 +418,58 @@ export function createAccountStarts(options: {
 function openDatabaseFile(options: ComposeOptions): StorePort {
   mkdirSync(options.dataDir, { recursive: true, mode: 0o700 });
   const db = (options.openDatabase ?? openSqlite)(join(options.dataDir, 'mail.db'));
+  let upgraded = false;
   try {
-    return openStore(db, {
+    const store = openStore(db, {
       extensions: laneExtensions(),
       // Without this the store never ranks a thread and Home shows every one of them under Do now.
       ingest: { laneFor },
       now: () => options.clock.now(),
+      // A consistent copy before any migration, for the damaged-database screen's Restore (plan 10 Decision 6).
+      beforeUpgrade: from => {
+        upgraded = true;
+        options.onUpgrade?.();
+        writeBackup(db, options.dataDir, from, options.freeBytes);
+      },
     });
+    if (upgraded) options.onUpgraded?.();
+    return store;
   } catch (error) {
+    // A damaged file is copied aside while this connection is still open: closing it folds the write-ahead log into
+    // the file, so a copy made after would not be the file as found. The engine process parks with this copy.
+    if (isCorruptError(error)) {
+      try {
+        Object.assign(error as object, {
+          damagedCopy: setAside(options.dataDir, options.clock.now()),
+        });
+      } catch {
+        // No copy (a full disk): the engine process tries again when it parks.
+      }
+    }
     db.close();
     throw error;
   }
+}
+
+/**
+ * Account removal forgets the stored sign-in only after the account's rows are gone (sync/account-remove.ts): from
+ * there no database file Aplos writes holds the account, so every backup and damaged copy, which still do, goes too.
+ * Best effort: a purge that fails is finished at the next start (`finishPurge`), and the sign-in result is unchanged.
+ */
+function purgeOnForget<T extends { forgetAccount?: (...args: never[]) => Promise<void> }>(
+  accounts: T,
+  dataDir: string,
+): T {
+  const forget = accounts.forgetAccount?.bind(accounts);
+  if (!forget) return accounts;
+  accounts.forgetAccount = (async (...args: never[]) => {
+    try {
+      await forget(...args);
+    } finally {
+      purgeAfterRemoval(dataDir);
+    }
+  }) as T['forgetAccount'];
+  return accounts;
 }
 
 /** Runs the steps taken so far, newest first; one that fails does not stop the rest. */
@@ -558,7 +606,7 @@ async function build(options: ComposeOptions, steps: Undo[]): Promise<ComposedHo
   });
   const late = lateStore(raw);
   const loop = createTimerLoop({ clock: options.clock, log });
-  const accounts = buildActors(options, late.port, log, loop);
+  const accounts = purgeOnForget(buildActors(options, late.port, log, loop), options.dataDir);
   steps.push(() => accounts.dispose());
   const starts = createAccountStarts({ host: accounts, store: late.port, log, salt });
   // Runs just before the actors are disposed: no retry may start an actor on a disposed host.

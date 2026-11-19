@@ -32,6 +32,15 @@ import {
   type UtilityInit,
   type UtilityRequest,
 } from '../host/transports/port';
+import {
+  DAMAGED_REASON,
+  UPGRADING_REASON,
+  damagedReport,
+  inspectDamaged,
+  lastCopy,
+  rebuildDatabase,
+  restoreBackup,
+} from '../host/damaged';
 import { KeyringError, loadDataKey } from './keyring';
 import { invokeNative, nativeMethods, notify, openBytes, saveBytes } from './native-methods';
 import { guardedDesktopCall } from '../shared/desktop-error';
@@ -90,6 +99,87 @@ const engineFrame = (state: 'connecting' | 'ready' | 'parked'): DesktopFrame => 
     ...(state === 'parked' ? { reasonCode: 'engine.parked', canRetry: true } : {}),
   },
 });
+
+/**
+ * Set when an engine start (the first or a restart after a crash) parked on a damaged `mail.db` (plan 10 Decision 6).
+ * No engine runs then: every window shows the damaged-database screen, and `Engine/recover` here exports the report,
+ * restores a backup or rebuilds.
+ */
+let damaged: { dataDir: string; copy: string | null } | undefined;
+
+const DAMAGED_MESSAGE = 'The mail database on this Mac is damaged.';
+
+/**
+ * While the starting engine backs up and migrates the database (minutes on a large mailbox), windows show the slot's
+ * "Updating your mailbox…" instead of a silent wait: a `connecting` frame with `UPGRADING_REASON`.
+ */
+let upgrading = false;
+const upgradingFrame = (): DesktopFrame => ({
+  frame: 'desktop',
+  event: {
+    type: 'engine',
+    state: 'connecting',
+    at: Date.now(),
+    reasonCode: UPGRADING_REASON,
+    message: 'Updating your mailbox…',
+  },
+});
+
+/** The supervisor's `onUpgrading`: every window that holds a port hears it; the plain frame clears it again. */
+function upgradingChanged(on: boolean): void {
+  upgrading = on;
+  broker.desktop(on ? upgradingFrame() : engineFrame('connecting'));
+}
+
+const damagedFrame = (): DesktopFrame => ({
+  frame: 'desktop',
+  event: {
+    type: 'engine',
+    state: 'parked',
+    at: Date.now(),
+    reasonCode: DAMAGED_REASON,
+    message: DAMAGED_MESSAGE,
+    canRetry: false,
+  },
+});
+
+/**
+ * The supervisor's `onStartFailed`: a start that parked on a damaged database holds the supervisor (no restart loop)
+ * and sends every open window the damaged frame; any other failure is not held.
+ */
+function parkOnDamaged(dataDir: string, error: unknown): boolean {
+  if ((error as { reason?: unknown })?.reason !== DAMAGED_REASON) return false;
+  damaged = { dataDir, copy: lastCopy(dataDir) };
+  broker.desktop(damagedFrame());
+  if (isTest) console.error('Aplos Mail test: engine: parked on a damaged database');
+  return true;
+}
+
+/** The damaged-database screen's actions. Restore and Rebuild relaunch Aplos once the reply is on its way. */
+async function recover(event: IpcMainInvokeEvent, args: Record<string, unknown>) {
+  if (!damaged) throw new Error('The mail database is not damaged.');
+  const { dataDir, copy } = damaged;
+  const action = args.action;
+  if (action === 'export') {
+    const win = BrowserWindow.fromWebContents(event.sender);
+    if (!win) throw new Error('That window was closed.');
+    const report = Buffer.from(damagedReport(dataDir, copy, Date.now()), 'utf8');
+    const saved = await saveBytes(win, 'Aplos Mail report.txt', report);
+    return { ...inspectDamaged(dataDir, copy), saved: !saved.canceled };
+  }
+  // A restored backup's waiting sends come back suspended, for the owner to check in the Outbox.
+  if (action === 'restore') restoreBackup(dataDir, String(args.backup ?? ''));
+  else if (action === 'rebuild') rebuildDatabase(dataDir);
+  const facts = inspectDamaged(dataDir, copy);
+  if (action === 'restore' || action === 'rebuild') {
+    damaged = undefined;
+    setTimeout(() => {
+      if (!isTest) app.relaunch();
+      app.quit();
+    }, 250);
+  }
+  return facts;
+}
 
 function openSignIn(raw: unknown) {
   const url = signInURL(raw);
@@ -229,6 +319,7 @@ async function desktopMethodFor(event: IpcMainInvokeEvent, method: unknown, inpu
     await supervisor.restart();
     return ok;
   }
+  if (method === 'Engine/recover') return recover(event, args);
   if (method === 'Diagnostics/copy') return copyDiagnostics();
   if (method === 'File/save' || method === 'File/open') {
     const name = fileNameOf(args.name);
@@ -266,7 +357,14 @@ async function legacyInvoke(event: IpcMainInvokeEvent, method: unknown, payload:
 function connectWindow(event: IpcMainInvokeEvent) {
   const win = callerWindow(event);
   if (!win) throw new Error('Untrusted application window.');
+  // No engine runs on a damaged database: the window is told so on its own channel, then refused its port.
+  if (damaged) {
+    win.desktop(damagedFrame());
+    throw new Error(DAMAGED_MESSAGE);
+  }
   broker.connect(win);
+  // A window that connects mid-migration (a restart's) is told at once, not at the next change.
+  if (upgrading) win.desktop(upgradingFrame());
   return ok;
 }
 
@@ -302,16 +400,28 @@ async function bootRealEngine(options: {
     spawn: () => spawn(init),
     noteExit: options.noteExit,
     ...(options.noteRestart ? { onRestart: options.noteRestart } : {}),
+    onUpgrading: upgradingChanged,
     onUp: (_link, restarted) => {
+      upgrading = false;
       if (restarted) broker.reissue();
       broker.desktop(engineFrame('ready'));
     },
-    onDown: parked => broker.desktop(engineFrame(parked ? 'parked' : 'connecting')),
+    onDown: parked => {
+      upgrading = false;
+      broker.desktop(engineFrame(parked ? 'parked' : 'connecting'));
+    },
+    onStartFailed: error => parkOnDamaged(options.dataDir, error),
     onKillFailed: error =>
       console.error('Aplos Mail: could not stop the engine process:', (error as Error)?.name),
     timers,
   });
-  await supervisor.start();
+  try {
+    await supervisor.start();
+  } catch (error) {
+    // Only a damaged database keeps the app up without an engine (`parkOnDamaged`); any other failed start is the
+    // startup error, whose message names the cause when the engine gave one (too little free space to update).
+    if (!damaged) throw error;
+  }
   watchWindows();
   // The sealed mail frame (html-5): the `aplos-mail://` relay, its window stamp and backstop, and the subframe rule.
   // At most MAX_RELAY_IN_FLIGHT relays open at once: a page cannot queue unbounded engine work through main.
@@ -320,7 +430,7 @@ async function bootRealEngine(options: {
   ipcMain.handle('aplos:engine-connect', connectWindow);
   ipcMain.handle('aplos:desktop', desktopMethod);
   ipcMain.handle('aplos:invoke', legacyInvoke);
-  if (isTest) console.error('Aplos Mail test: engine: real engine ready');
+  if (isTest && !damaged) console.error('Aplos Mail test: engine: real engine ready');
 }
 
 /** What lifecycle.ts needs from the real engine: power wakes, the quit warning's facts, and the quit itself. */

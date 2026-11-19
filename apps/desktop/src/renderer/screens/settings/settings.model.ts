@@ -480,8 +480,8 @@ export function removalDiscards(queue: readonly QueueEntry[], accountId: string)
 const count = (n: number, one: string, many: string) => `${n} ${n === 1 ? one : many}`;
 
 /**
- * What Remove on a real account asks before it runs. Cancel is the default (DESIGN 6 Confirm). "Its data on this Mac,
- * including backups" stays true as backups of the database are added: removal deletes those copies too.
+ * What Remove on a real account asks before it runs. Cancel is the default (DESIGN 6 Confirm). Removal also deletes
+ * Aplos's database backups (host/damaged.ts `purgeAfterRemoval`); each backup holds every account, so the copy says so.
  */
 export function removeAccountConfirm(
   address: string,
@@ -496,7 +496,7 @@ export function removeAccountConfirm(
   const discarded = parts.length ? ` ${parts.join(' and ')} will be discarded.` : '';
   return {
     question: `Remove ${address}?`,
-    consequence: `Aplos stops syncing this account and deletes its data on this Mac, including backups: its mail, drafts, calendar, summaries and sign-in. Your mail stays with Google. Changes still waiting to sync are discarded.${discarded}`,
+    consequence: `Aplos stops syncing this account and deletes its mail, drafts, calendar, summaries and sign-in on this Mac, including Aplos's backups (which also removes backups of your other accounts). Your mail stays with Google. Changes still waiting to sync are discarded.${discarded}`,
   };
 }
 

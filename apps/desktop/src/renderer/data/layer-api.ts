@@ -201,7 +201,10 @@ export function buildApi({ client, mint, act, undo, command }: ApiParts): DataAp
       grant: args => c.consent.grant(args),
       revoke: args => c.consent.revoke(args),
     },
-    engine: { restart: args => c.engine.restart(args) },
+    engine: {
+      restart: args => c.engine.restart(args),
+      recover: args => c.engine.recover(args),
+    },
     diagnostics: {
       preview: args => c.diagnostics.preview(args),
       copy: args => c.diagnostics.copy(args),

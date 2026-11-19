@@ -3,6 +3,7 @@ import { desktop } from '../registry/define';
 import {
   bool,
   Bytes,
+  Count,
   choice,
   Empty,
   EpochMs,
@@ -220,6 +221,32 @@ export const native = desktop({
     scope: 'admin',
     input: Empty,
     output: Ok,
+  },
+  'Engine/recover': {
+    summary:
+      "The damaged-database screen (plan 10 Decision 6), served by main while the engine is parked on a damaged `mail.db`: `inspect` lists what exists only on this Mac and the pre-migration backups; `export` saves a report (drafts' and scheduled sends' own words) where the owner chooses; `restore` puts a backup in place and `rebuild` starts over from the provider, each then relaunching Aplos. The damaged file is kept aside either way.",
+    kind: 'command',
+    scope: 'admin',
+    input: z.object({
+      action: choice(['inspect', 'export', 'restore', 'rebuild']),
+      /** `restore`: the backup's name from `inspect`. */
+      backup: z.optional(line(200)),
+    }),
+    output: z.object({
+      /** The damaged copy's name in the data folder's `damaged/` folder; null when it could not be copied. */
+      copy: z.nullable(line(300)),
+      /** What exists only on this Mac; null where the damaged file would not say. */
+      localOnly: z.object({
+        drafts: z.nullable(Count),
+        scheduled: z.nullable(Count),
+        workflow: z.nullable(Count),
+        changes: z.nullable(Count),
+      }),
+      /** Newest first. */
+      backups: z.array(z.object({ name: line(200), schema: Count, at: EpochMs })),
+      /** `export`: false when the owner cancelled the save. */
+      saved: z.optional(z.boolean()),
+    }),
   },
   'Diagnostics/copy': {
     summary:

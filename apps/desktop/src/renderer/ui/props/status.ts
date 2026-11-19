@@ -10,6 +10,10 @@ export type SyncStatus =
       kind: 'starting';
     }
   | {
+      /** "Updating your mailbox…": main says the engine is backing up and migrating the database (may take minutes). */
+      kind: 'updating';
+    }
+  | {
       /** "Syncing…", only after 150 ms. */
       kind: 'syncing';
       /** First window still reading: "Reading your newest mail · 24 of 50" (mockup empty.html first-mail; see README open question). */
@@ -237,14 +241,41 @@ export interface ProgressSegment {
 
 /** The whole-pane fatal error: sans `display` "Aplos can't reach its mail engine." + "Your mail is safe on this Mac." (DESIGN §6 FatalScreen, §7.15; plan 30 §4.5 #3). Mockups: fatal.html. Plain + refines: ui-foundation; used by ui-shell. */
 export interface FatalScreenProps {
-  /** 'unreachable' = Restart engine · Copy diagnostics; 'parked' = the parked engine, Try again · Export diagnostics. */
-  kind: 'unreachable' | 'parked';
+  /**
+   * 'unreachable' = Restart engine · Copy diagnostics; 'parked' = the parked engine, Try again · Export diagnostics;
+   * 'damaged' = the damaged mail database (plan 10 Decision 6): what is only on this Mac, then Export report · Restore
+   * backup · Rebuild from Google, from `damaged`.
+   */
+  kind: 'unreachable' | 'parked' | 'damaged';
+  /** `kind: 'damaged'` only. Absent while main is still reading the damaged file. */
+  damaged?: DamagedDatabase;
   /** Restart in progress: the button reads "Restarting…" and is disabled. */
   restarting: boolean;
   /** Restart engine / Try again (Return). */
   onRestart: () => void;
   /** Copy or export the content-free diagnostics. */
   onDiagnostics: () => void;
+}
+
+/** The damaged-database screen's facts and its three ways out (FatalScreen `kind: 'damaged'`). */
+export interface DamagedDatabase {
+  /** What exists only on this Mac; null where the damaged file would not say. */
+  localOnly: {
+    drafts: number | null;
+    scheduled: number | null;
+    workflow: number | null;
+    changes: number | null;
+  };
+  /** The newest pre-migration backup, when there is one. */
+  backup?: { at: number };
+  /** An action in flight: its button reads as working and the others wait. */
+  busy?: 'export' | 'restore' | 'rebuild';
+  /** Restore and Rebuild ask once, naming what they cannot bring back. */
+  confirm?: 'restore' | 'rebuild';
+  onExport: () => void;
+  onRestore: () => void;
+  onRebuild: () => void;
+  onCancel: () => void;
 }
 
 /** A quiet indicator that appears only after 150 ms; never for local reads (DESIGN §5 rule 12, §6 Spinner). Mockups: onboarding-sync.html, onboarding-drill.html. Plain + refines: ui-foundation. */
