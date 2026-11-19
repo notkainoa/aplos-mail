@@ -30,6 +30,7 @@ import type { AiTransport } from '@aplos/engine';
 import type { SqlDatabase } from '@aplos/engine/store/sql';
 import { createTimerLoop, type TimerLoop } from '@aplos/engine/clock/loop';
 import { accountIds } from '@aplos/engine/sync/account-read';
+import { resumeRemovals } from '@aplos/engine/sync/account-remove';
 import { disposeConnectSessions } from '@aplos/engine/sync/connect-sessions';
 import * as engineConnectSessions from '@aplos/engine/sync/connect-sessions';
 import { Governor } from '@aplos/engine/sync/governor';
@@ -572,6 +573,9 @@ async function build(options: ComposeOptions, steps: Undo[]): Promise<ComposedHo
   steps.push(() => disposeConnectSessions(engine.services));
   late.use(engine.services.store);
   loop.start();
+  // Finishes any account removal a quit or crash interrupted: the rest of its rows and files, then its stored sign-in.
+  // `startAll` above already skipped such an account (it is `removing`). In the background; it never throws.
+  void resumeRemovals(engine.services);
   feedHost(options, engine, log, starts, steps);
   let closing: Promise<void> | undefined;
   return {

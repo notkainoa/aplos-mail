@@ -280,6 +280,19 @@ export const STATES: Record<string, StateSpec> = {
     data: dataOf({ accounts: [ALEX] }),
     view: { confirm: { kind: 'removeAccount', accountId: ALEX.id, address: ALEX.address } },
   },
+  'accounts-remove-discards': {
+    title: 'Accounts, confirm removing an account with failed sends',
+    section: 'accounts',
+    data: dataOf({ accounts: [ALEX] }),
+    view: {
+      confirm: {
+        kind: 'removeAccount',
+        accountId: ALEX.id,
+        address: ALEX.address,
+        discards: { sends: 2, calendar: 1 },
+      },
+    },
+  },
   'accounts-remove-waiting': {
     title: 'Accounts, removal refused while mail is waiting to go out',
     section: 'accounts',

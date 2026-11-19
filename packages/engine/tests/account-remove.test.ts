@@ -8,7 +8,10 @@ import type { AccountActorHost } from '../src/ports';
 import { laneExtensions } from '../src/index';
 // The seed's `conversation` write uses the lazy AI writers; the method loads them itself.
 import '../src/ai/impl/ai-writes';
-import { openStore, type StorePort, type StoreWrite } from '../src/store';
+import { openStore, type CommitInput, type StorePort, type StoreWrite } from '../src/store';
+import { REMOVE_BATCH, resumeRemovals } from '../src/sync/account-remove';
+import { accountIds as listedAccounts } from '../src/sync/account-read';
+import { accountIds as viewAccounts } from '../src/views/compile';
 import { accountWrite, folderWrites, msg, tempDb, T0 } from './store/helpers';
 
 /*
@@ -314,6 +317,9 @@ test('Account/disconnect refuses while mail is waiting to go out, lists it, and 
         .run(id, `d-${GONE}`, GONE, state);
     add('s-sched', 'scheduled');
     add('s-q', 'queued');
+    add('s-susp', 'suspended');
+    add('s-unc', 'uncertain');
+    // A failed send does not block: it is deleted with the account (the Settings confirm lists it).
     add('s-fail', 'failed');
     const before = dump(r.db);
     await assert.rejects(
@@ -322,7 +328,7 @@ test('Account/disconnect refuses while mail is waiting to go out, lists it, and 
         e instanceof ContractError &&
         e.type === 'conflict' &&
         e.message ===
-          'This account still has 3 messages that have not gone out (1 that failed to send, 1 waiting to send, 1 scheduled). Send or cancel them first, then remove the account.',
+          'This account still has 4 messages that have not gone out (2 waiting to send, 1 scheduled, 1 that may not have sent). Send or cancel them first, then remove the account.',
     );
     assert.deepEqual(r.calls, [], 'nothing was stopped or forgotten');
     assert.deepEqual(dump(r.db), before, 'nothing was deleted');
@@ -334,8 +340,10 @@ test('Account/disconnect refuses while mail is waiting to go out, lists it, and 
       (e: unknown) => e instanceof ContractError && /being sent/.test(e.message),
     );
 
-    // A calendar change waiting to tell guests counts too.
-    r.db.prepare("UPDATE submissions SET state = 'cancelled' WHERE account_id = ?").run(GONE);
+    // A calendar change waiting to tell guests counts too; the failed send still does not.
+    r.db
+      .prepare("UPDATE submissions SET state = 'cancelled' WHERE account_id = ? AND id <> 's-fail'")
+      .run(GONE);
     r.db
       .prepare('UPDATE meta SET value = ? WHERE key = ?')
       .run(
@@ -350,10 +358,32 @@ test('Account/disconnect refuses while mail is waiting to go out, lists it, and 
           'This account still has 1 calendar change for guests. Send or cancel it first, then remove the account.',
     );
 
-    // Once nothing waits, it goes.
-    r.db.prepare("UPDATE meta SET value = '{}' WHERE key = ?").run(`calendar.hold.hold-${GONE}`);
+    // A hold being sent right now blocks too.
+    const hold = (state: string) =>
+      r.db
+        .prepare('UPDATE meta SET value = ? WHERE key = ?')
+        .run(
+          JSON.stringify({ opId: 'h', state, targets: [`${GONE}:primary:e1`] }),
+          `calendar.hold.hold-${GONE}`,
+        );
+    hold('syncing');
+    await assert.rejects(
+      async () => disconnect(r, GONE),
+      (e: unknown) => e instanceof ContractError && /1 calendar change for guests/.test(e.message),
+    );
+
+    // Once nothing is on its way, it goes, and the failed send and failed calendar change go with it.
+    hold('failed');
     await disconnect(r, GONE);
     assert.equal(r.db.prepare('SELECT 1 FROM accounts WHERE id = ?').get(GONE), undefined);
+    assert.equal(
+      r.db.prepare('SELECT count(*) AS c FROM submissions WHERE account_id = ?').get(GONE)?.c,
+      0,
+    );
+    assert.equal(
+      r.db.prepare('SELECT 1 FROM meta WHERE key = ?').get(`calendar.hold.hold-${GONE}`),
+      undefined,
+    );
   } finally {
     r.cleanup();
   }
@@ -397,6 +427,191 @@ test('Account/disconnect: an unknown account is notFound, and a retry of a finis
       async () => disconnect(r, GONE, 'rm-y'),
       (e: unknown) => e instanceof ContractError && e.type === 'notFound',
     );
+  } finally {
+    r.cleanup();
+  }
+});
+
+/** No row of any table (the journal in `meta` included) names the account. */
+function namesNothing(db: Db, id: string) {
+  for (const [name, rows] of dump(db))
+    assert.ok(!rows.some(r => r.includes(id)), `${name}: nothing names the removed account`);
+}
+
+/** `extra` more threads of one message each, for a mailbox too big for one short transaction. */
+function seedThreads(store: StorePort, id: string, extra: number) {
+  const writes: StoreWrite[] = [];
+  for (let i = 0; i < extra; i++)
+    writes.push({ ...msg(`bulk${i}`, `bulk-t${i}`, 10 + i), accountId: id } as StoreWrite);
+  store.commit({ opId: `bulk-${id}`, origin: 'sync', writes });
+}
+
+/** Counts the removal's own batch commits and can fail the `n`th, the way a quit mid-removal would. */
+function batchCommits(store: StorePort, id: string, failAt?: number) {
+  const commit = store.commit.bind(store);
+  const counter = { batches: 0, restore: () => void (store.commit = commit) };
+  store.commit = (input: CommitInput) => {
+    if (input.opId.startsWith(`account-remove:${id}:`) && ++counter.batches === failAt)
+      throw new Error('the app quit');
+    return commit(input);
+  };
+  return counter;
+}
+
+const journalOf = (db: Db, id: string) =>
+  db.prepare('SELECT value FROM meta WHERE key = ?').get(`account.removing.${id}`);
+
+test('a sign-in that could not be forgotten is reported, kept in the journal, and forgotten at the next start', async () => {
+  const r = rig();
+  try {
+    seedAccount(r.store, r.db, KEEP);
+    seedAccount(r.store, r.db, GONE);
+    const accounts = r.ctx.services.accounts as unknown as {
+      forgetAccount: (id: string, kind: string) => Promise<void>;
+    };
+    accounts.forgetAccount = async () => {
+      throw new Error('the keychain is locked');
+    };
+    const receipt = await disconnect(r, GONE);
+    assert.equal(receipt.signInKept, true, 'the result says the sign-in is still stored');
+    assert.equal(r.db.prepare('SELECT 1 FROM accounts WHERE id = ?').get(GONE), undefined);
+    assert.ok(journalOf(r.db, GONE), 'the journal keeps the step that is left');
+
+    // The next start: the keychain answers again, and the sweep finishes the removal.
+    accounts.forgetAccount = async (id, kind) => void r.calls.push(`forget:${id}:${kind}`);
+    await resumeRemovals(r.ctx.services);
+    assert.deepEqual(r.calls, [`stop:${GONE}:disconnect`, `forget:${GONE}:google`]);
+    assert.equal(journalOf(r.db, GONE), undefined);
+    namesNothing(r.db, GONE);
+
+    // Nothing is left to do: a later start forgets nothing more.
+    await resumeRemovals(r.ctx.services);
+    assert.equal(r.calls.length, 2);
+  } finally {
+    r.cleanup();
+  }
+});
+
+test('a removal a quit interrupts stays hidden everywhere, and the next start finishes it', async () => {
+  const r = rig();
+  try {
+    seedAccount(r.store, r.db, KEEP);
+    seedAccount(r.store, r.db, GONE);
+    seedThreads(r.store, GONE, REMOVE_BATCH * 2);
+    const quit = batchCommits(r.store, GONE, 2);
+    await assert.rejects(async () => disconnect(r, GONE), /the app quit/);
+    quit.restore();
+
+    // Half its mail is still stored, but no account list, start-up, view or Account/get shows the account again.
+    const left = r.db.prepare('SELECT count(*) AS c FROM threads WHERE account_id = ?').get(GONE);
+    assert.ok(Number(left?.c) > 0, 'the removal really was cut short');
+    assert.deepEqual(listedAccounts(r.store), [KEEP]);
+    assert.deepEqual(
+      r.store.read(q => viewAccounts(q)),
+      [KEEP],
+    );
+    assert.deepEqual(
+      r.store.read(q => viewAccounts(q, GONE)),
+      [],
+    );
+    const got = await handlers['Account/get']({ ids: [GONE] }, r.ctx);
+    assert.deepEqual(got.notFound, [GONE]);
+    assert.deepEqual(r.calls, [`stop:${GONE}:disconnect`], 'nothing was forgotten yet');
+
+    await resumeRemovals(r.ctx.services);
+    assert.equal(r.db.prepare('SELECT 1 FROM accounts WHERE id = ?').get(GONE), undefined);
+    assert.deepEqual(r.calls, [`stop:${GONE}:disconnect`, `forget:${GONE}:google`]);
+    // Files go before their rows, so the resumed run deletes the same file again (removing is idempotent).
+    assert.deepEqual(
+      [...new Set(r.removedFiles)],
+      [`${GONE}-a.pdf`],
+      'its attachment file is deleted',
+    );
+    namesNothing(r.db, GONE);
+    assert.deepEqual(listedAccounts(r.store), [KEEP]);
+  } finally {
+    r.cleanup();
+  }
+});
+
+test('a retry from Settings after an interrupted removal finishes it and answers with the first receipt', async () => {
+  const r = rig();
+  try {
+    seedAccount(r.store, r.db, GONE);
+    seedThreads(r.store, GONE, REMOVE_BATCH);
+    const quit = batchCommits(r.store, GONE, 1);
+    await assert.rejects(async () => disconnect(r, GONE), /the app quit/);
+    quit.restore();
+    const seq = r.db.prepare("SELECT seq FROM commits WHERE op_id = 'rm-1'").get()?.seq;
+    const receipt = await disconnect(r, GONE);
+    assert.deepEqual(receipt.appliedState, { dbEpoch: r.store.dbEpoch, seq });
+    assert.equal(receipt.signInKept, undefined);
+    namesNothing(r.db, GONE);
+  } finally {
+    r.cleanup();
+  }
+});
+
+test('a large account is removed in short batches that yield to the event loop, hidden from the first one', async () => {
+  const r = rig();
+  try {
+    seedAccount(r.store, r.db, KEEP);
+    seedAccount(r.store, r.db, GONE);
+    seedThreads(r.store, GONE, REMOVE_BATCH * 10);
+    const count = batchCommits(r.store, GONE);
+    let ticks = 0;
+    let listed = 0;
+    const iv = setInterval(() => {
+      ticks++;
+      if (listedAccounts(r.store).includes(GONE)) listed++;
+      if (r.store.read(q => viewAccounts(q)).includes(GONE)) listed++;
+    }, 1);
+    try {
+      await disconnect(r, GONE);
+    } finally {
+      clearInterval(iv);
+    }
+    assert.ok(count.batches >= 10, `deleted in batches (${count.batches} commits)`);
+    assert.ok(ticks > 0, 'a 1 ms timer fired while the batches ran');
+    assert.equal(listed, 0, 'no account list showed it while it was being removed');
+    namesNothing(r.db, GONE);
+    assert.equal(
+      r.db.prepare('SELECT count(*) AS c FROM threads WHERE account_id = ?').get(KEEP)?.c,
+      2,
+    );
+  } finally {
+    r.cleanup();
+  }
+});
+
+test('an attachment file that cannot be deleted keeps its rows: the account stays hidden and a Retry finishes it', async () => {
+  const r = rig();
+  try {
+    seedAccount(r.store, r.db, KEEP);
+    seedAccount(r.store, r.db, GONE);
+    const files = r.ctx.services.attachmentFiles as unknown as {
+      remove: (p: string) => Promise<void>;
+    };
+    const remove = files.remove;
+    files.remove = async () => {
+      throw new Error('io');
+    };
+    await assert.rejects(
+      async () => disconnect(r, GONE),
+      (e: unknown) => e instanceof ContractError && e.type === 'unavailable',
+    );
+    assert.ok(
+      r.db.prepare('SELECT 1 FROM attachments WHERE path = ?').get(`${GONE}-a.pdf`),
+      'the row that names the file is kept',
+    );
+    assert.deepEqual(listedAccounts(r.store), [KEEP], 'still hidden');
+    assert.deepEqual(r.calls, [`stop:${GONE}:disconnect`], 'the sign-in is not forgotten yet');
+
+    files.remove = remove;
+    await disconnect(r, GONE);
+    assert.deepEqual(r.removedFiles, [`${GONE}-a.pdf`]);
+    assert.deepEqual(r.calls, [`stop:${GONE}:disconnect`, `forget:${GONE}:google`]);
+    namesNothing(r.db, GONE);
   } finally {
     r.cleanup();
   }

@@ -462,13 +462,49 @@ export function demoControls(accounts: readonly Account[]): {
   };
 }
 
-/** What Remove on a real account asks before it runs. Cancel is the default (DESIGN 6 Confirm). */
-export function removeAccountConfirm(address: string): { question: string; consequence: string } {
+/** What a removal deletes that the owner may not expect: failed sends and failed calendar changes (not sent, and never will be). */
+export interface RemovalDiscards {
+  readonly sends: number;
+  readonly calendar: number;
+}
+
+/** Counts the account's failed sends and failed calendar changes in the queue inspector's list. */
+export function removalDiscards(queue: readonly QueueEntry[], accountId: string): RemovalDiscards {
+  const failed = queue.filter(q => q.accountId === accountId && q.state === 'failed');
+  return {
+    sends: failed.filter(q => q.kind === 'submission').length,
+    calendar: failed.filter(q => q.kind === 'op' && q.id.startsWith('cal:')).length,
+  };
+}
+
+const count = (n: number, one: string, many: string) => `${n} ${n === 1 ? one : many}`;
+
+/**
+ * What Remove on a real account asks before it runs. Cancel is the default (DESIGN 6 Confirm). "Its data on this Mac,
+ * including backups" stays true as backups of the database are added: removal deletes those copies too.
+ */
+export function removeAccountConfirm(
+  address: string,
+  discards?: RemovalDiscards,
+): { question: string; consequence: string } {
+  const parts = [
+    discards?.sends ? count(discards.sends, 'failed send', 'failed sends') : '',
+    discards?.calendar
+      ? count(discards.calendar, 'failed calendar change', 'failed calendar changes')
+      : '',
+  ].filter(Boolean);
+  const discarded = parts.length ? ` ${parts.join(' and ')} will be discarded.` : '';
   return {
     question: `Remove ${address}?`,
-    consequence:
-      'Aplos stops syncing this account and deletes everything it stored for it on this Mac: its mail, drafts, calendar, summaries and sign-in. Your mail stays with Google. Changes still waiting to sync are discarded.',
+    consequence: `Aplos stops syncing this account and deletes its data on this Mac, including backups: its mail, drafts, calendar, summaries and sign-in. Your mail stays with Google. Changes still waiting to sync are discarded.${discarded}`,
   };
+}
+
+/** The toast after a removal; says so when the stored sign-in is still on this Mac (the next start deletes it). */
+export function removedToast(address: string, signInKept: boolean): string {
+  return signInKept
+    ? `Removed ${address}, but its sign-in could not be deleted yet. Aplos tries again the next time it starts.`
+    : `Removed ${address}`;
 }
 
 /**

@@ -32,6 +32,7 @@ export function standInPorts(
     },
     async accountDisconnect(accountId) {
       set({ accounts: get().accounts.filter(a => a.id !== accountId) });
+      return { signInKept: false };
     },
     async accountLease(accountId, pin) {
       set({

@@ -14,6 +14,7 @@ import { AddKeyDialog } from './overlays';
 import { CANARY, ALEX } from './preview/fixtures';
 import { dataOf, HOST, STATES, staticScreen, withCanary } from './preview/states';
 import { INITIAL_VIEW } from './view';
+import { removeAccountConfirm, removedToast } from './settings.model';
 
 const render = (name: string, canary = false): string => {
   const spec = STATES[name];
@@ -231,7 +232,10 @@ describe('write failure and destructive steps', () => {
     const calls: string[] = [];
     let view = { ...INITIAL_VIEW };
     const ports = {
-      accountDisconnect: async () => void calls.push('disconnect'),
+      accountDisconnect: async () => {
+        calls.push('disconnect');
+        return { signInKept: false };
+      },
       demoRemove: async () => void calls.push('demoRemove'),
     } as unknown as SettingsApiPort;
     const actions = createController({
@@ -268,6 +272,7 @@ describe('write failure and destructive steps', () => {
       accountDisconnect: async (id: string) => {
         calls.push(id);
         if (refuse) throw refuse;
+        return { signInKept: false };
       },
     } as unknown as SettingsApiPort;
     const actions = createController({
@@ -298,6 +303,62 @@ describe('write failure and destructive steps', () => {
     await new Promise(r => setTimeout(r, 0));
     assert.deepEqual(calls, [ALEX.id, ALEX.id, ALEX.id]);
     assert.deepEqual(toasts, [`Removed ${ALEX.address}`]);
+  });
+
+  test('Remove account: the confirm names the failed sends and calendar changes that go with it', async () => {
+    let view = { ...INITIAL_VIEW };
+    const queue = [
+      { id: 'sub:1', kind: 'submission', accountId: ALEX.id, state: 'failed' },
+      { id: 'sub:2', kind: 'submission', accountId: ALEX.id, state: 'failed' },
+      { id: 'sub:3', kind: 'submission', accountId: 'other', state: 'failed' },
+      { id: 'cal:h1', kind: 'op', accountId: ALEX.id, state: 'failed' },
+      { id: 'op:o1', kind: 'op', accountId: ALEX.id, state: 'failed' },
+    ];
+    const ports = { queueList: async () => queue } as unknown as SettingsApiPort;
+    const actions = createController({
+      ports,
+      host: HOST,
+      data: () => dataOf({ accounts: [ALEX] }),
+      view: () => view,
+      setView: patch => void (view = { ...view, ...patch }),
+      setData: () => {},
+      overlay: () => {},
+      accountOverlay: () => {},
+      fail: () => {},
+    });
+    await actions.askRemoveAccount(ALEX.id);
+    assert.equal(view.confirm?.kind, 'removeAccount');
+    const confirm = view.confirm as Extract<typeof view.confirm, { kind: 'removeAccount' }>;
+    assert.deepEqual(confirm.discards, { sends: 2, calendar: 1 });
+    const text = removeAccountConfirm(confirm.address, confirm.discards).consequence;
+    assert.match(text, /deletes its data on this Mac, including backups/);
+    assert.match(text, /2 failed sends and 1 failed calendar change will be discarded\.$/);
+    assert.doesNotMatch(removeAccountConfirm(ALEX.address).consequence, /will be discarded/);
+    assert.match(
+      removeAccountConfirm(ALEX.address, { sends: 1, calendar: 0 }).consequence,
+      /1 failed send will be discarded\.$/,
+    );
+  });
+
+  test('Remove account: a sign-in the engine could not delete yet is said in the toast', async () => {
+    const toasts: string[] = [];
+    const ports = {
+      accountDisconnect: async () => ({ signInKept: true }),
+    } as unknown as SettingsApiPort;
+    const actions = createController({
+      ports,
+      host: { ...HOST, toast: (m: string) => void toasts.push(m) },
+      data: () => dataOf({ accounts: [ALEX] }),
+      view: () => INITIAL_VIEW,
+      setView: () => {},
+      setData: () => {},
+      overlay: () => {},
+      accountOverlay: () => {},
+      fail: () => {},
+    });
+    await actions.runConfirm({ kind: 'removeAccount', accountId: ALEX.id, address: ALEX.address });
+    assert.deepEqual(toasts, [removedToast(ALEX.address, true)]);
+    assert.match(toasts[0], /sign-in could not be deleted yet/);
   });
 
   test('a key remap is toasted, put on the undo stack, and undone to the previous keymap', async () => {

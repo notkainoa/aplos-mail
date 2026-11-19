@@ -4,12 +4,18 @@
  * It never holds a key: the add-key field keeps its text in its own component and hands it over once.
  */
 import type { ProviderId, ProviderStatus } from '../../ui/props';
-import type { LocalId } from './settings.model';
+import type { LocalId, RemovalDiscards } from './settings.model';
 import type { Recording } from './keyboard.model';
 
 /** A question that has to be answered before something destructive runs. Cancel is the default. */
 export type Confirmation =
-  | { readonly kind: 'removeAccount'; readonly accountId: string; readonly address: string }
+  | {
+      readonly kind: 'removeAccount';
+      readonly accountId: string;
+      readonly address: string;
+      /** Failed sends and calendar changes the removal deletes; absent when the queue could not be read. */
+      readonly discards?: RemovalDiscards;
+    }
   | { readonly kind: 'removeDemo' }
   | { readonly kind: 'removeKey'; readonly provider: ProviderId }
   | { readonly kind: 'discardQueueItem'; readonly id: string; readonly label: string }

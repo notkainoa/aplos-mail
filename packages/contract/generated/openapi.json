@@ -4059,7 +4059,7 @@
     "/call/Account/disconnect": {
       "post": {
         "operationId": "Account_disconnect",
-        "summary": "Remove an account and everything Aplos stored for it; refused while one of its messages is sending.",
+        "summary": "Remove an account and everything Aplos stored for it on this device; refused while one of its messages is on its way (sending, queued, scheduled, suspended or maybe sent) or a calendar change for guests is waiting. Failed sends are deleted with it.",
         "tags": ["account"],
         "x-aplos-kind": "command",
         "x-aplos-scope": "admin",
@@ -4080,7 +4080,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/Receipt"
+                  "$ref": "#/components/schemas/Account_disconnect_output"
                 }
               }
             }
@@ -5256,6 +5256,28 @@
           }
         },
         "required": ["opId", "accountId"]
+      },
+      "Account_disconnect_output": {
+        "type": "object",
+        "properties": {
+          "opId": {
+            "$ref": "#/components/schemas/OpId"
+          },
+          "appliedState": {
+            "$ref": "#/components/schemas/State"
+          },
+          "undoUntil": {
+            "$ref": "#/components/schemas/EpochMs"
+          },
+          "undoable": {
+            "type": "boolean"
+          },
+          "signInKept": {
+            "type": "boolean",
+            "const": true
+          }
+        },
+        "required": ["opId", "appliedState"]
       },
       "Account_discover_input": {
         "type": "object",

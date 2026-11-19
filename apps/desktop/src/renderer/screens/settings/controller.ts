@@ -34,11 +34,14 @@ import {
 import type { SettingsApiPort, SettingsData, SettingsHost, WriteFailure } from './ports';
 import {
   grantUnconfirmed,
+  removalDiscards,
   removalRefusal,
+  removedToast,
   GRANT_UNCONFIRMED_LINE,
   withoutKeyPath,
   type AccountWrite,
   type ClientEntry,
+  type QueueEntry,
   type ToolKind,
   type ToolScope,
 } from './settings.model';
@@ -364,10 +367,26 @@ export function createController(deps: ControllerDeps) {
     closeReconnect() {
       deps.setView({ reconnect: null });
     },
-    askRemoveAccount(accountId: string) {
+    /** The confirm names the failed sends and calendar changes that go with the account; without the queue it still asks. */
+    async askRemoveAccount(accountId: string) {
       const account = data().accounts.find(a => a.id === accountId);
-      if (account)
-        deps.setView({ confirm: { kind: 'removeAccount', accountId, address: account.address } });
+      if (!account) return;
+      let queue: readonly QueueEntry[] | undefined;
+      try {
+        queue = await ports.queueList();
+      } catch {
+        queue = undefined;
+      }
+      // Another dialog opened while the queue was read: that one stays.
+      if (view().confirm) return;
+      deps.setView({
+        confirm: {
+          kind: 'removeAccount',
+          accountId,
+          address: account.address,
+          ...(queue ? { discards: removalDiscards(queue, accountId) } : {}),
+        },
+      });
     },
     takeLease(accountId: string, pin: boolean) {
       const key = `lease:${accountId}`;
@@ -820,8 +839,8 @@ export function createController(deps: ControllerDeps) {
           // A refusal for unsent mail says what is waiting; Retry works once it is sent or cancelled.
           // The toast rides inside the step, so a Retry from the failure line that lands says so too.
           const remove = async () => {
-            await ports.accountDisconnect(c.accountId);
-            host.toast?.(`Removed ${c.address}`);
+            const { signInKept } = await ports.accountDisconnect(c.accountId);
+            host.toast?.(removedToast(c.address, signInKept));
           };
           return guard(op, remove, (error, retry) => {
             const line = removalRefusal(error);

@@ -114,7 +114,7 @@ export function Accounts({ data, view, actions, host }: SectionProps) {
                       variant="text"
                       tone="danger"
                       label="Remove"
-                      onPress={() => actions.askRemoveAccount(r.id)}
+                      onPress={() => void actions.askRemoveAccount(r.id)}
                     />
                   )}
                 </>

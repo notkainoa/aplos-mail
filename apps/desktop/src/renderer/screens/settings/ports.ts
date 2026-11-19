@@ -59,7 +59,8 @@ export interface SettingsApiPort {
     accountId: string,
     patch: { colorTag?: string; aiAllowed?: boolean; notifications?: boolean; name?: string },
   ): Promise<void>;
-  accountDisconnect(accountId: string): Promise<void>;
+  /** `Account/disconnect`; `signInKept` when the account is gone but its stored sign-in is not yet. */
+  accountDisconnect(accountId: string): Promise<{ signInKept: boolean }>;
   accountLease(accountId: string | undefined, pin: boolean): Promise<void>;
   demoLoad(): Promise<void>;
   demoReset(): Promise<void>;
