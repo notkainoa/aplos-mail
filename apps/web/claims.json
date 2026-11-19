@@ -1001,23 +1001,23 @@
     },
     {
       "id": "privacy-contact",
-      "says": "Privacy and terms questions go to privacy@aplos.email",
+      "says": "Privacy and terms questions go to support@aplos.email",
       "pages": ["privacy", "terms"],
       "evidence": [
         {
           "kind": "owner",
-          "ref": "2026-11-19 owner decision: publish the site now; the owner is setting up privacy@aplos.email forwarding at Spaceship the same day. Recheck MX and send one test message once it is set up.",
-          "maxAgeDays": 7
+          "ref": "2026-11-19 owner note: support@aplos.email is set up and receives mail (the contact address for privacy and terms questions)",
+          "maxAgeDays": null
         },
         {
-          "kind": "owner",
-          "ref": "2026-10-27 owner decision: a free forwarding address on aplos.email (plans/00-roadmap.md section 8.3 #58)",
+          "kind": "fact",
+          "ref": "DNS for aplos.email has MX records at Zoho Mail (mx.zoho.com 10, mx2.zoho.com 20, mx3.zoho.com 50) and an SPF record including zohomail.com, checked 2026-11-19",
           "maxAgeDays": null
         }
       ],
       "status": "verified",
       "verifiedAt": "2026-11-19",
-      "note": "Published on the owner's word on 2026-11-19 while the forwarding was being set up (no MX records at publish time). maxAgeDays 7 makes this stale on 2026-11-26 unless the forwarding is confirmed and this evidence is replaced with the confirmed test."
+      "note": "The owner chose support@aplos.email over the planned privacy@ on 2026-11-19 and set it up the same day (Zoho Mail). Replaces the 2026-11-19 publish-ahead note."
     }
   ]
 }
