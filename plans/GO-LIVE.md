@@ -6,19 +6,17 @@ Written 2026-11-18 on `revamp` at `8f1eb4cd0`, together with the engine switch i
 
 The owner's final test ran a development build started with `APLOS_ENGINE=real`. Until this PR, a release build always ran the old engine and the old screens, so the redesign would have shipped turned off.
 
-This PR makes the new engine the default in every build. There is one exception. A Mac that still has 0.2.3 mail (`aplos.db`) and no new `mail.db` keeps the old engine. Nothing moves `aplos.db` into the new store yet. On such a Mac the new engine would open empty, and that Mac's accounts, local drafts, scheduled sends, Later, reminders and settings would seem to disappear. The old file would be untouched, but the user would not know that.
-
-So a fresh install gets the redesign, and an existing 0.2.3 user stays on the old version, with a one-line banner, until the importer exists. **The importer is the one blocker for upgrading existing users.** The new engine also supports only Gmail, so 0.2.3 Outlook, IMAP and Fastmail accounts have nowhere to go yet.
+This PR makes the new engine run in every build. The first draft of this PR kept a Mac with 0.2.3 mail (`aplos.db`) and no `mail.db` on the old engine until an importer existed. The owner dropped that on 2026-11-18: Aplos has no users yet (every 0.2.x release stayed a draft), so there is no importer and no hold. On a Mac with old data the new engine starts its own `mail.db` beside the untouched `aplos.db`, and the user signs in again.
 
 ## Summary
 
 | # | Item | Status | Size left |
 |---|---|---|---|
-| 1 | Engine switch in release builds | Done in this PR (with the 0.2.3 hold) | — |
+| 1 | Engine switch in release builds | Done in this PR | — |
 | 2 | What the new UI needs from the legacy engine | Done (nothing reachable) | — |
-| 3 | Import of a 0.2.3 user's `aplos.db` | **Missing: blocks moving 0.2.3 users** | L |
-| 4 | Update path from 0.2.3 | Partial: safe, but upgraders stay on the old version | L (same as 3), plus S for a second-Mac test |
-| 5 | Legacy code deletion | Missing; can't start until 3 lands | L |
+| 3 | Import of a 0.2.3 user's `aplos.db` | Not needed: no 0.2.x users (owner, 2026-11-18) | — |
+| 4 | Update path from 0.2.3 | Not needed for the same reason; an updated Mac starts fresh on the new engine | — |
+| 5 | Legacy code deletion | Missing; nothing blocks it now (the legacy verify scripts go with it) | L |
 | 6 | OAuth and keychain in release builds | Partial | S, or M with token migration |
 | 7 | Auto-updater | Partial: works in main, no notice in the new UI | S |
 | 8 | `!release` / `releaseBuild` gates | Done: none hides a new feature | — |
@@ -29,21 +27,20 @@ So a fresh install gets the redesign, and an existing 0.2.3 user stays on the ol
 | 13 | Soak and fault injection | Missing soak, partial faults | M–L |
 | 14 | Release checks still drive the legacy engine | Partial | S–M |
 | 15 | "Allow tools on this Mac" (local listener) | Partial: toggle only, no listener | M if it must ship |
-| 16 | AI consent re-ask on upgrade | Partial: nothing to re-ask without 3 | S after 3 |
+| 16 | AI consent re-ask on upgrade | Not needed: no importer (item 3) | — |
 | 17 | Version number | Missing: still `0.2.3` | S |
 
 ## 1. Engine switch: done in this PR
 
-`realEngineRequested` (`apps/desktop/src/host/transports/port.ts:80-88`) now answers "real engine" by default in every build. It answers "legacy" only when the data folder has `aplos.db` or `state.json` and no `mail.db`. `engine-host.ts:31-41` checks those files; it only tests whether they exist and never opens them. Once `mail.db` exists, the folder stays on the new engine.
+`realEngineRequested` (`apps/desktop/src/host/transports/port.ts`) now answers "real engine" in every build. The data folder is not checked: a folder with old `aplos.db` gets a new `mail.db` beside it, and the old file is never opened.
 
-**Escape hatch kept, outside release builds only.** `APLOS_ENGINE=legacy` and `APLOS_ENGINE=real` still override the rule in development and local `npm run package` builds. A release build ignores both, as it already ignores `APLOS_TEST` and `APLOS_DATA_DIR`, so nothing outside the app can change which engine runs.
+**Escape hatch kept, outside release builds only.** `APLOS_ENGINE=legacy` brings the old engine back in development and local `npm run package` builds. A release build ignores it, as it already ignores `APLOS_TEST` and `APLOS_DATA_DIR`.
 
-- *Why keep it:* several checks still drive the old engine through `state.get`: `verify-release.mjs`, `verify-resident.mjs` and `verify-large-mailbox.mjs`. Hand-checks also sometimes need to compare old and new behaviour. These checks are now pinned to `APLOS_ENGINE=legacy`. The hatch goes away with the legacy code (item 5).
-- *Why not in release:* a release user can't set the variable usefully, and `=real` on a 0.2.3 folder would hide their data.
+- *Why keep it:* several checks still drive the old engine through `state.get`: `verify-release.mjs`, `verify-resident.mjs` and `verify-large-mailbox.mjs`. These are now pinned to `APLOS_ENGINE=legacy`. The hatch goes away with the legacy code (item 5).
 
-Everything else keys off `realPath`, which follows the new rule: preload's bridge argument (`windows.ts:146`), the welcome window (`windows.ts:370`), the mail scheme, power, quit and the tray. Test mode always starts on a fresh temp folder, so it now runs the new engine by default. "Try demo mail" is `Demo/load` on whichever engine runs, and needs no change.
+Everything else keys off `realPath`: preload's bridge argument (`windows.ts:146`), the welcome window (`windows.ts:370`), the mail scheme, power, quit and the tray. Test mode runs the new engine by default. "Try demo mail" is `Demo/load` on whichever engine runs, and needs no change.
 
-In a production build the legacy banner no longer tells users to set `APLOS_ENGINE=real` (`renderer/legacyBanner.ts`). It says the old version stays until their mail can move.
+In a production build the legacy renderer appears only as the fallback when the new engine's bridge fails to connect. Its banner no longer tells users to set `APLOS_ENGINE=real` (`renderer/legacyBanner.ts`); it says the new version could not start and to reopen the app.
 
 ## 2. What the new UI needs from the legacy engine: done
 
@@ -51,24 +48,13 @@ The new renderer calls no legacy method; `window.aplos` is used only for close, 
 
 Pop-out windows (`?draft=` / `?thread=`) still boot the legacy renderer (`renderer/entry.ts:66-67`), and on the new engine that renderer is refused every call (`engine-real.ts:253-263`). Nothing in the new UI opens one: its "pop out" goes to the in-window compose page (`screens/compose/InlineReplyHost.tsx:196`). So this is harmless today. Delete it with the legacy code.
 
-## 3. Import of 0.2.3 data: missing (the blocker)
+## 3. Import of 0.2.3 data: not needed
 
-Plan 10 E2 "The import" specifies a resumable importer from a read-only `aplos.db`. No such code exists. The search terms `importer`, `import_state`, `imported_from` and `import_done` turn up only a comment (`host/sqlite.ts:12`), a reserved meta key (`store/port.ts:430`) and a log event name (`contract/src/log/events.ts:348`).
+Plan 10 E2 specified an importer from a read-only `aplos.db`; none exists. The owner decided on 2026-11-18 that none is needed: Aplos has no users yet, and every 0.2.x GitHub release stayed a draft. A Mac with 0.2.x data starts fresh on the new engine; the old `aplos.db` and `google-tokens.enc.json` stay untouched, and the user signs in to Google again.
 
-What a 0.2.3 user has and the new engine doesn't read:
+## 4. Update path from 0.2.3: not needed
 
-- mail, accounts, drafts, scheduled sends, workflow state (Later, reminders, to-dos, statuses), settings and blocked senders, all in `aplos.db` (`main/store.ts:64-66`);
-- Google tokens in `google-tokens.enc.json` (`main/google.ts:253`). The new vault is `google-tokens.v2.enc.json` (`engine-utility.ts:138`).
-
-The new engine also has only a Gmail provider. Outlook, IMAP and Fastmail are marked "arrives in a later version" (`packages/engine/src/methods/session.ts:15-21`), so the importer needs a rule for those accounts too.
-
-*Smallest next step:* import accounts, settings, sender rules, local drafts and scheduled sends, and workflow state. Let Gmail re-sync the mail itself. Ask non-Gmail users before moving them, or keep them on legacy. Size: L (plan 10 estimated two agents by table family, plus the kill-mid-import and rollback tests).
-
-## 4. Update path from 0.2.3: partial
-
-0.2.3 updates through `electron-updater` from GitHub releases (`apps/desktop/package.json:157-163`). After the update, the folder still has `aplos.db` and no `mail.db`, so the app keeps the old engine. Nothing is lost, and the user sees the old screens with the banner.
-
-When the importer lands, the rule in item 1 changes to "import, then switch". Plan 10 E8 item 6 also needs doing then: the second-Mac update test, an update interrupted mid-import, and a rollback to 0.2.3. None of it has been run.
+For the same reason there is no 0.2.3 → new-engine migration to test. The first public release is the redesign.
 
 ## 5. Legacy deletion: missing
 
@@ -79,14 +65,14 @@ The legacy code is still there:
 - `apps/desktop/src/renderer/legacy`: 57 files, about 28,400 lines;
 - most of `apps/desktop/src/main`'s provider files (`google.ts`, `imap*.ts`, `jmap.ts`, `microsoft.ts`, `service.ts`, `store.ts` and others), which still import legacy modules.
 
-Deleting it before the importer would leave 0.2.3 users with no working app, so this waits for item 3. Size: L.
+Nothing blocks it now that there is no importer (item 3). It removes the `APLOS_ENGINE=legacy` hatch and the three legacy verify scripts with it. Size: L.
 
 ## 6. OAuth and keychain in release builds: partial
 
 - **Client ID.** The order is `APLOS_GOOGLE_*` env, then `GOOGLE_*` env, then Settings, then the bundled client (`host/providers/oauth/client.ts:41-48`). A packaged non-test app loads `~/.config/aplos-mail/.env` (`main/lifecycle.ts:344-345`), so a release build does honour an env override. That matches `RELEASING.md`. Decide whether release should ignore it (S).
 - **Keychain.** Both engines unwrap the same `engine-key.bin` through `loadDataKey`: `engine-real.ts:138` for the new one, `engine-host.ts:94` for the old. There is one keychain item, and no new keychain prompt on switching.
 - **Sign-in return.** A loopback page hands off to `aplos://oauth-return?n=<nonce>`, which is checked against `<dataDir>/oauth-returns/` (`main/windows.ts:157`).
-- **Tokens.** The new vault doesn't read the old token file (item 3), so a moved 0.2.3 user signs in to Google again unless the importer migrates tokens (M).
+- **Tokens.** The new vault doesn't read the old token file, so a Mac with 0.2.x data signs in to Google again (accepted: no users, item 3).
 - **Testing mode.** While the Google project stays in Testing mode, refresh tokens last 7 days, and the UI warns through `reconnectBy`.
 
 ## 7. Auto-updater: partial
@@ -156,9 +142,9 @@ Size: M–L, plus a week of the owner's time running the soak.
 
 The toggle exists and is off by default (`packages/engine/src/methods/listener.ts:11-17`), matching plan 10 decision 5. There is no socket or loopback listener behind it; `host/transports/` holds only `auth.ts` and `port.ts`. Hide the toggle or build the listener (M).
 
-## 16. AI consent re-ask: partial
+## 16. AI consent re-ask: not needed
 
-Consent drift re-asks correctly (`ai/impl/consent-methods.ts:45-51`). The upgrade case from plan 10 decision 7 can't happen until the importer brings 0.2.3 settings across, so this is an S item that comes after item 3.
+Consent drift re-asks correctly (`ai/impl/consent-methods.ts:45-51`). The upgrade case from plan 10 decision 7 can't happen: there is no importer bringing 0.2.3 settings across (item 3). Nothing to do.
 
 ## 17. Version number: missing
 

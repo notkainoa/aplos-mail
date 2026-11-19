@@ -14,11 +14,11 @@ export const LEGACY_BANNER_TEXT =
   'This is the old version of Aplos. Start the app with APLOS_ENGINE=real to see the new one.';
 
 /**
- * A production build runs the old version only on a Mac whose 0.2.x mail has not moved to the new engine yet (main's
- * `realEngineRequested`). A release ignores `APLOS_ENGINE`, so its line names no variable.
+ * A production build shows the old version only as the fallback when the new engine's bridge fails to connect
+ * (renderer/main.tsx). A release ignores `APLOS_ENGINE`, so its line names no variable.
  */
 export const LEGACY_BANNER_TEXT_PRODUCTION =
-  'This is the old version of Aplos. It stays until your mail can move to the new one.';
+  'This is the old version of Aplos, shown because the new one could not start. Quit and reopen the app to try again.';
 
 /** The banner's line: the developer hint in a development build, the plain one otherwise. */
 export const legacyBannerText = (dev: boolean) =>

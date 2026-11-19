@@ -60,31 +60,19 @@ export const portMethods: ReadonlySet<string> = new Set(
 /** True for a desktop method, which preload routes to main and never down the engine port. */
 export const isDesktopMethod = (method: string) => desktopSet.has(method);
 
-/** What the data folder holds, for the engine choice. Main checks the files; this module stays free of Node. */
-export interface DataFolderFacts {
-  /** 0.2.x mail is there: `aplos.db`, or the older `state.json`. */
-  readonly legacyMail: boolean;
-  /** The new engine's `mail.db` is there, so this folder already runs on the new engine. */
-  readonly newStore: boolean;
-}
-
 /**
- * Which engine runs (plan 10 4.1, the switch). The real engine is the default in every build. The one exception is a
- * folder that still holds 0.2.x mail and no `mail.db`: nothing imports `aplos.db` yet (plan 10 E2 "The import"), so
- * starting the new engine there would show an empty app and hide that Mac's accounts, drafts and settings. Such a
- * folder keeps the legacy engine until the importer lands. Once `mail.db` exists the folder stays on the new engine.
+ * Which engine runs (plan 10 4.1, the switch): the real engine, in every build. Aplos has no 0.2.x users (every 0.2.x
+ * release stayed a draft; owner, 2026-11-18), so there is no importer and no hold for a folder with `aplos.db`: the new
+ * engine starts its own `mail.db` beside it and leaves the old file untouched.
  *
- * `APLOS_ENGINE=legacy` or `=real` overrides the rule in a development or local build only. A release build ignores
- * the environment, as it does `APLOS_TEST` and `APLOS_DATA_DIR`, so nothing outside the app can change its engine.
+ * `APLOS_ENGINE=legacy` brings the old engine back in a development or local build only, for the legacy verify scripts.
+ * A release build ignores the environment, as it does `APLOS_TEST` and `APLOS_DATA_DIR`.
  */
 export function realEngineRequested(
   env: Record<string, string | undefined>,
   release: boolean,
-  folder: DataFolderFacts,
 ): boolean {
-  if (!release && env.APLOS_ENGINE === 'legacy') return false;
-  if (!release && env.APLOS_ENGINE === 'real') return true;
-  return folder.newStore || !folder.legacyMail;
+  return release || env.APLOS_ENGINE !== 'legacy';
 }
 
 /** A window's call down its port (ARCH 9.1's envelope). */

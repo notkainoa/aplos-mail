@@ -7,7 +7,6 @@ import {
   safeStorage,
   utilityProcess,
 } from 'electron';
-import { existsSync } from 'node:fs';
 import { join } from 'node:path';
 import { connectEngine, type EngineInit } from './engine-rpc';
 import { KeyringError, createCipher, loadDataKey, migrateCredentials } from './keyring';
@@ -27,18 +26,8 @@ import { registerMailScheme } from './mail-protocol';
 
 /** The engine's data folder: the test or development override, else the app's own folder. */
 const dataFolder = () => dataDirOverride ?? app.getPath('userData');
-/** What `realEngineRequested` needs from the folder: plain file checks, nothing opened or written. */
-function folderFacts(dir: string) {
-  return {
-    legacyMail: existsSync(join(dir, 'aplos.db')) || existsSync(join(dir, 'state.json')),
-    newStore: existsSync(join(dir, 'mail.db')),
-  };
-}
-/**
- * The new engine in its utility process, no state mirror in main: the default, except on a folder that still holds
- * 0.2.x mail and no `mail.db` (no importer yet; see `realEngineRequested`).
- */
-const realPath = realEngineRequested(process.env, releaseBuild, folderFacts(dataFolder()));
+/** The new engine in its utility process, no state mirror in main: every build (`realEngineRequested`). */
+const realPath = realEngineRequested(process.env, releaseBuild);
 // The sealed mail frame's scheme (html-5): registered at import, before app ready as Electron requires, and only on the
 // real path. The legacy path registers no scheme, so Chromium does not know `aplos-mail:` there.
 if (realPath) registerMailScheme();
