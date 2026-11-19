@@ -295,11 +295,11 @@ export function threadRowId(q: StoreReader, id: string): number | undefined {
   )?.id;
 }
 
-/** Accounts a spec covers: the one named, or every account, in a stable order. */
+/** Accounts a spec covers: the one named, or every account, in a stable order; never one being removed. */
 export function accountIds(q: StoreReader, accountId?: string): string[] {
   return q
     .all<{ id: string }>(
-      `SELECT id FROM accounts${accountId === undefined ? '' : ' WHERE id = ?'} ORDER BY id`,
+      `SELECT id FROM accounts WHERE status <> 'removing'${accountId === undefined ? '' : ' AND id = ?'} ORDER BY id`,
       ...(accountId === undefined ? [] : [accountId]),
     )
     .map(r => r.id);

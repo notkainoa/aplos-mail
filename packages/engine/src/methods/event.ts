@@ -105,8 +105,10 @@ const hiddenSet = (ctx: MethodContext) =>
       .map(r => `${r.calendar_id}|${r.remote_id}|${r.recurrence_id}`),
   );
 
+/** Accounts whose calendars are shown: not one being removed, whose events go only after its mail. */
+const LIVE = "SELECT id FROM accounts WHERE status <> 'removing'";
 const accountIds = (ctx: MethodContext) =>
-  ctx.services.store.read(q => q.all<{ id: string }>('SELECT id FROM accounts').map(r => r.id));
+  ctx.services.store.read(q => q.all<{ id: string }>(LIVE).map(r => r.id));
 
 function calRow(ctx: MethodContext, accountId: string, remoteId: string): CalRow | undefined {
   return ctx.services.store.read(q =>
@@ -119,15 +121,12 @@ function calRow(ctx: MethodContext, accountId: string, remoteId: string): CalRow
 }
 
 function getCalendars(args: Input<'Calendar/get'>, ctx: MethodContext): Output<'Calendar/get'> {
+  // One account (`accountId`) or all of them; never one being removed (sync/account-remove.ts).
   const list = ctx.services.store.read(q =>
-    args.accountId
-      ? q.all<CalRow>(
-          'SELECT id, account_id, remote_id, name, color, is_primary, hidden, read_only, selected, time_zone FROM calendars WHERE account_id = ? ORDER BY is_primary DESC, name, remote_id',
-          args.accountId,
-        )
-      : q.all<CalRow>(
-          'SELECT id, account_id, remote_id, name, color, is_primary, hidden, read_only, selected, time_zone FROM calendars ORDER BY account_id, is_primary DESC, name, remote_id',
-        ),
+    q.all<CalRow>(
+      `SELECT id, account_id, remote_id, name, color, is_primary, hidden, read_only, selected, time_zone FROM calendars WHERE account_id IN (${LIVE} AND id = coalesce(?, id)) ORDER BY account_id, is_primary DESC, name, remote_id`,
+      args.accountId ?? null,
+    ),
   );
   return { list: list.map(calendarFromRow) };
 }

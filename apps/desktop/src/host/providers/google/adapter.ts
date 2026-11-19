@@ -101,6 +101,8 @@ export interface GoogleProviderOptions {
   connect?: GoogleConnect;
   /** `ProviderFactory.discardCredential`, from the same place; without it the factory has none (the engine fails closed). */
   discardCredential?: (ref: string) => Promise<void>;
+  /** `ProviderFactory.forgetAccount` (account removal), from the same place; without it the factory has none. */
+  forgetAccount?: (accountId: string) => Promise<void>;
   /**
    * Present to enable the workflow channel: `adapter.workflow` is the transport (`WorkflowChannel`) and `plan()`
    * schedules its round. Off by default so callers without a lease host do not pay for channel reads — see
@@ -361,7 +363,7 @@ export class GmailAdapter implements ProviderAdapter {
 }
 
 export function createGoogleProvider(options: GoogleProviderOptions): ProviderFactory {
-  const { connect, discardCredential } = options;
+  const { connect, discardCredential, forgetAccount } = options;
   return {
     kind: 'google',
     connect(req: ConnectRequest, ctx: ConnectContext): Promise<ConnectResult> {
@@ -369,6 +371,7 @@ export function createGoogleProvider(options: GoogleProviderOptions): ProviderFa
       return Promise.reject(new NotInThisLaneError('connect', 'prov-gov (host/providers/oauth)'));
     },
     ...(discardCredential ? { discardCredential } : {}),
+    ...(forgetAccount ? { forgetAccount } : {}),
     budgets(): BudgetSpec[] {
       return [GMAIL_BUDGET, GCAL_BUDGET];
     },

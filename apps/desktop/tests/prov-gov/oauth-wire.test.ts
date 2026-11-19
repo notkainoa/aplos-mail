@@ -307,6 +307,40 @@ test('WIRE-b discardCredential deletes only a ref this host’s new connect mint
   await assert.rejects(bare.connect(newConnect, {} as never), NotInThisLaneError);
 });
 
+test('WIRE-b forgetAccount deletes a removed account’s bundle, never a committed one, and revokes nothing at Google', async () => {
+  const vault = memoryVault(oldBundle);
+  vault.entries.set('acct-other', { ...oldBundle });
+  const committed = new Set([account, 'acct-other']);
+  const forms: URLSearchParams[] = [];
+  const host = createGoogleHostConnect({
+    accountIsCommitted: id => committed.has(id),
+    http: createHttpClient({
+      fetch: async (_url, init) => {
+        forms.push(new URLSearchParams(String(init?.body ?? '')));
+        return new Response('{}');
+      },
+      clock: manualClock(),
+      userAgent: 'aplos-test',
+    }),
+    openExternal: async () => undefined,
+    clientInputs: () => ({ env: {}, bundled: {} }),
+    vault,
+  });
+  const factory = createGoogleProvider({ fetch, ...host });
+  // Still in the store: the removal did not commit, so the sign-in stays.
+  const held = await refusal(factory.forgetAccount!(account));
+  assert.equal(held.error.reason, 'accountStillHeld');
+  assert.deepEqual(vault.entries.get(account), oldBundle);
+
+  committed.delete(account);
+  await factory.forgetAccount!(account);
+  assert.equal(vault.entries.has(account), false);
+  assert.ok(vault.entries.has('acct-other'), 'another account’s bundle is untouched');
+  await factory.forgetAccount!(account); // a ref that is not stored is not an error
+  assert.deepEqual(forms, [], 'no request reached Google');
+  assert.equal(createGoogleProvider({ fetch }).forgetAccount, undefined);
+});
+
 /** A rig whose revoke endpoint never answers, and a wrong-account reconnect on it. */
 function hangingRevoke() {
   const r = scriptedRig(

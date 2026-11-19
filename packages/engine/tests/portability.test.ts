@@ -149,6 +149,8 @@ const lazyModules = [
   join(src, 'calendar', 'write-errors.ts'),
   // Held calendar writes (a write that tells guests waits its undo window): the working half loads on the first hold.
   join(src, 'calendar', 'holds.ts'),
+  // Account removal (`Account/disconnect`) is rare: it loads on first use via `import()` in methods/account.ts.
+  join(src, 'sync', 'account-remove.ts'),
   // The SQLite self-check has no caller yet (it is kept for the Diagnostics surface): no import path reaches it,
   // so like the recurrence edit writes above it does not belong to the startup bundle.
   join(src, 'selftest.ts'),

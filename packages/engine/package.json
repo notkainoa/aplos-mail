@@ -14,6 +14,7 @@
     "./clock/loop": "./src/clock/loop.ts",
     "./clock/system": "./src/clock/system.ts",
     "./sync/account-read": "./src/sync/account-read.ts",
+    "./sync/account-remove": "./src/sync/account-remove.ts",
     "./sync/connect-sessions": "./src/sync/connect-sessions.ts",
     "./sync/governor": "./src/sync/governor.ts",
     "./sync/host": "./src/sync/host.ts",

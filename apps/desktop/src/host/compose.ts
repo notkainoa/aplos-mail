@@ -30,6 +30,7 @@ import type { AiTransport } from '@aplos/engine';
 import type { SqlDatabase } from '@aplos/engine/store/sql';
 import { createTimerLoop, type TimerLoop } from '@aplos/engine/clock/loop';
 import { accountIds } from '@aplos/engine/sync/account-read';
+import { resumeRemovals } from '@aplos/engine/sync/account-remove';
 import { disposeConnectSessions } from '@aplos/engine/sync/connect-sessions';
 import * as engineConnectSessions from '@aplos/engine/sync/connect-sessions';
 import { Governor } from '@aplos/engine/sync/governor';
@@ -52,7 +53,7 @@ import {
   type CredentialVault,
   type GoogleTokenBundle,
 } from './providers/oauth/token-source';
-import { createHttpClient, type HttpClient } from './providers/shared/http';
+import { createHttpClient } from './providers/shared/http';
 import { announceMissedReminders } from './reminders';
 import { openSqlite } from './sqlite';
 
@@ -270,7 +271,7 @@ function googleFactory(
   options: ComposeOptions,
   store: StorePort,
   governor: Governor,
-  http: HttpClient,
+  { http, tokens }: ReturnType<typeof googleTokens>,
 ): ProviderFactory {
   const connect = createGoogleHostConnect({
     http,
@@ -304,6 +305,11 @@ function googleFactory(
     pace: false,
     connect: connect.connect,
     discardCredential: connect.discardCredential,
+    // Removal: the cached access token goes first, then the stored bundle.
+    forgetAccount: async id => {
+      tokens.forget(id);
+      await connect.forgetAccount(id);
+    },
     ...(options.keys ? { workflow: {} } : {}),
   });
 }
@@ -440,13 +446,14 @@ function openSink(options: ComposeOptions, steps: Undo[]): LogSink {
 /** The account actors over the late store, with the Google provider and, given keys, the lease channel. */
 function buildActors(options: ComposeOptions, store: StorePort, log: Logger, loop: TimerLoop) {
   const { clock } = options;
-  const { http, tokens } = googleTokens(options);
+  const google = googleTokens(options);
+  const { tokens } = google;
   const governor = new Governor({ clock, tokens, log, role: 'secondary' });
   const env = options.env ?? (() => defaultEnv);
   const deps = {
     store,
     governor,
-    providers: [googleFactory(options, store, governor, http)],
+    providers: [googleFactory(options, store, governor, google)],
     tokens,
     clock,
     log,
@@ -566,6 +573,9 @@ async function build(options: ComposeOptions, steps: Undo[]): Promise<ComposedHo
   steps.push(() => disposeConnectSessions(engine.services));
   late.use(engine.services.store);
   loop.start();
+  // Finishes any account removal a quit or crash interrupted: the rest of its rows and files, then its stored sign-in.
+  // `startAll` above already skipped such an account (it is `removing`). In the background; it never throws.
+  void resumeRemovals(engine.services);
   feedHost(options, engine, log, starts, steps);
   let closing: Promise<void> | undefined;
   return {

@@ -150,12 +150,15 @@ export const account = area('account', {
   },
   'Account/disconnect': {
     summary:
-      'Remove an account and everything Aplos stored for it; refused while one of its messages is sending.',
+      'Remove an account and everything Aplos stored for it on this device; refused while one of its messages is on its way (sending, queued, scheduled, suspended or maybe sent) or a calendar change for guests is waiting. Failed sends are deleted with it.',
     kind: 'command',
     scope: 'admin',
     audit: true,
     input: z.object({ opId: OpId, accountId: Id }),
-    output: Receipt,
+    output: z.extend(Receipt, {
+      /** The account is gone but its stored sign-in could not be deleted yet; the next start tries again. */
+      signInKept: z.optional(z.literal(true)),
+    }),
   },
 });
 

@@ -44,7 +44,9 @@ export function dataPorts(): SettingsApiPort {
   return {
     settingsSet: async patch => void (await api.settings.set({ patch })),
     accountSet: async (accountId, patch) => void (await api.account.set({ accountId, ...patch })),
-    accountDisconnect: async accountId => void (await api.account.disconnect({ accountId })),
+    accountDisconnect: async accountId => ({
+      signInKept: (await api.account.disconnect({ accountId })).signInKept === true,
+    }),
     accountLease: async (accountId, pin) => void (await api.account.lease({ accountId, pin })),
     demoLoad: async () => void (await api.demo.load({})),
     demoReset: async () => void (await api.demo.reset({})),

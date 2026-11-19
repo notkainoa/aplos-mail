@@ -38,6 +38,13 @@ export interface GoogleHostConnect {
    * guessed or malformed one) is refused and nothing is deleted.
    */
   discardCredential(ref: string): Promise<void>;
+  /**
+   * `ProviderFactory.forgetAccount`: deletes the account's token bundle (`refFor(accountId)`) once the engine removed
+   * it. Refused while the account still has a committed row. The grant is not revoked at Google: whether a revoke
+   * ends only this token or the user's whole grant for this client is still unproven (connect.ts TODO(live)), and a
+   * whole-grant revoke would sign the same account out on the owner's other Macs.
+   */
+  forgetAccount(accountId: string): Promise<void>;
 }
 
 function withConnectGovernor(
@@ -81,6 +88,22 @@ function discarder(deps: GoogleHostConnectDeps, minted: Map<string, string>) {
   };
 }
 
+function forgetter(deps: GoogleHostConnectDeps, minted: Map<string, string>) {
+  return async (accountId: string): Promise<void> => {
+    if (deps.accountIsCommitted(accountId)) {
+      throw connectError('permanent', 'accountStillHeld', { extra: { uncertain: false } });
+    }
+    const ref = deps.refFor ? deps.refFor(accountId) : accountId;
+    if (!wellFormedRef(ref)) return;
+    minted.delete(ref);
+    try {
+      await deps.vault.delete(ref);
+    } catch {
+      throw connectError('transient', 'vaultDeleteFailed', { extra: { uncertain: false } });
+    }
+  };
+}
+
 export function createGoogleHostConnect(deps: GoogleHostConnectDeps): GoogleHostConnect {
   const { clientInputs, governor, ...rest } = deps;
   const minted = new Map<string, string>();
@@ -91,5 +114,6 @@ export function createGoogleHostConnect(deps: GoogleHostConnectDeps): GoogleHost
   return {
     connect: withConnectGovernor(minting(connect, minted), governor),
     discardCredential: discarder(deps, minted),
+    forgetAccount: forgetter(deps, minted),
   };
 }

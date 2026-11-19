@@ -185,7 +185,7 @@ function confirmText(
 ): { question: string; consequence: string } {
   switch (confirm.kind) {
     case 'removeAccount':
-      return removeAccountConfirm(confirm.address);
+      return removeAccountConfirm(confirm.address, confirm.discards);
     case 'removeDemo':
       return REMOVE_DEMO_CONFIRM;
     case 'removeKey':

@@ -37,6 +37,9 @@ interface AccountSettings {
 const ROW_COLUMNS =
   'id, provider, address, display_name, capabilities, granted_scopes, status, status_reason, status_reason_code, status_detail, resume_at, baseline_done_at, calendar_listed_at, refresh_expires_at, remote_subject, ai_allowed, settings, created_at';
 
+/** Every read here leaves out an account being removed (sync/account-remove.ts). */
+const LIVE = "status <> 'removing'";
+
 const CAPABILITY_FLAGS = [
   'labels',
   'folders',
@@ -49,25 +52,37 @@ const CAPABILITY_FLAGS = [
   'unsubscribeHeaders',
 ] as const;
 
-/** The ids of every stored account, oldest first; accounts made in one commit keep the order they were written in. */
+/**
+ * The ids of every stored account, oldest first; accounts made in one commit keep the order they were written in. An
+ * account being removed (`status` `removing`, sync/account-remove.ts) is left out here and in `readAccount`: no list,
+ * no start-up and no `Account/get` sees it again.
+ */
 export function accountIds(store: StorePort): string[] {
   return store.read(q =>
-    q.all<{ id: string }>('SELECT id FROM accounts ORDER BY created_at, rowid').map(r => r.id),
+    q
+      .all<{ id: string }>(`SELECT id FROM accounts WHERE ${LIVE} ORDER BY created_at, rowid`)
+      .map(r => r.id),
   );
 }
 
+/** False for an account being removed too, so `Account/set` (AI back on), a lease or a Setup retry cannot reach it. */
 export function accountExists(store: StorePort, id: string): boolean {
-  return store.read(q => q.get('SELECT 1 FROM accounts WHERE id = ?', id) !== undefined);
+  return store.read(
+    q => q.get(`SELECT 1 FROM accounts WHERE id = ? AND ${LIVE}`, id) !== undefined,
+  );
 }
 
-/** The stored identity facts a reconnect compares against. */
+/**
+ * The stored identity facts a reconnect compares against. None for an account being removed: a reconnect sheet left
+ * open must not store a grant and restart its actor mid-removal.
+ */
 export function storedIdentity(
   store: StorePort,
   id: string,
 ): { provider: string; address: string; subject?: string } | undefined {
   const row = store.read(q =>
     q.get<{ provider: string; address: string; remote_subject: string | null }>(
-      'SELECT provider, address, remote_subject FROM accounts WHERE id = ?',
+      `SELECT provider, address, remote_subject FROM accounts WHERE id = ? AND ${LIVE}`,
       id,
     ),
   );
@@ -125,7 +140,7 @@ export function readAccount(
   runtime: AccountRuntime | undefined,
 ): Account | undefined {
   const found = store.read(q => ({
-    row: q.get<AccountRow>(`SELECT ${ROW_COLUMNS} FROM accounts WHERE id = ?`, id),
+    row: q.get<AccountRow>(`SELECT ${ROW_COLUMNS} FROM accounts WHERE id = ? AND ${LIVE}`, id),
     rev: q.get<{ rev: number | null }>(
       "SELECT MAX(seq) AS rev FROM changes WHERE type = 'Account' AND id = ?",
       id,

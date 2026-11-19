@@ -844,4 +844,10 @@ export interface ProviderFactory {
    * this method cannot be discarded from: the host fails closed and rejects rather than keep an orphaned credential.
    */
   discardCredential?(ref: string): Promise<void>;
+  /**
+   * `Account/disconnect`, after the engine committed the removal: deletes the credential this factory keeps for the
+   * account (the vault entry its `connect` wrote) and anything it remembers for it in memory. A credential that is not
+   * stored is not an error. Revoking the grant at the provider is the factory's call.
+   */
+  forgetAccount?(account: AccountId): Promise<void>;
 }
