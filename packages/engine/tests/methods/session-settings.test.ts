@@ -62,6 +62,10 @@ test('Session/get: the handshake facts, from the store, the clock and the host',
     'the engine can write events (each grant decides)',
   );
   assert.equal(session.capabilities.remoteSearch, false, 'and says no to what is not built');
+  // Settings hides "Allow tools on this Mac", Connected tools and the queue inspector while these are off (GO-LIVE 15):
+  // no socket or loopback listener exists, so none of them may report true until it is built.
+  for (const key of ['listener', 'clients', 'mcp', 'queueInspector'])
+    assert.equal(session.capabilities[key], false, `${key} stays off until it is built`);
   assert.deepEqual(
     session.providers.map(p => [p.kind, p.available]),
     [
