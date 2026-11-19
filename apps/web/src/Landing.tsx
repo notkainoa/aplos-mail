@@ -200,8 +200,9 @@ function AiSection() {
         request on to the company that runs the chosen model.
       </p>
       <p data-claim="ai-consent no-training-providers ai-daily-limit">
-        Background AI starts only after you agree, and mail never goes to a provider that trains on
-        what it receives. It stops at a daily limit you can change.
+        Background AI starts only after you agree, and it stops at a daily limit you can change.
+        Gemini gets mail only when you mark its key as paid, because Google may use what a free key
+        sends to improve its products.
       </p>
     </Section>
   );

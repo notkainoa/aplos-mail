@@ -144,7 +144,8 @@ function destination(provider: string) {
 
 function routeSentence(feature: Feature, provider: string) {
   const voice = feature === 'Voice' ? ' Only Groq and OpenAI turn speech into text.' : '';
-  const gemini = provider === 'Gemini' ? ' A free Gemini key never gets mail.' : '';
+  const gemini =
+    provider === 'Gemini' ? ' Gemini gets mail only when you mark its key as paid.' : '';
   return `${subjectOf(feature)} go to ${destination(provider)}${voice}${gemini}`;
 }
 
