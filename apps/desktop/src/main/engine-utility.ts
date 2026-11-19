@@ -12,6 +12,16 @@ import { composeEngineHost, type ComposedHost, type ComposeOptions } from '../ho
 import { createAiHost } from '../host/ai/index';
 import { createImageProxy } from '../host/proxy/fetch';
 import { openSqlite } from '../host/sqlite';
+import {
+  checkDatabase,
+  DAMAGED_REASON,
+  DB_FILE,
+  isCorruptError,
+  markClosed,
+  markOpen,
+  needsCheck,
+  setAside,
+} from '../host/damaged';
 import type { AiProviderId } from '../host/ai/providers';
 import type { GoogleTokenBundle } from '../host/providers/oauth/token-source';
 import {
@@ -42,6 +52,8 @@ export interface UtilityParent {
 }
 
 export interface UtilityDeps {
+  /** The clock for the damaged copy's name (default `Date.now`). */
+  now?: () => number;
   /** Default `composeEngineHost`. */
   compose?: (options: ComposeOptions) => Promise<ComposedHost>;
   /** The compose options for `init`. Default: `realComposeOptions`, the production ports. */
@@ -192,6 +204,8 @@ function aiAddressesOf(dataDir: string): Partial<Record<AiProviderId, string>> {
 }
 
 const REQUEST_TIMEOUT_MS = 30_000;
+/** How long a process parked on a damaged database waits for main to stop it before it exits on its own. */
+const DAMAGED_EXIT_MS = 2000;
 
 function createBridge(parent: UtilityParent) {
   const waiting = new Map<number, { resolve(value: unknown): void; reject(error: Error): void }>();
@@ -284,10 +298,36 @@ export function runEngineUtility(parent: UtilityParent, deps: UtilityDeps): void
   let ports: ReturnType<typeof createPortHost> | undefined;
   let starting = false;
   let quitting = false;
+  /** Set once the engine is up: a clean quit clears the open mark there. */
+  let dataDir: string | undefined;
+
+  /**
+   * A damaged `mail.db` parks instead of starting (plan 10 Decision 6): the file is copied aside and main shows the
+   * damaged-database screen. Nothing is rebuilt here. Main is told with a fixed sentence and the reason code only.
+   */
+  class Damaged extends Error {}
+  function park(dataDir: string): never {
+    try {
+      setAside(dataDir, (deps.now ?? Date.now)());
+    } catch {
+      // A copy that cannot be made (a full disk) still parks: the file itself stays where it is, untouched.
+    }
+    throw new Damaged();
+  }
 
   async function start(init: UtilityInit) {
+    // The file is checked only after an unclean exit; a corrupt read during open parks the same way.
+    if (needsCheck(init.dataDir) && !checkDatabase(join(init.dataDir, DB_FILE)).ok)
+      park(init.dataDir);
+    markOpen(init.dataDir);
     const options = await (deps.options ?? realComposeOptions)(init, bridge);
-    host = await (deps.compose ?? composeEngineHost)(options);
+    try {
+      host = await (deps.compose ?? composeEngineHost)(options);
+    } catch (error) {
+      if (isCorruptError(error)) park(init.dataDir);
+      throw error;
+    }
+    dataDir = init.dataDir;
     const store = host.engine.services.store;
     const engine = host.engine;
     control = engine.connect(controlCaller);
@@ -306,7 +346,11 @@ export function runEngineUtility(parent: UtilityParent, deps: UtilityDeps): void
     quitting = true;
     ports?.closeAll();
     control?.close();
-    await host?.close().catch(() => undefined);
+    const closed = await host?.close().then(
+      () => true,
+      () => false,
+    );
+    if (closed && dataDir) markClosed(dataDir);
     parent.post({ kind: 'closed' });
     deps.exit(0);
   }
@@ -314,8 +358,19 @@ export function runEngineUtility(parent: UtilityParent, deps: UtilityDeps): void
   function receive(message: ToUtility, transferred: readonly unknown[]) {
     if (message.kind === 'init' && !starting) {
       starting = true;
-      start(message.init).catch(() => {
+      start(message.init).catch(error => {
         // The message is fixed: a raw error could name the data folder or carry provider text.
+        if (error instanceof Damaged) {
+          parent.post({
+            kind: 'failed',
+            message: 'The mail database on this Mac is damaged.',
+            reason: DAMAGED_REASON,
+          });
+          // Main must hear why before this process goes (it kills it on receipt): exiting in the same turn can drop
+          // the message, and main would then report a plain failed start.
+          setTimeout(() => deps.exit(1), DAMAGED_EXIT_MS);
+          return;
+        }
         parent.post({ kind: 'failed', message: 'The new mailbox engine could not start.' });
         deps.exit(1);
       });

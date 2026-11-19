@@ -379,7 +379,8 @@ export type UtilityRequest = { op: 'notify'; item: unknown } | { op: 'openExtern
 
 export type FromUtility =
   | { kind: 'ready'; dbEpoch: string; seq: number }
-  | { kind: 'failed'; message: string }
+  /** `reason`: `store.corrupt` when the engine parked on a damaged database (main shows that screen). */
+  | { kind: 'failed'; message: string; reason?: string }
   | { kind: 'reply'; id: number; ok: true; result: unknown }
   | { kind: 'reply'; id: number; ok: false; error: PortError }
   /** A host-channel event (`HostEvent` in the contract); main validates it before acting. */
@@ -500,7 +501,8 @@ export function createEngineLink(
     if (message.kind === 'ready')
       return settle.resolve({ dbEpoch: message.dbEpoch, seq: message.seq });
     if (message.kind === 'failed') {
-      settle.reject(new Error(String(message.message)));
+      const reason = typeof message.reason === 'string' ? message.reason : undefined;
+      settle.reject(Object.assign(new Error(String(message.message)), reason ? { reason } : {}));
       return child.kill();
     }
     if (message.kind === 'reply')

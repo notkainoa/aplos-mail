@@ -136,6 +136,7 @@ export const desktopMethods = [
   'Ai/pasteKey',
   'App/info',
   'Diagnostics/copy',
+  'Engine/recover',
   'Engine/restart',
   'File/open',
   'File/save',
@@ -224,6 +225,7 @@ export const rendererMethods = [
   'Draft/get',
   'Draft/resolve',
   'Draft/set',
+  'Engine/recover',
   'Engine/restart',
   'Event/extract',
   'Event/get',
@@ -699,6 +701,7 @@ export const methodHost: Record<string, 'engine' | 'desktop'> = {
   'Symbols/render': 'desktop',
   'System/openSettings': 'desktop',
   'Engine/restart': 'desktop',
+  'Engine/recover': 'desktop',
   'Diagnostics/copy': 'desktop',
   'Ai/pasteKey': 'desktop',
 };
@@ -856,6 +859,7 @@ export const methodScope: Record<
   'Symbols/render': 'read',
   'System/openSettings': 'read',
   'Engine/restart': 'admin',
+  'Engine/recover': 'admin',
   'Diagnostics/copy': 'admin',
   'Ai/pasteKey': 'admin',
 };
@@ -1010,6 +1014,7 @@ export const methodKind: Record<string, 'query' | 'command'> = {
   'Symbols/render': 'query',
   'System/openSettings': 'command',
   'Engine/restart': 'command',
+  'Engine/recover': 'command',
   'Diagnostics/copy': 'command',
   'Ai/pasteKey': 'command',
 };
@@ -1164,6 +1169,7 @@ export const methodArea: Record<string, string> = {
   'Symbols/render': 'native',
   'System/openSettings': 'native',
   'Engine/restart': 'native',
+  'Engine/recover': 'native',
   'Diagnostics/copy': 'native',
   'Ai/pasteKey': 'native',
 };

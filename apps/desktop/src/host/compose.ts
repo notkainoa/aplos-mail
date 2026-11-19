@@ -56,6 +56,7 @@ import {
 import { createHttpClient } from './providers/shared/http';
 import { announceMissedReminders } from './reminders';
 import { openSqlite } from './sqlite';
+import { writeBackup } from './damaged';
 
 /**
  * The composition root of the new engine's host (lane eng-host). Everything the environment decides is injected, so it
@@ -417,6 +418,8 @@ function openDatabaseFile(options: ComposeOptions): StorePort {
       // Without this the store never ranks a thread and Home shows every one of them under Do now.
       ingest: { laneFor },
       now: () => options.clock.now(),
+      // A consistent copy before any migration, for the damaged-database screen's Restore (plan 10 Decision 6).
+      beforeUpgrade: from => writeBackup(db, options.dataDir, from),
     });
   } catch (error) {
     db.close();

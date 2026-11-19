@@ -13,6 +13,7 @@ test('the methods main handles itself, not through the table, are the ones the t
   const handledInEngineReal = [
     'Window/compose',
     'Engine/restart',
+    'Engine/recover',
     'Diagnostics/copy',
     'File/save',
     'File/open',

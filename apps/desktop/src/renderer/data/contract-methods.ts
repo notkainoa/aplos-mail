@@ -208,6 +208,13 @@ export const CONTRACT_METHODS = {
   'consent.grant': { method: 'Consent/grant', kind: 'call', gaps: ['F9-23'], notes: '' },
   'consent.revoke': { method: 'Consent/revoke', kind: 'call', gaps: ['F9-23'], notes: '' },
   'engine.restart': { method: 'Engine/restart', kind: 'native', gaps: ['F9-24'], notes: '' },
+  'engine.recover': {
+    method: 'Engine/recover',
+    kind: 'native',
+    gaps: [],
+    notes:
+      'the damaged-database screen: inspect, export report, restore a backup, rebuild (plan 10 Decision 6)',
+  },
   'diagnostics.preview': {
     method: 'Diagnostics/preview',
     kind: 'call',
