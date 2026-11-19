@@ -29,11 +29,11 @@
   "dependencies": {
     "@aplos/contract": "*",
     "@aplos/mail-html": "*",
-    "fast-xml-parser": "^5.11.2"
+    "fast-xml-parser": "^5.12.1"
   },
   "devDependencies": {
     "@types/node": "^24.0.0",
-    "esbuild": "^0.27.0",
+    "esbuild": "^0.28.2",
     "tsx": "^4.20.0",
     "typescript": "^5.9.0"
   }
