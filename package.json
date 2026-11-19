@@ -22,6 +22,7 @@
     "package": "npm run package -w @aplos/desktop",
     "start": "npm run start -w @aplos/desktop",
     "verify:release": "npm run verify:release -w @aplos/desktop",
+    "verify:release:real": "npm run verify:release:real -w @aplos/desktop",
     "verify:hardening": "node apps/desktop/scripts/verify-hardening.mjs",
     "verify:large": "npm run verify:large -w @aplos/desktop",
     "web": "npm run dev -w @aplos/web",
