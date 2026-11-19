@@ -30,5 +30,6 @@ The Vercel project `aplos-mail` is connected to this GitHub repository through V
 ## Honesty checks
 
 - `apps/web/claims.json` lists every factual claim on the site; copy marks each with `data-claim="<id>"`. `npm run build -w @aplos/web` runs `scripts/check-claims.mjs`, which fails on an unregistered id, a placeholder, a banned phrase, and, on Vercel production builds (`VERCEL_ENV=production`), on any claim that is not verified or is stale. Preview builds only warn.
+- Test evidence names test files in the app's code. `main` carries only the site until the app ships, so `claims.json` names a `proofSource` (the `revamp` commit holding those files). A test file missing from the checkout is looked up at that commit with git; if it is not there, production fails as usual; if the clone lacks that commit (Vercel's shallow clone of `main`), the check prints a warning naming the commit. Move `proofSource.commit` forward when claims gain new test evidence, and drop `proofSource` once `main` carries the app.
 - `npm run check:external -w @aplos/web` (after a build) proves the built site requests no host but itself: a static pass over HTML, CSS and JS plus a headless browser pass in five views. It needs Playwright (`PLAYWRIGHT_FROM=<folder with playwright>` if it is not installed locally).
 - `npm run test:checks -w @aplos/web` runs the checks' own tests.

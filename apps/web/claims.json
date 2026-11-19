@@ -1,5 +1,10 @@
 {
   "version": 1,
+  "proofSource": {
+    "branch": "revamp",
+    "commit": "be21fd115030ba55c351123dd0ab61db3a2f56c3",
+    "note": "The app these claims describe is on revamp; main carries only the site until the app ships. Test evidence missing from a main checkout is looked up at this commit."
+  },
   "claims": [
     {
       "id": "mac-only",

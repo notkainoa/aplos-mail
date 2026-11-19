@@ -1,7 +1,7 @@
 // Checks that every claim shown on the site has proof, and that the copy keeps to the owner's decisions.
 //
 //   node apps/web/scripts/check-claims.mjs [--production] [--src <dir|file>]... [--claims claims.json]
-//                                          [--status provider-status.json] [--today YYYY-MM-DD]
+//                                          [--status provider-status.json] [--today YYYY-MM-DD] [--repo <dir>]
 //
 // Copy marks a claim with data-claim="<id>" (several ids separated by spaces). apps/web/claims.json lists
 // every claim with its evidence. Always fails on:
@@ -36,13 +36,19 @@
 //   - "design", "fact", "test" evidence: with status "verified" it counts; with maxAgeDays, verifiedAt must be
 //     recent. A "test" ref that looks like a file path must exist in the repo (a missing file is a warning,
 //     and a failure with --production).
+//   - Proof on another branch: the site can ship from a branch that does not carry the app (main carries only
+//     the site until the app ships). claims.json may then name `"proofSource": { "branch", "commit", "note" }`,
+//     the commit whose tree holds the test files. A test file missing from this checkout is looked up there
+//     with git: present = fine; absent = the usual failure; that commit not in this clone at all (Vercel's
+//     shallow clone of main) = a warning that names the commit, never a quiet pass.
 import { existsSync, readFileSync, readdirSync, statSync } from 'node:fs';
+import { execFileSync } from 'node:child_process';
 import { basename, extname, join, relative, resolve } from 'node:path';
 import ts from 'typescript';
 import { decodeCssEscapes, decodeEntities, decodeJsEscapes } from './lib/decode.mjs';
 
 const webDir = resolve(import.meta.dirname, '..');
-const repoRoot = resolve(webDir, '../..');
+let repoRoot = resolve(webDir, '../..');
 
 // ---------- arguments ----------
 const argv = process.argv.slice(2);
@@ -54,6 +60,7 @@ for (let i = 0; i < argv.length; i += 1) {
   else if (a === '--claims') opts.claims = resolve(argv[++i]);
   else if (a === '--status') opts.status = resolve(argv[++i]);
   else if (a === '--today') opts.today = argv[++i];
+  else if (a === '--repo') repoRoot = resolve(argv[++i]);
   else {
     console.error(`Unknown argument: ${a}`);
     process.exit(2);
@@ -378,6 +385,7 @@ for (const h of [...hits.values()].sort(
 const PAGES = new Set(['landing', 'download', 'privacy', 'terms']);
 const KINDS = new Set(['design', 'test', 'live', 'owner', 'fact']);
 let claims = [];
+let proofSource = null;
 if (!existsSync(claimsPath)) {
   err(`${rel(claimsPath)} not found (the claims registry is required)`);
 } else {
@@ -389,6 +397,21 @@ if (!existsSync(claimsPath)) {
   }
   if (doc) {
     if (doc.version !== 1) err(`${rel(claimsPath)}: "version" must be 1`);
+    if (doc.proofSource !== undefined) {
+      const p = doc.proofSource;
+      if (
+        !p ||
+        typeof p !== 'object' ||
+        typeof p.branch !== 'string' ||
+        !p.branch.trim() ||
+        typeof p.commit !== 'string' ||
+        !/^[0-9a-f]{40}$/.test(p.commit)
+      )
+        err(
+          `${rel(claimsPath)}: "proofSource" needs a "branch" name and a full 40-character "commit"`,
+        );
+      else proofSource = p;
+    }
     if (!Array.isArray(doc.claims)) err(`${rel(claimsPath)}: "claims" must be an array`);
     else {
       const seen = new Set();
@@ -464,6 +487,22 @@ const stamp = v => {
   return null;
 };
 
+const git = args => {
+  try {
+    execFileSync('git', args, { cwd: repoRoot, stdio: 'ignore' });
+    return true;
+  } catch {
+    return false;
+  }
+};
+let proofCommitHere = null;
+/** 'present' | 'absent' | 'unreachable' (the proof commit is not in this clone). */
+function atProofCommit(path) {
+  proofCommitHere ??= git(['cat-file', '-e', `${proofSource.commit}^{commit}`]);
+  if (!proofCommitHere) return 'unreachable';
+  return git(['cat-file', '-e', `${proofSource.commit}:${path}`]) ? 'present' : 'absent';
+}
+
 /** Returns { state: 'verified'|'pending'|'stale'|'unproven', reasons: [] , warns: [] }. */
 function evaluate(c) {
   const reasons = [];
@@ -514,8 +553,19 @@ function evaluate(c) {
         (first.includes('/') || /\.(m?[jt]sx?|json|md)$/.test(first)) &&
         !existsSync(resolve(repoRoot, first))
       ) {
-        warns.push(`test file ${first} not found`);
-        if (production) worsen('unproven', `test file ${first} not found`);
+        const there = proofSource ? atProofCommit(first) : 'absent';
+        const at = proofSource && `${proofSource.branch} at ${proofSource.commit.slice(0, 12)}`;
+        if (there === 'unreachable')
+          warns.push(
+            `test file ${first} is not in this checkout; its proof is on ${at}, which this clone lacks`,
+          );
+        else if (there === 'absent') {
+          const why = proofSource
+            ? `test file ${first} not found here or on ${at}`
+            : `test file ${first} not found`;
+          warns.push(why);
+          if (production) worsen('unproven', why);
+        }
       }
     }
   }

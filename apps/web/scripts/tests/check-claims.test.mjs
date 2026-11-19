@@ -1,5 +1,7 @@
 import assert from 'node:assert/strict';
 import { after, test } from 'node:test';
+import { execFileSync } from 'node:child_process';
+import { rmSync } from 'node:fs';
 import { join } from 'node:path';
 import { cleanup, makeDir, run } from './helpers.mjs';
 
@@ -385,4 +387,83 @@ test('live evidence: an explicit failure cannot be rescued by a stray ok, and th
     status: { gmail: { ok: true, checkedAt: '2026-10-27T00:00:00Z' } },
   });
   assert.equal(okOnly(['--production']).code, 0, okOnly(['--production']).out);
+});
+
+// ---------- test evidence that lives on another branch (proofSource) ----------
+
+/** A throwaway git repo whose one commit holds tests/kept.test.ts, then deletes it from the working tree. */
+function proofRepo() {
+  const dir = makeDir({ 'tests/kept.test.ts': 'test' });
+  const git = (...a) =>
+    execFileSync('git', a, {
+      cwd: dir,
+      encoding: 'utf8',
+      env: {
+        ...process.env,
+        GIT_AUTHOR_NAME: 't',
+        GIT_AUTHOR_EMAIL: 't@example.com',
+        GIT_COMMITTER_NAME: 't',
+        GIT_COMMITTER_EMAIL: 't@example.com',
+      },
+    }).trim();
+  git('init', '-q');
+  git('add', '.');
+  git('commit', '-q', '--no-gpg-sign', '-m', 'proof');
+  const commit = git('rev-parse', 'HEAD');
+  rmSync(join(dir, 'tests/kept.test.ts'));
+  return { dir, commit };
+}
+const tested = ref => claim('local-only', { evidence: [{ kind: 'test', ref, maxAgeDays: null }] });
+
+test('a test file missing from the checkout fails production with no proofSource', () => {
+  const { dir } = proofRepo();
+  const r = setup({ claims: registry(tested('tests/kept.test.ts')) })([
+    '--production',
+    '--repo',
+    dir,
+  ]);
+  assert.equal(r.code, 1);
+  assert.match(r.out, /test file tests\/kept\.test\.ts not found/);
+});
+
+test('a test file missing here but present at the proofSource commit passes production', () => {
+  const { dir, commit } = proofRepo();
+  const claims = {
+    ...registry(tested('tests/kept.test.ts')),
+    proofSource: { branch: 'revamp', commit },
+  };
+  const r = setup({ claims })(['--production', '--repo', dir]);
+  assert.equal(r.code, 0, r.out);
+});
+
+test('a test file missing here and at the proofSource commit still fails production', () => {
+  const { dir, commit } = proofRepo();
+  const claims = {
+    ...registry(tested('tests/gone.test.ts')),
+    proofSource: { branch: 'revamp', commit },
+  };
+  const r = setup({ claims })(['--production', '--repo', dir]);
+  assert.equal(r.code, 1);
+  assert.match(r.out, /not found here or on revamp at/);
+});
+
+test('a proofSource commit this clone lacks is a named warning, not a quiet pass', () => {
+  const { dir } = proofRepo();
+  const claims = {
+    ...registry(tested('tests/kept.test.ts')),
+    proofSource: { branch: 'revamp', commit: 'a'.repeat(40) },
+  };
+  const r = setup({ claims })(['--production', '--repo', dir]);
+  assert.equal(r.code, 0, r.out);
+  assert.match(r.out, /WARN .*proof is on revamp at aaaaaaaaaaaa, which this clone lacks/);
+});
+
+test('a malformed proofSource fails', () => {
+  const claims = {
+    ...registry(claim('local-only')),
+    proofSource: { branch: 'revamp', commit: 'abc' },
+  };
+  const r = setup({ claims })();
+  assert.equal(r.code, 1);
+  assert.match(r.out, /"proofSource" needs/);
 });
