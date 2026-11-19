@@ -25,10 +25,10 @@ This PR makes the new engine run in every build. The first draft of this PR kept
 | 11 | Gmail live smoke → `apps/web/provider-status.json` | Missing | S–M |
 | 12 | Damaged-database path | Missing | M |
 | 13 | Soak and fault injection | Missing soak, partial faults | M–L |
-| 14 | Release checks still drive the legacy engine | Partial: `verify:release:real` covers the new engine; `verify-release` stays legacy | S |
+| 14 | Release checks still drive the legacy engine | Partial: `verify:release:real` covers the new engine and runs in the Release workflow; `verify-release` stays legacy | S |
 | 15 | "Allow tools on this Mac" (local listener) | Hidden until the listener is built: no listener behind it | M, only if it must ship |
 | 16 | AI consent re-ask on upgrade | Not needed: no importer (item 3) | — |
-| 17 | Version number | Missing: still `0.2.3` | S |
+| 17 | Version number | Done: `0.0.1`, the first beta | — |
 
 ## 1. Engine switch: done in this PR
 
@@ -146,9 +146,9 @@ There is no socket or loopback listener behind the toggle; `host/transports/` ho
 
 Consent drift re-asks correctly (`ai/impl/consent-methods.ts:45-51`). The upgrade case from plan 10 decision 7 can't happen: there is no importer bringing 0.2.3 settings across (item 3). Nothing to do.
 
-## 17. Version number: missing
+## 17. Version number: done
 
-The root and desktop `package.json` still say `0.2.3`. The redesign needs its own version before `npm run release` (S).
+The root and desktop `package.json` and `package-lock.json` say `0.0.1`, the first beta. That is lower than the old v0.2.x tags and drafts, which is fine: the Release workflow only checks that the tag matches the app version, and electron-updater reads only published releases (all 0.2.x stayed drafts). Tag `v0.0.1` on `main` by hand (see RELEASING.md); `npm run release` refuses a version that is already set.
 
 ## 18. Seen while writing `verify:release:real` (fixed)
 

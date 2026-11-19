@@ -560,6 +560,9 @@ test(
     await withDir(async dir => {
       const hang = gate();
       const plan = { dirs: 0, writes: 0, hang: false };
+      // Set once the vault has the late rename's result. The file is replaced before that: a check of the
+      // disk alone could run while the vault does not know yet, and the delete below would find nothing to repair.
+      let landed = false;
       const fs = failingFs(plan, {
         rename: async (from, to) => {
           if (!plan.hang) return nodeFs.rename(from, to);
@@ -570,6 +573,7 @@ test(
           // The repair after this landing fails every time.
           plan.writes = 3;
           await nodeFs.rename(held, to);
+          setImmediate(() => (landed = true));
         },
       });
       const vault = await createVault<{ v: number }>({
@@ -583,7 +587,7 @@ test(
       await assert.rejects(vault.set('a', { v: 7 }), unsaved);
       await vault.set('b', { v: 3 });
       hang.release();
-      await eventually(async () => plan.writes === 0, 'every repair attempt ran');
+      await eventually(async () => landed && plan.writes === 0, 'every repair attempt ran');
       await new Promise(resolve => setTimeout(resolve, 20));
       assert.deepEqual(
         await onDisk(dir),

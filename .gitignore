@@ -2,6 +2,7 @@
 node_modules
 dist/
 release/
+release-check/
 .DS_Store
 *.log
 .env.*

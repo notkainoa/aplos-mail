@@ -160,7 +160,12 @@ test('read answers undefined for missing and unsafe entries, never wrong bytes',
   assert.equal(await swapped.read(path), undefined);
 });
 
-test('a file swapped in between the lstat and the open is not served', async t => {
+// The defence compares the opened file's inode with the one the lstat saw. APFS never reuses an inode
+// number, so a swapped-in file always differs there. Linux file systems hand the freed inode straight to
+// the next file, so the swap below reuses it and the check cannot see it; Aplos ships on macOS only.
+const apfsOnly = { skip: process.platform !== 'darwin' && 'relies on APFS never reusing inodes' };
+
+test('a file swapped in between the lstat and the open is not served', apfsOnly, async t => {
   const dir = join(scratch(t), 'attachments');
   const files = await open(dir);
   const path = await files.write('a', 'm', 'p', bytesOf(16, 5));

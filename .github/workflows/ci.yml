@@ -1,11 +1,11 @@
 name: CI
 
-# Free-minutes rule: Linux jobs run on pushes to revamp only; there is no pull_request trigger
-# (the Integrator runs the full suite before each merge). macOS runs only when a manual run
-# ticks the "macos" box, so a scratch-branch proof of the static job costs Linux minutes only.
+# The repository is public, so Actions minutes (macOS included) are free: every job runs on pushes
+# to revamp and main and on pull requests into them. The workflow never uses pull_request_target and
+# holds no secrets, so a fork's pull request runs with a read-only token.
 on:
   push:
-    branches: [revamp]
+    branches: [revamp, main]
     # Coordination and docs pushes (STATUS.md entries land on revamp many times a day) run nothing.
     # A push that also changes code still runs everything.
     paths-ignore:
@@ -13,12 +13,14 @@ on:
       - 'mockups/**'
       - 'research/**'
       - '**/*.md'
+  pull_request:
+    branches: [revamp, main]
+    paths-ignore:
+      - 'plans/**'
+      - 'mockups/**'
+      - 'research/**'
+      - '**/*.md'
   workflow_dispatch:
-    inputs:
-      macos:
-        description: Also run the desktop job on macOS (costs about 10x Linux minutes)
-        type: boolean
-        default: false
 
 permissions:
   contents: read
@@ -34,6 +36,8 @@ jobs:
     timeout-minutes: 5
     permissions:
       contents: read
+      # paths-filter lists a pull request's changed files through the API.
+      pull-requests: read
     outputs:
       desktop: ${{ github.event_name == 'workflow_dispatch' || steps.filter.outputs.desktop == 'true' }}
       web: ${{ github.event_name == 'workflow_dispatch' || steps.filter.outputs.web == 'true' }}
@@ -41,9 +45,9 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: dorny/paths-filter@ceb8a2b8f2d89434be7ff52d3de7ec3738c5cc9d # v4.0.3
         id: filter
-        if: github.event_name == 'push'
+        if: github.event_name != 'workflow_dispatch'
         with:
-          # On a push to revamp, compare with the commit before the push.
+          # On a push, compare with the commit before the push; a pull request uses its own changed files.
           base: ${{ github.ref_name }}
           filters: |
             shared: &shared
@@ -209,10 +213,13 @@ jobs:
       - run: npm run typecheck -w @aplos/web
       - run: npm run build -w @aplos/web
 
-  # macOS minutes are scarce: this job runs only when started by hand with the macos box ticked.
+  # The app ships on macOS only, and some tests run only there (the attachment store's lstat/open
+  # swap check relies on APFS inodes; measure-idle's command line refuses other systems), so this
+  # job is what covers them.
   desktop-macos:
     name: Desktop on macOS (typecheck, test, build)
-    if: github.event_name == 'workflow_dispatch' && inputs.macos
+    needs: changes
+    if: needs.changes.outputs.desktop == 'true'
     runs-on: macos-latest
     timeout-minutes: 30
     steps:
@@ -224,6 +231,8 @@ jobs:
       - run: npm ci
       - run: npm run typecheck
       - run: npm test
+      # The audit suite again, for its macOS-only cases (measure-idle's command line).
+      - run: npm run test:audit
       # Renderer (Vite), main/engine bundles (esbuild) and the native helper (swiftc).
       - run: npm run build -w @aplos/desktop
       # Electron tier: the built app starts hidden on a temporary data directory (APLOS_TEST=1, never a visible window).

@@ -34,8 +34,11 @@ Text and tables without Path and Lane columns are ignored.
 | \`TODO.md\` | all | | shared |
 `;
 
+// A pull request run on Actions sets GITHUB_BASE_REF and GITHUB_HEAD_REF, which change what the script
+// checks; the tests start without them and pass them explicitly where they matter.
+const { GITHUB_BASE_REF: _base, GITHUB_HEAD_REF: _head, ...outerEnv } = process.env;
 const GIT_ENV = {
-  ...process.env,
+  ...outerEnv,
   GIT_CONFIG_GLOBAL: '/dev/null',
   GIT_CONFIG_SYSTEM: '/dev/null',
   GIT_CONFIG_NOSYSTEM: '1',

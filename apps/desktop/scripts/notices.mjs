@@ -326,7 +326,7 @@ function main() {
       : undefined;
   if (args.requireChromium && !chromium.file) {
     console.error(
-      'FAIL LICENSES.chromium.html not found in node_modules/electron/dist (run after Electron is downloaded)',
+      'FAIL LICENSES.chromium.html not found in node_modules/electron/dist. Electron downloads its binary on first use, not at install; run node node_modules/electron/install.js first.',
     );
     process.exit(1);
   }

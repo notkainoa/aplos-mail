@@ -487,7 +487,20 @@ describe('measure-idle devtools io', () => {
   });
 });
 
-describe('measure-idle cli', () => {
+// The script refuses to run anywhere but macOS before it reads its arguments (ps/top formats and the
+// .app layout are darwin), so the usage checks below only mean something there; CI's Linux job checks
+// the refusal instead.
+const onMac = process.platform === 'darwin';
+
+describe('measure-idle cli off macOS', { skip: onMac && 'checks the refusal off macOS' }, () => {
+  it('exits 2 with the macOS-only message and never launches', () => {
+    const run = spawnSync(process.execPath, [script, 'a.app'], { encoding: 'utf8' });
+    assert.equal(run.status, 2);
+    assert.match(run.stderr, /measure-idle: macOS only/);
+  });
+});
+
+describe('measure-idle cli', { skip: !onMac && 'measure-idle runs on macOS only' }, () => {
   it('exits 2 with usage and never launches without an .app', () => {
     const run = spawnSync(process.execPath, [script], { encoding: 'utf8' });
     assert.equal(run.status, 2);
