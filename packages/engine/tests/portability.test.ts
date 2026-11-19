@@ -150,6 +150,8 @@ const lazyModules = [
   // The SQLite self-check has no caller yet (it is kept for the Diagnostics surface): no import path reaches it,
   // so like the recurrence edit writes above it does not belong to the startup bundle.
   join(src, 'selftest.ts'),
+  // Body retention's pass loads a while after start (`import()` in host/module.ts); only its writers are core.
+  join(src, 'store', 'retention.ts'),
 ];
 // Whole folders that are lazy: eng-ai's implementation (ask loop, jobs runner, prompts, usage) is reached only through
 // `import()` from the thin dispatchers in `ai/module.ts` and `methods/`, so a new file there needs no entry above.

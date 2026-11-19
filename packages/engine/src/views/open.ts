@@ -26,6 +26,13 @@ export async function openThread(services: EngineServices, threadId: string): Pr
     });
   const now = store.read(q => threadByContractId(q, threadId));
   if (!now) throw gone();
+  // Opened mail keeps its text past the retention window (ARCH 3.6); no change row, nothing on screen moves.
+  const at = services.clock.now();
+  store.commit({
+    opId: `read:${threadId}:${at}`,
+    origin: 'local',
+    writes: [{ kind: 'bodyRead', accountId: now.account_id, remoteThreadId: now.remote_id, at }],
+  });
   return {
     threadId,
     complete: now.complete === 1,
