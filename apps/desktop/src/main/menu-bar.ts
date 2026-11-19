@@ -139,6 +139,8 @@ function startMenuBar(deps: MenuBarDeps) {
   const image = nativeImage.createFromPath(join(__dirname, MENU_BAR_IMAGE));
   image.setTemplateImage(true);
   tray = new Tray(image);
+  // A missing or unreadable image would leave an invisible item; fall back to the old plain letter.
+  if (image.isEmpty()) tray.setTitle('A');
   tray.setToolTip('Aplos Mail');
   const actions: Record<MenuEntryId, () => void> = {
     status: () => {},
