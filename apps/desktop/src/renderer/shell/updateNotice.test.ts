@@ -143,3 +143,12 @@ test('without a bridge it still reads the current state', async () => {
   await tick();
   assert.equal(pushed.length, 1);
 });
+
+test('a slow first status answer never overrides a newer update event', async () => {
+  const t = setup(ready());
+  // Later arrives before the window's first `status` answer, which still says ready.
+  t.send(ready('0.3.0', true));
+  await tick();
+  assert.equal(t.pushed.length, 0);
+  assert.ok(t.dismissed.includes(UPDATE_TOAST_ID));
+});

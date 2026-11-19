@@ -51,6 +51,9 @@ export function listenUpdates(
   toasts: UpdateToasts,
 ): () => void {
   let stopped = false;
+  // Once an `update` event has arrived, the first `status` answer is stale: it must not bring back a notice that a
+  // newer event (Later, or a new state) already changed.
+  let heardEvent = false;
   const show = (info: UpdateState | null | undefined) => {
     if (stopped) return;
     const version = readyVersion(info);
@@ -83,12 +86,19 @@ export function listenUpdates(
     bridge && typeof bridge.subscribe === 'function'
       ? bridge.subscribe(
           event => {
-            if (event.type === 'update') show(event.payload as UpdateState | null | undefined);
+            if (event.type !== 'update') return;
+            heardEvent = true;
+            show(event.payload as UpdateState | null | undefined);
           },
           { only: ['update'] },
         )
       : () => undefined;
-  void calls.status().then(show, () => undefined);
+  void calls.status().then(
+    info => {
+      if (!heardEvent) show(info);
+    },
+    () => undefined,
+  );
   return () => {
     stopped = true;
     off();
