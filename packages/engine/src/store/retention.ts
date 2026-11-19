@@ -1,10 +1,11 @@
 import type { EngineServices } from '../runtime/services';
 import { parseStored, withDefaults } from '../runtime/settings';
-import type { BodyEvictWrite } from '../host/retention-ext';
+import type { CommitExtensionTx } from './port';
+import type { ThreadDbRow } from '../views/rows';
 
 /*
- * Body retention (ARCH 3.6, Decision 6), the lazy half: `host/module.ts` loads this on a desktop host and runs a pass
- * a while after start and then every few hours. Message text is kept for `retention.bodyDays` plus anything opened in
+ * Body retention (ARCH 3.6, Decision 6), the lazy half: `host/module.ts` loads this at start and, on a desktop host,
+ * runs a pass a while after start and then every few hours. Message text is kept for `retention.bodyDays` plus anything opened in
  * Aplos, starred or unread, and all of it under `retention.maxBodyBytes`; older text is dropped and fetched again from
  * the provider when the message is opened (`mail/render.ts loadBody`). Metadata, folders and the search index stay.
  *
@@ -12,9 +13,94 @@ import type { BodyEvictWrite } from '../host/retention-ext';
  * words would be lost to search). The outbox and drafts tables are never touched. A pass never runs while an account
  * is backfilling, reads and writes in small batches with a yield between them, so the engine is never held for long,
  * and hands the freed pages back to the disk with paced `incremental_vacuum` steps.
+ *
+ * This module also holds the writer of the `retention` kind (the stub in `host/module.ts` runs it) and `markOpened`,
+ * which `Thread/open` loads it for, so none of it is in the core bundle.
  */
 
 const DAY = 86_400_000;
+
+declare module './port' {
+  interface ExtensionWrites {
+    retention: RetentionWrite;
+  }
+}
+
+/**
+ * - `read`: `Thread/open` opened the thread's messages at `at` (the engine clock, the one the pass compares against).
+ *   Only a message with no stamp, or one older than `RESTAMP_MS`, gets the new one (see `markOpened`).
+ * - `evict`: drops the stored bodies (`messages.id`s, never on the wire) the pass planned. Every row is checked again
+ *   here, since the plan was read across yields: a draft, a local-only message, one not yet in the search index, or one
+ *   opened after `before` keeps its body; with `rule` (the age rule, not the size cap) a starred or unread message
+ *   keeps it too.
+ * - `vacuum`: hands up to `pages` freed pages back to the disk (`auto_vacuum=INCREMENTAL`, the host opener).
+ */
+export type RetentionWrite =
+  | { kind: 'retention'; op: 'read'; thread: number; at: number }
+  | { kind: 'retention'; op: 'evict'; ids: readonly number[]; before: number; rule: boolean }
+  | { kind: 'retention'; op: 'vacuum'; pages: number };
+type EvictWrite = Extract<RetentionWrite, { op: 'evict' }>;
+
+/** The `retention` kind's writer, run inside the commit by the stub `host/module.ts` registers. */
+export function write(write: { kind: string }, tx: CommitExtensionTx): void {
+  const w = write as RetentionWrite;
+  if (w.op === 'vacuum') {
+    tx.all(`PRAGMA incremental_vacuum(${Math.max(1, Math.trunc(Number(w.pages)) || 1)})`);
+    return;
+  }
+  if (w.op === 'read') {
+    const at = Number(w.at) || tx.now();
+    tx.run(
+      'UPDATE messages SET last_read_at = ? WHERE thread_id = ? AND (last_read_at IS NULL OR last_read_at < ?)',
+      at,
+      w.thread,
+      at - RESTAMP_MS,
+    );
+    return;
+  }
+  for (const id of w.ids) {
+    const m = tx.get<{ account_id: string; remote_id: string }>(
+      `SELECT account_id, remote_id FROM messages WHERE id = ? AND (flags & 8) = 0 AND origin <> 'local'
+        AND (parts & 8) <> 0 AND (last_read_at IS NULL OR last_read_at < ?) AND (? = 0 OR (flags & 3) = 1)`,
+      id,
+      w.before,
+      Number(w.rule),
+    );
+    if (!m || !tx.run('DELETE FROM bodies WHERE message_id = ?', id).changes) continue;
+    tx.run('UPDATE messages SET parts = parts | 32 WHERE id = ?', id);
+    tx.touchMessage(m.account_id, m.remote_id); // Message.bodyState is now `evicted`
+  }
+}
+
+/**
+ * How stale a message's opened stamp must be before a re-open moves it: the size cap drops the least recently read
+ * first (ARCH 3.6), and a day is fine-grained enough for that while a thread opened again and again writes nothing.
+ */
+export const RESTAMP_MS = DAY;
+
+/**
+ * `Thread/open`: stamps the thread's messages as opened, so they keep their text past the window. A re-open within
+ * `RESTAMP_MS` of every message's stamp writes nothing: no commit, no `commits` row. The stamp never reaches a window
+ * (no change row): no view reads `last_read_at`, only this pass.
+ */
+export function markOpened(services: EngineServices, thread: ThreadDbRow): void {
+  const { store, clock } = services;
+  const at = clock.now();
+  const stale = store.read(q =>
+    q.get(
+      'SELECT 1 FROM messages WHERE thread_id = ? AND (last_read_at IS NULL OR last_read_at < ?) LIMIT 1',
+      thread.rowid,
+      at - RESTAMP_MS,
+    ),
+  );
+  if (!stale) return;
+  store.commit({
+    opId: `read:${thread.account_id}:${thread.remote_id}:${at}`,
+    origin: 'local',
+    writes: [{ kind: 'retention', op: 'read', thread: thread.rowid, at }],
+  });
+}
+
 /** Body rows read per scan step. */
 export const SCAN_BATCH = 2000;
 /** Bodies dropped per commit. */
@@ -51,7 +137,7 @@ interface Candidate {
   size: number;
   /** Starred, unread or opened: dropped by the cap only after every unmarked body. */
   marked: boolean;
-  /** Least recently read first; never-opened mail by its date. */
+  /** Least recently read first (to the day, `RESTAMP_MS`); never-opened mail by its date. */
   key: number;
 }
 
@@ -166,21 +252,30 @@ function overCap(scan: Scan, maxBodyBytes: number): number[] {
   return byCap;
 }
 
-/** Hands the freed pages back, a bounded step per commit; returns the steps taken. */
+/**
+ * Hands the freed pages back, a bounded step per commit; returns the steps taken. Stops when a step frees nothing (a
+ * file made before `auto_vacuum=INCREMENTAL`, where `incremental_vacuum` is a no-op) and after as many steps as the
+ * free pages needed at the start, plus one, so new free pages from other commits cannot keep it going.
+ */
 async function vacuum(
   services: EngineServices,
   pause: () => Promise<void>,
   signal: AbortSignal | undefined,
 ): Promise<number> {
   let steps = 0;
-  while (!signal?.aborted && freePages(services) > 0) {
+  let free = freePages(services);
+  const most = Math.ceil(free / VACUUM_PAGES) + 1;
+  while (free > 0 && steps < most && !signal?.aborted) {
     services.store.commit({
       opId: opId(services, 'vacuum'),
       origin: 'system',
-      writes: [{ kind: 'bodyVacuum', pages: VACUUM_PAGES }],
+      writes: [{ kind: 'retention', op: 'vacuum', pages: VACUUM_PAGES }],
     });
     steps++;
     await pause();
+    const left = freePages(services);
+    if (left >= free) break;
+    free = left;
   }
   return steps;
 }
@@ -188,7 +283,7 @@ async function vacuum(
 async function evict(
   services: EngineServices,
   ids: readonly number[],
-  how: Pick<BodyEvictWrite, 'before' | 'rule'>,
+  how: Pick<EvictWrite, 'before' | 'rule'>,
   step: { size: number; pause: () => Promise<void>; signal: AbortSignal | undefined },
 ): Promise<number> {
   const { size, pause, signal } = step;
@@ -197,7 +292,7 @@ async function evict(
     const { changed } = services.store.commit({
       opId: opId(services, 'evict'),
       origin: 'system',
-      writes: [{ kind: 'bodyEvict', ids: ids.slice(i, i + size), ...how }],
+      writes: [{ kind: 'retention', op: 'evict', ids: ids.slice(i, i + size), ...how }],
     });
     done += changed;
     await pause();
@@ -225,8 +320,12 @@ function opId(services: EngineServices, what: string) {
   return `retention-${what}:${hex}`;
 }
 
-/** The schedule: a pass a while after start, then every few hours, until `signal` aborts. Failures are logged. */
+/**
+ * The schedule: a pass a while after start, then every few hours, until `signal` aborts; on a desktop host only.
+ * Failures are logged.
+ */
 export async function retentionLoop(services: EngineServices, signal: AbortSignal): Promise<void> {
+  if (!services.host.capabilities.desktop) return;
   let wait = FIRST_PASS_MS;
   while (!signal.aborted) {
     try {

@@ -1,11 +1,11 @@
-import { searchRemote } from '../views/remote';
 import { ensureViewKind } from '../views/registry';
 import type { ViewSpec } from '@aplos/contract';
 import type { AreaHandlers, EngineServices } from './types';
 
 /**
  * The `view` area, owned by lane `eng-views`: live windows, one-shot reads, the sidebar's numbers and remote search.
- * Arguments arrive validated; the window engine (`services.views`) does the work, per connection.
+ * Arguments arrive validated; the window engine (`services.views`) does the work, per connection. Remote search loads on
+ * its first `Search/remote` (`views/remote`, a lazy module).
  */
 /** `ensureFolders` from the lazy module, only for specs that name folders. */
 const fetchFolders = (args: { spec: ViewSpec }, ctx: { services: EngineServices }) =>
@@ -39,5 +39,6 @@ export const handlers: AreaHandlers<'view'> = {
   'Folder/get': (args, ctx) => ctx.services.views.folders(args.accountId),
   'Counts/get': (_args, ctx) => ctx.services.views.counts(),
   'SenderGroup/get': (args, ctx) => ctx.services.views.senderGroups(args.ids),
-  'Search/remote': (args, ctx) => searchRemote(ctx.services, args, ctx.connectionId),
+  'Search/remote': async (args, ctx) =>
+    (await import('../views/remote')).searchRemote(ctx.services, args, ctx.connectionId),
 };

@@ -1,16 +1,23 @@
 import assert from 'node:assert/strict';
+import { DatabaseSync } from 'node:sqlite';
 import { describe, it } from 'node:test';
-import { retainBodies, type RetentionOptions } from '../../src/store/retention';
-import { ACCOUNT, PLAIN, mailWorld, type World } from '../mail/harness';
-import { msg } from './helpers';
+import {
+  FIRST_PASS_MS,
+  PASS_EVERY_MS,
+  RESTAMP_MS,
+  retainBodies,
+  type RetentionOptions,
+} from '../../src/store/retention';
+import { ACCOUNT, PLAIN, mailWorld, type World, type WorldOptions } from '../mail/harness';
+import { msg, T0 } from './helpers';
 
 // Body retention (ARCH 3.6): text older than the window is dropped unless opened, starred or unread, everything under
 // the size cap, and drafts, local-only mail and unindexed mail are never dropped. A dropped body comes back on open.
 
 const DAY = 86_400_000;
 
-async function withWorld(fn: (w: World) => Promise<void>) {
-  const world = await mailWorld();
+async function withWorld(fn: (w: World) => Promise<void>, options?: WorldOptions) {
+  const world = await mailWorld(options);
   try {
     await fn(world);
   } finally {
@@ -91,6 +98,23 @@ const bodyState = async (w: World, remoteId: string) =>
       list: { bodyState: string }[];
     }
   ).list[0].bodyState;
+
+/** Twenty read messages with 200 KB bodies each, so dropping them frees whole pages. */
+function seedBig(w: World) {
+  const seen = { seen: true, flagged: false, draft: false, fromMe: false };
+  const big = { text: 'x'.repeat(200_000), cidMap: {} };
+  w.store.commit({
+    opId: 'big',
+    origin: 'sync',
+    writes: Array.from({ length: 20 }, (_, i) => [
+      msg(`big-${i}`, `tb${i}`, i, { flags: seen }),
+      { kind: 'body' as const, accountId: ACCOUNT, remoteId: `big-${i}`, body: big },
+    ]).flat(),
+  });
+}
+
+const freelist = (w: World) =>
+  w.store.read(q => q.get<{ freelist_count: number }>('PRAGMA freelist_count')!.freelist_count);
 
 describe('body retention', () => {
   it('drops old read text and keeps opened, starred, unread, draft, local and recent mail', () =>
@@ -239,16 +263,7 @@ describe('body retention', () => {
 
   it('hands freed pages back to the disk', () =>
     withWorld(async w => {
-      const seen = { seen: true, flagged: false, draft: false, fromMe: false };
-      const big = { text: 'x'.repeat(200_000), cidMap: {} };
-      w.store.commit({
-        opId: 'big',
-        origin: 'sync',
-        writes: Array.from({ length: 20 }, (_, i) => [
-          msg(`big-${i}`, `tb${i}`, i, { flags: seen }),
-          { kind: 'body' as const, accountId: ACCOUNT, remoteId: `big-${i}`, body: big },
-        ]).flat(),
-      });
+      seedBig(w);
       w.clock.advance(100 * DAY);
       await tick();
       const pages = () =>
@@ -258,11 +273,141 @@ describe('body retention', () => {
       assert.equal(result.byAge, 20);
       assert.ok(result.vacuumSteps >= 1);
       assert.ok(pages() < before - 500, `${before} -> ${pages()} pages`);
-      assert.equal(
+      assert.equal(freelist(w), 0);
+    }));
+  it('stops handing pages back when the file cannot give them (no incremental auto_vacuum)', () =>
+    withWorld(
+      async w => {
+        assert.equal(
+          w.store.read(q => q.get<{ auto_vacuum: number }>('PRAGMA auto_vacuum')!.auto_vacuum),
+          0,
+          'the file was made without auto_vacuum',
+        );
+        seedBig(w);
+        w.clock.advance(100 * DAY);
+        await tick();
+        // A guard, so a regression fails the test instead of hanging it.
+        const guard = new AbortController();
+        let steps = 0;
+        const result = await run(w, {
+          signal: guard.signal,
+          pause: () => {
+            if (++steps > 500) guard.abort();
+            return tick();
+          },
+        });
+        assert.equal(guard.signal.aborted, false, 'the pass ended by itself');
+        assert.equal(result.byAge, 20);
+        assert.equal(result.vacuumSteps, 1, 'one step freed nothing, so it stopped');
+        assert.ok(freelist(w) > 0, 'the free pages stay in the file, reused by later writes');
+      },
+      {
+        // An older opener: the file and a table exist before the store opens it, so its auto_vacuum pragma is a no-op.
+        prepare: path => {
+          const db = new DatabaseSync(path);
+          db.exec('CREATE TABLE made_before(x)');
+          db.close();
+        },
+      },
+    ));
+
+  it('a re-open writes nothing; a re-open a day later moves the stamp', () =>
+    withWorld(async w => {
+      await seedOld(w);
+      w.remote.clear(); // the fake provider's open commits nothing, so every commit counted here is the stamp's
+      const thread = { threadId: `${ACCOUNT}:to5` };
+      const commits = () =>
+        w.store.read(q => q.get<{ n: number }>('SELECT count(*) AS n FROM commits')!.n);
+      const stamp = () =>
         w.store.read(
-          q => q.get<{ freelist_count: number }>('PRAGMA freelist_count')!.freelist_count,
-        ),
-        0,
+          q =>
+            q.get<{ at: number }>(
+              "SELECT last_read_at AS at FROM messages WHERE remote_id = 'old-opened'",
+            )!.at,
+        );
+      const first = stamp();
+      const before = { commits: commits(), seq: w.store.seq() };
+      await w.windowA.call('Thread/open', thread);
+      await w.windowA.call('Thread/open', thread);
+      assert.deepEqual(
+        { commits: commits(), seq: w.store.seq() },
+        before,
+        'no commit, no change row',
       );
+      assert.equal(stamp(), first);
+      w.clock.advance(RESTAMP_MS + 1);
+      await w.windowA.call('Thread/open', thread);
+      assert.equal(commits(), before.commits + 1);
+      assert.equal(w.store.seq(), before.seq, 'still no change row: no window reads the stamp');
+      assert.equal(stamp(), w.clock.now());
+    }));
+});
+
+/** The pass the way a desktop host runs it: the eng-host lane starts it after `FIRST_PASS_MS`, then every few hours. */
+describe('body retention on a host', () => {
+  const desktop = {
+    appVersion: '9.9.9',
+    device: { id: 'd', name: 'd' },
+    resident: true,
+    capabilities: { desktop: true },
+  };
+  const old = T0 - 100 * DAY;
+  const seen = { seen: true, flagged: false, draft: false, fromMe: false };
+  function seedHostMail(w: World) {
+    w.store.commit({
+      opId: 'host-old',
+      origin: 'sync',
+      writes: ['h-read', 'h-starred'].flatMap((id, i) => [
+        msg(id, `th${i}`, 0, {
+          flags: { ...seen, flagged: id === 'h-starred' },
+          date: old,
+          internalDate: old,
+        }),
+        { kind: 'body' as const, accountId: ACCOUNT, remoteId: id, body: PLAIN },
+      ]),
+    });
+  }
+  /** Fires due timers and lets the pass's yields run, until `done` or a bound. */
+  async function pump(w: World, done: () => boolean) {
+    for (let i = 0; i < 200 && !done(); i++) {
+      w.clock.advance(0);
+      await tick();
+    }
+  }
+
+  it('a desktop engine drops old text on its own schedule and keeps starred mail', () =>
+    withWorld(
+      async w => {
+        seedHostMail(w);
+        w.clock.advance(FIRST_PASS_MS - 1);
+        await pump(w, () => false);
+        assert.ok(stored(w).includes('h-read'), 'nothing before the first pass is due');
+        w.clock.advance(1);
+        await pump(w, () => !stored(w).includes('h-read'));
+        assert.deepEqual(
+          stored(w).filter(id => id.startsWith('h-')),
+          ['h-starred'],
+        );
+        assert.equal(await bodyState(w, 'h-read'), 'evicted');
+        await pump(w, () => false); // the pass ends (its vacuum steps) and the loop sleeps until the next one
+        // The next pass is scheduled: mail that ages out meanwhile goes then.
+        w.store.commit({
+          opId: 'host-unstar',
+          origin: 'sync',
+          writes: [msg('h-starred', 'th1', 0, { flags: seen, date: old, internalDate: old })],
+        });
+        w.clock.advance(PASS_EVERY_MS);
+        await pump(w, () => !stored(w).includes('h-starred'));
+        assert.ok(!stored(w).includes('h-starred'));
+      },
+      { host: desktop },
+    ));
+
+  it('a host without the desktop capability never runs it', () =>
+    withWorld(async w => {
+      seedHostMail(w);
+      w.clock.advance(FIRST_PASS_MS + PASS_EVERY_MS);
+      await pump(w, () => false);
+      assert.ok(stored(w).includes('h-read'));
     }));
 });

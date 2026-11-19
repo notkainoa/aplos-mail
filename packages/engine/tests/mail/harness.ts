@@ -6,6 +6,7 @@ import { createLogger } from '../../src/diag/log';
 import { createEngine, laneExtensions } from '../../src/index';
 import type { Caller } from '../../src/methods/types';
 import type { ImageProxy, MailHtml, MailHtmlInput, ProxiedImage } from '../../src/ports';
+import type { HostFacts } from '../../src/runtime/services';
 import { findMessage, type MessageRef } from '../../src/mail/message';
 import { openStore, type BodyRecord, type StoreWrite } from '../../src/store';
 import { manualClock } from '../runtime.helpers';
@@ -48,6 +49,10 @@ export const IDS = {
 export interface WorldOptions {
   /** Sender of the rich message. */
   from?: string;
+  /** What the host says it is (default: a bare host with no capabilities). */
+  host?: HostFacts;
+  /** Runs on the empty file's path before the store opens it (a file made by an older opener, say). */
+  prepare?: (path: string) => void;
 }
 
 function seed(from: string): StoreWrite[] {
@@ -66,6 +71,7 @@ function seed(from: string): StoreWrite[] {
 
 export async function mailWorld(options: WorldOptions = {}) {
   const file = tempDb();
+  options.prepare?.(file.path);
   const db = file.open();
   const store = openStore(db, { now: () => T0, extensions: laneExtensions() });
   store.commit({ opId: 'seed', origin: 'sync', writes: seed(options.from ?? 'ada@corp.example') });
@@ -126,6 +132,7 @@ export async function mailWorld(options: WorldOptions = {}) {
     log,
     validate: parseArgs as (m: string, a: unknown) => unknown,
     ports: { accounts: accounts as never, html: html as MailHtml, images },
+    ...(options.host ? { host: options.host } : {}),
   });
   // Connection ids are `c1`, `c2`, ... in connect order: window A, window B, then main.
   const windowA = engine.connect();

@@ -1,6 +1,7 @@
 import type { Output } from '@aplos/contract';
 import { ContractError } from '@aplos/contract/contract-error';
 import type { EngineServices } from '../runtime/services';
+import { loadRetention } from '../host/module';
 import { threadByContractId } from './rows';
 
 /*
@@ -26,13 +27,9 @@ export async function openThread(services: EngineServices, threadId: string): Pr
     });
   const now = store.read(q => threadByContractId(q, threadId));
   if (!now) throw gone();
-  // Opened mail keeps its text past the retention window (ARCH 3.6); no change row, nothing on screen moves.
-  const at = services.clock.now();
-  store.commit({
-    opId: `read:${threadId}:${at}`,
-    origin: 'local',
-    writes: [{ kind: 'bodyRead', accountId: now.account_id, remoteThreadId: now.remote_id, at }],
-  });
+  // Opened mail keeps its text past the retention window (ARCH 3.6), stamped by the lazy retention module (a re-open
+  // the same day writes nothing).
+  (await loadRetention()).markOpened(services, now);
   return {
     threadId,
     complete: now.complete === 1,

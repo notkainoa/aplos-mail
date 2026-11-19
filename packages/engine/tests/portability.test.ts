@@ -141,6 +141,8 @@ const lazyModules = [
   join(src, 'store', 'fts-indexer.ts'),
   // The provider search text (Gmail operators) loads on the first `Search/remote` via `import()` in views/remote.ts.
   join(src, 'views', 'remote-text.ts'),
+  // `Search/remote` itself loads on its first call (`import()` in methods/view.ts), 2026-11-18.
+  join(src, 'views', 'remote.ts'),
   // Calendar writes are rare: the port that runs them (and its error mapping) loads on the first write via
   // `import()` in calendar/write-target.ts.
   join(src, 'calendar', 'write-port.ts'),
