@@ -118,9 +118,10 @@ export function Privacy() {
             Removing an account in Settings stops syncing it and deletes what Aplos stored for it on
             your Mac: its mail and attachments, drafts, events, AI summaries and saved Google
             sign-in. Aplos won’t remove an account while mail or a calendar update from it is still
-            waiting to go out. A copy saved before an update, or of a damaged database, can still
-            hold its mail until that copy is deleted. Your mail stays with Google, and removing the
-            account doesn’t withdraw the app’s access there; the end of this section says how.
+            waiting to go out. It also deletes the copies Aplos saved before an update or of a
+            damaged database, which hold all your accounts’ mail. Your mail stays with Google, and
+            removing the account doesn’t withdraw the app’s access there; the end of this section
+            says how.
           </p>
           <p data-claim="delete-data">
             To remove the app’s data, quit Aplos Mail and delete <code>{dataFolder}</code> and its

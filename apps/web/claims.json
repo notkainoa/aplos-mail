@@ -633,17 +633,22 @@
     },
     {
       "id": "update-backups",
-      "says": "Before an update changes the database Aplos saves a copy in the data folder and deletes it after 14 days; a damaged database's copy is kept 30 days; these copies can hold dropped text; removing an account does not delete them",
+      "says": "Before an update changes the database Aplos saves a copy in the data folder and deletes it after 14 days; a damaged database's copy is kept 30 days; these copies can hold dropped text; removing an account deletes all of them",
       "pages": ["privacy"],
       "evidence": [
         {
           "kind": "fact",
-          "ref": "apps/desktop/src/host/damaged.ts (PR #567): writeBackup writes mail.db.pre-<from> (VACUUM INTO, mode 0600) in the data folder before a migration and removes older backups; setAside copies a damaged file into damaged/ (0600); pruneCopies, after every healthy start, keeps the newest backup only while younger than BACKUP_DAYS = 14 and removes damaged copies older than DAMAGED_DAYS = 30. deleteLocalCopies exists but neither #564 nor #567 calls it from account removal (checked 2026-11-18)",
+          "ref": "apps/desktop/src/host/damaged.ts (PR #567): writeBackup writes mail.db.pre-<from> (VACUUM INTO, mode 0600) in the data folder before a migration and removes older backups; setAside copies a damaged file into damaged/ (0600); pruneCopies, after every healthy start, keeps the newest backup only while younger than BACKUP_DAYS = 14 and removes damaged copies older than DAMAGED_DAYS = 30. account removal on the desktop host calls deleteLocalCopies after the account's rows are gone, with a mark file so an interrupted purge finishes at the next start (PR #567 at 422b5a03)",
           "maxAgeDays": null
         },
         {
           "kind": "test",
           "ref": "apps/desktop/tests/eng-host/damaged.test.ts \"opening an older database writes mail.db.pre-<from> before it migrates\", \"after a healthy start, backups go after 14 days (only the newest stays) and damaged copies after 30\", \"the damaged file is copied aside once, and the original is left where it is\"",
+          "maxAgeDays": null
+        },
+        {
+          "kind": "test",
+          "ref": "apps/desktop/tests/eng-host/damaged.test.ts \"removing an account on the desktop host deletes every backup and damaged copy after its rows are gone\", \"a purge after a removal that could not finish is finished at the next start, before anything reads a copy\"",
           "maxAgeDays": null
         },
         {
@@ -654,7 +659,7 @@
       ],
       "status": "verified",
       "verifiedAt": "2026-11-18",
-      "note": "New on 2026-11-18. \"Deletes after 14 days\" means at the first healthy start once the backup is 14 days old (pruneCopies runs at start), and a newer backup replaces an older one at once. When account removal calls deleteLocalCopies, drop the sentence \"A copy saved before an update, or of a damaged database, can still hold its mail until that copy is deleted.\" from the Deleting your data section and update this claim. Merge only after #567 (its test file is not on this branch until then). Holds on the redesigned build's real engine. A release build of revamp at 8f1eb4cd0 still boots the legacy engine (realEngineRequested in apps/desktop/src/host/transports/port.ts is false in release builds), where it does not hold: merge revamp into main only after the go-live switch makes release builds boot the real engine."
+      "note": "New on 2026-11-18. \"Deletes after 14 days\" means at the first healthy start once the backup is 14 days old (pruneCopies runs at start), and a newer backup replaces an older one at once. Account removal calls deleteLocalCopies since #567 at 422b5a03, so the Deleting your data section says removal deletes these copies. Merge only after #567 (its test file is not on this branch until then). Holds on the redesigned build's real engine. A release build of revamp at 8f1eb4cd0 still boots the legacy engine (realEngineRequested in apps/desktop/src/host/transports/port.ts is false in release builds), where it does not hold: merge revamp into main only after the go-live switch makes release builds boot the real engine."
     },
     {
       "id": "keychain-protected-secrets",
@@ -889,7 +894,7 @@
     },
     {
       "id": "remove-account",
-      "says": "Removing an account in Settings stops syncing it and deletes what Aplos stored for it on this Mac (mail and attachments, drafts, events, AI summaries, saved Google sign-in); refused while mail or a guest calendar update is waiting to go out; mail stays with Google and access at Google is not withdrawn",
+      "says": "Removing an account in Settings stops syncing it and deletes what Aplos stored for it on this Mac (mail and attachments, drafts, events, AI summaries, saved Google sign-in) and Aplos's backups and damaged copies; refused while mail or a guest calendar update is waiting to go out; mail stays with Google and access at Google is not withdrawn",
       "pages": ["privacy"],
       "evidence": [
         {
@@ -910,7 +915,7 @@
       ],
       "status": "verified",
       "verifiedAt": "2026-11-18",
-      "note": "Restored on 2026-11-18 now that PR #564 implements Account/disconnect on the real engine (the sentence removed earlier in this PR described the legacy engine). Merge only after #564: its test file is not on this branch until then. The Settings confirm in #564 says \"including backups\"; that is not true until removal calls deleteLocalCopies (#567), so the site does not say it (see update-backups). Holds on the redesigned build's real engine. A release build of revamp at 8f1eb4cd0 still boots the legacy engine (realEngineRequested in apps/desktop/src/host/transports/port.ts is false in release builds), where it does not hold: merge revamp into main only after the go-live switch makes release builds boot the real engine."
+      "note": "Restored on 2026-11-18 now that PR #564 implements Account/disconnect on the real engine (the sentence removed earlier in this PR described the legacy engine). Merge only after #564: its test file is not on this branch until then. Removal deletes Aplos's backups and damaged copies via deleteLocalCopies (#567); merge after #567 too (see update-backups). Holds on the redesigned build's real engine. A release build of revamp at 8f1eb4cd0 still boots the legacy engine (realEngineRequested in apps/desktop/src/host/transports/port.ts is false in release builds), where it does not hold: merge revamp into main only after the go-live switch makes release builds boot the real engine."
     },
     {
       "id": "delete-data",
