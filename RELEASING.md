@@ -40,7 +40,7 @@ To sign and notarize, you need an Apple Developer Program membership (paid, indi
 
 - On CI (`CI` set), a release build without `GOOGLE_CLIENT_ID` and `GOOGLE_CLIENT_SECRET` **fails** so a release that cannot sign in never ships. Set `APLOS_ALLOW_NO_GOOGLE=1` for an intentionally unconfigured build. A local `npm run release:build` only warns.
 - `MICROSOFT_CLIENT_ID` may be missing; Outlook then shows "Outlook sign-in isn't available in this build."
-- At runtime a value in `.env` (development) or `~/.config/aplos-mail/.env` (packaged) still wins over the built-in client, so you can test another client without rebuilding.
+- A release build (`APLOS_RELEASE_BUILD=1`) signs in with the built-in client only: `GOOGLE_*`, `APLOS_GOOGLE_*`, `MICROSOFT_*` and `APLOS_GOOGLE_TESTING_MODE` in the environment or in `~/.config/aplos-mail/.env` are ignored (`oauthEnv` in `src/main/oauth-config.ts`). To try another client, use a development or `npm run package` build, where those variables still win. AI keys in that `.env` are still read.
 - `npm run build`, `npm run package` and CI's `npm run build` never read these variables; their apps use `.env` only and show the unavailable state (with a developer hint) when it has none.
 
 ## Cutting a release

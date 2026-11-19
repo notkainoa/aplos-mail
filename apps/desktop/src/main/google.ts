@@ -24,7 +24,13 @@ import {
   type SyncResult,
   type ThreadFlags,
 } from '@aplos/engine/legacy/provider';
-import { bundledOAuth, oauthClient, releaseBuild, type OAuthClient } from './oauth-config';
+import {
+  bundledOAuth,
+  oauthClient,
+  oauthEnv,
+  releaseBuild,
+  type OAuthClient,
+} from './oauth-config';
 
 export interface GoogleOptions {
   dataDir: string;
@@ -244,8 +250,8 @@ export async function createGoogle(options: GoogleOptions): Promise<GoogleAdapte
     options.clientId !== undefined
       ? { clientId: options.clientId, clientSecret: options.clientSecret }
       : oauthClient(
-          process.env.GOOGLE_CLIENT_ID,
-          process.env.GOOGLE_CLIENT_SECRET,
+          oauthEnv(process.env).GOOGLE_CLIENT_ID,
+          oauthEnv(process.env).GOOGLE_CLIENT_SECRET,
           options.bundled ?? bundledOAuth.google,
         );
   const clientId = client.clientId,

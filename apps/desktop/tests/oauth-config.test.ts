@@ -7,6 +7,8 @@ import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { build } from 'esbuild';
 import { createGoogle } from '../src/main/google';
+import { oauthEnv } from '../src/main/oauth-config';
+import { resolveGoogleClient } from '../src/host/providers/oauth/client';
 import { checkReleaseOAuth, oauthDefines } from '../scripts/oauth-defines.mjs';
 
 const bundled = { clientId: 'bundled-id.apps.example.test', clientSecret: 'bundled-secret' };
@@ -148,4 +150,60 @@ test('a CI release without a Google client fails unless explicitly allowed', () 
     checkReleaseOAuth({ CI: 'true', GOOGLE_CLIENT_ID: 'x', GOOGLE_CLIENT_SECRET: 'y' }),
     [],
   );
+});
+
+test('a release build ignores every OAuth override in the environment; development keeps them', () => {
+  const env = {
+    APLOS_GOOGLE_CLIENT_ID: 'env-id.apps.example.test',
+    APLOS_GOOGLE_CLIENT_SECRET: 'env-secret',
+    GOOGLE_CLIENT_ID: 'old-env-id.apps.example.test',
+    APLOS_GOOGLE_TESTING_MODE: '0',
+    MICROSOFT_CLIENT_ID: 'ms-env-id',
+    MICROSOFT_TENANT: 'env-tenant',
+  };
+  const inRelease = resolveGoogleClient({ env: oauthEnv(env, true), bundled });
+  assert.equal(inRelease.source, 'bundled');
+  assert.equal(inRelease.clientId, bundled.clientId);
+  assert.equal(
+    inRelease.testingMode,
+    true,
+    'the Testing-mode flag is not an env switch in release',
+  );
+  assert.deepEqual(oauthEnv(env, true), {});
+  const inDev = resolveGoogleClient({ env: oauthEnv(env, false), bundled });
+  assert.equal(inDev.source, 'env');
+  assert.equal(inDev.clientId, env.APLOS_GOOGLE_CLIENT_ID);
+  assert.equal(inDev.testingMode, false);
+});
+
+test('in a built release bundle the environment cannot change the Google client', async () => {
+  const dir = await mkdtemp(join(tmpdir(), 'aplos-oauth-env-'));
+  try {
+    const outfile = join(dir, 'oauth.cjs');
+    await build({
+      entryPoints: ['src/main/oauth-config.ts'],
+      outfile,
+      bundle: true,
+      platform: 'node',
+      format: 'cjs',
+      logLevel: 'silent',
+      define: oauthDefines({
+        APLOS_RELEASE_BUILD: '1',
+        GOOGLE_CLIENT_ID: 'built-in-id',
+        GOOGLE_CLIENT_SECRET: 'built-in-secret',
+      }),
+    });
+    const mod = createRequire(import.meta.url)(
+      outfile,
+    ) as typeof import('../src/main/oauth-config');
+    const env = { APLOS_GOOGLE_CLIENT_ID: 'from-dotenv', GOOGLE_CLIENT_ID: 'from-dotenv' };
+    assert.equal(mod.releaseBuild, true);
+    assert.deepEqual(mod.oauthEnv(env), {}, 'the default follows the build define');
+    assert.equal(
+      resolveGoogleClient({ env: mod.oauthEnv(env), bundled: mod.bundledOAuth.google }).clientId,
+      'built-in-id',
+    );
+  } finally {
+    await rm(dir, { recursive: true, force: true });
+  }
 });
