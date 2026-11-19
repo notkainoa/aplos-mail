@@ -163,6 +163,12 @@ export function buildApi({ client, mint, act, undo, command }: ApiParts): DataAp
       closeReady: args => c.window.closeReady(args),
       closeCancel: args => c.window.closeCancel(args),
     },
+    update: {
+      status: args => c.update.status(args),
+      check: args => c.update.check(args),
+      restart: args => c.update.restart(args),
+      later: args => c.update.later(args),
+    },
     system: {
       login: args => c.system.login(args),
       defaultMail: args => c.system.defaultMail(args),

@@ -12,6 +12,12 @@ type Stub = (args: Record<string, unknown>) => unknown;
 
 const ok = () => ({ ok: true as const });
 
+/** Development and tests have no updater: the honest answer is that updates are off. */
+const updatesOff = () => ({
+  currentVersion: '0.0.0',
+  status: { state: 'disabled' as const, reason: 'Updates are off in development builds.' },
+});
+
 /** The desktop methods the stand-in answers, by contract name. */
 const STUBS: Readonly<Record<string, Stub>> = {
   'Window/openOnboarding': ok,
@@ -19,6 +25,10 @@ const STUBS: Readonly<Record<string, Stub>> = {
   'Window/closeReady': ok,
   'Window/closeCancel': ok,
   'Notification/test': ok,
+  'Update/status': updatesOff,
+  'Update/check': updatesOff,
+  'Update/later': updatesOff,
+  'Update/restart': ok,
   'System/openSettings': ok,
   'Shell/open': ok,
   'File/save': () => ({ canceled: true }),

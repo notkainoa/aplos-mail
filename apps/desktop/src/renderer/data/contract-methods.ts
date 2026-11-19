@@ -472,6 +472,30 @@ export const CONTRACT_METHODS = {
     gaps: [],
     notes: 'tells main the close failed, so it re-enables the window',
   },
+  'update.status': {
+    method: 'Update/status',
+    kind: 'native',
+    gaps: [],
+    notes: 'main answers; the stand-in says updates are off',
+  },
+  'update.check': {
+    method: 'Update/check',
+    kind: 'native',
+    gaps: [],
+    notes: '',
+  },
+  'update.restart': {
+    method: 'Update/restart',
+    kind: 'native',
+    gaps: [],
+    notes: '',
+  },
+  'update.later': {
+    method: 'Update/later',
+    kind: 'native',
+    gaps: [],
+    notes: '',
+  },
   'system.login': {
     method: 'System/login',
     kind: 'native',
