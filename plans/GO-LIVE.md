@@ -26,7 +26,7 @@ This PR makes the new engine run in every build. The first draft of this PR kept
 | 12 | Damaged-database path | Missing | M |
 | 13 | Soak and fault injection | Missing soak, partial faults | M–L |
 | 14 | Release checks still drive the legacy engine | Partial: `verify:release:real` covers the new engine; `verify-release` stays legacy | S |
-| 15 | "Allow tools on this Mac" (local listener) | Partial: toggle only, no listener | M if it must ship |
+| 15 | "Allow tools on this Mac" (local listener) | Hidden until the listener is built: no listener behind it | M, only if it must ship |
 | 16 | AI consent re-ask on upgrade | Not needed: no importer (item 3) | — |
 | 17 | Version number | Missing: still `0.2.3` | S |
 
@@ -138,9 +138,9 @@ Size: M–L, plus a week of the owner's time running the soak.
 
 `verify-release.mjs`, the pre-release smoke on a packaged build, exercises the old engine through `state.get`. It is now pinned to `APLOS_ENGINE=legacy`. The new engine's packaged check is `verify-hardening-real-engine.mjs`. It covers only the first window, not mail, drafts, send-later and settings the way `verify-release.mjs` does. A real-engine equivalent of `verify-release.mjs` is needed before release (S–M).
 
-## 15. "Allow tools on this Mac": partial
+## 15. "Allow tools on this Mac": hidden until the listener is built
 
-The toggle exists and is off by default (`packages/engine/src/methods/listener.ts:11-17`), matching plan 10 decision 5. There is no socket or loopback listener behind it; `host/transports/` holds only `auth.ts` and `port.ts`. Hide the toggle or build the listener (M).
+There is no socket or loopback listener behind the toggle; `host/transports/` holds only `auth.ts` and `port.ts`. So it is not shown. The engine reports `listener`, `clients` and `queueInspector` as `false` (`packages/engine/src/methods/session.ts`), the desktop host adds none of them (`main/engine-utility.ts`), and Settings draws those rows only when their capability is on (`SHOW_UNBUILT_ROWS = false` in `settings.model.ts`). The same check keeps them out of the ⌘K palette. A test pins the three capabilities to `false` (`packages/engine/tests/methods/session-settings.test.ts`). `Listener/get|set` and `Clients/*` stay in the engine for contract stability. When the listener is built: report the capability from the host, and the rows appear with no UI change.
 
 ## 16. AI consent re-ask: not needed
 
