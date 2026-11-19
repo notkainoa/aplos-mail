@@ -92,7 +92,7 @@
       ],
       "status": "pending",
       "verifiedAt": null,
-      "note": "Needs a passing Gmail live smoke within 7 days in apps/web/provider-status.json (absent today) and an owner acceptance note."
+      "note": "Cannot be settled by code. Needs (1) a passing Gmail live smoke within 7 days recorded in apps/web/provider-status.json: the runner that writes it (plan 40 Q4 `npm run smoke:live`, scripts/smoke/) does not exist yet, only plan 20's probes in apps/desktop/scripts/live; and (2) the owner's dated acceptance note after the hand checks, entered as the owner evidence ref. Checked 2026-11-18."
     },
     {
       "id": "google-weekly-reconnect",
@@ -480,34 +480,54 @@
       "pages": ["landing", "privacy"],
       "evidence": [
         {
-          "kind": "design",
-          "ref": "plans/ARCHITECTURE.md section 8.3 (versioned consent card)",
-          "maxAgeDays": null
-        }
-      ],
-      "status": "pending",
-      "verifiedAt": null,
-      "note": "Design commitment for the redesigned build; not in today's 0.2.x code (checked by grep on 2026-10-27). Verify with a test when it lands. Today's build uses an in-memory deferAI set (ARCH 8.3)."
-    },
-    {
-      "id": "no-training-providers",
-      "says": "Mail never goes to a provider that trains on inputs; a free Gemini key never gets mail",
-      "pages": ["landing", "privacy"],
-      "evidence": [
-        {
-          "kind": "design",
-          "ref": "plans/ARCHITECTURE.md section 8.3 (trainsOnInputs)",
+          "kind": "fact",
+          "ref": "packages/engine/src/ai/impl/gate.ts backgroundGate: background jobs need settings.ai.background, a granted and current 'background' consent (fingerprint of provider, model and address per packages/engine/src/ai/consent.ts) and ai_allowed; every background call (ai/impl/execute.ts, plans.ts, plan-jobs.ts, runner.ts) goes through it",
           "maxAgeDays": null
         },
         {
-          "kind": "design",
-          "ref": "plans/00-roadmap.md section 8.3 #25",
+          "kind": "test",
+          "ref": "packages/engine/tests/ai/path.test.ts \"jobs runner: without consent the due summary job waits; with consent it summarizes and meters\"",
+          "maxAgeDays": null
+        },
+        {
+          "kind": "test",
+          "ref": "packages/engine/tests/methods/settings-sources.test.ts \"Consent: get, grant (version-checked), drift reconsent, revoke\" and \"Consent: changing a provider endpoint forces reconsent (fingerprint covers origin+path)\"",
           "maxAgeDays": null
         }
       ],
-      "status": "pending",
-      "verifiedAt": null,
-      "note": "Design commitment for the redesigned build; not in today's 0.2.x code (checked by grep on 2026-10-27). Verify with a test when it lands. ARCH 8.3 also says Groq and OpenRouter terms are still to be checked before release. The Gemini line in the provider picker belongs here too."
+      "status": "verified",
+      "verifiedAt": "2026-11-18",
+      "note": "Background means summaries, plans and follow-up drafts. Ask and drafts you request are interactive and need no consent (the privacy page's Google user data paragraph says so). Holds on the redesigned build's real engine. A release build of revamp at 8f1eb4cd0 still boots the legacy engine (realEngineRequested in apps/desktop/src/host/transports/port.ts is false in release builds), where it does not hold: merge revamp into main only after the go-live switch makes release builds boot the real engine."
+    },
+    {
+      "id": "no-training-providers",
+      "says": "Gemini gets mail only when you mark its key as paid, because Google may use what a free key sends to improve its products",
+      "pages": ["landing", "privacy"],
+      "evidence": [
+        {
+          "kind": "fact",
+          "ref": "packages/engine/src/ai/providers.ts trainsOnInputs: only Gemini is marked, and only until settings.ai.providers.gemini.paid; ai/impl/gate.ts refuses mail to it in background and interactive features ('ai.providerTrains'); the app's switch reads \"Gemini key is on a paid plan\"",
+          "maxAgeDays": null
+        },
+        {
+          "kind": "fact",
+          "ref": "Gemini API Additional Terms, Unpaid Services: Google uses content submitted to unpaid services to provide, improve and develop Google products and machine learning technologies (https://ai.google.dev/gemini-api/terms, now served at https://aistudio.google.com/docs/terms; fetched 2026-11-18, effective 2026-03-23)",
+          "maxAgeDays": null
+        },
+        {
+          "kind": "test",
+          "ref": "packages/engine/tests/ai/training-gate.test.ts \"background summaries never send mail to a free Gemini key, and do once the key is marked paid\" (mutation-checked: removing the background refusal turns it red)",
+          "maxAgeDays": null
+        },
+        {
+          "kind": "test",
+          "ref": "packages/engine/tests/ai/path.test.ts \"Ask/run: a kept-out scope and a trains-on-inputs provider refuse honestly\"",
+          "maxAgeDays": null
+        }
+      ],
+      "status": "verified",
+      "verifiedAt": "2026-11-18",
+      "note": "Copy changed on 2026-11-18. It used to say mail never goes to any provider that trains on what it receives. The app cannot know that about OpenRouter's or OpenCode Go's downstream model hosts or about a custom server, so the site now states only what the code enforces, and keeps \"Each provider handles what it receives under its own terms\". Holds on the redesigned build's real engine. A release build of revamp at 8f1eb4cd0 still boots the legacy engine (realEngineRequested in apps/desktop/src/host/transports/port.ts is false in release builds), where it does not hold: merge revamp into main only after the go-live switch makes release builds boot the real engine."
     },
     {
       "id": "ai-daily-limit",
@@ -515,19 +535,24 @@
       "pages": ["landing"],
       "evidence": [
         {
-          "kind": "design",
-          "ref": "plans/ARCHITECTURE.md section 8.4",
+          "kind": "fact",
+          "ref": "packages/engine/src/ai/impl/runtime.ts meteredChat refuses background calls once today's background tokens reach settings.ai.dailyCap; default 150,000 tokens, on (packages/engine/src/runtime/settings.ts); Settings → AI → Daily limit changes it (apps/desktop/src/renderer/screens/settings/sections/ai.tsx)",
           "maxAgeDays": null
         },
         {
-          "kind": "design",
-          "ref": "plans/00-roadmap.md section 8.3 #26 (150,000 tokens, adjustable)",
+          "kind": "test",
+          "ref": "packages/engine/tests/ai/path.test.ts \"jobs runner: the daily cap refuses background calls and pauses the queue\"",
+          "maxAgeDays": null
+        },
+        {
+          "kind": "test",
+          "ref": "apps/desktop/src/renderer/screens/settings/model.test.ts \"tokens, 150,000 by default; \\\"No limit\\\" turns it off; the unit is never requests\"",
           "maxAgeDays": null
         }
       ],
-      "status": "pending",
-      "verifiedAt": null,
-      "note": "Design commitment for the redesigned build; not in today's 0.2.x code (checked by grep on 2026-10-27). Verify with a test when it lands."
+      "status": "verified",
+      "verifiedAt": "2026-11-18",
+      "note": "\"No limit\" in Settings turns the limit off. Interactive calls are metered but never refused. Holds on the redesigned build's real engine. A release build of revamp at 8f1eb4cd0 still boots the legacy engine (realEngineRequested in apps/desktop/src/host/transports/port.ts is false in release builds), where it does not hold: merge revamp into main only after the go-live switch makes release builds boot the real engine."
     },
     {
       "id": "no-aplos-server",
@@ -583,23 +608,58 @@
     },
     {
       "id": "retention-default",
-      "says": "Message text kept 90 days plus opened, starred or unread, up to 2 GB; older text refetched; metadata and search index kept",
+      "says": "Message text is kept for the last 90 days plus anything opened in Aplos, starred or unread, all up to 2 GB, both changeable in Settings → Mail; past the cap, text of mail not opened, starred or unread goes first, then the least recently read; dropped text is fetched from Google on open; subject, sender, folders and the search index stay; drafts and local-only mail keep their text",
       "pages": ["privacy"],
       "evidence": [
         {
-          "kind": "design",
-          "ref": "plans/ARCHITECTURE.md section 3.6",
+          "kind": "fact",
+          "ref": "packages/engine/src/store/retention.ts (PR #566): retainBodies drops by age (retention.bodyDays) unless unread, starred or opened (last_read_at, stamped by markOpened from views/open.ts Thread/open), then overCap drops unmarked bodies first and then marked ones by least recently read until retention.maxBodyBytes fits; drafts, origin 'local' and not-yet-indexed messages are never dropped. Defaults bodyDays 90 and maxBodyBytes 2 GB in packages/engine/src/runtime/settings.ts; both are choices in apps/desktop/src/renderer/screens/settings/sections/mail.tsx (\"Message text kept\")",
           "maxAgeDays": null
         },
         {
-          "kind": "design",
-          "ref": "plans/00-roadmap.md section 8.3 #18",
+          "kind": "test",
+          "ref": "packages/engine/tests/store/retention.test.ts \"drops old read text and keeps opened, starred, unread, draft, local and recent mail\" (also asserts subject, snippet and the search index stay), \"keeps the window the owner set\", \"holds the size cap: unmarked first, then least recently read, never drafts or local mail\"",
+          "maxAgeDays": null
+        },
+        {
+          "kind": "test",
+          "ref": "packages/engine/tests/store/retention.test.ts \"fetches dropped text again from the provider when the message is opened\" and \"a desktop engine drops old text on its own schedule and keeps starred mail\"",
           "maxAgeDays": null
         }
       ],
-      "status": "pending",
-      "verifiedAt": null,
-      "note": "Design commitment for the redesigned build; not in today's 0.2.x code (checked by grep on 2026-10-27). Verify with a test when it lands."
+      "status": "verified",
+      "verifiedAt": "2026-11-18",
+      "note": "Copy restored to the ARCH 3.6 rule on 2026-11-18, now that PR #566 enforces it (a pass 10 minutes after start, then every 6 hours, desktop hosts only, never while an account is backfilling). Merge this site change only after #566: its test file is not on this branch until then, and a production build fails on a missing test file. Folders are named because placements are untouched by the pass. Backups outside mail.db are the separate claim update-backups. Holds on the redesigned build's real engine. A release build of revamp at 8f1eb4cd0 still boots the legacy engine (realEngineRequested in apps/desktop/src/host/transports/port.ts is false in release builds), where it does not hold: merge revamp into main only after the go-live switch makes release builds boot the real engine."
+    },
+    {
+      "id": "update-backups",
+      "says": "Before an update changes the database Aplos saves a copy in the data folder and deletes it after 14 days; a damaged database's copy is kept 30 days; these copies can hold dropped text; removing an account deletes all of them",
+      "pages": ["privacy"],
+      "evidence": [
+        {
+          "kind": "fact",
+          "ref": "apps/desktop/src/host/damaged.ts (PR #567): writeBackup writes mail.db.pre-<from> (VACUUM INTO, mode 0600) in the data folder before a migration and removes older backups; setAside copies a damaged file into damaged/ (0600); pruneCopies, after every healthy start, keeps the newest backup only while younger than BACKUP_DAYS = 14 and removes damaged copies older than DAMAGED_DAYS = 30. account removal on the desktop host calls deleteLocalCopies after the account's rows are gone, with a mark file so an interrupted purge finishes at the next start (PR #567 at 422b5a03)",
+          "maxAgeDays": null
+        },
+        {
+          "kind": "test",
+          "ref": "apps/desktop/tests/eng-host/damaged.test.ts \"opening an older database writes mail.db.pre-<from> before it migrates\", \"after a healthy start, backups go after 14 days (only the newest stays) and damaged copies after 30\", \"the damaged file is copied aside once, and the original is left where it is\"",
+          "maxAgeDays": null
+        },
+        {
+          "kind": "test",
+          "ref": "apps/desktop/tests/eng-host/damaged.test.ts \"removing an account on the desktop host deletes every backup and damaged copy after its rows are gone\", \"a purge after a removal that could not finish is finished at the next start, before anything reads a copy\"",
+          "maxAgeDays": null
+        },
+        {
+          "kind": "fact",
+          "ref": "DECISIONS.md 2026-11-18 \"message text retention is enforced\" (PR #566), Backups: the retention pass does not reach mail.db.pre-N or damaged/ copies",
+          "maxAgeDays": null
+        }
+      ],
+      "status": "verified",
+      "verifiedAt": "2026-11-18",
+      "note": "New on 2026-11-18. \"Deletes after 14 days\" means at the first healthy start once the backup is 14 days old (pruneCopies runs at start), and a newer backup replaces an older one at once. Account removal calls deleteLocalCopies since #567 at 422b5a03, so the Deleting your data section says removal deletes these copies. Merge only after #567 (its test file is not on this branch until then). Holds on the redesigned build's real engine. A release build of revamp at 8f1eb4cd0 still boots the legacy engine (realEngineRequested in apps/desktop/src/host/transports/port.ts is false in release builds), where it does not hold: merge revamp into main only after the go-live switch makes release builds boot the real engine."
     },
     {
       "id": "keychain-protected-secrets",
@@ -666,23 +726,43 @@
     },
     {
       "id": "remote-images-blocked",
-      "says": "Remote images load only when allowed per message or sender, through the image proxy without cookies; the server still sees a request",
+      "says": "Remote images load only when allowed for the message, the sender or all mail, through the image proxy without cookies; the server still sees a request",
       "pages": ["privacy"],
       "evidence": [
         {
-          "kind": "design",
-          "ref": "plans/ARCHITECTURE.md section 10 (remote images, image proxy)",
+          "kind": "fact",
+          "ref": "packages/engine/src/mail/policy.ts resolveImagePolicy: block unless this message is loaded, the global Settings → Mail → Remote images is Allow, or the sender's address or @domain is on the allow-list; default block (runtime/settings.ts). mail-html drops remote URLs under block; the frame CSP allows only aplos-mail: and data: images (packages/mail-html/src/frame/headers.ts); allowed images go through host/proxy/fetch.ts with fixed headers and no cookie, Referer or Authorization",
           "maxAgeDays": null
         },
         {
-          "kind": "design",
-          "ref": "plans/00-roadmap.md section 8.3 #20",
+          "kind": "test",
+          "ref": "packages/engine/tests/mail/policy.test.ts \"resolveImagePolicy\" cases, \"the owner’s global remoteImages setting allows before the allow-list is even read\", \"readRemoteImages reads the settings document and defaults to block\"",
+          "maxAgeDays": null
+        },
+        {
+          "kind": "test",
+          "ref": "packages/engine/tests/mail/allow.test.ts \"adds a normalised address or @domain, once, and removes it\"",
+          "maxAgeDays": null
+        },
+        {
+          "kind": "test",
+          "ref": "packages/mail-html/tests/frame/serve.test.ts \"refuses every img/<n> while images are blocked, with the unknown-path 404\"",
+          "maxAgeDays": null
+        },
+        {
+          "kind": "test",
+          "ref": "packages/mail-html/tests/sanitize.test.ts \"keeps blocked remote images as quiet sized placeholders and does not list them\"; packages/mail-html/tests/css.test.ts \"drops every remote or unknown url() when images are blocked, but records remote ones\"",
+          "maxAgeDays": null
+        },
+        {
+          "kind": "test",
+          "ref": "apps/desktop/tests/eng-html/proxy-transport.test.ts \"the request on the wire is a GET with only Host and the fixed headers, never a cookie\"",
           "maxAgeDays": null
         }
       ],
-      "status": "pending",
-      "verifiedAt": null,
-      "note": "Design commitment for the redesigned build; not in today's 0.2.x code (checked by grep on 2026-10-27). Verify with a test when it lands. ARCH 10 notes today's renderer CSP allows https: images directly."
+      "status": "verified",
+      "verifiedAt": "2026-11-18",
+      "note": "Copy changed on 2026-11-18 to add \"or all mail\" (the global setting). The legacy reader that a release build of revamp at 8f1eb4cd0 still shows loads allowed images straight from the sender's server, with no proxy and no per-sender list. Holds on the redesigned build's real engine. A release build of revamp at 8f1eb4cd0 still boots the legacy engine (realEngineRequested in apps/desktop/src/host/transports/port.ts is false in release builds), where it does not hold: merge revamp into main only after the go-live switch makes release builds boot the real engine."
     },
     {
       "id": "update-check",
@@ -709,19 +789,24 @@
       "pages": ["privacy"],
       "evidence": [
         {
-          "kind": "design",
-          "ref": "plans/40-platform-quality.md Q5A item 5",
+          "kind": "fact",
+          "ref": "Code audit of the real engine path on 2026-11-18 (revamp 8f1eb4cd0): Google (oauth2.googleapis.com, gmail.googleapis.com, www.googleapis.com/calendar/v3), the AI providers in apps/desktop/src/host/ai/providers.ts (plus loopback or the owner's own address), image hosts through host/proxy/fetch.ts only under the allow policy, and GitHub releases for electron-updater (apps/desktop/package.json build.publish). Account discovery makes no network call (packages/engine/src/sync/account-discover.ts); only Google accounts connect; crashReporter uploadToServer false (host/crash.ts); no analytics dependency; macOS spellchecker downloads nothing",
           "maxAgeDays": null
         },
         {
           "kind": "test",
-          "ref": "network audit of the packaged redesigned build (not written yet)",
+          "ref": "apps/desktop/tests/eng-contract/privacy-destinations.test.ts \"the real engine gets no unsubscribe executor, so no sender-chosen unsubscribe URL is contacted\" and \"AI requests go only to the listed providers or an address the owner sets\"",
+          "maxAgeDays": null
+        },
+        {
+          "kind": "design",
+          "ref": "plans/40-platform-quality.md Q5A item 5",
           "maxAgeDays": null
         }
       ],
-      "status": "pending",
-      "verifiedAt": null,
-      "note": "Needs a network capture of the packaged build. The engine still contains account autodiscovery for round-2 providers (checkDomain), which round 1 must not expose."
+      "status": "verified",
+      "verifiedAt": "2026-11-18",
+      "note": "Static audit, no live network capture of a packaged build. One-click unsubscribe (host/providers/google/unsubscribe.ts) is built but not wired into the real engine; wiring it must add the sender's unsubscribe server to the privacy page (the tripwire test fails first). The legacy engine that a release build at 8f1eb4cd0 still runs also contacts cloudflare-dns.com and dns.google, autoconfig hosts and autoconfig.thunderbird.net, and IMAP, JMAP, CalDAV and Microsoft servers, and loads images directly. Holds on the redesigned build's real engine. A release build of revamp at 8f1eb4cd0 still boots the legacy engine (realEngineRequested in apps/desktop/src/host/transports/port.ts is false in release builds), where it does not hold: merge revamp into main only after the go-live switch makes release builds boot the real engine."
     },
     {
       "id": "no-telemetry",
@@ -759,7 +844,7 @@
     },
     {
       "id": "google-limited-use",
-      "says": "Google user data used only for in-app features, not sold, not for ads or training, never reaches an Aplos server; Google's Limited Use sentence quoted word for word",
+      "says": "Aplos does not sell Google user data, use it for ads or train AI on it; it never reaches an Aplos server; it goes to an AI provider only when you use a feature or for background AI after you agree; Google's Limited Use sentence quoted word for word",
       "pages": ["privacy"],
       "evidence": [
         {
@@ -771,11 +856,21 @@
           "kind": "design",
           "ref": "research/email-clients/protocols/proto-google.md section 8.2",
           "maxAgeDays": null
+        },
+        {
+          "kind": "fact",
+          "ref": "Aplos does no model training (no training code anywhere); mail text reaches an AI provider only through ai/impl/gate.ts: interactive features the owner uses, or background jobs after consent",
+          "maxAgeDays": null
+        },
+        {
+          "kind": "test",
+          "ref": "packages/engine/tests/ai/path.test.ts \"Ai/polish + Ask/run: an accountId left out of AI refuses before any mail is read\" and \"jobs runner: without consent the due summary job waits; with consent it summarizes and meters\"",
+          "maxAgeDays": null
         }
       ],
-      "status": "pending",
-      "verifiedAt": null,
-      "note": "https://developers.google.com/terms/api-services-user-data-policy (fetched 2026-10-27, last updated 2024-02-15) has no sample disclosure sentence; the Workspace policy's example was used. Pending because \"not used to train AI models\" and \"after you agree\" depend on no-training-providers and ai-consent."
+      "status": "verified",
+      "verifiedAt": "2026-11-18",
+      "note": "Copy changed on 2026-11-18: \"after you agree\" was true only for background AI, so it now reads \"when you use one, or for background AI after you agree\", and the no-training sentence names Aplos as the one that does not train. The Limited Use sentence is unchanged. \"Never reaches an Aplos server\" rests on only-these-destinations. Holds on the redesigned build's real engine. A release build of revamp at 8f1eb4cd0 still boots the legacy engine (realEngineRequested in apps/desktop/src/host/transports/port.ts is false in release builds), where it does not hold: merge revamp into main only after the go-live switch makes release builds boot the real engine."
     },
     {
       "id": "site-no-tracking",
@@ -798,18 +893,48 @@
       "note": "Vercel project settings were not inspected (agents do not touch them). plans/40 Q5A item 6 adds scripts/check-web-external.mjs to make this a build check."
     },
     {
-      "id": "delete-data",
-      "says": "Disconnecting removes the account's mail, drafts and events; delete the data folder, plus the preferences file and the Aplos Mail Safe Storage keychain key outside it; revoke at myaccount.google.com/permissions",
+      "id": "remove-account",
+      "says": "Removing an account in Settings stops syncing it and deletes what Aplos stored for it on this Mac (mail and attachments, drafts, events, AI summaries, saved Google sign-in) and Aplos's backups and damaged copies; refused while mail or a guest calendar update is waiting to go out; mail stays with Google and access at Google is not withdrawn",
       "pages": ["privacy"],
       "evidence": [
         {
           "kind": "fact",
-          "ref": "packages/engine/src/legacy/service.ts account.disconnect removes the account's threads, drafts and events",
+          "ref": "packages/engine/src/sync/account-remove.ts (PR #564): removeAccount refuses with conflict while a submission is sending, uncertain, queued, scheduled or suspended or a guest calendar hold is queued or syncing (pendingMessage); stops the account's actor, then deletes attachment files, threads (messages, bodies, search rows), events, AI jobs, Ask conversations, holds and the account row (cascade), then forgets the stored sign-in (forgetAccount). No revoke call at Google (DECISIONS.md 2026-11-18 \"removing an account\", No revoke at Google)",
+          "maxAgeDays": null
+        },
+        {
+          "kind": "test",
+          "ref": "packages/engine/tests/account-remove.test.ts \"Account/disconnect empties every per-account table for that account and leaves the other one untouched\"",
+          "maxAgeDays": null
+        },
+        {
+          "kind": "test",
+          "ref": "packages/engine/tests/account-remove.test.ts \"Account/disconnect refuses while mail is waiting to go out, lists it, and keeps the account syncing\" and \"a sign-in that could not be forgotten is reported, kept in the journal, and forgotten at the next start\"",
+          "maxAgeDays": null
+        }
+      ],
+      "status": "verified",
+      "verifiedAt": "2026-11-18",
+      "note": "Restored on 2026-11-18 now that PR #564 implements Account/disconnect on the real engine (the sentence removed earlier in this PR described the legacy engine). Merge only after #564: its test file is not on this branch until then. Removal deletes Aplos's backups and damaged copies via deleteLocalCopies (#567); merge after #567 too (see update-backups). Holds on the redesigned build's real engine. A release build of revamp at 8f1eb4cd0 still boots the legacy engine (realEngineRequested in apps/desktop/src/host/transports/port.ts is false in release builds), where it does not hold: merge revamp into main only after the go-live switch makes release builds boot the real engine."
+    },
+    {
+      "id": "delete-data",
+      "says": "To remove the app's data, delete the data folder and ~/Library/Logs/Aplos Mail, plus the preferences file and the Aplos Mail Safe Storage keychain key; revoke at myaccount.google.com/permissions",
+      "pages": ["privacy"],
+      "evidence": [
+        {
+          "kind": "fact",
+          "ref": "apps/desktop/src/main/engine-host.ts dataDir = app.getPath('userData') (productName \"Aplos Mail\" in apps/desktop/package.json)",
           "maxAgeDays": null
         },
         {
           "kind": "fact",
-          "ref": "apps/desktop/src/main/electron.ts userData path",
+          "ref": "apps/desktop/src/host/logsink.ts logDir: ~/Library/Logs/Aplos Mail",
+          "maxAgeDays": null
+        },
+        {
+          "kind": "test",
+          "ref": "apps/desktop/tests/logsink.test.ts \"the log folder: the macOS folder by default, and inside an isolated data dir when the caller has one\"",
           "maxAgeDays": null
         },
         {
@@ -819,8 +944,8 @@
         }
       ],
       "status": "verified",
-      "verifiedAt": "2026-10-27",
-      "note": "When ARCH section 11 adds logs in ~/Library/Logs/Aplos Mail, add that folder to this paragraph."
+      "verifiedAt": "2026-11-18",
+      "note": "Copy changed on 2026-11-18: the logs folder is new since ARCH 11 landed. The account-removal sentence that used to open this paragraph is now its own claim, remove-account, describing PR #564."
     },
     {
       "id": "privacy-contact",
@@ -835,7 +960,7 @@
       ],
       "status": "pending",
       "verifiedAt": null,
-      "note": "Pending until the owner confirms the forwarding address is set up and delivers."
+      "note": "Cannot be settled by code. aplos.email has no MX records (checked 2026-11-18), so privacy@aplos.email cannot receive mail. Either set up the forwarding and confirm one test message arrives, or point apps/web/src/site.ts contactEmail at an address that works today (the owner's choice), then mark verified with a dated owner note."
     }
   ]
 }
