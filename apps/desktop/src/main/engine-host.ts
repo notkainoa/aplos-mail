@@ -24,7 +24,9 @@ import { releaseBuild } from './oauth-config';
 import { bootRealEngine, realEngine } from './engine-real';
 import { registerMailScheme } from './mail-protocol';
 
-/** `APLOS_ENGINE=real` (never in a release build): the new engine in its utility process, no state mirror in main. */
+/** The engine's data folder: the test or development override, else the app's own folder. */
+const dataFolder = () => dataDirOverride ?? app.getPath('userData');
+/** The new engine in its utility process, no state mirror in main: every build (`realEngineRequested`). */
 const realPath = realEngineRequested(process.env, releaseBuild);
 // The sealed mail frame's scheme (html-5): registered at import, before app ready as Electron requires, and only on the
 // real path. The legacy path registers no scheme, so Chromium does not know `aplos-mail:` there.
@@ -174,7 +176,7 @@ function restartEngine(init: EngineInit, lastError?: unknown) {
 }
 /** `noteExit` counts an engine stop toward the park (lifecycle.ts); the legacy path keeps its own restart dialog. */
 async function bootEngine(hooks: { noteExit(): boolean; noteRestart?(): void }) {
-  const dataDir = dataDirOverride ?? app.getPath('userData');
+  const dataDir = dataFolder();
   // Folders an opened attachment left in the temp directory in earlier sessions (either engine path).
   void sweepAttachmentTemp().catch(() => undefined);
   if (realPath)

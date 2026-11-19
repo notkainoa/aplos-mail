@@ -11,8 +11,8 @@
  *
  * `transportOf` then picks the session a new root connects: `window.aplosEngine` (the real engine, `bridge.ts`)
  * when the preload exposed it, the in-process stand-in otherwise (a development build without the bridge: previews,
- * tests, the demo). Preload exposes the bridge only on main's real-engine path (`APLOS_ENGINE=real`, never in a
- * release build), so a release still boots the legacy renderer.
+ * tests, the demo). Preload exposes the bridge on main's real-engine path, which every build takes
+ * (`realEngineRequested`); only a development run with `APLOS_ENGINE=legacy` boots the legacy renderer.
  *
  * The test hook `globalThis.__aplosWindowKind` (a browser test sets it before the entry runs) names the window kind
  * when the URL does not.

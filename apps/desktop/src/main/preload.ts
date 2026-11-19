@@ -26,7 +26,7 @@ const bridge: Bridge = {
 };
 contextBridge.exposeInMainWorld('aplos', bridge);
 
-// ---- The real engine's direct port (APLOS_ENGINE=real, contract-4) ----------------------------------------------
+// ---- The real engine's direct port (the default engine, contract-4) ---------------------------------------------
 // Only when main passed `ENGINE_PORT_ARG` (the real path): the default path exposes nothing and listens on nothing new.
 // The bridge itself lives in host/transports/port.ts, where it runs under node:test with fakes.
 exposeEngineBridge({ contextBridge, ipcRenderer }, process.argv);

@@ -15,7 +15,7 @@ test('electron app starts hidden on an isolated data directory', async () => {
   const aplos = await launchAplos();
   try {
     const window = await aplos.app.firstWindow();
-    await expect(window.locator('.app-shell')).toBeAttached();
+    await expect(window.locator('#root > *')).toBeAttached();
     await aplos.assertNoVisibleWindows();
   } finally {
     await aplos.cleanup();

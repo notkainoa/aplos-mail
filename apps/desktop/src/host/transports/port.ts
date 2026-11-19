@@ -60,9 +60,19 @@ export const portMethods: ReadonlySet<string> = new Set(
 /** True for a desktop method, which preload routes to main and never down the engine port. */
 export const isDesktopMethod = (method: string) => desktopSet.has(method);
 
-/** The real engine is opt-in (`APLOS_ENGINE=real`) and never in a release build until the switch (plan 10 4.1). */
-export function realEngineRequested(env: Record<string, string | undefined>, release: boolean) {
-  return !release && env.APLOS_ENGINE === 'real';
+/**
+ * Which engine runs (plan 10 4.1, the switch): the real engine, in every build. Aplos has no 0.2.x users (every 0.2.x
+ * release stayed a draft; owner, 2026-11-18), so there is no importer and no hold for a folder with `aplos.db`: the new
+ * engine starts its own `mail.db` beside it and leaves the old file untouched.
+ *
+ * `APLOS_ENGINE=legacy` brings the old engine back in a development or local build only, for the legacy verify scripts.
+ * A release build ignores the environment, as it does `APLOS_TEST` and `APLOS_DATA_DIR`.
+ */
+export function realEngineRequested(
+  env: Record<string, string | undefined>,
+  release: boolean,
+): boolean {
+  return release || env.APLOS_ENGINE !== 'legacy';
 }
 
 /** A window's call down its port (ARCH 9.1's envelope). */

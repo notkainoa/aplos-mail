@@ -106,6 +106,8 @@ async function run() {
     TMPDIR: process.env.TMPDIR ?? '',
     APLOS_TEST: '1',
     APLOS_DATA_DIR: dataDir,
+    // This suite drives the legacy engine (`state.get`), no longer the default: pinned until the legacy code goes.
+    APLOS_ENGINE: 'legacy',
   };
   live.app = await _electron.launch({
     executablePath: target.executablePath,

@@ -8,8 +8,8 @@
  * on the same stand-in switch and the same data layer, never a separate engine.
  * Today's renderer stays reachable: `VITE_APLOS_LEGACY=1` or `?legacy=1` loads `./legacy/main` instead, and so does a
  * production build without the real engine's bridge, because no release ships stand-in data (plan 30 4.1 release
- * rule). When preload exposes `window.aplosEngine` (main's real-engine path, `APLOS_ENGINE=real`, never in a release
- * build) the new roots connect over `bridge.ts` in any build; only a development build without it uses the in-process
+ * rule). When preload exposes `window.aplosEngine` (main's real-engine path, the default in every build; see
+ * `realEngineRequested`) the new roots connect over `bridge.ts` in any build; only a development build without it uses the in-process
  * stand-in. A production build whose bridge fails to connect falls back to the legacy renderer, never to stand-in
  * data. The browser preview's tokenised HTTP and SSE transport is still to come.
  *
@@ -23,7 +23,7 @@
 import { StrictMode } from 'react';
 import { createRoot } from 'react-dom/client';
 import { chooseEntry, hasBridgeShape, onboardingMode, transportOf, type EntryInput } from './entry';
-import { mountLegacyBanner } from './legacyBanner';
+import { legacyBannerText, mountLegacyBanner } from './legacyBanner';
 import { answerPrepareClose } from './shell/closeHandshake';
 import { startSystemTheme } from './shell/theme';
 import { scenarioParam } from './onboarding/route';
@@ -198,7 +198,7 @@ async function bootLegacy(fallback = false): Promise<void> {
   stopCloseAnswer();
   if (fallback) document.title = 'Aplos Mail (legacy view)';
   // The one place the legacy banner is mounted: the old version says so at the top of its window.
-  mountLegacyBanner();
+  mountLegacyBanner(undefined, legacyBannerText(import.meta.env.DEV));
   // eslint-disable-next-line aplos/boundaries
   await import('./legacy/main');
 }

@@ -35,11 +35,13 @@ test('the real path keeps no state mirror in main', () => {
   }
 });
 
-test('APLOS_ENGINE=real is opt-in and never in a release build', () => {
-  assert.equal(realEngineRequested({}, false), false);
-  assert.equal(realEngineRequested({ APLOS_ENGINE: 'legacy' }, false), false);
+test('the real engine runs in every build; only a development build honours APLOS_ENGINE=legacy', () => {
+  assert.equal(realEngineRequested({}, true), true);
+  assert.equal(realEngineRequested({}, false), true);
   assert.equal(realEngineRequested({ APLOS_ENGINE: 'real' }, false), true);
-  assert.equal(realEngineRequested({ APLOS_ENGINE: 'real' }, true), false);
+  assert.equal(realEngineRequested({ APLOS_ENGINE: 'legacy' }, false), false);
+  // A release build ignores the environment.
+  assert.equal(realEngineRequested({ APLOS_ENGINE: 'legacy' }, true), true);
 });
 
 test('real path: a window gets its own port, Session/get answers, main validates compose through Draft/get', async t => {

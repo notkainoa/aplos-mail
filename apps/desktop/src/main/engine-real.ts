@@ -44,7 +44,7 @@ import { isTest } from './test-mode';
 import { hostTheme, popout } from './windows';
 
 /**
- * Main's half of the real engine path (lane eng-contract, contract-4), on only with `APLOS_ENGINE=real`. Main forks the
+ * Main's half of the real engine path (lane eng-contract, contract-4), the default (`realEngineRequested`). Main forks the
  * new engine in a utility process, gives each window's trusted main frame its own MessagePort, and keeps only its control
  * connection, the native methods and the host channel. Main holds no copy of mail state here; the transport logic is
  * in `host/transports/port.ts`, which this file wires to Electron.
