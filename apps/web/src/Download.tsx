@@ -6,9 +6,9 @@ import { detect, type Detected } from './platform';
 import { megabytes, release, requires, type Release } from './release';
 import { useReveal } from './reveal';
 
-// The page the "How to get it" links lead to. While there is no public release (the repository is private), it says
-// that builds are shared with invited testers and who can use the app. Once `release` is filled in, it lists the Mac
-// builds and marks the one for this Mac; see VISION.md.
+// The page the "How to get it" links lead to. Aplos Mail is open to invited testers only. While there is no
+// published release (`release` is null), the page says the Mac download is coming soon and offers no file. Once
+// `release` is filled in, it lists the Mac builds and marks the one for this Mac; see VISION.md.
 
 function useDetected() {
   const [found, setFound] = useState<Detected | null>(null);
@@ -34,16 +34,16 @@ function releasedOn(date: string) {
 function Intro() {
   return (
     <section className="dl-hero" aria-labelledby="dl-title" data-reveal>
-      <h1 id="dl-title">
-        {release ? 'Download Aplos Mail' : 'Aplos Mail is with invited testers.'}
-      </h1>
+      <h1 id="dl-title">{release ? 'Download Aplos Mail' : 'Coming soon for Mac.'}</h1>
       {release ? (
         <p className="dl-lead">
           Aplos Mail {release.version} for Mac. It takes about a minute to install.
         </p>
       ) : (
-        <p className="dl-lead" data-claim="invited-testers-builds">
-          There is no public download yet. Builds are shared directly with invited testers.
+        // claims-allow: beta-badge
+        <p className="dl-lead" data-claim="beta-invited-testers download-coming-soon">
+          {/* claims-allow: beta-badge */}
+          Aplos Mail is in beta. There is no public download yet.
         </p>
       )}
       <a className="text-link text-link-strong dl-jump" href="#install">
@@ -134,7 +134,8 @@ function WhoCanUse({ found }: { found: Detected | null }) {
               <a href={release.notesUrl}>What’s new</a>
             </>
           ) : (
-            'No public release yet.'
+            // claims-allow: beta-badge
+            <span data-claim="beta-invited-testers">The beta is open to invited testers.</span>
           )}
         </p>
       </div>
@@ -146,9 +147,11 @@ function WhoCanUse({ found }: { found: Detected | null }) {
         </article>
         <article data-reveal>
           <h3>Gmail and Google Calendar</h3>
-          <p data-claim="gmail-invited-testers google-weekly-reconnect">
-            Available to invited testers. While Aplos Mail is in testing, Google lets only listed
-            test users sign in, and a sign-in lasts 7 days, so testers reconnect once a week.
+          {/* claims-allow: beta-badge */}
+          <p data-claim="beta-invited-testers google-weekly-reconnect">
+            {/* claims-allow: beta-badge */}
+            During the beta, Google sign-in is limited to invited testers, and Google asks you to
+            sign in again every 7 days.
           </p>
         </article>
       </div>

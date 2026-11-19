@@ -4,6 +4,7 @@ import { HomeShot, Logo } from './brand';
 import { Footer, Header } from './Chrome';
 import { KeyList, ProviderPicker } from './Live';
 import { CalendarDayMock, CalendarWeekMock, SuggestionCards } from './Mocks';
+import { release } from './release';
 import { Triage } from './Triage';
 import { useReveal } from './reveal';
 
@@ -23,12 +24,17 @@ function Hero() {
             How to get it
           </a>
           <div className="hero-note">
-            <p data-claim="invited-testers-builds">
-              No public download. Builds are shared with invited testers.
-            </p>
-            <p data-claim="mac-chips macos-13">
-              For Macs with Apple silicon or Intel, on macOS 13 or later.
-            </p>
+            {/* claims-allow: beta-badge */}
+            <p data-claim="beta-invited-testers">In beta, open to invited testers.</p>
+            {release ? (
+              <p data-claim="mac-chips macos-13">
+                For Macs with Apple silicon or Intel, on macOS 13 or later.
+              </p>
+            ) : (
+              <p data-claim="download-coming-soon mac-chips macos-13">
+                Coming soon for Macs with Apple silicon or Intel, on macOS 13 or later.
+              </p>
+            )}
           </div>
         </div>
       </div>
@@ -213,9 +219,11 @@ function Close() {
     <section className="close" aria-labelledby="close-title">
       <div className="close-inner" data-reveal>
         <div className="close-copy">
-          <h2 id="close-title">See it on your Mac.</h2>
-          <p data-claim="gmail-invited-testers">
-            Aplos Mail works with Gmail and Google Calendar, available to invited testers.
+          <h2 id="close-title">{release ? 'See it on your Mac.' : 'Coming soon for Mac.'}</h2>
+          {/* claims-allow: beta-badge */}
+          <p data-claim="gmail-google-calendar beta-invited-testers">
+            {/* claims-allow: beta-badge */}
+            Aplos Mail is for Gmail and Google Calendar. It is in beta, open to invited testers.
           </p>
           <p className="close-spec" data-claim="mac-chips macos-13">
             For Macs with Apple silicon or Intel, on macOS 13 or later.

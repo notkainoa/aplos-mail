@@ -1,3 +1,8 @@
-// Addresses the site shows. There is no download or source link while the repository is private: builds are shared
-// with invited testers directly. When the repository is public, its releases page goes here (plans/40 Q5A item 7).
+// The facts the legal pages rest on, kept in one place: the privacy policy and the terms both read from here.
+// Provider and governing law were confirmed by the owner on 2026-11-18 (claim `terms-operator`). `contactEmail`
+// takes privacy and terms questions; the claim `privacy-contact` stays pending until that mailbox forwards.
+export const operatorName = 'Kainoa Newton';
+export const governingLaw = 'the State of California, USA';
 export const contactEmail = 'privacy@aplos.email';
+// The date the privacy policy and the terms show at the top. Change it whenever either page changes.
+export const legalUpdated = '18 November 2026';
