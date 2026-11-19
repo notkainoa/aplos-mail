@@ -311,6 +311,11 @@ export class ActorHost implements AccountActorHost, DraftSyncPort {
     });
   }
 
+  async forgetAccount(account: AccountId, kind: ProviderKind): Promise<void> {
+    if (readAccount(this.deps.store, account)) return;
+    await this.factory(kind).forgetAccount?.(account);
+  }
+
   /** Only the provider kind and the outcome: no ref, no secret. */
   private logDiscard(kind: ProviderKind, outcome: 'unsupported' | 'failed' | 'kept'): void {
     this.deps.log.event('rpc.failed', {

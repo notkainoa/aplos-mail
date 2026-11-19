@@ -274,6 +274,23 @@ export const STATES: Record<string, StateSpec> = {
     data: dataOf({ accounts: [DEMO] }),
     view: { confirm: { kind: 'removeDemo' } },
   },
+  'accounts-remove-account': {
+    title: 'Accounts, confirm removing an account',
+    section: 'accounts',
+    data: dataOf({ accounts: [ALEX] }),
+    view: { confirm: { kind: 'removeAccount', accountId: ALEX.id, address: ALEX.address } },
+  },
+  'accounts-remove-waiting': {
+    title: 'Accounts, removal refused while mail is waiting to go out',
+    section: 'accounts',
+    data: dataOf({ accounts: [ALEX] }),
+    failure: {
+      op: 'remove that account',
+      line: 'This account still has 2 messages that have not gone out (1 scheduled, 1 waiting to send). Send or cancel them first, then remove the account.',
+      retry: noop,
+      dismiss: noop,
+    },
+  },
   'accounts-lease': {
     title: 'Accounts, background work on another Mac',
     section: 'accounts',

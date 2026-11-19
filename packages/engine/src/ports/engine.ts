@@ -137,6 +137,11 @@ export interface AccountActorHost extends ProviderPort {
    */
   discardCredential?(account: AccountId, kind: ProviderKind, ref: string): Promise<void>;
   /**
+   * After `Account/disconnect` committed: forwards to `ProviderFactory.forgetAccount` for `kind`. Never for an account
+   * that still has a row (resolves without forgetting), so a removal that was refused cannot sign the account out.
+   */
+  forgetAccount?(account: AccountId, kind: ProviderKind): Promise<void>;
+  /**
    * Restores governor state, then plans from committed cursors. The outbox start rules are `SendPort`'s: a `sending` row
    * becomes `uncertain` and is settled by `findSent` before anything else; `queued` and `scheduled` rows (every row
    * waiting on `not_before`, `WAITING_SUBMISSION_STATES`) obey the overdue rule.

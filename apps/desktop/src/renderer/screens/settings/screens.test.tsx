@@ -253,6 +253,53 @@ describe('write failure and destructive steps', () => {
     assert.deepEqual(calls, ['disconnect']);
   });
 
+  test('Remove account: unsent mail shows the engine sentence with Retry; a removal that lands is toasted', async () => {
+    const WAITING =
+      'This account still has 1 message that has not gone out (1 scheduled). Send or cancel it first, then remove the account.';
+    let refuse: unknown = {
+      name: 'OperationFailedError',
+      message: WAITING,
+      error: { type: 'conflict', message: WAITING },
+    };
+    const calls: string[] = [];
+    const toasts: string[] = [];
+    let failure: WriteFailure | null = null;
+    const ports = {
+      accountDisconnect: async (id: string) => {
+        calls.push(id);
+        if (refuse) throw refuse;
+      },
+    } as unknown as SettingsApiPort;
+    const actions = createController({
+      ports,
+      host: { ...HOST, toast: (m: string) => void toasts.push(m) },
+      data: () => dataOf({ accounts: [ALEX] }),
+      view: () => INITIAL_VIEW,
+      setView: () => {},
+      setData: () => {},
+      overlay: () => {},
+      accountOverlay: () => {},
+      fail: f => void (failure = f),
+    });
+    const confirm = { kind: 'removeAccount', accountId: ALEX.id, address: ALEX.address } as const;
+    assert.equal(await actions.runConfirm(confirm), false);
+    assert.equal(failure!.line, WAITING, 'the line says what is still waiting');
+    assert.ok(failure!.retry, 'Retry stays: it works once the mail is sent or cancelled');
+    assert.deepEqual(toasts, []);
+
+    // Any other failure keeps the plain "Couldn't remove that account." line.
+    refuse = new Error('engine went away');
+    assert.equal(await actions.runConfirm(confirm), false);
+    assert.equal(failure!.line, undefined);
+    assert.equal(failure!.op, 'remove that account');
+
+    refuse = undefined;
+    failure!.retry!();
+    await new Promise(r => setTimeout(r, 0));
+    assert.deepEqual(calls, [ALEX.id, ALEX.id, ALEX.id]);
+    assert.deepEqual(toasts, [`Removed ${ALEX.address}`]);
+  });
+
   test('a key remap is toasted, put on the undo stack, and undone to the previous keymap', async () => {
     const writes: unknown[] = [];
     const toasts: string[] = [];

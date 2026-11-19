@@ -34,6 +34,7 @@ import {
 import type { SettingsApiPort, SettingsData, SettingsHost, WriteFailure } from './ports';
 import {
   grantUnconfirmed,
+  removalRefusal,
   GRANT_UNCONFIRMED_LINE,
   withoutKeyPath,
   type AccountWrite,
@@ -814,8 +815,19 @@ export function createController(deps: ControllerDeps) {
     async runConfirm(c: Confirmation) {
       deps.setView({ confirm: null });
       switch (c.kind) {
-        case 'removeAccount':
-          return guard('remove that account', () => ports.accountDisconnect(c.accountId));
+        case 'removeAccount': {
+          const op = 'remove that account';
+          // A refusal for unsent mail says what is waiting; Retry works once it is sent or cancelled.
+          // The toast rides inside the step, so a Retry from the failure line that lands says so too.
+          const remove = async () => {
+            await ports.accountDisconnect(c.accountId);
+            host.toast?.(`Removed ${c.address}`);
+          };
+          return guard(op, remove, (error, retry) => {
+            const line = removalRefusal(error);
+            return { op, ...(line ? { line } : {}), retry, dismiss: () => deps.fail(null) };
+          });
+        }
         case 'removeDemo': {
           busy('demo', true);
           const ok = await guard('remove the demo mail', () => ports.demoRemove());

@@ -143,30 +143,9 @@ async function restoreLeases(
   }
 }
 
-function disconnect(args: Input<'Account/disconnect'>, ctx: MethodContext): never {
-  const { store } = ctx.services;
-  if (!accountExists(store, args.accountId)) throw notFound();
-  const sending = store.read(
-    q =>
-      q.get(
-        "SELECT 1 FROM submissions WHERE account_id = ? AND state = 'sending'",
-        args.accountId,
-      ) !== undefined,
-  );
-  if (sending) {
-    throw new ContractError({
-      type: 'conflict',
-      message: 'A message is being sent from this account. Try again when it has gone out.',
-    });
-  }
-  // TODO(eng-store): the store has no write that removes an account (`DELETE FROM accounts` cascades, but nothing exposes
-  // it). Until it does, nothing is stopped or deleted here: stopping the actor first would leave a half-removed account.
-  // When it lands: `await accounts.stop(id, 'disconnect')`, commit the removal with `args.opId`, return the receipt.
-  throw new ContractError({
-    type: 'unavailable',
-    message: 'Removing an account is not available yet.',
-  });
-}
+/** Removal is rare: its working half (`sync/account-remove.ts`) loads on first use, outside the core budget. */
+const disconnect = async (args: Input<'Account/disconnect'>, ctx: MethodContext) =>
+  (await import('../sync/account-remove')).removeAccount(args, ctx);
 
 export const handlers: AreaHandlers<'account'> = {
   'Account/get': get,

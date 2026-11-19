@@ -52,7 +52,7 @@ import {
   type CredentialVault,
   type GoogleTokenBundle,
 } from './providers/oauth/token-source';
-import { createHttpClient, type HttpClient } from './providers/shared/http';
+import { createHttpClient } from './providers/shared/http';
 import { announceMissedReminders } from './reminders';
 import { openSqlite } from './sqlite';
 
@@ -270,7 +270,7 @@ function googleFactory(
   options: ComposeOptions,
   store: StorePort,
   governor: Governor,
-  http: HttpClient,
+  { http, tokens }: ReturnType<typeof googleTokens>,
 ): ProviderFactory {
   const connect = createGoogleHostConnect({
     http,
@@ -304,6 +304,11 @@ function googleFactory(
     pace: false,
     connect: connect.connect,
     discardCredential: connect.discardCredential,
+    // Removal: the cached access token goes first, then the stored bundle.
+    forgetAccount: async id => {
+      tokens.forget(id);
+      await connect.forgetAccount(id);
+    },
     ...(options.keys ? { workflow: {} } : {}),
   });
 }
@@ -440,13 +445,14 @@ function openSink(options: ComposeOptions, steps: Undo[]): LogSink {
 /** The account actors over the late store, with the Google provider and, given keys, the lease channel. */
 function buildActors(options: ComposeOptions, store: StorePort, log: Logger, loop: TimerLoop) {
   const { clock } = options;
-  const { http, tokens } = googleTokens(options);
+  const google = googleTokens(options);
+  const { tokens } = google;
   const governor = new Governor({ clock, tokens, log, role: 'secondary' });
   const env = options.env ?? (() => defaultEnv);
   const deps = {
     store,
     governor,
-    providers: [googleFactory(options, store, governor, http)],
+    providers: [googleFactory(options, store, governor, google)],
     tokens,
     clock,
     log,

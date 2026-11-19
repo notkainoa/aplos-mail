@@ -432,7 +432,7 @@ test('Account/lease pins or releases one account or all, and answers from the ac
   }
 });
 
-test('Account/disconnect is refused while a message is sending, and stops and deletes nothing while the store cannot remove an account', async () => {
+test('Account/disconnect is refused while a message is sending, then stops the actor and removes the account', async () => {
   const t = setup();
   try {
     seed(t.store);
@@ -444,13 +444,15 @@ test('Account/disconnect is refused while a message is sending, and stops and de
       (e: unknown) =>
         e instanceof ContractError && e.type === 'conflict' && /sent/.test(sentence(e)),
     );
+    assert.deepEqual(t.calls, [], 'a refused removal stops nothing');
     t.db.exec(`UPDATE submissions SET state = 'sent'`);
-    await assert.rejects(
-      async () => handlers['Account/disconnect']({ opId: 'op-d', accountId: 'acct-1' }, t.ctx),
-      (e: unknown) => e instanceof ContractError && e.type === 'unavailable',
+    const receipt = await handlers['Account/disconnect'](
+      { opId: 'op-d', accountId: 'acct-1' },
+      t.ctx,
     );
-    assert.deepEqual(t.calls, []);
-    assert.equal((await handlers['Account/get']({}, t.ctx)).list.length, 1);
+    assert.equal(receipt.opId, 'op-d');
+    assert.deepEqual(t.calls, ['stop:acct-1:disconnect']);
+    assert.equal((await handlers['Account/get']({}, t.ctx)).list.length, 0);
   } finally {
     t.cleanup();
   }

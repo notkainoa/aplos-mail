@@ -467,8 +467,23 @@ export function removeAccountConfirm(address: string): { question: string; conse
   return {
     question: `Remove ${address}?`,
     consequence:
-      'Aplos stops reading this account and deletes what it stored for it on this Mac. Your mail stays with Google. Changes still waiting to sync are discarded.',
+      'Aplos stops syncing this account and deletes everything it stored for it on this Mac: its mail, drafts, calendar, summaries and sign-in. Your mail stays with Google. Changes still waiting to sync are discarded.',
   };
+}
+
+/**
+ * The engine's own sentence when it refused a removal because mail is still waiting to go out ("This account still
+ * has 2 messages that have not gone out…"); undefined for any other failure, which keeps "Couldn't remove that
+ * account." A `ContractError` carries it on `body`, the data layer's `OperationFailedError` on `error`.
+ */
+export function removalRefusal(error: unknown): string | undefined {
+  if (error === null || typeof error !== 'object') return undefined;
+  const e = error as { body?: unknown; error?: unknown; type?: unknown; message?: unknown };
+  const inner = e.body ?? e.error;
+  const body = inner !== null && typeof inner === 'object' ? (inner as typeof e) : undefined;
+  const type = body?.type ?? e.type;
+  const message = body?.message ?? e.message;
+  return type === 'conflict' && typeof message === 'string' && message ? message : undefined;
 }
 export const REMOVE_DEMO_CONFIRM = {
   question: 'Remove the demo mail?',
