@@ -1,0 +1,145 @@
+/* The site's tokens. Neutrals, type and motion are the app's (apps/desktop/src/renderer/ui/generated/tokens.css);
+   the brand green is the logo's own. Ink blue (--app-accent) appears only inside copies of the app, as in the app. */
+
+:root {
+  color-scheme: light dark;
+
+  --shell: #f5f5f6;
+  --canvas: #ffffff;
+  --paper: #ffffff;
+  --raised: #f2f2f4;
+  --sunken: #ececee;
+  --ink: #1d1e21;
+  --ink-2: #3e4045;
+  --dim: #55585f;
+  --line: color-mix(in srgb, var(--ink) 9%, transparent);
+  --line-strong: color-mix(in srgb, var(--ink) 14%, transparent);
+  --hover: color-mix(in srgb, var(--ink) 5%, transparent);
+  --puck: color-mix(in srgb, var(--ink) 6%, transparent);
+  --shadow-ink: #1d1e21;
+  --sheen: transparent;
+
+  --brand: #075244;
+  --brand-hover: #0a634f;
+  --brand-ink: #ffffff;
+  --brand-soft: #e1eeed;
+  --brand-soft-ink: #063a30;
+  --brand-soft-hover: #f6fbfa;
+  --link: #075244;
+
+  --app-accent: #0b5394;
+  --app-accent-ink: #ffffff;
+  --hill: #2f6f2a;
+  --dusk: #3e5878;
+  --stamp-ink: #a3221e;
+  --tag-sky: #2f6fa3;
+  --tag-sand: #8a6320;
+  --event-fill: 12%;
+  --today-tint: color-mix(in srgb, var(--app-accent) 5%, transparent);
+
+  /* macOS's own colours, for the install drawings only. */
+  --mac-folder-back: #5d8fbf;
+  --mac-folder-front: #7aaad6;
+  --mac-select: #2c6fd1;
+  --mac-disk: #8d939c;
+  --mac-disk-label: #c9cdd3;
+  --mac-select-ink: #ffffff;
+  --mac-pointer-fill: #ffffff;
+  --mac-pointer-stroke: #111111;
+  --mac-close: #ff5f57;
+  --mac-minimize: #febc2e;
+  --mac-zoom: #28c840;
+  --mac-light-edge: rgb(0 0 0 / 12%);
+
+  --elev-card:
+    0 0 0 0.75px var(--line-strong),
+    0 1px 2px color-mix(in srgb, var(--shadow-ink) 4%, transparent),
+    0 6px 20px color-mix(in srgb, var(--shadow-ink) 5%, transparent);
+  --elev-window:
+    0 0 0 0.75px var(--line-strong),
+    0 2px 4px color-mix(in srgb, var(--shadow-ink) 4%, transparent),
+    0 16px 40px -16px color-mix(in srgb, var(--shadow-ink) 14%, transparent);
+  --elev-lift:
+    0 0 0 0.75px var(--line-strong),
+    0 6px 20px color-mix(in srgb, var(--shadow-ink) 6%, transparent),
+    0 12px 32px color-mix(in srgb, var(--shadow-ink) 10%, transparent);
+  --press-hi: color-mix(in srgb, #ffffff 16%, transparent);
+  --press-lo: color-mix(in srgb, var(--shadow-ink) 14%, transparent);
+
+  --font-sans:
+    -apple-system, BlinkMacSystemFont, 'SF Pro Text', 'Inter', 'Helvetica Neue', Arial, sans-serif;
+  --font-display:
+    'SF Pro Display', -apple-system, BlinkMacSystemFont, 'Helvetica Neue', Arial, sans-serif;
+  --font-serif: 'Newsreader Variable', 'New York', Georgia, serif;
+  --w-summary: 430;
+  --w-answer: 400;
+
+  --page-w: 1160px;
+  --gutter: clamp(16px, 4vw, 40px);
+  --section-gap: clamp(48px, 6vw, 88px);
+  --column-gap: clamp(32px, 6vw, 88px);
+
+  --ease-out: cubic-bezier(0.16, 1, 0.3, 1);
+  --ease-std: cubic-bezier(0.2, 0.8, 0.2, 1);
+  --dur-hover: 100ms;
+  --dur-press: 120ms;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --shell: #121314;
+    --canvas: #191a1c;
+    --paper: #1f2023;
+    --raised: #26272a;
+    --sunken: #0e0f10;
+    --ink: #ececed;
+    --ink-2: #cfd0d4;
+    --dim: #b0b3ba;
+    --line: color-mix(in srgb, var(--ink) 10%, transparent);
+    --line-strong: color-mix(in srgb, var(--ink) 15%, transparent);
+    --hover: color-mix(in srgb, var(--ink) 6%, transparent);
+    --puck: color-mix(in srgb, var(--ink) 10%, transparent);
+    --shadow-ink: #000000;
+    --sheen: color-mix(in srgb, #ffffff 4%, transparent);
+
+    --brand: #0d6a57;
+    --brand-hover: #11806a;
+    --link: #9cc4b3;
+
+    --app-accent: #88aee0;
+    --app-accent-ink: #08111a;
+    --hill: #86b86a;
+    --dusk: #8fa9cc;
+    --stamp-ink: #ff8d82;
+    --tag-sky: #6aa5d6;
+    --tag-sand: #d9a65a;
+    --event-fill: 20%;
+    --today-tint: color-mix(in srgb, var(--app-accent) 8%, transparent);
+    --mac-folder-back: #4c7aa6;
+    --mac-folder-front: #6595c4;
+    --mac-select: #3b78d6;
+    --mac-disk: #8a9099;
+    --mac-disk-label: #5a5f68;
+    --w-summary: 410;
+    --w-answer: 390;
+
+    --elev-card:
+      0 0 0 0.75px var(--line-strong), inset 0 1px 0 var(--sheen),
+      0 8px 24px color-mix(in srgb, var(--shadow-ink) 30%, transparent);
+    --elev-window:
+      0 0 0 0.75px var(--line-strong),
+      0 2px 4px color-mix(in srgb, var(--shadow-ink) 30%, transparent),
+      0 16px 40px -16px color-mix(in srgb, var(--shadow-ink) 60%, transparent);
+    --elev-lift:
+      0 0 0 0.75px var(--line-strong), inset 0 1px 0 var(--sheen),
+      0 12px 32px color-mix(in srgb, var(--shadow-ink) 45%, transparent);
+    --press-lo: color-mix(in srgb, var(--shadow-ink) 22%, transparent);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  :root {
+    --dur-hover: 0ms;
+    --dur-press: 0ms;
+  }
+}

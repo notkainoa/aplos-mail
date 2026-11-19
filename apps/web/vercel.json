@@ -1,10 +1,15 @@
 {
   "$schema": "https://openapi.vercel.sh/vercel.json",
+  "git": { "deploymentEnabled": { "rv/**": false, "t3/**": false, "rv/web/**": true } },
   "framework": "vite",
   "installCommand": "cd ../.. && ELECTRON_SKIP_BINARY_DOWNLOAD=1 npm ci --workspace @aplos/web --include-workspace-root",
   "buildCommand": "npm run build",
   "outputDirectory": "dist",
   "ignoreCommand": "[ -n \"$VERCEL_GIT_PREVIOUS_SHA\" ] && git diff --quiet \"$VERCEL_GIT_PREVIOUS_SHA\" HEAD -- . ../../packages ../../package.json ../../package-lock.json",
+  "redirects": [
+    { "source": "/tos", "destination": "/terms/", "permanent": true },
+    { "source": "/tos/", "destination": "/terms/", "permanent": true }
+  ],
   "headers": [
     {
       "source": "/(.*)",

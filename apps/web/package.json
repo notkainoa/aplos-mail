@@ -7,7 +7,10 @@
   "scripts": {
     "dev": "vite",
     "typecheck": "tsc --noEmit",
-    "build": "tsc --noEmit && vite build",
+    "build": "tsc --noEmit && vite build && node scripts/check-claims.mjs",
+    "check:claims": "node scripts/check-claims.mjs",
+    "check:external": "node scripts/check-web-external.mjs",
+    "test:checks": "node --test \"scripts/tests/*.test.mjs\"",
     "preview": "vite preview"
   },
   "dependencies": {

@@ -1,123 +1,265 @@
-import icon from './assets/icon-512.webp';
-import {Airmail,Footer,Header} from './Chrome';
-import {Ask} from './Ask';
-import {HeroIcon,KeyList,ProviderPicker,Rise} from './Live';
-import {Tour} from './Tour';
-import {Triage} from './Triage';
-import {useReveal} from './reveal';
-import {releasesUrl} from './site';
+import type { ReactNode } from 'react';
+import { Ask } from './Ask';
+import { HomeShot, Logo } from './brand';
+import { Footer, Header } from './Chrome';
+import { KeyList, ProviderPicker } from './Live';
+import { CalendarDayMock, CalendarWeekMock, SuggestionCards } from './Mocks';
+import { release } from './release';
+import { Triage } from './Triage';
+import { useReveal } from './reveal';
 
-const Key=({children}:{children:string}) => <kbd>{children}</kbd>;
-const delay=(ms:number)=>({'--d':`${ms}ms`} as React.CSSProperties);
+const DOWNLOAD = './download/';
 
-const accounts='Gmail, Outlook, iCloud, Fastmail and any IMAP account';
+function Hero() {
+  return (
+    <section className="hero" aria-labelledby="hero-title">
+      <div className="hero-copy" data-reveal>
+        <h1 id="hero-title">Finish your inbox, one email at a time.</h1>
+        <p className="hero-sub" data-claim="gmail-google-calendar home-focus keyboard-first">
+          Aplos Mail is a keyboard-first Mac app for Gmail and Google Calendar. It puts the email
+          that needs you in focus, then brings the next.
+        </p>
+        <div className="hero-cta">
+          <a className="button button-large" href={DOWNLOAD}>
+            How to get it
+          </a>
+          <div className="hero-note">
+            {/* claims-allow: beta-badge */}
+            <p data-claim="beta-invited-testers">In beta, open to invited testers.</p>
+            {release ? (
+              <p data-claim="mac-chips macos-13">
+                For Macs with Apple silicon or Intel, on macOS 13 or later.
+              </p>
+            ) : (
+              <p data-claim="download-coming-soon mac-chips macos-13">
+                Coming soon for Macs with Apple silicon or Intel, on macOS 13 or later.
+              </p>
+            )}
+          </div>
+        </div>
+      </div>
+      <figure className="window" data-reveal data-claim="home-focus several-accounts">
+        <div className="window-frame">
+          <TrafficLights />
+          <HomeShot alt="Aplos Mail's Home on All accounts: Jordan Park's email in focus with Reply, Later and Done, and the rest of Do now below it." />
+        </div>
+        <figcaption data-claim="mac-only">Home in the Mac app, on its demo mail.</figcaption>
+      </figure>
+    </section>
+  );
+}
+
+// The window's close, minimise and zoom buttons. macOS draws them outside the page, so a screenshot of the page lacks them.
+function TrafficLights() {
+  return (
+    <span className="traffic-lights" aria-hidden="true">
+      <i />
+      <i />
+      <i />
+    </span>
+  );
+}
+
+type SectionProps = {
+  id: string;
+  title: string;
+  children: ReactNode;
+  aside: ReactNode;
+  layout?: 'split' | 'flip' | 'wide';
+};
+
+/** One feature: the words and the thing they describe, straight on the page. */
+function Section({ id, title, children, aside, layout = 'split' }: SectionProps) {
+  const wide = layout === 'wide';
+  return (
+    <section className={`feature feature-${layout}`} id={id} aria-labelledby={`${id}-title`}>
+      <div className="feature-copy" data-reveal={wide ? undefined : true}>
+        <h2 id={`${id}-title`} data-reveal={wide ? true : undefined}>
+          {title}
+        </h2>
+        <div className="feature-text" data-reveal={wide ? true : undefined}>
+          {children}
+        </div>
+      </div>
+      <div className="feature-aside" data-reveal>
+        {aside}
+      </div>
+    </section>
+  );
+}
+
+function HomeSection() {
+  return (
+    <Section id="home" title="Read the point, then decide." aside={<Triage />}>
+      <p data-claim="summaries-with-ai home-focus">
+        Once AI is on, the email in focus carries a short summary of what it says and needs. Reply,
+        set it aside for Later or mark it Done, and the next one takes its place.
+      </p>
+      <p className="note">
+        This is a working copy of Home.{' '}
+        <span className="pointer-only">Click it and try the keys.</span>
+        <span className="touch-only">Tap the card, then use the buttons, or swipe it.</span>
+      </p>
+    </Section>
+  );
+}
+
+function SuggestedSection() {
+  return (
+    <Section
+      id="next-step"
+      title="One suggested step, one key."
+      layout="wide"
+      aside={
+        <>
+          <SuggestionCards />
+          <p className="note" data-claim="suggested-action">
+            For links, attachments and plans, Space opens the email.
+          </p>
+        </>
+      }
+    >
+      <p data-claim="suggested-action">
+        Once AI is on, Aplos reads each email and suggests one next step: reply, open a link or
+        attachment, a plan for your calendar, or just Done. The main button names it with its own
+        icon, and Space starts it.
+      </p>
+      <p data-claim="suggested-action">
+        A reply opens, Done clears the email, and the rest open the email. Nothing is sent or added
+        to your calendar on its own.
+      </p>
+      <p data-claim="suggested-action-ai-off">
+        With AI off, the button is Reply on Do now and Done on Important updates.
+      </p>
+    </Section>
+  );
+}
+
+function CalendarSection() {
+  return (
+    <Section
+      id="calendar"
+      title="Your calendar sits next to your mail."
+      layout="wide"
+      aside={
+        <>
+          <CalendarWeekMock />
+          <CalendarDayMock />
+        </>
+      }
+    >
+      <p data-claim="google-calendar-views">
+        Your Google calendars share one day, week and month view.
+      </p>
+      <p data-claim="plans-confirm">
+        When an email mentions a plan, Aplos can propose the event, and adds it only after you
+        confirm.
+      </p>
+      <p data-claim="several-accounts">Connect several Google accounts and see them together.</p>
+    </Section>
+  );
+}
+
+function AskSection() {
+  return (
+    <Section id="ask" title="Ask about your mail or calendar." layout="flip" aside={<Ask />}>
+      <p data-claim="ask-dictate">
+        Type a question, or hold <kbd className="kbd">A</kbd> to dictate it.
+      </p>
+      <p data-claim="ask-cites">
+        Ask reads your mail and calendar, and shows the messages its answer came from.
+      </p>
+      <p data-claim="ask-never-sends">
+        It can draft a reply for you to review. It never sends on its own.
+      </p>
+      <p className="note">Pick a question to see another answer.</p>
+    </Section>
+  );
+}
+
+function KeysSection() {
+  return (
+    <Section id="keys" title="Made for the keyboard." aside={<KeyList />}>
+      <p data-claim="keyboard-first">
+        Your hands stay on the keyboard from the first email to the last.
+      </p>
+      <p className="note pointer-only">Press a key to see its cap press.</p>
+    </Section>
+  );
+}
+
+function AiSection() {
+  return (
+    <Section
+      id="ai"
+      title="Your provider, your keys, your Mac."
+      layout="flip"
+      aside={<ProviderPicker />}
+    >
+      <p data-claim="keys-on-mac local-models no-aplos-server">
+        No Aplos server ever sees your mail, calendar or sign&#8209;in details. Your keys stay on
+        your Mac. Ollama and LM Studio run on your Mac at their default addresses.
+      </p>
+      <p data-claim="groq-default provider-per-feature ai-routers">
+        Groq is the default for every AI feature, and in Settings you pick a provider for each one.
+        A feature’s text goes only to the provider you picked. OpenRouter and OpenCode Go pass each
+        request on to the company that runs the chosen model.
+      </p>
+      <p data-claim="ai-consent no-training-providers ai-daily-limit">
+        Background AI starts only after you agree, and it stops at a daily limit you can change.
+        Gemini gets mail only when you mark its key as paid, because Google may use what a free key
+        sends to improve its products.
+      </p>
+    </Section>
+  );
+}
+
+function Close() {
+  return (
+    <section className="close" aria-labelledby="close-title">
+      <div className="close-inner" data-reveal>
+        <div className="close-copy">
+          <h2 id="close-title">{release ? 'See it on your Mac.' : 'Coming soon for Mac.'}</h2>
+          {/* claims-allow: beta-badge */}
+          <p data-claim="gmail-google-calendar beta-invited-testers">
+            {/* claims-allow: beta-badge */}
+            Aplos Mail is for Gmail and Google Calendar. It is in beta, open to invited testers.
+          </p>
+          <p className="close-spec" data-claim="mac-chips macos-13">
+            For Macs with Apple silicon or Intel, on macOS 13 or later.
+          </p>
+          <a className="button button-on-brand button-large" href={DOWNLOAD}>
+            How to get it
+          </a>
+        </div>
+        <Logo size={120} />
+      </div>
+    </section>
+  );
+}
 
 export function Landing() {
   useReveal();
   return (
-    <>
-      <div className="sky">
-        <Airmail />
+    <div className="site">
+      <div className="page">
         <Header home="./" />
-        <section className="hero" aria-labelledby="hero-title">
-          <div className="hero-copy">
-            <h1 id="hero-title"><Rise text="Finish your inbox, one email at a time." /></h1>
-            <p className="lead" data-reveal style={delay(80)}>
-              Aplos Mail is a keyboard-first Mac app for email and calendar. Every message
-              arrives with a short summary of what it says and what it needs from you.
-            </p>
-            <div className="cta" data-reveal style={delay(160)}>
-              <a className="button" href={releasesUrl}>Download for Mac</a>
-              <p className="note">For Macs with Apple silicon or Intel.</p>
-            </div>
-          </div>
-          <HeroIcon src={icon} alt="The Aplos Mail icon: an airmail envelope in a blue sky above a green hill." />
-          <div className="window-wrap" data-reveal style={delay(320)}>
-            <div className="window" data-ui><Tour id="hero" eager focus={0.2} /></div>
-            <p className="note tour-note">
-              <span className="for-pointer">This is the app. Click anything that lights up to look around.</span>
-              <span className="for-touch">This is the app. Tap around, and swipe the window sideways.</span>
-            </p>
-          </div>
-        </section>
       </div>
-
       <main>
-        <section className="demo" id="home" aria-labelledby="demo-title">
-          <div className="copy">
-            <h2 id="demo-title" data-reveal>Home shows what each email needs</h2>
-            <p data-reveal style={delay(70)}>
-              The email that needs you sits in focus, with a summary that already says what
-              is asked and by when. Reply, set it aside for Later, or mark it Done, and the
-              next one is waiting.
-            </p>
-            <p className="note" data-reveal style={delay(140)}>This is a working copy. Click it and try the keys.</p>
-          </div>
-          <div className="demo-stage" data-reveal style={delay(120)}><Triage /></div>
-        </section>
-
-        <section className="calendar" id="calendar" aria-labelledby="calendar-title">
-          <h2 id="calendar-title" data-reveal>Every calendar in one week</h2>
-          <p data-reveal style={delay(70)}>
-            Calendars from all your accounts share one day, week and month view. When an
-            email mentions a plan, Aplos proposes the event and adds it only after you
-            confirm.
-          </p>
-          <div className="calendar-live" data-reveal style={delay(140)}>
-            <div className="calendar-shot" data-ui><Tour id="calendar" focus={0.335} /></div>
-            <p className="note tour-note">Switch views, change the week or open any event, right in the window.</p>
-          </div>
-        </section>
-
-        <section className="ask" aria-labelledby="ask-title">
-          <div className="ask-live" data-reveal><Ask /></div>
-          <div className="copy">
-            <h2 id="ask-title" data-reveal style={delay(70)}>Ask your mail anything</h2>
-            <p data-reveal style={delay(140)}>
-              Type a question, or hold <Key>A</Key> and say it. Ask reads your mail and
-              calendar, cites the messages it used, and drafts replies for you to review.
-              It never sends anything on its own.
-            </p>
-            <p className="note" data-reveal style={delay(210)}>Pick a question to see how it answers.</p>
-          </div>
-        </section>
-
-        <section className="keys" aria-labelledby="keys-title">
-          <div className="copy">
-            <h2 id="keys-title" data-reveal>A key for every action</h2>
-            <p data-reveal style={delay(70)}>Your hands stay on the keyboard from the first email to the last.</p>
-            <p className="note" data-reveal style={delay(140)}>Try them: press any of these keys.</p>
-          </div>
-          <KeyList />
-        </section>
+        <div className="page">
+          <Hero />
+          <HomeSection />
+          <SuggestedSection />
+          <CalendarSection />
+          <AskSection />
+          <KeysSection />
+          <AiSection />
+        </div>
+        <Close />
       </main>
-
-      <section className="ai" id="ai" aria-labelledby="ai-title">
-        <div className="ai-inner">
-          <h2 id="ai-title" data-reveal>AI that stays out of the way</h2>
-          <p data-reveal style={delay(70)}>
-            Summaries, Ask, drafts, plans and voice run on Groq by default. Pick a
-            different provider for any of them in Settings, the way you can here. A message goes only to the
-            provider you chose for that feature, and your keys stay on your Mac.
-          </p>
-          <div className="ai-picker" data-reveal style={delay(140)}><ProviderPicker /></div>
-        </div>
-      </section>
-
-      <section className="finish" aria-labelledby="close-title">
-        <div className="finish-inner">
-          <div className="copy">
-            <h2 id="close-title" data-reveal>Aplos Mail for Mac</h2>
-            <p data-reveal style={delay(70)}>Works with {accounts}. No Aplos server ever sees your mail.</p>
-            <div className="cta" data-reveal style={delay(140)}>
-              <a className="button" href={releasesUrl}>Download for Mac</a>
-              <p className="note">For Macs with Apple silicon or Intel, on macOS 12 or later. Windows and Linux later.</p>
-            </div>
-          </div>
-          <img className="finish-icon" src={icon} width="512" height="512" alt="" loading="lazy" data-reveal style={delay(120)} />
-        </div>
+      <div className="page">
         <Footer home="./" />
-      </section>
-    </>
+      </div>
+    </div>
   );
 }
