@@ -28,8 +28,12 @@ export async function openThread(services: EngineServices, threadId: string): Pr
   const now = store.read(q => threadByContractId(q, threadId));
   if (!now) throw gone();
   // Opened mail keeps its text past the retention window (ARCH 3.6), stamped by the lazy retention module (a re-open
-  // the same day writes nothing).
-  (await loadRetention()).markOpened(services, now);
+  // the same day writes nothing). Best effort: a failed load or stamp never fails the open itself.
+  try {
+    (await loadRetention()).markOpened(services, now);
+  } catch {
+    // The next open stamps it; at worst this thread's text is treated as unopened by one retention pass.
+  }
   return {
     threadId,
     complete: now.complete === 1,
