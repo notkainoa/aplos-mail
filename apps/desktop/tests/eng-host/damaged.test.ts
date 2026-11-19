@@ -1,12 +1,19 @@
 import test, { type TestContext } from 'node:test';
 import assert from 'node:assert/strict';
+import { createHash } from 'node:crypto';
 import {
   closeSync,
+  copyFileSync,
   existsSync,
+  mkdirSync,
   mkdtempSync,
   openSync,
   readdirSync,
+  readFileSync,
   rmSync,
+  statSync,
+  utimesSync,
+  writeFileSync,
   writeSync,
 } from 'node:fs';
 import { DatabaseSync } from 'node:sqlite';
@@ -16,8 +23,14 @@ import { MIGRATIONS, openStore } from '../../../../packages/engine/src/store';
 import { laneExtensions } from '../../../../packages/engine/src/index';
 import { composeEngineHost } from '../../src/host/compose';
 import {
+  checkAside,
   checkDatabase,
   DAMAGED_DIR,
+  deleteLocalCopies,
+  LOW_SPACE_REASON,
+  LowSpaceError,
+  pruneCopies,
+  RESTORED_SEND_COPY,
   DAMAGED_REASON,
   damagedReport,
   inspectDamaged,
@@ -33,7 +46,14 @@ import {
   writeBackup,
 } from '../../src/host/damaged';
 import { openSqlite } from '../../src/host/sqlite';
-import { createEngineLink, type Timers } from '../../src/host/transports/port';
+import {
+  createEngineLink,
+  createEngineSupervisor,
+  type EngineLink,
+  type FromUtility,
+  type Timers,
+} from '../../src/host/transports/port';
+import { runEngineUtility } from '../../src/main/engine-utility';
 import { fakeClock, inProcessUtility, T0, testOptions } from '../eng-contract/rig';
 
 // The damaged-database path (plan 10 Decision 6): a deliberately corrupted temp `mail.db` parks the engine, the file is
@@ -175,7 +195,7 @@ test('the report keeps the words of drafts and scheduled sends, and the Done cho
   assert.doesNotMatch(report, /<p>/, 'plain text, no markup');
 });
 
-test('a pre-migration backup restores in place of the damaged file; old backups are pruned', t => {
+test('a pre-migration backup restores in place of the damaged file; only the newest backup is kept', t => {
   const dir = folder(t);
   const path = seededDb(dir);
   const db = openSqlite(path);
@@ -185,8 +205,9 @@ test('a pre-migration backup restores in place of the damaged file; old backups 
   db.close();
   assert.deepEqual(
     listBackups(dir).map(b => b.name),
-    ['mail.db.pre-7', 'mail.db.pre-6'],
+    ['mail.db.pre-7'],
   );
+  assert.equal(statSync(join(dir, 'mail.db.pre-7')).mode & 0o777, 0o600, 'a backup is 0600');
   corruptPages(path);
   setAside(dir, T0);
   markOpen(dir);
@@ -281,4 +302,324 @@ test('a healthy database starts as before', async t => {
   markOpen(dir);
   assert.deepEqual(await startOn(dir), { ok: true });
   assert.equal(existsSync(join(dir, DAMAGED_DIR)), false);
+});
+
+const hash = (path: string) =>
+  existsSync(path) ? createHash('sha256').update(readFileSync(path)).digest('hex') : 'missing';
+
+/**
+ * A crashed engine's folder: `mail.db` with committed rows still only in its write-ahead log (no connection open, as
+ * after a kill). Built in `scratch`, then the three files are copied into `dir` while the writer still holds them.
+ */
+function crashedWithWal(t: TestContext, dir: string): void {
+  const scratch = folder(t);
+  const path = seededDb(scratch);
+  const grow = new DatabaseSync(path);
+  const insert = grow.prepare(
+    `INSERT INTO drafts(id, account_id, revision, data, updated_at) VALUES(?, 'acct-1', 1, ?, ${T0})`,
+  );
+  for (let i = 0; i < 300; i++) insert.run(`bulk-${i}`, 'x'.repeat(2000));
+  grow.close();
+  const writer = new DatabaseSync(path);
+  writer.exec('PRAGMA wal_autocheckpoint=0');
+  writer.exec(`INSERT INTO drafts(id, account_id, revision, data, updated_at)
+    VALUES('in-wal', 'acct-1', 1, '{}', ${T0})`);
+  for (const side of ['', '-wal', '-shm']) copyFileSync(path + side, join(dir, 'mail.db' + side));
+  writer.close();
+  assert.ok(statSync(join(dir, 'mail.db-wal')).size > 0, 'the write-ahead log holds a commit');
+}
+
+test('after an unclean exit the file and its write-ahead log are copied as found, then only the copy is read', t => {
+  const dir = folder(t);
+  crashedWithWal(t, dir);
+  const live = join(dir, 'mail.db');
+  // Damage pages the log does not cover, far from the schema and the last insert.
+  const fd = openSync(live, 'r+');
+  writeSync(fd, Buffer.alloc(4096 * 8, 0xa5), 0, 4096 * 8, 4096 * 60);
+  closeSync(fd);
+  const before = { db: hash(live), wal: hash(`${live}-wal`) };
+  const found = checkAside(dir, T0);
+  assert.equal(found.ok, false);
+  const copy = (found as { copy: string }).copy;
+  assert.ok(copy);
+  const kept = join(dir, DAMAGED_DIR, copy);
+  assert.deepEqual(
+    { db: hash(live), wal: hash(`${live}-wal`) },
+    before,
+    'the live file is untouched',
+  );
+  assert.deepEqual(
+    { db: hash(kept), wal: hash(`${kept}-wal`) },
+    before,
+    'the copy is the file as found',
+  );
+  assert.equal(statSync(kept).mode & 0o777, 0o600, 'a damaged copy is 0600');
+  // The screen and the report read the copy read-only: it stays the file as found.
+  inspectDamaged(dir, copy);
+  damagedReport(dir, copy, T0);
+  assert.deepEqual({ db: hash(kept), wal: hash(`${kept}-wal`) }, before);
+  assert.equal(lastCopy(dir), copy);
+  assert.deepEqual(checkAside(dir, T0 + 1000), { ok: false, copy }, 'the same file is copied once');
+});
+
+test('a healthy file with a pending write-ahead log passes, unchanged, and leaves no copy behind', t => {
+  const dir = folder(t);
+  crashedWithWal(t, dir);
+  const live = join(dir, 'mail.db');
+  const before = { db: hash(live), wal: hash(`${live}-wal`) };
+  assert.deepEqual(checkAside(dir, T0), { ok: true });
+  assert.deepEqual({ db: hash(live), wal: hash(`${live}-wal`) }, before);
+  assert.equal(existsSync(join(dir, DAMAGED_DIR)), false, 'no copy, and no folder, is left');
+  // The log was checked too: its commit is readable.
+  const db = new DatabaseSync(live, { readOnly: true });
+  assert.ok(db.prepare("SELECT 1 FROM drafts WHERE id = 'in-wal'").get());
+  db.close();
+});
+
+test('a damaged file found when the engine restarts after a crash holds the supervisor on the damaged reason', async t => {
+  const dir = folder(t);
+  seededDb(dir);
+  const utilities: ReturnType<typeof inProcessUtility>[] = [];
+  const failed: { reason: unknown; restarted: boolean }[] = [];
+  let ups = 0;
+  const supervisor = createEngineSupervisor({
+    spawn: () => {
+      const utility = inProcessUtility({ dir, clock: fakeClock(T0) });
+      utilities.push(utility);
+      return createEngineLink(
+        utility.child,
+        { dataDir: dir, appVersion: '0.3.0-test' },
+        { hostEvent: () => undefined, request: async () => 'posted' },
+        timers,
+      );
+    },
+    noteExit: () => false,
+    onUp: () => void ups++,
+    onDown: () => undefined,
+    onStartFailed: (error, restarted) => {
+      const reason = (error as { reason?: unknown }).reason;
+      failed.push({ reason, restarted });
+      return reason === DAMAGED_REASON;
+    },
+    timers,
+    restartDelayMs: 50,
+  });
+  t.after(() => supervisor.close());
+  await supervisor.start();
+  // The engine dies (its open mark stays), and the file is damaged before the restart.
+  await utilities[0]!.crash();
+  corruptPages(join(dir, 'mail.db'));
+  const deadline = Date.now() + 5000;
+  while (!failed.length && Date.now() < deadline) await new Promise(r => setTimeout(r, 10));
+  assert.deepEqual(failed, [{ reason: DAMAGED_REASON, restarted: true }]);
+  assert.ok(lastCopy(dir), 'the restart set the damaged file aside');
+  await supervisor.restart();
+  await new Promise(r => setTimeout(r, 300));
+  assert.equal(utilities.length, 2, 'held: no restart loop, and Try again does nothing');
+  assert.equal(ups, 1);
+});
+
+/** A link that never answers `ready`, saying it is upgrading when `upgrading` is set. */
+function silentLink(upgrading: boolean): EngineLink & { killedAt?: number } {
+  const exits: (() => void)[] = [];
+  let exited = false;
+  let fail!: (error: unknown) => void;
+  const ready = new Promise<{ dbEpoch: string; seq: number }>((_, reject) => (fail = reject));
+  ready.catch(() => undefined);
+  const link: EngineLink & { killedAt?: number } = {
+    ready,
+    get exited() {
+      return exited;
+    },
+    upgrading,
+    call: async () => undefined,
+    attach: () => undefined,
+    detach: () => undefined,
+    power: () => undefined,
+    quit: () => undefined,
+    kill: () => {
+      link.killedAt = Date.now();
+      exited = true;
+      fail(new Error('killed'));
+      exits.splice(0).forEach(run => run());
+    },
+    onExit: run => (exited ? run() : void exits.push(run)),
+  };
+  return link;
+}
+
+test('an engine backing up and migrating gets the longer start timeout', async t => {
+  for (const upgrading of [false, true]) {
+    const link = silentLink(upgrading);
+    const started = Date.now();
+    const supervisor = createEngineSupervisor({
+      spawn: () => link,
+      noteExit: () => false,
+      onUp: () => undefined,
+      onDown: () => undefined,
+      timers,
+      readyTimeoutMs: 30,
+      upgradeTimeoutMs: 400,
+    });
+    t.after(() => supervisor.close());
+    await assert.rejects(supervisor.start());
+    const took = (link.killedAt ?? 0) - started;
+    if (upgrading) assert.ok(took >= 400, `upgrading: killed after ${took} ms`);
+    else assert.ok(took < 400, `plain start: killed after ${took} ms`);
+  }
+});
+
+test('too little free space stops the update before anything changes, with how much is needed', async t => {
+  const dir = folder(t);
+  const path = seededDb(dir, MIGRATIONS.slice(0, 6));
+  const base = testOptions(dir, fakeClock(T0));
+  const bridge = {
+    request: async () => undefined,
+    power: new (await import('node:events')).EventEmitter(),
+  };
+  const options = { ...(await base(undefined, bridge)), freeBytes: () => 1000 };
+  await assert.rejects(composeEngineHost(options), (error: unknown) => {
+    assert.ok(error instanceof LowSpaceError);
+    assert.match(error.message, /^Aplos needs about \d+\.\d GB free to update safely\./);
+    return true;
+  });
+  assert.deepEqual(listBackups(dir), [], 'no backup was started');
+  const db = new DatabaseSync(path, { readOnly: true });
+  assert.equal(
+    (db.prepare('PRAGMA user_version').get() as { user_version: number }).user_version,
+    6,
+  );
+  db.close();
+
+  // The engine process says so to main in those words, with its own reason, not "could not start".
+  const posted: FromUtility[] = [];
+  let send!: (data: unknown, ports: readonly unknown[]) => void;
+  runEngineUtility(
+    { post: message => void posted.push(message), onMessage: handler => void (send = handler) },
+    {
+      options: async (init, b) => ({ ...(await base(init, b)), freeBytes: () => 1000 }),
+      wrapPort: () => {
+        throw new Error('no ports in this test');
+      },
+      exit: () => undefined,
+      now: () => T0,
+    },
+  );
+  send({ kind: 'init', init: { dataDir: dir, appVersion: '0.3.0-test' } }, []);
+  const deadline = Date.now() + 5000;
+  while (!posted.some(m => m.kind === 'failed') && Date.now() < deadline)
+    await new Promise(r => setTimeout(r, 10));
+  const failed = posted.find(m => m.kind === 'failed') as Extract<FromUtility, { kind: 'failed' }>;
+  assert.equal(failed.reason, LOW_SPACE_REASON);
+  assert.match(failed.message, /Aplos needs about .* GB free to update safely/);
+  assert.ok(
+    posted.some(m => m.kind === 'upgrading'),
+    'main was told an upgrade began',
+  );
+  await new Promise(r => setTimeout(r, 2100)); // the process's own delayed exit
+});
+
+test('restoring a backup suspends its waiting sends for review in the Outbox', t => {
+  const dir = folder(t);
+  const path = seededDb(dir);
+  const seed = new DatabaseSync(path);
+  seed.exec(`INSERT INTO submissions(id, draft_id, account_id, internet_id, not_before, state)
+    VALUES('s2', 'd1', 'acct-1', '<s2@mail.example>', ${T0}, 'queued'),
+          ('s3', 'd1', 'acct-1', '<s3@mail.example>', ${T0}, 'sent')`);
+  seed.close();
+  const db = openSqlite(path);
+  writeBackup(db, dir, 7);
+  db.close();
+  corruptPages(path);
+  setAside(dir, T0);
+  assert.deepEqual(restoreBackup(dir, 'mail.db.pre-7', T0 + 5), { suspended: 2 });
+  const restored = new DatabaseSync(path, { readOnly: true });
+  const rows = restored.prepare('SELECT id, state, error FROM submissions ORDER BY id').all() as {
+    id: string;
+    state: string;
+    error: string;
+  }[];
+  restored.close();
+  assert.deepEqual(
+    rows.map(r => [r.id, r.state]),
+    [
+      ['s1', 'suspended'],
+      ['s2', 'suspended'],
+      ['s3', 'sent'],
+    ],
+  );
+  assert.deepEqual(JSON.parse(rows[0]!.error).problem, {
+    reasonCode: 'send.overdue',
+    message: RESTORED_SEND_COPY,
+    at: T0 + 5,
+  });
+  assert.equal(existsSync(`${path}.restoring`), false);
+});
+
+test('after a healthy start, backups go after 14 days (only the newest stays) and damaged copies after 30', t => {
+  const dir = folder(t);
+  const day = 86_400_000;
+  const now = T0 + 100 * day;
+  const backup = (name: string, ageDays: number) => {
+    writeFileSync(join(dir, name), 'x');
+    const at = (now - ageDays * day) / 1000;
+    utimesSync(join(dir, name), at, at);
+  };
+  backup('mail.db.pre-7', 2);
+  backup('mail.db.pre-6', 3);
+  const damagedDir = join(dir, DAMAGED_DIR);
+  mkdirSync(damagedDir);
+  const copyName = (ageDays: number) =>
+    `mail-${new Date(now - ageDays * day).toISOString().replace(/[:.]/g, '-')}.db`;
+  const old = copyName(31);
+  const recent = copyName(29);
+  for (const name of [old, `${old}-wal`, recent]) writeFileSync(join(damagedDir, name), 'x');
+  writeFileSync(join(damagedDir, 'last.json'), JSON.stringify({ name: old, stamp: '-' }));
+  pruneCopies(dir, now);
+  assert.deepEqual(
+    listBackups(dir).map(b => b.name),
+    ['mail.db.pre-7'],
+    'only the newest backup stays',
+  );
+  assert.deepEqual(readdirSync(damagedDir), [recent], 'old copies and their record go');
+  // Once the newest backup is 14 days old it goes too.
+  pruneCopies(dir, now + 13 * day);
+  assert.deepEqual(
+    listBackups(dir).map(b => b.name),
+    [],
+  );
+});
+
+test('a healthy start prunes old copies; a start parked on a damaged file keeps them', async t => {
+  const dir = folder(t);
+  const path = seededDb(dir);
+  const db = openSqlite(path);
+  writeBackup(db, dir, 7);
+  db.close();
+  const stale = (Date.now() - 20 * 86_400_000) / 1000;
+  utimesSync(join(dir, 'mail.db.pre-7'), stale, stale);
+  corruptHeader(path);
+  assert.deepEqual(await startOn(dir), { ok: false, reason: DAMAGED_REASON });
+  assert.deepEqual(
+    listBackups(dir).map(b => b.name),
+    ['mail.db.pre-7'],
+    'parked: Restore still has it',
+  );
+  rebuildDatabase(dir);
+  assert.deepEqual(await startOn(dir), { ok: true });
+  assert.deepEqual(listBackups(dir), [], 'a healthy start removed the 20-day-old backup');
+});
+
+test('deleteLocalCopies removes every backup and damaged copy (account removal calls it)', t => {
+  const dir = folder(t);
+  const path = seededDb(dir);
+  const db = openSqlite(path);
+  writeBackup(db, dir, 7);
+  db.close();
+  corruptPages(path);
+  setAside(dir, T0);
+  deleteLocalCopies(dir);
+  assert.deepEqual(listBackups(dir), []);
+  assert.equal(existsSync(join(dir, DAMAGED_DIR)), false);
+  assert.ok(existsSync(path), 'the live database is not touched');
 });

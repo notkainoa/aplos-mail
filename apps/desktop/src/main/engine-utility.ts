@@ -13,13 +13,15 @@ import { createAiHost } from '../host/ai/index';
 import { createImageProxy } from '../host/proxy/fetch';
 import { openSqlite } from '../host/sqlite';
 import {
-  checkDatabase,
+  checkAside,
   DAMAGED_REASON,
-  DB_FILE,
   isCorruptError,
+  LowSpaceError,
   markClosed,
   markOpen,
   needsCheck,
+  pruneCopies,
+  recordCopy,
   setAside,
 } from '../host/damaged';
 import type { AiProviderId } from '../host/ai/providers';
@@ -306,9 +308,14 @@ export function runEngineUtility(parent: UtilityParent, deps: UtilityDeps): void
    * damaged-database screen. Nothing is rebuilt here. Main is told with a fixed sentence and the reason code only.
    */
   class Damaged extends Error {}
-  function park(dataDir: string): never {
+  const now = () => (deps.now ?? Date.now)();
+  /** `copy`: the copy already made of the file as found (`undefined`: make one now; `null`: none could be made). */
+  function park(dataDir: string, copy?: string | null): never {
     try {
-      setAside(dataDir, (deps.now ?? Date.now)());
+      // The store's connection closed after its copy was made: the copy is recorded against the file as it is now,
+      // so the next start on the same damaged file reuses it.
+      if (typeof copy === 'string') recordCopy(dataDir, copy);
+      else if (copy === undefined) setAside(dataDir, now());
     } catch {
       // A copy that cannot be made (a full disk) still parks: the file itself stays where it is, untouched.
     }
@@ -316,18 +323,33 @@ export function runEngineUtility(parent: UtilityParent, deps: UtilityDeps): void
   }
 
   async function start(init: UtilityInit) {
-    // The file is checked only after an unclean exit; a corrupt read during open parks the same way.
-    if (needsCheck(init.dataDir) && !checkDatabase(join(init.dataDir, DB_FILE)).ok)
-      park(init.dataDir);
+    // The file is checked only after an unclean exit, on a copy made first; a corrupt read during open parks the same way.
+    if (needsCheck(init.dataDir)) {
+      const found = checkAside(init.dataDir, now());
+      if (!found.ok) park(init.dataDir, found.copy);
+    }
     markOpen(init.dataDir);
     const options = await (deps.options ?? realComposeOptions)(init, bridge);
     try {
-      host = await (deps.compose ?? composeEngineHost)(options);
+      host = await (deps.compose ?? composeEngineHost)({
+        ...options,
+        // Main gives a backup and migration far longer than a plain start before it kills the process.
+        onUpgrade: () => parent.post({ kind: 'upgrading' }),
+      });
     } catch (error) {
-      if (isCorruptError(error)) park(init.dataDir);
+      if (isCorruptError(error)) {
+        const copy = (error as { damagedCopy?: unknown }).damagedCopy;
+        park(init.dataDir, typeof copy === 'string' ? copy : undefined);
+      }
       throw error;
     }
     dataDir = init.dataDir;
+    // Backups and damaged copies are whole mailboxes: they go by age, and only after a healthy start.
+    try {
+      pruneCopies(init.dataDir, now());
+    } catch {
+      // Left for the next start.
+    }
     const store = host.engine.services.store;
     const engine = host.engine;
     control = engine.connect(controlCaller);
@@ -368,6 +390,12 @@ export function runEngineUtility(parent: UtilityParent, deps: UtilityDeps): void
           });
           // Main must hear why before this process goes (it kills it on receipt): exiting in the same turn can drop
           // the message, and main would then report a plain failed start.
+          setTimeout(() => deps.exit(1), DAMAGED_EXIT_MS);
+          return;
+        }
+        // Too little free space for the backup and migration: nothing changed, and the owner is told how much is needed.
+        if (error instanceof LowSpaceError) {
+          parent.post({ kind: 'failed', message: error.message, reason: error.reason });
           setTimeout(() => deps.exit(1), DAMAGED_EXIT_MS);
           return;
         }

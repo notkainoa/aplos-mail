@@ -15,6 +15,8 @@ function unavailable(message = 'The mailbox is restarting. Try again in a moment
 export const ENGINE_QUIT_MS = 3000;
 /** After the kill, `close` waits this long for the exit event before it reports the engine as stuck. */
 export const ENGINE_EXIT_AFTER_KILL_MS = 2000;
+/** How long an engine that said it is backing up and migrating (`EngineLink.upgrading`) may take to answer `ready`. */
+export const ENGINE_UPGRADE_TIMEOUT_MS = 30 * 60_000;
 /** Restarts the owner asks for closer together than this are one restart. */
 export const RESTART_COALESCE_MS = 5000;
 /** At most this many asked restarts clear the park count in `UNPARK_WINDOW_MS`. */
@@ -47,6 +49,13 @@ export interface SupervisorOptions {
    * toward the park). Default 60 s: a large import or migration may be slow, but never silent forever.
    */
   readyTimeoutMs?: number;
+  /** The start timeout once the engine says it is upgrading the database. Default `ENGINE_UPGRADE_TIMEOUT_MS`. */
+  upgradeTimeoutMs?: number;
+  /**
+   * A start (the first or a restart) failed. Return true to hold: no restart follows, the stop does not count toward the
+   * park, and asked restarts do nothing (main parks on a damaged database this way, whichever start found it).
+   */
+  onStartFailed?(error: unknown, restarted: boolean): boolean;
   /** A kill threw (the OS refused): tell someone, since an engine that never becomes ready then leaves `start` waiting. */
   onKillFailed?(error: unknown): void;
   /** The owner asked for a restart ("Try again"): the host forgets earlier stops, so a parked app is not parked any more. */
@@ -80,12 +89,14 @@ export function createEngineSupervisor(options: SupervisorOptions) {
   let asked: EngineLink | undefined;
   let lastAsk = -Infinity;
   const unparks: number[] = [];
+  /** Set by `onStartFailed`: nothing restarts any more. */
+  let held = false;
 
   function down(link: EngineLink) {
     if (current !== link) return;
     current = undefined;
     // A first start that fails is the caller's error (startup shows it); only a running engine restarts.
-    if (closing || !everUp) return;
+    if (closing || !everUp || held) return;
     if (asked === link) {
       asked = undefined;
       options.onDown(false);
@@ -97,7 +108,7 @@ export function createEngineSupervisor(options: SupervisorOptions) {
     if (parked) return;
     restart = options.timers.set(() => {
       restart = undefined;
-      up(true).catch(() => undefined);
+      if (!held) up(true).catch(() => undefined);
     }, options.restartDelayMs ?? 500);
   }
 
@@ -106,12 +117,22 @@ export function createEngineSupervisor(options: SupervisorOptions) {
     const link = options.spawn();
     current = link;
     link.onExit(() => down(link));
-    const timer = options.timers.set(
-      () => stop(link, options.onKillFailed),
-      options.readyTimeoutMs ?? 60_000,
-    );
+    // A backup and migration of a large mailbox may outlast the plain start timeout: an engine that said so gets longer.
+    let extended = false;
+    const expire = () => {
+      if (link.upgrading && !extended) {
+        extended = true;
+        timer = options.timers.set(expire, options.upgradeTimeoutMs ?? ENGINE_UPGRADE_TIMEOUT_MS);
+        return;
+      }
+      stop(link, options.onKillFailed);
+    };
+    let timer = options.timers.set(expire, options.readyTimeoutMs ?? 60_000);
     try {
       await link.ready;
+    } catch (error) {
+      if (!closing && options.onStartFailed?.(error, restarted)) held = true;
+      throw error;
     } finally {
       options.timers.clear(timer);
     }
@@ -131,6 +152,7 @@ export function createEngineSupervisor(options: SupervisorOptions) {
      */
     restart(): Promise<void> {
       if (closing) return Promise.reject(unavailable());
+      if (held) return Promise.resolve();
       const now = (options.now ?? Date.now)();
       // A loop of asks must not keep the engine in spawn, quit, spawn: one restart per coalescing window.
       if (now - lastAsk < (options.restartCoalesceMs ?? RESTART_COALESCE_MS))

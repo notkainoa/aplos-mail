@@ -1,11 +1,15 @@
 import {
+  chmodSync,
+  constants,
   copyFileSync,
   existsSync,
   mkdirSync,
   readdirSync,
   readFileSync,
   renameSync,
+  rmdirSync,
   rmSync,
+  statfsSync,
   statSync,
   writeFileSync,
 } from 'node:fs';
@@ -19,15 +23,27 @@ import type { SqlDatabase } from '@aplos/engine/store/sql';
  * `damaged/`, and the owner chooses Export report, Restore a pre-migration backup, or Rebuild from the provider, after
  * seeing what exists only on this Mac (drafts, scheduled sends, Done/Later and reminders, changes not yet sent).
  * Pre-migration backups are `mail.db.pre-<schema>`, written by `writeBackup` before a migration runs.
+ *
+ * The damaged file is never opened read-write: closing a writing connection folds the write-ahead log into the file
+ * and deletes the log, so the copy would no longer be the file as found. `checkAside` copies the file, its log and its
+ * index byte for byte first, then checks the copy read-only; the screen and the report read the copy read-only too.
+ *
+ * Backups and damaged copies are full plaintext copies of the mailbox: they are written 0600, `pruneCopies` drops them
+ * by age after every healthy start, and `deleteLocalCopies` removes them all when an account is removed.
  */
 
 export const DB_FILE = 'mail.db';
 /** Present while an engine has the database open; left behind by a crash, so the next start checks the file. */
 export const OPEN_MARK = 'mail.db.open';
 export const DAMAGED_DIR = 'damaged';
-/** The pre-migration backups kept, newest first. */
-export const KEEP_BACKUPS = 2;
+/** A pre-migration backup is kept this long, and only the newest one. */
+export const BACKUP_DAYS = 14;
+/** A damaged copy is kept this long (never while the app is parked on it: pruning runs only after a healthy start). */
+export const DAMAGED_DAYS = 30;
+const DAY_MS = 86_400_000;
 const BACKUP = /^mail\.db\.pre-(\d{1,4})$/;
+/** `mail-<ISO time with : and . as ->.db`, and its `-wal` / `-shm`. */
+const COPY = /^mail-(\d{4}-\d{2}-\d{2})T(\d{2})-(\d{2})-(\d{2})-(\d{3})Z\.db(?:-wal|-shm)?$/;
 const SIDECARS = ['-wal', '-shm'] as const;
 
 /** The reason the utility gives main when it parks on a damaged database. */
@@ -42,12 +58,15 @@ export function isCorruptError(error: unknown): boolean {
   return /database disk image is malformed|file is not a database/i.test(message);
 }
 
-/** Whether SQLite can read the file: `quick_check` over every page. A missing file is fine (a fresh start). */
+/**
+ * Whether SQLite can read the file: `quick_check` over every page, its write-ahead log included. A missing file is fine
+ * (a fresh start). Read-only, so closing never checkpoints the log into the file or deletes it.
+ */
 export function checkDatabase(path: string): { ok: true } | { ok: false; reason: string } {
   if (!existsSync(path)) return { ok: true };
   let db: DatabaseSync | undefined;
   try {
-    db = new DatabaseSync(path);
+    db = new DatabaseSync(path, { readOnly: true });
     const rows = db.prepare('PRAGMA quick_check').all() as { quick_check?: unknown }[];
     if (rows.length === 1 && rows[0]?.quick_check === 'ok') return { ok: true };
     return { ok: false, reason: 'quick_check' };
@@ -82,24 +101,106 @@ export function markClosed(dataDir: string): void {
   }
 }
 
-/**
- * Copies the damaged file (and its write-ahead log) into `damaged/`, once per damaged file: a second start on the same
- * file reuses the first copy. Returns the copy's name inside `damaged/`.
- */
-export function setAside(dataDir: string, now: number): string {
+/** What identifies one damaged file: the size and time of the file and of its write-ahead log. */
+function stampOf(source: string): string {
+  const part = (path: string) => {
+    try {
+      const stat = statSync(path);
+      return `${stat.size}:${Math.trunc(stat.mtimeMs)}`;
+    } catch {
+      return '-';
+    }
+  };
+  return `${part(source)}/${part(`${source}-wal`)}`;
+}
+
+/** A byte copy (a clone on APFS, so a large file costs nothing) of `mail.db`, its log and its index, mode 0600. */
+function copyFiles(dataDir: string, now: number): string {
   const source = join(dataDir, DB_FILE);
   const dir = join(dataDir, DAMAGED_DIR);
   mkdirSync(dir, { recursive: true, mode: 0o700 });
-  const stat = statSync(source);
-  const stamp = `${stat.size}:${Math.trunc(stat.mtimeMs)}`;
-  const last = readLast(dir);
-  if (last && last.stamp === stamp && existsSync(join(dir, last.name))) return last.name;
   const name = `mail-${new Date(now).toISOString().replace(/[:.]/g, '-')}.db`;
-  copyFileSync(source, join(dir, name));
-  for (const side of SIDECARS)
-    if (existsSync(source + side)) copyFileSync(source + side, join(dir, name + side));
-  writeFileSync(join(dir, 'last.json'), JSON.stringify({ name, stamp }), { mode: 0o600 });
+  try {
+    for (const side of ['', ...SIDECARS]) {
+      if (side && !existsSync(source + side)) continue;
+      copyFileSync(source + side, join(dir, name + side), constants.COPYFILE_FICLONE);
+      chmodSync(join(dir, name + side), 0o600);
+    }
+  } catch (error) {
+    removeCopy(dataDir, name);
+    throw error;
+  }
   return name;
+}
+
+function removeCopy(dataDir: string, name: string): void {
+  for (const side of ['', ...SIDECARS])
+    rmSync(join(dataDir, DAMAGED_DIR, name + side), { force: true });
+}
+
+/** Records `name` as the copy of the damaged file as it is now, so the next start on the same file reuses it. */
+export function recordCopy(dataDir: string, name: string): void {
+  const stamp = stampOf(join(dataDir, DB_FILE));
+  writeFileSync(join(dataDir, DAMAGED_DIR, 'last.json'), JSON.stringify({ name, stamp }), {
+    mode: 0o600,
+  });
+}
+
+/** The recorded copy when it is of this very file (nothing has written to it since), else undefined. */
+function reusable(dataDir: string): string | undefined {
+  const dir = join(dataDir, DAMAGED_DIR);
+  const last = readLast(dir);
+  const stamp = stampOf(join(dataDir, DB_FILE));
+  return last && last.stamp === stamp && existsSync(join(dir, last.name)) ? last.name : undefined;
+}
+
+/**
+ * Copies the damaged file (and its write-ahead log and index) into `damaged/`, once per damaged file: a second start on
+ * the same file reuses the first copy. Returns the copy's name inside `damaged/`.
+ */
+export function setAside(dataDir: string, now: number): string {
+  const known = reusable(dataDir);
+  if (known) return known;
+  const name = copyFiles(dataDir, now);
+  recordCopy(dataDir, name);
+  return name;
+}
+
+/**
+ * The check after an unclean exit: the file as found is copied aside first, then the COPY is checked read-only. A
+ * healthy copy is removed again; a damaged one stays as the damaged file's copy. When no copy can be made (a full
+ * disk), the live file is checked read-only instead, which leaves it as it is too.
+ */
+export function checkAside(
+  dataDir: string,
+  now: number,
+): { ok: true } | { ok: false; copy: string | null } {
+  const source = join(dataDir, DB_FILE);
+  if (!existsSync(source)) return { ok: true };
+  const known = reusable(dataDir);
+  let name = known;
+  if (!name) {
+    try {
+      name = copyFiles(dataDir, now);
+    } catch {
+      return checkDatabase(source).ok ? { ok: true } : { ok: false, copy: null };
+    }
+  }
+  const result = checkDatabase(join(dataDir, DAMAGED_DIR, name));
+  if (result.ok) {
+    if (!known) {
+      removeCopy(dataDir, name);
+      // The folder was made for this check only: it goes again when nothing else is in it.
+      try {
+        rmdirSync(join(dataDir, DAMAGED_DIR));
+      } catch {
+        // Earlier copies are still there.
+      }
+    }
+    return { ok: true };
+  }
+  if (!known) recordCopy(dataDir, name);
+  return { ok: false, copy: name };
 }
 
 /** The copy `setAside` made last, for main's damaged-database screen. */
@@ -162,7 +263,7 @@ const COUNTS: Record<keyof LocalOnly, string> = {
 function openCopy(dataDir: string, copy: string | null): DatabaseSync | undefined {
   if (!copy) return undefined;
   try {
-    return new DatabaseSync(join(dataDir, DAMAGED_DIR, copy));
+    return new DatabaseSync(join(dataDir, DAMAGED_DIR, copy), { readOnly: true });
   } catch {
     return undefined;
   }
@@ -209,23 +310,119 @@ export function listBackups(dataDir: string): Backup[] {
     .sort((a, b) => b.schema - a.schema || b.at - a.at);
 }
 
+/** The reason the utility gives main when there is not enough free space to back up and migrate. */
+export const LOW_SPACE_REASON = 'store.space';
+
+/** Not enough free space to write the pre-migration backup and migrate: nothing was changed. */
+export class LowSpaceError extends Error {
+  override readonly name = 'LowSpaceError';
+  readonly reason = LOW_SPACE_REASON;
+  constructor(readonly needBytes: number) {
+    const gb = Math.max(0.1, Math.ceil(needBytes / 1e8) / 10);
+    super(
+      `Aplos needs about ${gb.toFixed(1)} GB free to update safely. Free some space, then open Aplos again.`,
+    );
+  }
+}
+
+/** Free bytes on the disk that holds `dir`; undefined when the OS will not say (the backup is then tried anyway). */
+export function freeBytesOf(dir: string): number | undefined {
+  try {
+    const fs = statfsSync(dir);
+    return Number(fs.bavail) * Number(fs.bsize);
+  } catch {
+    return undefined;
+  }
+}
+
+const sizeOf = (path: string) => {
+  try {
+    return statSync(path).size;
+  } catch {
+    return 0;
+  }
+};
+
+/**
+ * What a migration needs free: the backup (at most the file and its log) and as much again for the migration's own
+ * writes, which may rewrite whole tables.
+ */
+export function upgradeNeedBytes(dataDir: string): number {
+  const source = join(dataDir, DB_FILE);
+  return 2 * (sizeOf(source) + sizeOf(`${source}-wal`));
+}
+
 /**
  * Before a migration (`openStore`'s `beforeUpgrade`): a consistent copy of the database as it is, `mail.db.pre-<from>`,
- * written with `VACUUM INTO` so the write-ahead log is folded in. Older backups past `KEEP_BACKUPS` are removed.
+ * mode 0600, written with `VACUUM INTO` so the write-ahead log is folded in. Every older backup is removed. Throws
+ * `LowSpaceError` first, changing nothing, when the disk cannot hold the backup and the migration.
  */
-export function writeBackup(db: SqlDatabase, dataDir: string, from: number): void {
+export function writeBackup(
+  db: SqlDatabase,
+  dataDir: string,
+  from: number,
+  freeBytes: (dir: string) => number | undefined = freeBytesOf,
+): void {
+  const need = upgradeNeedBytes(dataDir);
+  const free = freeBytes(dataDir);
+  if (free !== undefined && free < need) throw new LowSpaceError(need);
   const name = `mail.db.pre-${Math.trunc(from)}`;
   const path = join(dataDir, name);
   rmSync(path, { force: true });
-  db.exec(`VACUUM INTO '${path.replace(/'/g, "''")}'`);
-  for (const old of listBackups(dataDir)
-    .filter(b => b.name !== name)
-    .slice(KEEP_BACKUPS - 1))
+  // VACUUM INTO fills an empty file it finds, keeping the file's mode.
+  writeFileSync(path, '', { mode: 0o600 });
+  try {
+    db.exec(`VACUUM INTO '${path.replace(/'/g, "''")}'`);
+    chmodSync(path, 0o600);
+  } catch (error) {
+    rmSync(path, { force: true });
+    throw error;
+  }
+  for (const old of listBackups(dataDir).filter(b => b.name !== name))
     rmSync(join(dataDir, old.name), { force: true });
 }
 
-/** Puts a backup in place of the damaged file. The damaged copy is already aside; a backup that is itself damaged is refused. */
-export function restoreBackup(dataDir: string, name: string): void {
+/** What every restored send waiting on its time says in the Outbox. */
+export const RESTORED_SEND_COPY =
+  'This came back with a restored backup. Check it, then send it now or choose a new time.';
+
+/**
+ * A restored backup's waiting sends (the undo window and Send later) are suspended, never sent on their own: one may
+ * already have gone out with Send now after the backup was taken. The owner reviews each in the Outbox.
+ */
+function suspendWaitingSends(path: string, now: number): number {
+  const db = new DatabaseSync(path);
+  try {
+    const problem = JSON.stringify({
+      reasonCode: 'send.overdue',
+      message: RESTORED_SEND_COPY,
+      at: now,
+    });
+    const result = db
+      .prepare(
+        `UPDATE submissions SET state = 'suspended', error_until = NULL,
+           error = json_set(CASE WHEN json_valid(error) THEN error ELSE '{}' END, '$.problem', json(?))
+         WHERE state IN ('queued', 'scheduled')`,
+      )
+      .run(problem);
+    return Number(result.changes);
+  } catch {
+    // A backup without the outbox table has nothing waiting.
+    return 0;
+  } finally {
+    db.close();
+  }
+}
+
+/**
+ * Puts a backup in place of the damaged file and suspends its waiting sends. The damaged copy is already aside; a
+ * backup that is itself damaged is refused. Returns how many sends were suspended.
+ */
+export function restoreBackup(
+  dataDir: string,
+  name: string,
+  now = Date.now(),
+): { suspended: number } {
   if (!BACKUP.test(name) || !listBackups(dataDir).some(b => b.name === name))
     throw new Error('That backup is not on this Mac any more.');
   const source = join(dataDir, name);
@@ -233,9 +430,57 @@ export function restoreBackup(dataDir: string, name: string): void {
   const target = join(dataDir, DB_FILE);
   const temp = `${target}.restoring`;
   copyFileSync(source, temp);
+  chmodSync(temp, 0o600);
+  let suspended: number;
+  try {
+    suspended = suspendWaitingSends(temp, now);
+  } finally {
+    for (const side of SIDECARS) rmSync(temp + side, { force: true });
+  }
   for (const side of SIDECARS) rmSync(target + side, { force: true });
   renameSync(temp, target);
   markClosed(dataDir);
+  return { suspended };
+}
+
+/** When a damaged copy was made, from its name; undefined for any other file. */
+function copiedAt(name: string): number | undefined {
+  const m = COPY.exec(name);
+  return m ? Date.parse(`${m[1]}T${m[2]}:${m[3]}:${m[4]}.${m[5]}Z`) : undefined;
+}
+
+/**
+ * After a healthy start (so never while parked on a damaged file): the newest pre-migration backup stays only while it
+ * is younger than `BACKUP_DAYS`, every other backup goes, and damaged copies older than `DAMAGED_DAYS` go.
+ */
+export function pruneCopies(dataDir: string, now: number): void {
+  listBackups(dataDir).forEach((backup, i) => {
+    if (i > 0 || now - backup.at >= BACKUP_DAYS * DAY_MS)
+      rmSync(join(dataDir, backup.name), { force: true });
+  });
+  const dir = join(dataDir, DAMAGED_DIR);
+  let names: string[];
+  try {
+    names = readdirSync(dir);
+  } catch {
+    return;
+  }
+  for (const name of names) {
+    const at = copiedAt(name);
+    if (at !== undefined && now - at >= DAMAGED_DAYS * DAY_MS)
+      rmSync(join(dir, name), { force: true });
+  }
+  const last = readLast(dir);
+  if (last && !existsSync(join(dir, last.name))) rmSync(join(dir, 'last.json'), { force: true });
+}
+
+/**
+ * Removes every pre-migration backup and every damaged copy: they are full copies of the mailbox, so removing an
+ * account (or the last one) must not leave them behind. Account removal calls this.
+ */
+export function deleteLocalCopies(dataDir: string): void {
+  for (const backup of listBackups(dataDir)) rmSync(join(dataDir, backup.name), { force: true });
+  rmSync(join(dataDir, DAMAGED_DIR), { recursive: true, force: true });
 }
 
 /** Starts over: the damaged file goes (its copy stays in `damaged/`), and the next start syncs from the provider. */

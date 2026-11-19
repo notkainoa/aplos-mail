@@ -381,6 +381,8 @@ export type FromUtility =
   | { kind: 'ready'; dbEpoch: string; seq: number }
   /** `reason`: `store.corrupt` when the engine parked on a damaged database (main shows that screen). */
   | { kind: 'failed'; message: string; reason?: string }
+  /** The engine is about to back up and migrate the database, which may take minutes: main waits longer for `ready`. */
+  | { kind: 'upgrading' }
   | { kind: 'reply'; id: number; ok: true; result: unknown }
   | { kind: 'reply'; id: number; ok: false; error: PortError }
   /** A host-channel event (`HostEvent` in the contract); main validates it before acting. */
@@ -413,6 +415,8 @@ export interface EngineLink {
   /** Resolves when the engine answers `ready`; rejects when it fails or stops first. */
   readonly ready: Promise<{ dbEpoch: string; seq: number }>;
   readonly exited: boolean;
+  /** The engine said it is backing up and migrating the database (the supervisor's longer start timeout applies). */
+  readonly upgrading?: boolean;
   /** A control-connection call; `controlMethods` only, rejected after `timeoutMs` or when the engine stops. */
   /** `signal`: the caller gave up; the call rejects at once and a late engine answer is dropped (the engine's work is not cancelled). */
   call(method: string, args?: unknown, timeoutMs?: number, signal?: AbortSignal): Promise<unknown>;
@@ -465,6 +469,7 @@ export function createEngineLink(
   const exitHandlers: (() => void)[] = [];
   let counter = 0;
   let exited = false;
+  let upgrading = false;
   let settle!: {
     resolve(at: { dbEpoch: string; seq: number }): void;
     reject(error: unknown): void;
@@ -500,6 +505,7 @@ export function createEngineLink(
   const receive = (message: FromUtility) => {
     if (message.kind === 'ready')
       return settle.resolve({ dbEpoch: message.dbEpoch, seq: message.seq });
+    if (message.kind === 'upgrading') return void (upgrading = true);
     if (message.kind === 'failed') {
       const reason = typeof message.reason === 'string' ? message.reason : undefined;
       settle.reject(Object.assign(new Error(String(message.message)), reason ? { reason } : {}));
@@ -530,6 +536,9 @@ export function createEngineLink(
     ready,
     get exited() {
       return exited;
+    },
+    get upgrading() {
+      return upgrading;
     },
     call(method, args = {}, timeoutMs = CALL_TIMEOUT_MS, signal) {
       if (!controlMethods.has(method))

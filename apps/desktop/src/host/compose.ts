@@ -56,7 +56,7 @@ import {
 import { createHttpClient } from './providers/shared/http';
 import { announceMissedReminders } from './reminders';
 import { openSqlite } from './sqlite';
-import { writeBackup } from './damaged';
+import { isCorruptError, setAside, writeBackup } from './damaged';
 
 /**
  * The composition root of the new engine's host (lane eng-host). Everything the environment decides is injected, so it
@@ -79,6 +79,10 @@ export interface ComposeOptions {
   dataDir: string;
   /** Opens the SQLite file with the host's pragmas. Default: `openSqlite`. */
   openDatabase?: (path: string) => SqlDatabase;
+  /** Free bytes on the data folder's disk, checked before a migration's backup. Default: `statfs`. */
+  freeBytes?: (dir: string) => number | undefined;
+  /** Called just before the pre-migration backup and the migration, which may take minutes on a large mailbox. */
+  onUpgrade?: () => void;
   /** The network. Every Google call, token refresh and sign-in exchange goes through it. */
   fetch: typeof fetch;
   clock: Clock;
@@ -419,9 +423,23 @@ function openDatabaseFile(options: ComposeOptions): StorePort {
       ingest: { laneFor },
       now: () => options.clock.now(),
       // A consistent copy before any migration, for the damaged-database screen's Restore (plan 10 Decision 6).
-      beforeUpgrade: from => writeBackup(db, options.dataDir, from),
+      beforeUpgrade: from => {
+        options.onUpgrade?.();
+        writeBackup(db, options.dataDir, from, options.freeBytes);
+      },
     });
   } catch (error) {
+    // A damaged file is copied aside while this connection is still open: closing it folds the write-ahead log into
+    // the file, so a copy made after would not be the file as found. The engine process parks with this copy.
+    if (isCorruptError(error)) {
+      try {
+        Object.assign(error as object, {
+          damagedCopy: setAside(options.dataDir, options.clock.now()),
+        });
+      } catch {
+        // No copy (a full disk): the engine process tries again when it parks.
+      }
+    }
     db.close();
     throw error;
   }

@@ -100,8 +100,9 @@ const engineFrame = (state: 'connecting' | 'ready' | 'parked'): DesktopFrame => 
 });
 
 /**
- * Set when the first engine parked on a damaged `mail.db` (plan 10 Decision 6). No engine runs then: every window shows
- * the damaged-database screen, and `Engine/recover` here exports the report, restores a backup or rebuilds.
+ * Set when an engine start (the first or a restart after a crash) parked on a damaged `mail.db` (plan 10 Decision 6).
+ * No engine runs then: every window shows the damaged-database screen, and `Engine/recover` here exports the report,
+ * restores a backup or rebuilds.
  */
 let damaged: { dataDir: string; copy: string | null } | undefined;
 
@@ -119,6 +120,18 @@ const damagedFrame = (): DesktopFrame => ({
   },
 });
 
+/**
+ * The supervisor's `onStartFailed`: a start that parked on a damaged database holds the supervisor (no restart loop)
+ * and sends every open window the damaged frame; any other failure is not held.
+ */
+function parkOnDamaged(dataDir: string, error: unknown): boolean {
+  if ((error as { reason?: unknown })?.reason !== DAMAGED_REASON) return false;
+  damaged = { dataDir, copy: lastCopy(dataDir) };
+  broker.desktop(damagedFrame());
+  if (isTest) console.error('Aplos Mail test: engine: parked on a damaged database');
+  return true;
+}
+
 /** The damaged-database screen's actions. Restore and Rebuild relaunch Aplos once the reply is on its way. */
 async function recover(event: IpcMainInvokeEvent, args: Record<string, unknown>) {
   if (!damaged) throw new Error('The mail database is not damaged.');
@@ -131,6 +144,7 @@ async function recover(event: IpcMainInvokeEvent, args: Record<string, unknown>)
     const saved = await saveBytes(win, 'Aplos Mail report.txt', report);
     return { ...inspectDamaged(dataDir, copy), saved: !saved.canceled };
   }
+  // A restored backup's waiting sends come back suspended, for the owner to check in the Outbox.
   if (action === 'restore') restoreBackup(dataDir, String(args.backup ?? ''));
   else if (action === 'rebuild') rebuildDatabase(dataDir);
   const facts = inspectDamaged(dataDir, copy);
@@ -366,6 +380,7 @@ async function bootRealEngine(options: {
       broker.desktop(engineFrame('ready'));
     },
     onDown: parked => broker.desktop(engineFrame(parked ? 'parked' : 'connecting')),
+    onStartFailed: error => parkOnDamaged(options.dataDir, error),
     onKillFailed: error =>
       console.error('Aplos Mail: could not stop the engine process:', (error as Error)?.name),
     timers,
@@ -373,10 +388,9 @@ async function bootRealEngine(options: {
   try {
     await supervisor.start();
   } catch (error) {
-    // Only a damaged database keeps the app up without an engine; any other failed start is the startup error.
-    if ((error as { reason?: unknown })?.reason !== DAMAGED_REASON) throw error;
-    damaged = { dataDir: options.dataDir, copy: lastCopy(options.dataDir) };
-    if (isTest) console.error('Aplos Mail test: engine: parked on a damaged database');
+    // Only a damaged database keeps the app up without an engine (`parkOnDamaged`); any other failed start is the
+    // startup error, whose message names the cause when the engine gave one (too little free space to update).
+    if (!damaged) throw error;
   }
   watchWindows();
   // The sealed mail frame (html-5): the `aplos-mail://` relay, its window stamp and backstop, and the subframe rule.

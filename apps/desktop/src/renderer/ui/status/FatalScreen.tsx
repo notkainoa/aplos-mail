@@ -37,7 +37,7 @@ const dateOf = (at: number) =>
 
 function confirmLine(d: DamagedDatabase, hasLocal: boolean): string {
   if (d.confirm === 'restore')
-    return `Aplos goes back to the copy from ${dateOf(d.backup?.at ?? 0)}. Mail since then downloads from Google again${hasLocal ? '; what is only on this Mac is kept in the report, not brought back' : ''}.`;
+    return `Aplos goes back to the copy from ${dateOf(d.backup?.at ?? 0)}. Mail since then downloads from Google again${hasLocal ? '; what is only on this Mac is kept in the report, not brought back' : ''}. Sends waiting in that copy are paused in the Outbox until you check them.`;
   return `Aplos starts over and you sign in to Google again; your mail downloads from there${hasLocal ? '. What is only on this Mac is kept in the report, not brought back' : ''}.`;
 }
 

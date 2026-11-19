@@ -94,6 +94,24 @@ describe('FatalScreen damaged database', () => {
     assert.match(text, /Cancel/);
     assert.doesNotMatch(text, /Only on this Mac/);
   });
+  it('Restore asks once and says its waiting sends are paused for review', () => {
+    const text = textOf(
+      render(
+        <FatalScreen
+          kind="damaged"
+          damaged={{ ...base, confirm: 'restore' }}
+          restarting={false}
+          onRestart={noop}
+          onDiagnostics={noop}
+        />,
+      ),
+    );
+    assert.match(text, /Aplos goes back to the copy from /);
+    assert.match(
+      text,
+      /Sends waiting in that copy are paused in the Outbox until you check them\./,
+    );
+  });
   it('while main reads the damaged file, only the title and the safe line show', () => {
     const text = textOf(
       render(
