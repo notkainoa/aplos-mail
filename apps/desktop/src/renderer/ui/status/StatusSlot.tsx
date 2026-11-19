@@ -35,6 +35,8 @@ export function statusCopy(status: SyncStatus, now: Date = new Date()): StatusCo
   switch (status.kind) {
     case 'starting':
       return { text: 'Starting…', icon: 'refresh', attention: false };
+    case 'updating':
+      return { text: 'Updating your mailbox…', icon: 'refresh', attention: false };
     case 'syncing':
       return status.firstWindow
         ? {

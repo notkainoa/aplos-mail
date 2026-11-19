@@ -383,6 +383,8 @@ export type FromUtility =
   | { kind: 'failed'; message: string; reason?: string }
   /** The engine is about to back up and migrate the database, which may take minutes: main waits longer for `ready`. */
   | { kind: 'upgrading' }
+  /** The backup and migration returned: main's plain start timeout applies again to the rest of the start. */
+  | { kind: 'upgraded' }
   | { kind: 'reply'; id: number; ok: true; result: unknown }
   | { kind: 'reply'; id: number; ok: false; error: PortError }
   /** A host-channel event (`HostEvent` in the contract); main validates it before acting. */
@@ -417,6 +419,8 @@ export interface EngineLink {
   readonly exited: boolean;
   /** The engine said it is backing up and migrating the database (the supervisor's longer start timeout applies). */
   readonly upgrading?: boolean;
+  /** Called with true when the backup and migration begin and false when they return (`upgrading` / `upgraded`). */
+  onUpgrading?(listener: (upgrading: boolean) => void): void;
   /** A control-connection call; `controlMethods` only, rejected after `timeoutMs` or when the engine stops. */
   /** `signal`: the caller gave up; the call rejects at once and a late engine answer is dropped (the engine's work is not cancelled). */
   call(method: string, args?: unknown, timeoutMs?: number, signal?: AbortSignal): Promise<unknown>;
@@ -470,6 +474,12 @@ export function createEngineLink(
   let counter = 0;
   let exited = false;
   let upgrading = false;
+  const upgradeListeners: ((upgrading: boolean) => void)[] = [];
+  const setUpgrading = (on: boolean) => {
+    if (upgrading === on) return;
+    upgrading = on;
+    for (const listener of upgradeListeners) listener(on);
+  };
   let settle!: {
     resolve(at: { dbEpoch: string; seq: number }): void;
     reject(error: unknown): void;
@@ -505,7 +515,8 @@ export function createEngineLink(
   const receive = (message: FromUtility) => {
     if (message.kind === 'ready')
       return settle.resolve({ dbEpoch: message.dbEpoch, seq: message.seq });
-    if (message.kind === 'upgrading') return void (upgrading = true);
+    if (message.kind === 'upgrading') return setUpgrading(true);
+    if (message.kind === 'upgraded') return setUpgrading(false);
     if (message.kind === 'failed') {
       const reason = typeof message.reason === 'string' ? message.reason : undefined;
       settle.reject(Object.assign(new Error(String(message.message)), reason ? { reason } : {}));
@@ -540,6 +551,7 @@ export function createEngineLink(
     get upgrading() {
       return upgrading;
     },
+    onUpgrading: listener => void upgradeListeners.push(listener),
     call(method, args = {}, timeoutMs = CALL_TIMEOUT_MS, signal) {
       if (!controlMethods.has(method))
         return Promise.reject(

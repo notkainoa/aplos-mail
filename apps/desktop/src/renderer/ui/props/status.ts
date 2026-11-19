@@ -10,6 +10,10 @@ export type SyncStatus =
       kind: 'starting';
     }
   | {
+      /** "Updating your mailbox…": main says the engine is backing up and migrating the database (may take minutes). */
+      kind: 'updating';
+    }
+  | {
       /** "Syncing…", only after 150 ms. */
       kind: 'syncing';
       /** First window still reading: "Reading your newest mail · 24 of 50" (mockup empty.html first-mail; see README open question). */

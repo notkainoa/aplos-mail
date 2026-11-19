@@ -338,6 +338,8 @@ export function runEngineUtility(parent: UtilityParent, deps: UtilityDeps): void
         ...options,
         // Main gives a backup and migration far longer than a plain start before it kills the process.
         onUpgrade: () => parent.post({ kind: 'upgrading' }),
+        // The rest of the start gets the plain timeout again.
+        onUpgraded: () => parent.post({ kind: 'upgraded' }),
       });
     } catch (error) {
       if (isCorruptError(error)) {

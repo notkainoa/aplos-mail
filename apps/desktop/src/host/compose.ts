@@ -83,6 +83,8 @@ export interface ComposeOptions {
   freeBytes?: (dir: string) => number | undefined;
   /** Called just before the pre-migration backup and the migration, which may take minutes on a large mailbox. */
   onUpgrade?: () => void;
+  /** Called once the backup and migration returned (only after `onUpgrade`). */
+  onUpgraded?: () => void;
   /** The network. Every Google call, token refresh and sign-in exchange goes through it. */
   fetch: typeof fetch;
   clock: Clock;
@@ -416,18 +418,22 @@ export function createAccountStarts(options: {
 function openDatabaseFile(options: ComposeOptions): StorePort {
   mkdirSync(options.dataDir, { recursive: true, mode: 0o700 });
   const db = (options.openDatabase ?? openSqlite)(join(options.dataDir, 'mail.db'));
+  let upgraded = false;
   try {
-    return openStore(db, {
+    const store = openStore(db, {
       extensions: laneExtensions(),
       // Without this the store never ranks a thread and Home shows every one of them under Do now.
       ingest: { laneFor },
       now: () => options.clock.now(),
       // A consistent copy before any migration, for the damaged-database screen's Restore (plan 10 Decision 6).
       beforeUpgrade: from => {
+        upgraded = true;
         options.onUpgrade?.();
         writeBackup(db, options.dataDir, from, options.freeBytes);
       },
     });
+    if (upgraded) options.onUpgraded?.();
+    return store;
   } catch (error) {
     // A damaged file is copied aside while this connection is still open: closing it folds the write-ahead log into
     // the file, so a copy made after would not be the file as found. The engine process parks with this copy.

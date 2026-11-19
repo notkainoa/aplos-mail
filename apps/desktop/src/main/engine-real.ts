@@ -34,6 +34,7 @@ import {
 } from '../host/transports/port';
 import {
   DAMAGED_REASON,
+  UPGRADING_REASON,
   damagedReport,
   inspectDamaged,
   lastCopy,
@@ -107,6 +108,28 @@ const engineFrame = (state: 'connecting' | 'ready' | 'parked'): DesktopFrame => 
 let damaged: { dataDir: string; copy: string | null } | undefined;
 
 const DAMAGED_MESSAGE = 'The mail database on this Mac is damaged.';
+
+/**
+ * While the starting engine backs up and migrates the database (minutes on a large mailbox), windows show the slot's
+ * "Updating your mailbox…" instead of a silent wait: a `connecting` frame with `UPGRADING_REASON`.
+ */
+let upgrading = false;
+const upgradingFrame = (): DesktopFrame => ({
+  frame: 'desktop',
+  event: {
+    type: 'engine',
+    state: 'connecting',
+    at: Date.now(),
+    reasonCode: UPGRADING_REASON,
+    message: 'Updating your mailbox…',
+  },
+});
+
+/** The supervisor's `onUpgrading`: every window that holds a port hears it; the plain frame clears it again. */
+function upgradingChanged(on: boolean): void {
+  upgrading = on;
+  broker.desktop(on ? upgradingFrame() : engineFrame('connecting'));
+}
 
 const damagedFrame = (): DesktopFrame => ({
   frame: 'desktop',
@@ -340,6 +363,8 @@ function connectWindow(event: IpcMainInvokeEvent) {
     throw new Error(DAMAGED_MESSAGE);
   }
   broker.connect(win);
+  // A window that connects mid-migration (a restart's) is told at once, not at the next change.
+  if (upgrading) win.desktop(upgradingFrame());
   return ok;
 }
 
@@ -375,11 +400,16 @@ async function bootRealEngine(options: {
     spawn: () => spawn(init),
     noteExit: options.noteExit,
     ...(options.noteRestart ? { onRestart: options.noteRestart } : {}),
+    onUpgrading: upgradingChanged,
     onUp: (_link, restarted) => {
+      upgrading = false;
       if (restarted) broker.reissue();
       broker.desktop(engineFrame('ready'));
     },
-    onDown: parked => broker.desktop(engineFrame(parked ? 'parked' : 'connecting')),
+    onDown: parked => {
+      upgrading = false;
+      broker.desktop(engineFrame(parked ? 'parked' : 'connecting'));
+    },
     onStartFailed: error => parkOnDamaged(options.dataDir, error),
     onKillFailed: error =>
       console.error('Aplos Mail: could not stop the engine process:', (error as Error)?.name),

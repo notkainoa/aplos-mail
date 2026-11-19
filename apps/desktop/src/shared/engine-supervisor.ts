@@ -51,6 +51,8 @@ export interface SupervisorOptions {
   readyTimeoutMs?: number;
   /** The start timeout once the engine says it is upgrading the database. Default `ENGINE_UPGRADE_TIMEOUT_MS`. */
   upgradeTimeoutMs?: number;
+  /** The starting engine began (true) or finished (false) backing up and migrating the database: main tells windows. */
+  onUpgrading?(upgrading: boolean): void;
   /**
    * A start (the first or a restart) failed. Return true to hold: no restart follows, the stop does not count toward the
    * park, and asked restarts do nothing (main parks on a damaged database this way, whichever start found it).
@@ -117,23 +119,37 @@ export function createEngineSupervisor(options: SupervisorOptions) {
     const link = options.spawn();
     current = link;
     link.onExit(() => down(link));
-    // A backup and migration of a large mailbox may outlast the plain start timeout: an engine that said so gets longer.
+    // A backup and migration of a large mailbox may outlast the plain start timeout: while the engine says it is
+    // upgrading it gets the long one, from the moment it says so; once the migration returns, the plain one again, so
+    // a hang after it is not given 30 minutes too.
+    const readyMs = options.readyTimeoutMs ?? 60_000;
+    const upgradeMs = options.upgradeTimeoutMs ?? ENGINE_UPGRADE_TIMEOUT_MS;
     let extended = false;
+    let settled = false;
     const expire = () => {
+      // A link that cannot report the change (`onUpgrading`) is read once, when the plain timeout runs out.
       if (link.upgrading && !extended) {
         extended = true;
-        timer = options.timers.set(expire, options.upgradeTimeoutMs ?? ENGINE_UPGRADE_TIMEOUT_MS);
+        timer = options.timers.set(expire, upgradeMs);
         return;
       }
       stop(link, options.onKillFailed);
     };
-    let timer = options.timers.set(expire, options.readyTimeoutMs ?? 60_000);
+    let timer = options.timers.set(expire, readyMs);
+    link.onUpgrading?.(on => {
+      if (settled || current !== link) return;
+      options.timers.clear(timer);
+      extended = on;
+      timer = options.timers.set(expire, on ? upgradeMs : readyMs);
+      options.onUpgrading?.(on);
+    });
     try {
       await link.ready;
     } catch (error) {
       if (!closing && options.onStartFailed?.(error, restarted)) held = true;
       throw error;
     } finally {
+      settled = true;
       options.timers.clear(timer);
     }
     if (closing || current !== link) throw unavailable();

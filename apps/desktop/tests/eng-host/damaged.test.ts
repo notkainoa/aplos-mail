@@ -252,8 +252,18 @@ test('opening an older database writes mail.db.pre-<from> before it migrates', a
     request: async () => undefined,
     power: new (await import('node:events')).EventEmitter(),
   });
-  const host = await composeEngineHost(options);
+  const said: string[] = [];
+  const host = await composeEngineHost({
+    ...options,
+    onUpgrade: () => void said.push(`upgrading:${listBackups(dir).length}`),
+    onUpgraded: () => void said.push(`upgraded:${listBackups(dir).length}`),
+  });
   await host.close();
+  assert.deepEqual(
+    said,
+    ['upgrading:0', 'upgraded:1'],
+    'upgraded once the backup and migration returned',
+  );
   assert.deepEqual(
     listBackups(dir).map(b => [b.name, b.schema]),
     [['mail.db.pre-6', 6]],
@@ -297,6 +307,23 @@ test('a file SQLite cannot read parks at open even after a clean exit', async t 
   assert.deepEqual(await startOn(dir), { ok: false, reason: DAMAGED_REASON });
   assert.ok(lastCopy(dir));
   assert.ok(existsSync(path));
+});
+
+test('a current database starts without saying it is upgrading', async t => {
+  const dir = folder(t);
+  seededDb(dir);
+  const options = await testOptions(dir, fakeClock(T0))(undefined, {
+    request: async () => undefined,
+    power: new (await import('node:events')).EventEmitter(),
+  });
+  const said: string[] = [];
+  const host = await composeEngineHost({
+    ...options,
+    onUpgrade: () => void said.push('upgrading'),
+    onUpgraded: () => void said.push('upgraded'),
+  });
+  await host.close();
+  assert.deepEqual(said, []);
 });
 
 test('a healthy database starts as before', async t => {
@@ -470,6 +497,70 @@ test('an engine backing up and migrating gets the longer start timeout', async t
     if (upgrading) assert.ok(took >= 400, `upgrading: killed after ${took} ms`);
     else assert.ok(took < 400, `plain start: killed after ${took} ms`);
   }
+});
+
+/** A link that never answers `ready` and reports `upgrading` / `upgraded` through `onUpgrading`, as the real one does. */
+function reportingLink(): EngineLink & { killedAt?: number; say(on: boolean): void } {
+  const listeners: ((on: boolean) => void)[] = [];
+  let upgrading = false;
+  const link = Object.assign(silentLink(false), {
+    onUpgrading: (listener: (on: boolean) => void) => void listeners.push(listener),
+    say(on: boolean) {
+      upgrading = on;
+      for (const listener of listeners) listener(on);
+    },
+  });
+  Object.defineProperty(link, 'upgrading', { get: () => upgrading });
+  return link;
+}
+
+test('once the migration returns, the plain start timeout applies again', async t => {
+  const link = reportingLink();
+  const said: boolean[] = [];
+  const supervisor = createEngineSupervisor({
+    spawn: () => link,
+    noteExit: () => false,
+    onUp: () => undefined,
+    onDown: () => undefined,
+    onUpgrading: on => void said.push(on),
+    timers,
+    readyTimeoutMs: 60,
+    upgradeTimeoutMs: 5000,
+  });
+  t.after(() => supervisor.close());
+  const started = supervisor.start();
+  link.say(true);
+  await new Promise(r => setTimeout(r, 150));
+  assert.equal(link.killedAt, undefined, 'upgrading: the long timeout applies');
+  const back = Date.now();
+  link.say(false);
+  await assert.rejects(started);
+  const took = (link.killedAt ?? Infinity) - back;
+  assert.ok(took >= 50 && took < 1000, `after the migration: killed ${took} ms later`);
+  assert.deepEqual(said, [true, false], 'main heard both, to tell its windows');
+});
+
+test('the engine link reports upgrading and upgraded from the utility', () => {
+  let handler: ((message: unknown) => void) | undefined;
+  const child = {
+    post: () => undefined,
+    onMessage: (h: (message: unknown) => void) => void (handler = h),
+    onExit: () => undefined,
+    kill: () => undefined,
+  };
+  const link = createEngineLink(
+    child as never,
+    { dataDir: '/nowhere', appVersion: '0.3.0-test' },
+    { hostEvent: () => undefined, request: async () => 'posted' },
+    timers,
+  );
+  const heard: boolean[] = [];
+  link.onUpgrading?.(on => void heard.push(on));
+  handler!({ kind: 'upgrading' } satisfies FromUtility);
+  assert.equal(link.upgrading, true);
+  handler!({ kind: 'upgraded' } satisfies FromUtility);
+  assert.equal(link.upgrading, false);
+  assert.deepEqual(heard, [true, false]);
 });
 
 test('too little free space stops the update before anything changes, with how much is needed', async t => {

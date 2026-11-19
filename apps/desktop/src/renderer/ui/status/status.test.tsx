@@ -67,6 +67,7 @@ function assertIdRefs(html: string) {
 describe('statusCopy (DESIGN 7.1 table)', () => {
   const cases: [SyncStatus, string, string | undefined][] = [
     [{ kind: 'starting' }, 'Starting…', undefined],
+    [{ kind: 'updating' }, 'Updating your mailbox…', undefined],
     [{ kind: 'syncing' }, 'Syncing…', undefined],
     [
       { kind: 'syncing', firstWindow: { read: 24, of: 50 } },

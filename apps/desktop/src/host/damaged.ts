@@ -50,6 +50,8 @@ const SIDECARS = ['-wal', '-shm'] as const;
 
 /** The reason the utility gives main when it parks on a damaged database. */
 export const DAMAGED_REASON = 'store.corrupt';
+/** The reason on main's `connecting` frame while the engine backs up and migrates the database. */
+export const UPGRADING_REASON = 'store.upgrading';
 
 /** SQLITE_CORRUPT (11) and SQLITE_NOTADB (26), as `node:sqlite` reports them. */
 export function isCorruptError(error: unknown): boolean {

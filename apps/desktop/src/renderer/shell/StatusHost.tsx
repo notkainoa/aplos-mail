@@ -3,7 +3,15 @@
  * `StatusSlot`, the only place sync status is drawn in the main window. Reconnect opens the reconnect sheet; the other
  * verbs call the engine. Nothing here writes a sentence.
  */
-import { api, toIsoDateTime, useAccounts, useNow, useStatus, type StatusSlotState } from '../data';
+import {
+  api,
+  toIsoDateTime,
+  useAccounts,
+  useConnection,
+  useNow,
+  useStatus,
+  type StatusSlotState,
+} from '../data';
 import type { StatusAction, SyncAccount } from '../ui/props';
 import { StatusSlot } from '../ui/status';
 import { DIAGNOSTICS_FAILED_COPY, RECONNECT_FAILED_COPY } from './failure-copy';
@@ -71,11 +79,18 @@ export function StatusView({ state, accountCount, now, onAction }: StatusViewPro
   );
 }
 
+/** main's reason on the `connecting` frame while the engine backs up and migrates (`host/damaged.ts UPGRADING_REASON`). */
+export const UPGRADING_REASON = 'store.upgrading';
+
 /** The sidebar footer's status slot, live. Renders nothing before any account exists. */
 export function StatusHost() {
   const state = useStatus();
   const accounts = useAccounts();
+  const connection = useConnection();
   const now = useNow({ granularity: 'minute' });
+  // The engine is updating the database: that, not an account's last state, is what is going on.
+  if (connection.state === 'connecting' && connection.reasonCode === UPGRADING_REASON)
+    return <StatusSlot status={{ kind: 'updating' }} onAction={ignore} />;
   if (!state) return null;
   return (
     <StatusView
