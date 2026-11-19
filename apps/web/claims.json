@@ -608,28 +608,53 @@
     },
     {
       "id": "retention-default",
-      "says": "Message text is stored once opened or loaded ahead, and kept; other mail keeps subject, sender and Gmail's preview, with the text fetched from Google on open",
+      "says": "Message text is kept for the last 90 days plus anything opened in Aplos, starred or unread, all up to 2 GB, both changeable in Settings → Mail; past the cap, text of mail not opened, starred or unread goes first, then the least recently read; dropped text is fetched from Google on open; subject, sender, folders and the search index stay; drafts and local-only mail keep their text",
       "pages": ["privacy"],
       "evidence": [
         {
           "kind": "fact",
-          "ref": "Message text is stored only by sync/host-read.ts openedWrites (an open, mail/render.ts, views/open.ts, or MessageBody/prefetch, mail/prefetch.ts). Sync stores metadata and Gmail's snippet (host/providers/google/sync.ts fields). Nothing sets PART.evicted or deletes a body except a message delete; settings.retention is stored but not acted on",
+          "ref": "packages/engine/src/store/retention.ts (PR #566): retainBodies drops by age (retention.bodyDays) unless unread, starred or opened (last_read_at, stamped by markOpened from views/open.ts Thread/open), then overCap drops unmarked bodies first and then marked ones by least recently read until retention.maxBodyBytes fits; drafts, origin 'local' and not-yet-indexed messages are never dropped. Defaults bodyDays 90 and maxBodyBytes 2 GB in packages/engine/src/runtime/settings.ts; both are choices in apps/desktop/src/renderer/screens/settings/sections/mail.tsx (\"Message text kept\")",
           "maxAgeDays": null
         },
         {
           "kind": "test",
-          "ref": "packages/engine/tests/mail/retention.test.ts \"a synced message has its subject, sender and preview but no text until it is opened\" and \"opened text is kept, whatever the age and the retention settings\"",
+          "ref": "packages/engine/tests/store/retention.test.ts \"drops old read text and keeps opened, starred, unread, draft, local and recent mail\" (also asserts subject, snippet and the search index stay), \"keeps the window the owner set\", \"holds the size cap: unmarked first, then least recently read, never drafts or local mail\"",
           "maxAgeDays": null
         },
         {
           "kind": "test",
-          "ref": "packages/engine/tests/mail/body.test.ts \"fetches on the prefetch lane and warms the cache Mail/frame then hits\"",
+          "ref": "packages/engine/tests/store/retention.test.ts \"fetches dropped text again from the provider when the message is opened\" and \"a desktop engine drops old text on its own schedule and keeps starred mail\"",
           "maxAgeDays": null
         }
       ],
       "status": "verified",
       "verifiedAt": "2026-11-18",
-      "note": "Copy changed on 2026-11-18. The old copy (90 days plus opened, starred or unread, up to 2 GB, older text refetched) described ARCH 3.6 eviction, which the engine does not do yet: Settings → Mail shows retention choices that nothing enforces. retention.test.ts fails when eviction lands; then restore the design copy. Holds on the redesigned build's real engine. A release build of revamp at 8f1eb4cd0 still boots the legacy engine (realEngineRequested in apps/desktop/src/host/transports/port.ts is false in release builds), where it does not hold: merge revamp into main only after the go-live switch makes release builds boot the real engine."
+      "note": "Copy restored to the ARCH 3.6 rule on 2026-11-18, now that PR #566 enforces it (a pass 10 minutes after start, then every 6 hours, desktop hosts only, never while an account is backfilling). Merge this site change only after #566: its test file is not on this branch until then, and a production build fails on a missing test file. Folders are named because placements are untouched by the pass. Backups outside mail.db are the separate claim update-backups. Holds on the redesigned build's real engine. A release build of revamp at 8f1eb4cd0 still boots the legacy engine (realEngineRequested in apps/desktop/src/host/transports/port.ts is false in release builds), where it does not hold: merge revamp into main only after the go-live switch makes release builds boot the real engine."
+    },
+    {
+      "id": "update-backups",
+      "says": "Before an update changes the database Aplos saves a copy in the data folder and deletes it after 14 days; a damaged database's copy is kept 30 days; these copies can hold dropped text; removing an account does not delete them",
+      "pages": ["privacy"],
+      "evidence": [
+        {
+          "kind": "fact",
+          "ref": "apps/desktop/src/host/damaged.ts (PR #567): writeBackup writes mail.db.pre-<from> (VACUUM INTO, mode 0600) in the data folder before a migration and removes older backups; setAside copies a damaged file into damaged/ (0600); pruneCopies, after every healthy start, keeps the newest backup only while younger than BACKUP_DAYS = 14 and removes damaged copies older than DAMAGED_DAYS = 30. deleteLocalCopies exists but neither #564 nor #567 calls it from account removal (checked 2026-11-18)",
+          "maxAgeDays": null
+        },
+        {
+          "kind": "test",
+          "ref": "apps/desktop/tests/eng-host/damaged.test.ts \"opening an older database writes mail.db.pre-<from> before it migrates\", \"after a healthy start, backups go after 14 days (only the newest stays) and damaged copies after 30\", \"the damaged file is copied aside once, and the original is left where it is\"",
+          "maxAgeDays": null
+        },
+        {
+          "kind": "fact",
+          "ref": "DECISIONS.md 2026-11-18 \"message text retention is enforced\" (PR #566), Backups: the retention pass does not reach mail.db.pre-N or damaged/ copies",
+          "maxAgeDays": null
+        }
+      ],
+      "status": "verified",
+      "verifiedAt": "2026-11-18",
+      "note": "New on 2026-11-18. \"Deletes after 14 days\" means at the first healthy start once the backup is 14 days old (pruneCopies runs at start), and a newer backup replaces an older one at once. When account removal calls deleteLocalCopies, drop the sentence \"A copy saved before an update, or of a damaged database, can still hold its mail until that copy is deleted.\" from the Deleting your data section and update this claim. Merge only after #567 (its test file is not on this branch until then). Holds on the redesigned build's real engine. A release build of revamp at 8f1eb4cd0 still boots the legacy engine (realEngineRequested in apps/desktop/src/host/transports/port.ts is false in release builds), where it does not hold: merge revamp into main only after the go-live switch makes release builds boot the real engine."
     },
     {
       "id": "keychain-protected-secrets",
@@ -863,6 +888,31 @@
       "note": "Vercel project settings were not inspected (agents do not touch them). plans/40 Q5A item 6 adds scripts/check-web-external.mjs to make this a build check."
     },
     {
+      "id": "remove-account",
+      "says": "Removing an account in Settings stops syncing it and deletes what Aplos stored for it on this Mac (mail and attachments, drafts, events, AI summaries, saved Google sign-in); refused while mail or a guest calendar update is waiting to go out; mail stays with Google and access at Google is not withdrawn",
+      "pages": ["privacy"],
+      "evidence": [
+        {
+          "kind": "fact",
+          "ref": "packages/engine/src/sync/account-remove.ts (PR #564): removeAccount refuses with conflict while a submission is sending, uncertain, queued, scheduled or suspended or a guest calendar hold is queued or syncing (pendingMessage); stops the account's actor, then deletes attachment files, threads (messages, bodies, search rows), events, AI jobs, Ask conversations, holds and the account row (cascade), then forgets the stored sign-in (forgetAccount). No revoke call at Google (DECISIONS.md 2026-11-18 \"removing an account\", No revoke at Google)",
+          "maxAgeDays": null
+        },
+        {
+          "kind": "test",
+          "ref": "packages/engine/tests/account-remove.test.ts \"Account/disconnect empties every per-account table for that account and leaves the other one untouched\"",
+          "maxAgeDays": null
+        },
+        {
+          "kind": "test",
+          "ref": "packages/engine/tests/account-remove.test.ts \"Account/disconnect refuses while mail is waiting to go out, lists it, and keeps the account syncing\" and \"a sign-in that could not be forgotten is reported, kept in the journal, and forgotten at the next start\"",
+          "maxAgeDays": null
+        }
+      ],
+      "status": "verified",
+      "verifiedAt": "2026-11-18",
+      "note": "Restored on 2026-11-18 now that PR #564 implements Account/disconnect on the real engine (the sentence removed earlier in this PR described the legacy engine). Merge only after #564: its test file is not on this branch until then. The Settings confirm in #564 says \"including backups\"; that is not true until removal calls deleteLocalCopies (#567), so the site does not say it (see update-backups). Holds on the redesigned build's real engine. A release build of revamp at 8f1eb4cd0 still boots the legacy engine (realEngineRequested in apps/desktop/src/host/transports/port.ts is false in release builds), where it does not hold: merge revamp into main only after the go-live switch makes release builds boot the real engine."
+    },
+    {
       "id": "delete-data",
       "says": "To remove the app's data, delete the data folder and ~/Library/Logs/Aplos Mail, plus the preferences file and the Aplos Mail Safe Storage keychain key; revoke at myaccount.google.com/permissions",
       "pages": ["privacy"],
@@ -890,7 +940,7 @@
       ],
       "status": "verified",
       "verifiedAt": "2026-11-18",
-      "note": "Copy changed on 2026-11-18. The old first sentence (\"Disconnecting an account in Settings removes its mail, drafts and events\") was true of the legacy engine only: the real engine's Account/disconnect answers \"Removing an account is not available yet.\" (packages/engine/src/methods/account.ts). Put the sentence back when it does. The logs folder is new since ARCH 11 landed."
+      "note": "Copy changed on 2026-11-18: the logs folder is new since ARCH 11 landed. The account-removal sentence that used to open this paragraph is now its own claim, remove-account, describing PR #564."
     },
     {
       "id": "privacy-contact",

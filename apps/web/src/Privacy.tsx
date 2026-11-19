@@ -37,12 +37,24 @@ export function Privacy() {
           </p>
 
           <h2>What stays on your Mac</h2>
-          <p data-claim="local-database retention-default keychain-protected-secrets">
+          <p data-claim="local-database retention-default">
             The app keeps a local database of your mail, drafts, calendar events and settings in{' '}
-            <code>{dataFolder}</code>. It stores a message’s text once you open it or the app loads
-            it ahead for you, and keeps it. For other mail it keeps the subject, sender and Gmail’s
-            short preview, and fetches the text from Google when you open the message. Sign-in
-            tokens and the AI keys you save are encrypted with a key that the macOS keychain
+            <code>{dataFolder}</code>. It keeps the text of messages from the last 90 days, plus any
+            message you opened in Aplos, starred or left unread, all up to 2&nbsp;GB. You can change
+            both limits in Settings → Mail. Past the size limit, text goes first from mail you
+            haven’t opened in Aplos, starred or left unread, then from the mail you read longest
+            ago. Text that was dropped is fetched from Google again when you open the message.
+            Subjects, senders, folders and the search index stay, so older mail is still searchable.
+            Drafts and mail that is only on your Mac keep their text.
+          </p>
+          <p data-claim="update-backups">
+            Before an app update changes the database, Aplos saves a copy of it in the same folder
+            and deletes that copy after 14 days. If the database is ever damaged, Aplos keeps a copy
+            of the damaged file there for 30 days. These copies can hold text the rules above have
+            dropped.
+          </p>
+          <p data-claim="keychain-protected-secrets">
+            Sign-in tokens and the AI keys you save are encrypted with a key that the macOS keychain
             protects. The rest of the database relies on your Mac’s own disk encryption (FileVault).
           </p>
 
@@ -102,6 +114,14 @@ export function Privacy() {
           </p>
 
           <h2>Deleting your data</h2>
+          <p data-claim="remove-account update-backups">
+            Removing an account in Settings stops syncing it and deletes what Aplos stored for it on
+            your Mac: its mail and attachments, drafts, events, AI summaries and saved Google
+            sign-in. Aplos won’t remove an account while mail or a calendar update from it is still
+            waiting to go out. A copy saved before an update, or of a damaged database, can still
+            hold its mail until that copy is deleted. Your mail stays with Google, and removing the
+            account doesn’t withdraw the app’s access there; the end of this section says how.
+          </p>
           <p data-claim="delete-data">
             To remove the app’s data, quit Aplos Mail and delete <code>{dataFolder}</code> and its
             logs in <code>{logsFolder}</code>. Outside those folders the app also keeps its
