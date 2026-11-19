@@ -57,7 +57,15 @@ This bumps the version in `package.json`, `apps/desktop/package.json` and `packa
 git push --atomic origin main vX.Y.Z
 ```
 
-The *Release* workflow checks that the tag matches the app version, runs the typecheck and tests, builds both architectures, signs and notarizes when the secrets exist, runs the hardening check and, only if it passes, uploads everything to a draft release named after the version. Without the signing secrets the run ends red at the check and uploads nothing. The same files are kept as a workflow artifact.
+When `main` already carries the version you want to ship (0.0.1, the first beta, was set in a pull request), `npm run release` stops with "already at 0.0.1". Tag the commit on `main` yourself instead:
+
+```sh
+git tag -a v0.0.1 -m "Aplos Mail 0.0.1" && git push origin v0.0.1
+```
+
+Old draft releases and tags with a higher version (v0.2.0 to v0.2.3) don't get in the way: nothing compares the new tag with older ones, and the updater only sees published releases.
+
+The *Release* workflow checks that the tag matches the app version, runs the typecheck and tests, checks the new engine on a packaged test build (`verify:release:real`, below), builds both architectures, signs and notarizes when the secrets exist, runs the hardening check and, only if it passes, uploads everything to a draft release named after the version. Without the signing secrets the run ends red at the check and uploads nothing. The same files are kept as a workflow artifact.
 
 To build the artifacts locally instead (no upload): `npm run release:build`. Output goes to `apps/desktop/release/`. Locally the build signs only when `CSC_LINK` or `CSC_NAME` is set in your shell; a certificate in your keychain is never picked up by accident. `npm run package` stays the fast, this-Mac-only `.app` build; it is always ad-hoc signed (never with a keychain identity) and uses `build/entitlements.adhoc.plist`, as does an unsigned `release:build`. Developer ID builds use `build/entitlements.mac.plist`.
 
@@ -75,6 +83,8 @@ npm run verify:hardening -- "apps/desktop/release/mac-arm64/Aplos Mail.app" --ex
 Nothing is uploaded before the check passes. electron-builder always builds with `--publish never`; `release:publish` uploads the DMGs, ZIPs, blockmaps and `latest-mac.yml` only after every row passed. The *Release* workflow builds with `--expect release` (so a run without the signing secrets ends red), verifies both apps again in its own step, and only then runs the upload step, which verifies both apps as a release once more and is the only step whose environment has `GH_TOKEN`. The checkout does not keep the job's token in `.git/config` (`persist-credentials: false`), so the build and verification steps, which run npm scripts, electron-builder and the app, never hold a GitHub token. A red run leaves no new files on the draft. `release:publish` refuses before building without a Developer ID certificate (`CSC_LINK` or `CSC_NAME`) and with `--expect adhoc`, so an ad-hoc build is never uploaded, locally either.
 
 **Debug guard (ADR 40-6).** A release build (one built with `APLOS_RELEASE_BUILD=1`, which `release:build`, `release:publish` and the *Release* workflow always set) refuses to start with `--remote-debugging-*`, `--inspect*`, `--debug`, `--debug-brk` or `--debug-port` (one or two leading dashes, or as Chromium parsed them) and exits with code 78, printing the switch name but never its value; `src/main/security.ts` does this while the main process loads, before the single-instance lock and before the app is ready. It is keyed on the build-time define, not on `app.isPackaged`. `npm run desktop` / `electron .` and `npm run package` builds have no release define and keep debugging, so `scripts/verify-release.mjs` (which drives the app over `--remote-debugging-port`) runs against `npm run package` as before. `release-build.mjs` refuses to package a `dist/main` bundle built without the define.
+
+**New-engine check.** For the same reason the *Release* workflow runs `scripts/verify-release-real.mjs` on a separate `npm run package` build in `apps/desktop/release-check/`, before the release build and with no secrets in its environment. It starts the packaged app in test mode (`APLOS_TEST=1`, no window shown) on a throwaway data folder with the demo mail, opens a thread, sends with Undo to the demo account's own Sent, and checks that a queued send survives a restart. To run it locally: `npm run package -w @aplos/desktop && npm run verify:release:real`.
 
 The app icon is the Icon Composer file `apps/desktop/assets/AppIcon.icon`; electron-builder compiles it with Xcode's `actool` into `Assets.car` (the macOS 26 icon) plus `icon.icns` for older systems. That needs full Xcode 26 or later, not just the Command Line Tools: run `sudo xcode-select -s /Applications/Xcode.app` once, or prefix the build with `DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer`. The release workflow runs on `macos-26` for the same reason.
 

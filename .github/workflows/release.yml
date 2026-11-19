@@ -38,8 +38,19 @@ jobs:
             exit 1
           fi
       - run: npm ci
+      # Electron downloads its binary on first use, not at install; the notices step of every build below
+      # copies LICENSES.chromium.html out of node_modules/electron/dist and fails without it.
+      - run: node node_modules/electron/install.js
       - run: npm run typecheck -w @aplos/desktop -w @aplos/engine -w @aplos/contract
       - run: npm test -w @aplos/desktop -w @aplos/engine
+      - name: Check the new engine on a packaged test build
+        # verify:release:real drives a packaged app over --remote-debugging-port with the demo mail in a
+        # throwaway data folder (APLOS_TEST=1: no window is shown, no account is added, nothing is sent). A
+        # release build refuses that switch (the ADR 40-6 debug guard), so this runs on a separate
+        # `npm run package` build in its own folder, before the release build, with no secrets in its environment.
+        run: |
+          npm run package -w @aplos/desktop -- -c.directories.output=release-check
+          npm run verify:release:real -- "$PWD/apps/desktop/release-check/mac-arm64/Aplos Mail.app"
       - name: Build, sign and notarize (nothing is uploaded yet)
         # Missing secrets arrive as empty strings; release-build.mjs then makes an ad-hoc signed,
         # un-notarized build instead of failing. Signing needs CSC_LINK + CSC_KEY_PASSWORD;
