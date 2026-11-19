@@ -4,7 +4,7 @@
     {
       "id": "mac-only",
       "says": "Independent software for Mac (no other platform named)",
-      "pages": ["landing", "download", "privacy"],
+      "pages": ["landing", "download", "privacy", "terms"],
       "evidence": [
         {
           "kind": "fact",
@@ -70,34 +70,49 @@
       "note": "Describes the app's scope. Whether Gmail works for a tester is the separate pending claim gmail-invited-testers. Also carried by the meta and og descriptions in apps/web/index.html."
     },
     {
-      "id": "gmail-invited-testers",
-      "says": "Gmail and Google Calendar are available to invited testers",
-      "pages": ["landing", "download"],
+      "id": "beta-invited-testers",
+      "says": "Aplos Mail is in beta, open to invited testers: Google sign-in stays in Testing mode for the beta, so only listed test users can sign in",
+      "pages": ["landing", "download", "privacy", "terms"],
       "evidence": [
         {
-          "kind": "live",
-          "ref": "gmail",
-          "maxAgeDays": 7
-        },
-        {
           "kind": "design",
-          "ref": "plans/ARCHITECTURE.md section 12.5 (Testing mode, listed test users only)",
+          "ref": "plans/ARCHITECTURE.md section 12.5 and AM-5 item 4 (the Google project stays in Testing mode, up to 100 listed test users, 7-day sign-ins)",
           "maxAgeDays": null
         },
         {
           "kind": "owner",
-          "ref": "owner acceptance note after the day 14-16 hand checks (not written yet)",
+          "ref": "2026-11-18 owner decision: the site says plainly that Aplos Mail is in beta; Google sign-in stays in Testing mode for the beta, limited to invited testers, and is not switched to production",
           "maxAgeDays": null
         }
       ],
-      "status": "pending",
-      "verifiedAt": null,
-      "note": "Cannot be settled by code. Needs (1) a passing Gmail live smoke within 7 days recorded in apps/web/provider-status.json: the runner that writes it (plan 40 Q4 `npm run smoke:live`, scripts/smoke/) does not exist yet, only plan 20's probes in apps/desktop/scripts/live; and (2) the owner's dated acceptance note after the hand checks, entered as the owner evidence ref. Checked 2026-11-18."
+      "status": "verified",
+      "verifiedAt": "2026-11-18",
+      "note": "Makes no claim that Gmail works today for anyone; that availability claim (the old gmail-invited-testers) needed a live smoke run and was dropped. The word beta is allowed line by line with claims-allow: beta-badge by this owner decision; the rule still blocks it elsewhere. Also carried by the meta and og descriptions in apps/web/download/index.html."
+    },
+    {
+      "id": "download-coming-soon",
+      "says": "There is no public download yet; the Mac download is coming soon",
+      "pages": ["landing", "download"],
+      "evidence": [
+        {
+          "kind": "fact",
+          "ref": "apps/web/src/release.ts: release is null, so no download file is linked",
+          "maxAgeDays": null
+        },
+        {
+          "kind": "owner",
+          "ref": "2026-11-18 owner note: every release in the repository is a draft; the first public release will be 0.0.1, so the site says coming soon",
+          "maxAgeDays": null
+        }
+      ],
+      "status": "verified",
+      "verifiedAt": "2026-11-18",
+      "note": "Fill release in apps/web/src/release.ts when the first release is published; the coming-soon lines then disappear."
     },
     {
       "id": "google-weekly-reconnect",
       "says": "Only listed test users can sign in with Google, and a sign-in lasts 7 days, so testers reconnect weekly",
-      "pages": ["download"],
+      "pages": ["download", "privacy", "terms"],
       "evidence": [
         {
           "kind": "design",
@@ -112,26 +127,6 @@
       ],
       "status": "verified",
       "verifiedAt": "2026-10-27"
-    },
-    {
-      "id": "invited-testers-builds",
-      "says": "There is no public download; builds are shared directly with invited testers",
-      "pages": ["landing", "download"],
-      "evidence": [
-        {
-          "kind": "owner",
-          "ref": "2026-10-27 owner decision: one repo, no releases repo, local or private draft builds; going public decided later (plans/00-roadmap.md section 8.1 #6)",
-          "maxAgeDays": null
-        },
-        {
-          "kind": "fact",
-          "ref": "plans/_council/CONTEXT.md: the repository is private",
-          "maxAgeDays": null
-        }
-      ],
-      "status": "verified",
-      "verifiedAt": "2026-10-27",
-      "note": "Also carried by the meta and og descriptions in apps/web/index.html and apps/web/download/index.html (data-claim cannot go on a meta tag)."
     },
     {
       "id": "dmg-install",
@@ -376,7 +371,7 @@
     {
       "id": "groq-default",
       "says": "Every AI feature runs on Groq by default",
-      "pages": ["landing", "privacy"],
+      "pages": ["landing", "privacy", "terms"],
       "evidence": [
         {
           "kind": "fact",
@@ -557,7 +552,7 @@
     {
       "id": "no-aplos-server",
       "says": "No Aplos server ever sees your mail, calendar or sign-in details",
-      "pages": ["landing", "privacy"],
+      "pages": ["landing", "privacy", "terms"],
       "evidence": [
         {
           "kind": "design",
@@ -576,7 +571,7 @@
     {
       "id": "mail-stays-on-mac",
       "says": "Aplos Mail keeps your mail on your Mac",
-      "pages": ["privacy"],
+      "pages": ["privacy", "terms"],
       "evidence": [
         {
           "kind": "design",
@@ -948,9 +943,61 @@
       "note": "Copy changed on 2026-11-18: the logs folder is new since ARCH 11 landed. The account-removal sentence that used to open this paragraph is now its own claim, remove-account, describing PR #564."
     },
     {
+      "id": "terms-operator",
+      "says": "Aplos Mail is provided by Kainoa Newton, an individual, and the terms are governed by the laws of the State of California, USA",
+      "pages": ["terms"],
+      "evidence": [
+        {
+          "kind": "owner",
+          "ref": "2026-11-18 owner confirmed: provider Kainoa Newton (an individual), governing law the State of California, USA",
+          "maxAgeDays": null
+        },
+        {
+          "kind": "design",
+          "ref": "apps/web/src/site.ts operatorName and governingLaw",
+          "maxAgeDays": null
+        }
+      ],
+      "status": "verified",
+      "verifiedAt": "2026-11-18"
+    },
+    {
+      "id": "terms-free",
+      "says": "Aplos Mail is free to use",
+      "pages": ["terms"],
+      "evidence": [
+        {
+          "kind": "owner",
+          "ref": "2026-11-18 owner brief: Aplos Mail is a free Mac app",
+          "maxAgeDays": null
+        },
+        {
+          "kind": "fact",
+          "ref": "apps/desktop has no purchase, payment or license-key code",
+          "maxAgeDays": null
+        }
+      ],
+      "status": "verified",
+      "verifiedAt": "2026-11-18"
+    },
+    {
+      "id": "terms-third-party",
+      "says": "Google and the AI providers the user sets up are separate companies under their own terms; any charges they make, such as for an AI key, are the user's",
+      "pages": ["terms"],
+      "evidence": [
+        {
+          "kind": "design",
+          "ref": "apps/web/src/Privacy.tsx: each provider handles what it receives under its own terms; AI keys are the user's own (claim keys-on-mac)",
+          "maxAgeDays": null
+        }
+      ],
+      "status": "verified",
+      "verifiedAt": "2026-11-18"
+    },
+    {
       "id": "privacy-contact",
-      "says": "Privacy questions go to privacy@aplos.email",
-      "pages": ["privacy"],
+      "says": "Privacy and terms questions go to privacy@aplos.email",
+      "pages": ["privacy", "terms"],
       "evidence": [
         {
           "kind": "owner",

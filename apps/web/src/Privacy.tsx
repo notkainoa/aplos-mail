@@ -1,6 +1,6 @@
 import { Footer, Header } from './Chrome';
 import { useReveal } from './reveal';
-import { contactEmail } from './site';
+import { contactEmail, legalUpdated } from './site';
 
 const dataFolder = '~/Library/Application Support/Aplos Mail';
 const logsFolder = '~/Library/Logs/Aplos Mail';
@@ -22,7 +22,7 @@ export function Privacy() {
       <div className="page">
         <Header home="../" page="privacy" />
         <main className="doc">
-          <p className="draft">Last updated 18 November 2026</p>
+          <p className="draft">Last updated {legalUpdated}</p>
           <h1>Privacy policy</h1>
           <p className="lead" data-claim="mail-stays-on-mac">
             Aplos Mail keeps your mail on your Mac. This page says what the app and this website do
@@ -34,6 +34,13 @@ export function Privacy() {
             Aplos Mail is a Mac app for Gmail and Google Calendar. It connects straight from your
             Mac to Google and, when you use AI features, to the AI provider you choose. Aplos runs
             no server that receives your mail, your calendar or your sign-in details.
+          </p>
+          {/* claims-allow: beta-badge */}
+          <p data-claim="beta-invited-testers google-weekly-reconnect">
+            {/* claims-allow: beta-badge */}
+            Aplos Mail is in beta. During the beta, Google sign-in is limited to invited testers,
+            and Google asks you to sign in again every 7 days. Using the app is also covered by the{' '}
+            <a href="../terms/">terms of service</a>.
           </p>
 
           <h2>What stays on your Mac</h2>

@@ -6,6 +6,10 @@
   "buildCommand": "npm run build",
   "outputDirectory": "dist",
   "ignoreCommand": "[ -n \"$VERCEL_GIT_PREVIOUS_SHA\" ] && git diff --quiet \"$VERCEL_GIT_PREVIOUS_SHA\" HEAD -- . ../../packages ../../package.json ../../package-lock.json",
+  "redirects": [
+    { "source": "/tos", "destination": "/terms/", "permanent": true },
+    { "source": "/tos/", "destination": "/terms/", "permanent": true }
+  ],
   "headers": [
     {
       "source": "/(.*)",

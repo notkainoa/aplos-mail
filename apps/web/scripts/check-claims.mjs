@@ -19,7 +19,7 @@
 // stale; otherwise those claims are printed as warnings.
 //
 // NOTE for whoever tags claims: Vercel production builds run this strict. A claim that is only "pending" (for
-// example Gmail for invited testers, whose only proof is a future live smoke run) fails the production build
+// example a Gmail availability claim whose only proof is a future live smoke run) fails the production build
 // if it is tagged in copy. Either leave such a claim untagged, or register it with dated "owner" evidence
 // (the owner's decision note) and status "verified", or wire the live runner first. This check does not
 // weaken that on its own.
@@ -67,6 +67,7 @@ const roots = opts.src.length
       join(webDir, 'index.html'),
       join(webDir, 'download'),
       join(webDir, 'privacy'),
+      join(webDir, 'terms'),
       join(webDir, 'public'),
     ];
 const claimsPath = opts.claims ?? join(webDir, 'claims.json');
@@ -374,7 +375,7 @@ for (const h of [...hits.values()].sort(
 }
 
 // ---------- claims.json ----------
-const PAGES = new Set(['landing', 'download', 'privacy']);
+const PAGES = new Set(['landing', 'download', 'privacy', 'terms']);
 const KINDS = new Set(['design', 'test', 'live', 'owner', 'fact']);
 let claims = [];
 if (!existsSync(claimsPath)) {
@@ -401,7 +402,7 @@ if (!existsSync(claimsPath)) {
         else seen.add(c.id);
         if (typeof c.says !== 'string' || !c.says.trim()) bad('"says" must be a non-empty string');
         if (!Array.isArray(c.pages) || c.pages.length === 0 || !c.pages.every(p => PAGES.has(p)))
-          bad('"pages" must be a non-empty list of landing, download, privacy');
+          bad('"pages" must be a non-empty list of landing, download, privacy, terms');
         if (!Array.isArray(c.evidence) || c.evidence.length === 0)
           bad('"evidence" must be a non-empty list');
         else

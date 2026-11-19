@@ -42,6 +42,9 @@ export function Footer({ home }: { home: string }) {
           <a className="text-link" href={`${home}privacy/`}>
             Privacy
           </a>
+          <a className="text-link" href={`${home}terms/`}>
+            Terms
+          </a>
           <a className="text-link" href={`${home}download/`}>
             How to get it
           </a>
