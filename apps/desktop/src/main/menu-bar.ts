@@ -1,10 +1,11 @@
+import { join } from 'node:path';
 import { app, dialog, Menu, nativeImage, Tray, type MenuItemConstructorOptions } from 'electron';
 import { command } from './windows';
 import { checkManually } from './updater';
 import { releaseBuild } from './oauth-config';
 import {
   createMenuRefresh,
-  MENU_BAR_TITLE,
+  MENU_BAR_IMAGE,
   type MenuEntry,
   type MenuEntryId,
   type PauseState,
@@ -129,16 +130,17 @@ function toTemplate(
 }
 
 /**
- * The menu-bar item (never created in test mode; the caller checks `isTest`). A 1x1 transparent image plus the
- * title letter keeps the glyph a plain `A`. `createMenuRefresh` (host/menu-bar.ts) owns the rebuild rule.
+ * The menu-bar item (never created in test mode; the caller checks `isTest`). Its glyph is the envelope as a
+ * template image, so macOS tints it for light, dark and selected menu bars; there is never a full-colour icon.
+ * `createMenuRefresh` (host/menu-bar.ts) owns the rebuild rule.
  */
 function startMenuBar(deps: MenuBarDeps) {
   if (tray) return;
-  const image = nativeImage.createFromDataURL(
-    'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAAC0lEQVR4nGNgAAIAAAUAAXpeqz8AAAAASUVORK5CYII=',
-  );
+  const image = nativeImage.createFromPath(join(__dirname, MENU_BAR_IMAGE));
+  image.setTemplateImage(true);
   tray = new Tray(image);
-  tray.setTitle(MENU_BAR_TITLE);
+  // A missing or unreadable image would leave an invisible item; fall back to the old plain letter.
+  if (image.isEmpty()) tray.setTitle('A');
   tray.setToolTip('Aplos Mail');
   const actions: Record<MenuEntryId, () => void> = {
     status: () => {},

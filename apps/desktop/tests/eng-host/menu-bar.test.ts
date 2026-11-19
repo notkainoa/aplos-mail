@@ -5,7 +5,7 @@ import {
   createMenuRefresh,
   createPause,
   formatClock,
-  MENU_BAR_TITLE,
+  MENU_BAR_IMAGE,
   PAUSE_MS,
   syncFactsOf,
   type SyncFacts,
@@ -28,7 +28,7 @@ test('the menu has exactly the four entries, the status line disabled, and no sp
       ['quit', 'Quit Aplos completely', true],
     ],
   );
-  for (const text of [MENU_BAR_TITLE, ...items(model).map(item => item.label)])
+  for (const text of [MENU_BAR_IMAGE, ...items(model).map(item => item.label)])
     assert.doesNotMatch(text, sparkle);
 });
 

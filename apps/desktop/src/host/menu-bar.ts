@@ -148,5 +148,5 @@ export function createMenuRefresh(
   };
 }
 
-/** The letter shown in the menu bar until the design system supplies a glyph. */
-export const MENU_BAR_TITLE = 'A';
+/** The menu-bar glyph: the app's envelope as a black template image (assets/trayTemplate*.png), copied beside the main bundle. */
+export const MENU_BAR_IMAGE = 'trayTemplate.png';
