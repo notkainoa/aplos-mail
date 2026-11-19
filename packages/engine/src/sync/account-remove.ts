@@ -162,7 +162,15 @@ const accountRow = (store: StorePort, id: string) =>
 interface Journal {
   provider: string;
   opId: string;
+  /** Runs (Settings Retry or start-up) that found an attachment file Aplos could not delete. */
+  fileTries?: number;
 }
+
+/**
+ * After this many runs that could not delete a file (it stays locked, say, or its folder lost write access), the removal
+ * finishes anyway: the file's path moves to `file_removals`, which every start tries again, and the sign-in is forgotten.
+ */
+export const FILE_TRIES = 3;
 
 function readJournal(store: StorePort, accountId: string): Journal | undefined {
   const row = store.read(q =>
@@ -172,7 +180,7 @@ function readJournal(store: StorePort, accountId: string): Journal | undefined {
   try {
     const j = JSON.parse(row.value) as Partial<Journal>;
     return typeof j?.provider === 'string'
-      ? { provider: j.provider, opId: String(j.opId) }
+      ? { provider: j.provider, opId: String(j.opId), fileTries: Number(j.fileTries) || 0 }
       : undefined;
   } catch {
     return undefined;
@@ -206,7 +214,14 @@ async function startRemoval(
       origin: 'local',
       writes: [
         { kind: 'meta', key: JOURNAL + accountId, value: JSON.stringify(journal) },
-        { kind: 'account', id: accountId, status: { state: 'removing' } as never },
+        // AI off in the same commit: the AI paths (backfill, the jobs scan, the gate, Ask) pick accounts by
+        // `ai_allowed`, not status, so a sentinel or an Ask between batches must not reach this account's mail.
+        {
+          kind: 'account',
+          id: accountId,
+          status: { state: 'removing' } as never,
+          aiAllowed: false,
+        },
         ...unlinkedDeletes(store, accountId),
       ],
     });
@@ -218,11 +233,14 @@ async function startRemoval(
   }
 }
 
-/** Deletes the account's attachment files, keyset-paged; the rows (and their paths) stay until their thread goes. */
-async function removeFiles(services: EngineServices, accountId: string): Promise<boolean> {
+/**
+ * Deletes the account's attachment files, keyset-paged; the rows (and their paths) stay until their thread goes.
+ * Answers the paths that could not be deleted.
+ */
+async function removeFiles(services: EngineServices, accountId: string): Promise<string[]> {
   const { store, attachmentFiles } = services;
   let after = 0;
-  let ok = true;
+  const stuck: string[] = [];
   for (;;) {
     const page = store.read(q =>
       q.all<{ id: number; path: string }>(
@@ -232,23 +250,31 @@ async function removeFiles(services: EngineServices, accountId: string): Promise
         after,
       ),
     );
-    if (!page.length) return ok;
+    if (!page.length) return stuck;
     for (const { path } of page)
       await attachmentFiles.remove(path).catch(() => {
-        ok = false;
+        stuck.push(path);
       });
     after = page[page.length - 1].id;
     await turn();
   }
 }
 
-/** Deletes the account's threads (newest first, so its mail leaves the top of every list first), then its events. */
-async function removeRows(store: StorePort, accountId: string): Promise<void> {
+/**
+ * Deletes the account's threads (newest first, so its mail leaves the top of every list first), then its events.
+ * Threads holding a `stuck` file stay for `accountRemove`, which queues the file's path in `file_removals`.
+ */
+async function removeRows(store: StorePort, accountId: string, stuck: string[]): Promise<void> {
   for (;;) {
     const threads = store.read(q =>
       q.all<{ remote_id: string }>(
-        `SELECT remote_id FROM threads WHERE account_id = ? ORDER BY last_date DESC LIMIT ${REMOVE_BATCH}`,
+        `SELECT remote_id FROM threads WHERE account_id = ? AND id NOT IN (
+           SELECT m.thread_id FROM messages m JOIN attachments a ON a.message_id = m.id
+           WHERE m.account_id = ? AND a.path IN (SELECT value FROM json_each(?)))
+         ORDER BY last_date DESC LIMIT ${REMOVE_BATCH}`,
         accountId,
+        accountId,
+        JSON.stringify(stuck),
       ),
     );
     if (!threads.length) break;
@@ -357,9 +383,30 @@ async function finish(services: EngineServices, accountId: string): Promise<Remo
   // The start-up sweep reaches here without `removeAccount`: the lazy job and conversation writers load first.
   await import('../ai/impl/ai-writes');
   // A file that could not be deleted keeps its rows (the only record of its path): stop here, still hidden, and let
-  // the next start or a Retry try again rather than lose track of it.
-  if (!(await removeFiles(services, accountId))) throw filesStuck();
-  await removeRows(store, accountId);
+  // the next start or a Retry try again rather than lose track of it. After FILE_TRIES such runs, finish anyway: the
+  // path moves to `file_removals` with the account row, and every start tries that file again.
+  const stuck = await removeFiles(services, accountId);
+  if (stuck.length) {
+    const fileTries = (journal.fileTries ?? 0) + 1;
+    if (fileTries < FILE_TRIES) {
+      store.commit({
+        // A meta-only commit does not move `seq`: the try count keeps each opId new.
+        opId: `account-remove:${accountId}:files:${fileTries}`,
+        origin: 'system',
+        writes: [
+          {
+            kind: 'meta',
+            key: JOURNAL + accountId,
+            value: JSON.stringify({ ...journal, fileTries }),
+          },
+        ],
+      });
+      throw filesStuck();
+    }
+    // The catalogue has no field for a path (ARCH 11); the paths themselves stay in `file_removals`.
+    services.log.event('rpc.failed', { method: 'Account/disconnect', reason: 'filesKept' });
+  }
+  await removeRows(store, accountId, stuck);
   if (accountRow(store, accountId))
     store.commit({
       opId: `account-remove:${accountId}:${store.seq()}:row`,
@@ -400,6 +447,8 @@ export async function resumeRemovals(services: EngineServices): Promise<void> {
       services.log.event('rpc.failed', { method: 'Account/disconnect', reason: 'resume' });
     }
   }
+  // Files a finished removal could not delete (FILE_TRIES): tried again at every start until they go.
+  await drainFileRemovals(services);
 }
 
 const receiptOf = (opId: string, dbEpoch: string, seq: number, left?: RemovalLeft): Receipt => ({

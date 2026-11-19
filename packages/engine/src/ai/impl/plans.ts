@@ -659,7 +659,7 @@ function resolveCalendar(
   const cal = calendarId
     ? parseCalendarIdIn(
         calendarId,
-        q.all<{ id: string }>('SELECT id FROM accounts').map(r => r.id),
+        q.all<{ id: string }>("SELECT id FROM accounts WHERE status <> 'removing'").map(r => r.id),
       )
     : undefined;
   if (calendarId && !cal) return undefined;

@@ -36,8 +36,8 @@ const SELECT = `
          c.hidden AS cal_hidden, c.read_only, c.selected, c.time_zone,
          e.remote_id, e.recurrence_id, e.master_remote_id, e.status, e.recurrence,
          e.start_utc, e.end_utc, e.all_day, e.data
-  FROM events e JOIN calendars c ON c.id = e.calendar_id
-  WHERE c.hidden = 0
+  FROM events e JOIN calendars c ON c.id = e.calendar_id JOIN accounts a ON a.id = c.account_id
+  WHERE c.hidden = 0 AND a.status <> 'removing'
     AND (e.recurrence_id != '' OR e.recurrence IS NOT NULL
       OR e.start_utc IS NULL OR e.end_utc IS NULL
       OR (e.start_utc < ? + 172800000 AND e.end_utc >= ? - 172800000))`;

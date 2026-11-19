@@ -577,7 +577,7 @@ async function askRun(
         args.context?.selectedIds,
       ),
       accounts: q.all<AccountRow>(
-        'SELECT id, address, display_name FROM accounts ORDER BY created_at, id',
+        "SELECT id, address, display_name FROM accounts WHERE status <> 'removing' ORDER BY created_at, id",
       ),
     }));
     emit({

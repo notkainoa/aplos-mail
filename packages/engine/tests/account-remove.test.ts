@@ -9,7 +9,12 @@ import { laneExtensions } from '../src/index';
 // The seed's `conversation` write uses the lazy AI writers; the method loads them itself.
 import '../src/ai/impl/ai-writes';
 import { openStore, type CommitInput, type StorePort, type StoreWrite } from '../src/store';
-import { REMOVE_BATCH, resumeRemovals } from '../src/sync/account-remove';
+import { FILE_TRIES, REMOVE_BATCH, resumeRemovals } from '../src/sync/account-remove';
+import { existingAccountFlow } from '../src/sync/account-connect';
+import { allowedAccounts } from '../src/ai/impl/gate';
+import { backfillSummaries } from '../src/ai/impl/backfill';
+import { eventsPlan } from '../src/calendar/views';
+import { handlers as eventHandlers } from '../src/methods/event';
 import { accountIds as listedAccounts } from '../src/sync/account-read';
 import { accountIds as viewAccounts } from '../src/views/compile';
 import { accountWrite, folderWrites, msg, tempDb, T0 } from './store/helpers';
@@ -235,6 +240,7 @@ function rig(): Rig {
     log: { event() {} },
     deadlines: { changed() {}, register: () => () => undefined },
     clock: { now: () => T0 },
+    randomBytes: (n: number) => new Uint8Array(n),
   } as unknown as EngineServices;
   const ctx = {
     caller: { kind: 'window', scopes: ['admin'] },
@@ -612,6 +618,168 @@ test('an attachment file that cannot be deleted keeps its rows: the account stay
     assert.deepEqual(r.removedFiles, [`${GONE}-a.pdf`]);
     assert.deepEqual(r.calls, [`stop:${GONE}:disconnect`, `forget:${GONE}:google`]);
     namesNothing(r.db, GONE);
+  } finally {
+    r.cleanup();
+  }
+});
+
+/** A removal cut short after its first batch: hidden, journaled, half its mail still stored. */
+async function interrupted(r: Rig) {
+  seedAccount(r.store, r.db, KEEP);
+  seedAccount(r.store, r.db, GONE);
+  r.store.commit({
+    opId: 'ai-on',
+    origin: 'local',
+    writes: [KEEP, GONE].map(id => ({ kind: 'account', id, aiAllowed: true }) as StoreWrite),
+  });
+  seedThreads(r.store, GONE, REMOVE_BATCH * 2);
+  const quit = batchCommits(r.store, GONE, 2);
+  await assert.rejects(async () => disconnect(r, GONE), /the app quit/);
+  quit.restore();
+  const left = r.db.prepare('SELECT count(*) AS c FROM threads WHERE account_id = ?').get(GONE);
+  assert.ok(Number(left?.c) > 0, 'the removal really was cut short');
+}
+
+test('mid-removal, no AI path can reach the account: AI is off for it from the first commit', async () => {
+  const r = rig();
+  try {
+    await interrupted(r);
+    assert.equal(
+      r.db.prepare('SELECT ai_allowed FROM accounts WHERE id = ?').get(GONE)?.ai_allowed,
+      0,
+    );
+    // The Ask gate (every account, and the account asked for by id) and the backfill sentinel's scan.
+    assert.deepEqual(allowedAccounts(r.ctx.services).allowed, [KEEP]);
+    assert.deepEqual(allowedAccounts(r.ctx.services, [GONE]).allowed, []);
+    backfillSummaries(r.ctx.services);
+    const keys = r.db.prepare('SELECT key FROM jobs').all<{ key: string }>();
+    assert.ok(keys.length > 0, 'the other account is still backfilled');
+    assert.ok(!keys.some(k => k.key.includes(GONE)), 'nothing of the removed account is queued');
+  } finally {
+    r.cleanup();
+  }
+});
+
+test('mid-removal, calendars and events of the account are not shown', async () => {
+  const r = rig();
+  try {
+    await interrupted(r);
+    assert.ok(
+      r.db
+        .prepare(
+          'SELECT 1 FROM events e JOIN calendars c ON c.id = e.calendar_id WHERE c.account_id = ?',
+        )
+        .get(GONE),
+      'its events are still stored',
+    );
+    const all = await eventHandlers['Calendar/get']({}, r.ctx);
+    assert.deepEqual(
+      all.list.map(c => c.id),
+      [`${KEEP}:primary`],
+    );
+    const one = await eventHandlers['Calendar/get']({ accountId: GONE }, r.ctx);
+    assert.deepEqual(one.list, []);
+    const plan = eventsPlan(
+      {
+        kind: 'events',
+        from: T0 - 86_400_000,
+        to: T0 + 86_400_000,
+        calendarIds: [`${KEEP}:primary`, `${GONE}:primary`],
+        includeHidden: true,
+      } as never,
+      { zone: 'UTC' } as never,
+    );
+    // The grid's own query: which accounts' event rows it reads at all (the seed's events carry no times to show).
+    const read = new Set<string>();
+    r.store.read(q => {
+      const counted = Object.create(q, {
+        all: {
+          value(sql: string, ...params: never[]) {
+            const rows = q.all<{ account_id?: string }>(sql, ...params);
+            for (const row of rows) if (row.account_id) read.add(row.account_id);
+            return rows;
+          },
+        },
+      });
+      plan.rows(counted, undefined, 50);
+    });
+    assert.deepEqual([...read], [KEEP]);
+  } finally {
+    r.cleanup();
+  }
+});
+
+test('mid-removal, a reconnect sheet left open cannot restart the account, and Account/set cannot turn AI back on', async () => {
+  const r = rig();
+  try {
+    await interrupted(r);
+    const deps = {
+      store: r.store,
+      accounts: r.ctx.services.accounts,
+      randomBytes: (n: number) => new Uint8Array(n),
+    };
+    const notFound = (e: unknown) => e instanceof ContractError && e.type === 'notFound';
+    assert.throws(() => existingAccountFlow(deps, 'reconnect', GONE), notFound);
+    // A sheet opened before the removal began answers after it: refused, nothing restarted.
+    seedAccount(r.store, r.db, 'a0000000000000000000c');
+    const flow = existingAccountFlow(deps, 'reconnect', 'a0000000000000000000c');
+    r.store.commit({
+      opId: 'hide-c',
+      origin: 'system',
+      writes: [
+        { kind: 'account', id: 'a0000000000000000000c', status: { state: 'removing' } as never },
+      ],
+    });
+    await assert.rejects(async () => flow.accept({} as never), notFound);
+    assert.ok(!r.calls.some(c => c.startsWith('start:')), r.calls.join());
+    await assert.rejects(
+      async () =>
+        handlers['Account/set']({ opId: 'set-1', accountId: GONE, aiAllowed: true }, r.ctx),
+      notFound,
+    );
+  } finally {
+    r.cleanup();
+  }
+});
+
+test(`a file that can never be deleted stops the removal ${FILE_TRIES - 1} times, then it finishes and the file stays queued`, async () => {
+  const r = rig();
+  try {
+    seedAccount(r.store, r.db, KEEP);
+    seedAccount(r.store, r.db, GONE);
+    seedThreads(r.store, GONE, 3);
+    const files = r.ctx.services.attachmentFiles as unknown as {
+      remove: (p: string) => Promise<void>;
+    };
+    const remove = files.remove;
+    files.remove = async () => {
+      throw new Error('EACCES');
+    };
+    const unavailable = (e: unknown) => e instanceof ContractError && e.type === 'unavailable';
+    await assert.rejects(async () => disconnect(r, GONE), unavailable);
+    for (let start = 2; start < FILE_TRIES; start++) {
+      await resumeRemovals(r.ctx.services);
+      assert.ok(journalOf(r.db, GONE), `still journaled after run ${start}`);
+      assert.deepEqual(r.calls, [`stop:${GONE}:disconnect`], 'the sign-in is kept so far');
+    }
+    // The last try: the account and its sign-in go; the path waits in `file_removals`.
+    await resumeRemovals(r.ctx.services);
+    assert.equal(r.db.prepare('SELECT 1 FROM accounts WHERE id = ?').get(GONE), undefined);
+    assert.equal(journalOf(r.db, GONE), undefined);
+    assert.deepEqual(r.calls, [`stop:${GONE}:disconnect`, `forget:${GONE}:google`]);
+    namesNothing(r.db, GONE);
+    const queued = () =>
+      r.db
+        .prepare('SELECT path FROM file_removals')
+        .all<{ path: string }>()
+        .map(x => x.path);
+    assert.deepEqual(queued(), [`${GONE}-a.pdf`]);
+
+    // A later start, once the file can go: deleted and dequeued.
+    files.remove = remove;
+    await resumeRemovals(r.ctx.services);
+    assert.deepEqual(r.removedFiles, [`${GONE}-a.pdf`]);
+    assert.deepEqual(queued(), []);
   } finally {
     r.cleanup();
   }
