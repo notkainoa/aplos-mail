@@ -18,9 +18,11 @@
 //        [--trailers] [--json]
 //
 // The rules are read from the integration branch (the --base ref, else the tip of origin/revamp or
-// revamp), never from the change being checked, so a PR cannot edit or delete OWNERS.md to pass.
+// revamp; origin/next or next for the rethink's next and next-<job>-<slug> branches), never from the
+// change being checked, so a PR cannot edit or delete OWNERS.md to pass.
 // Acting lanes: --lane, else the branch name (rv/<lane>/<slug> is that lane; rv/thread/<name> is
-// every lane of that thread; in a detached CI checkout GITHUB_HEAD_REF is used). Approvals:
+// every lane of that thread; next-<job>-<slug> is every lane that is not reserved, so only unowned,
+// tied and reserved paths fail; in a detached CI checkout GITHUB_HEAD_REF is used). Approvals:
 // --approved and the PR labels "lane-approved:<lane>" (--pr, read-only `gh pr view`). Commit trailers
 // ("Lane-Approved: <lane>[, <lane>]", covering only the files of their own commit) are written by the
 // PR's own author, so they are self-attested and ignored unless --trailers is given.
@@ -35,6 +37,8 @@ import { pathToFileURL } from 'node:url';
 const DEFAULT_OWNERS = 'plans/OWNERS.md';
 const SHARED = '*';
 const MAX_ROWS = 40;
+const NEXT_JOB_BRANCH = /^next-[^/]+$/;
+const isNextBranch = branch => branch === 'next' || NEXT_JOB_BRANCH.test(branch);
 
 // ---------- globs ----------
 
@@ -206,6 +210,7 @@ export function parseOwners(text) {
   const errors = [];
   const warnings = [];
   const laneThread = new Map();
+  const activeLanes = new Set();
   const lines = text.split(/\r?\n/);
   let fenced = false;
   let headingThread = '';
@@ -298,6 +303,7 @@ export function parseOwners(text) {
           errors.push(`${where}: lane ${lane} is in thread "${thread}" but earlier in "${known}"`);
         else laneThread.set(lane, thread);
       }
+      if (lane !== SHARED) activeLanes.add(lane);
       addRules(globs, lane, row + 1, where);
     }
     i = row - 1;
@@ -319,7 +325,7 @@ export function parseOwners(text) {
     } else if (!earlier) seen.set(rule.glob, rule);
   }
   const lanes = new Set(rules.map(rule => rule.lane).filter(lane => lane !== SHARED));
-  return { rules, errors, warnings, laneThread, lanes };
+  return { rules, errors, warnings, laneThread, lanes, activeLanes };
 }
 
 // ---------- git and CLI plumbing ----------
@@ -404,7 +410,7 @@ function currentBranch(cwd) {
   return branch === 'HEAD' ? process.env.GITHUB_HEAD_REF || 'HEAD' : branch;
 }
 
-function actingLanes(opts, branch, { lanes: known, laneThread }) {
+function actingLanes(opts, branch, { lanes: known, laneThread, activeLanes }) {
   if (opts.lane) {
     const lanes = csv(opts.lane);
     const unknown = lanes.filter(lane => !known.has(lane));
@@ -414,6 +420,8 @@ function actingLanes(opts, branch, { lanes: known, laneThread }) {
       );
     return lanes;
   }
+  // The rethink's jobs are scoped by their brief, not by lane: every lane except the reserved ones.
+  if (NEXT_JOB_BRANCH.test(branch)) return [...activeLanes];
   const thread = branch.match(/^rv\/thread\/(.+)$/);
   if (thread) {
     const lanes = lanesForThread(thread[1], laneThread, known);
@@ -429,13 +437,18 @@ function actingLanes(opts, branch, { lanes: known, laneThread }) {
 }
 
 /** The branch the rules are read from (its tip, like CODEOWNERS) and the merge-base to diff from. */
-function integrationRef(cwd) {
-  for (const ref of ['origin/revamp', 'revamp'])
+function integrationRefs(branch) {
+  return isNextBranch(branch) ? ['origin/next', 'next'] : ['origin/revamp', 'revamp'];
+}
+
+function integrationRef(cwd, branch) {
+  for (const ref of integrationRefs(branch))
     if (git(['rev-parse', '--verify', '-q', `${ref}^{commit}`], cwd, { allowFail: true }))
       return ref;
   return null;
 }
-const NO_REF = 'cannot find origin/revamp or revamp to diff against; pass --base <ref>';
+const noRef = branch =>
+  `cannot find ${integrationRefs(branch).join(' or ')} to diff against; pass --base <ref>`;
 
 /** Every path touched between base and head; a rename counts both its old and new path. */
 function nameStatusFiles(output) {
@@ -626,7 +639,7 @@ function runCheck(parsed, opts, cwd, out, rulesRef) {
       `OK: no changed files in ${base.slice(0, 10)}...${head}`,
     );
   const branch = currentBranch(cwd);
-  if (!opts.lane && /^(revamp|main)$/.test(branch) && !process.env.GITHUB_BASE_REF) {
+  if (!opts.lane && /^(revamp|main|next)$/.test(branch) && !process.env.GITHUB_BASE_REF) {
     return finish(
       { mode: 'check', ok: true, skipped: true, base, head, changedFiles: files, violations: [] },
       `skipped: ${branch} is an integration branch; ownership is checked on pull requests (pass --lane to check anyway)`,
@@ -747,10 +760,11 @@ export function main(argv, { cwd = process.cwd(), out = console.log } = {}) {
     return 0;
   };
   // The change check enforces the rules of the integration branch (the --base ref, or the tip of
-  // origin/revamp), never the head's own copy: a PR cannot delete or rewrite OWNERS.md to pass.
-  const rulesRef = opts.validate ? undefined : (opts.base ?? integrationRef(root));
+  // origin/revamp or origin/next), never the head's own copy: a PR cannot delete or rewrite OWNERS.md to pass.
+  const branch = currentBranch(root);
+  const rulesRef = opts.validate ? undefined : (opts.base ?? integrationRef(root, branch));
   if (!opts.validate && !rulesRef && (opts.owners || existsSync(path.join(root, DEFAULT_OWNERS))))
-    throw new UsageError(NO_REF);
+    throw new UsageError(noRef(branch));
   let text;
   let label = DEFAULT_OWNERS;
   if (opts.owners) {

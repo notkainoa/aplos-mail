@@ -42,7 +42,7 @@ Among all matching globs the **most specific** wins: the longest literal prefix 
 
 ## Which rules apply to a change
 
-The change check reads `plans/OWNERS.md` from the integration branch, never from the change being checked: `--base <ref>` if given, else the tip of `origin/revamp` (or `revamp`). A pull request cannot delete, rename or rewrite the file to pass; editing it is an ordinary change to an integrator-owned file. If the file does not exist on the integration branch yet (the commit that adds it), the check prints `pending` and exits 0. `--validate` and `--owners <file>` read the working-tree or given file instead.
+The change check reads `plans/OWNERS.md` from the integration branch, never from the change being checked: `--base <ref>` if given, else the tip of `origin/revamp` (or `revamp`); on the rethink's `next` and `next-<job>-<slug>` branches, the tip of `origin/next` (or `next`). A pull request cannot delete, rename or rewrite the file to pass; editing it is an ordinary change to an integrator-owned file. If the file does not exist on the integration branch yet (the commit that adds it), the check prints `pending` and exits 0. `--validate` and `--owners <file>` read the working-tree or given file instead.
 
 ## Approvals
 
@@ -61,7 +61,7 @@ node scripts/audit/owners-check.mjs --validate [--strict] [--json]   # check the
 node scripts/audit/owners-check.mjs [--base <ref>] [--head <ref>] [--lane <lane,...>] [--approved <lane,...>] [--pr <n>] [--trailers] [--json]
 ```
 
-`--validate` reports errors (ties, malformed tables, bad lanes), warnings (globs ending in `/`), and tracked files that match no glob (a warning with a count, an error only with `--strict`). The change check diffs the merge-base of `HEAD` and the integration branch to `HEAD`, takes the acting lane from `--lane` or the branch name (`rv/<lane>/<slug>`, `rv/thread/<name>`, or `GITHUB_HEAD_REF` in a detached CI checkout), and passes immediately when nothing changed. On `revamp` and `main` it is skipped (unless `--lane` is given or `GITHUB_BASE_REF` is set, i.e. a pull request). Exit codes: 0 ok, 1 violations or an invalid file, 2 usage error.
+`--validate` reports errors (ties, malformed tables, bad lanes), warnings (globs ending in `/`), and tracked files that match no glob (a warning with a count, an error only with `--strict`). The change check diffs the merge-base of `HEAD` and the integration branch to `HEAD`, takes the acting lane from `--lane` or the branch name (`rv/<lane>/<slug>`, `rv/thread/<name>`, or `GITHUB_HEAD_REF` in a detached CI checkout), and passes immediately when nothing changed. A `next-<job>-<slug>` branch acts as every lane except the reserved ones: a rethink job is scoped by its brief, so only unowned, tied and reserved paths fail (git cannot hold `next/<job>` beside a branch named `next`). On `revamp`, `main` and `next` it is skipped (unless `--lane` is given or `GITHUB_BASE_REF` is set, i.e. a pull request). Exit codes: 0 ok, 1 violations or an invalid file, 2 usage error.
 
 ## Errors
 
