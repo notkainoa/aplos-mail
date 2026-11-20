@@ -9,7 +9,7 @@ Job 1, Part A (`plans/next/01-provider-test-bar.md`). This is an inventory only:
 - **One row per file:** every hit line is listed, and the row's sentence covers them. Files whose hits are only comments, icon names or the Inbox role say so.
 - **Classes:** `fine` (an enumeration, a comment, a role every provider has, or Google-only by design), `behind a capability` (a `Capabilities` flag or an absent role already turns it off), `leak` (another provider would get Gmail behaviour or Gmail copy).
 
-Totals: 114 fine, 10 behind a capability, 35 leak files.
+Totals: 114 fine, 8 behind a capability, 37 leak files.
 
 ## The leaks, shortest list
 
@@ -162,8 +162,8 @@ Totals: 114 fine, 10 behind a capability, 35 leak files.
 | `apps/desktop/src/renderer/screens/search/search.model.ts` | 4, 6, 25, 45, 136, 250, 262, 285, 288, 290, 292, 310, … (29 hits) | The server-search offer and its results say "on Google" ("Search all mail on Google", "From Google"). | leak | Gate on `serverSearch` (already) and template the name with `providerName`. |
 | `apps/desktop/src/renderer/screens/settings/availability.ts` | 53 | Comments or docs that use Gmail/Google as an example; no runtime assumption. | fine | — |
 | `apps/desktop/src/renderer/screens/settings/paletteEntries.ts` | 72, 73, 83, 102, 109, 110, 119 | Search keywords for Settings rows (`google`, `gmail`). | fine | — |
-| `apps/desktop/src/renderer/screens/settings/sections/calendar.tsx` | 41, 127, 171, 172, 175 | "Events from Gmail" setting: only relevant to Google accounts. | behind a capability | — |
-| `apps/desktop/src/renderer/screens/settings/sections/notifications.tsx` | 50, 53 | "Remind me before Gmail asks to reconnect": only relevant to Google accounts. | behind a capability | — |
+| `apps/desktop/src/renderer/screens/settings/sections/calendar.tsx` | 41, 127, 171, 172, 175 | "Events from Gmail" shows whenever a calendar exists; nothing hides it for providers that add no events from mail. | leak | Gate the row on a capability the provider reports (a new `eventsFromMail` flag, or the calendar half saying so), and template the name. |
+| `apps/desktop/src/renderer/screens/settings/sections/notifications.tsx` | 50, 53 | "Remind me before Gmail asks to reconnect" shows for every account; nothing hides it when no account has a weekly reconnect. | leak | Show the row only when an account reports a reconnect date (`reconnectBy`), and name its provider with `providerName`. |
 | `apps/desktop/src/renderer/screens/settings/settings.model.ts` | 237, 239, 302, 329, 331, 332, 333, 499 | `providerLabel` names only Google and Demo (others get an empty label); permission copy names Gmail/Google. | leak | A label for every `ProviderKind`, and copy through `providerName`. |
 | `apps/desktop/src/renderer/screens/settings/settings.queue.model.ts` | 8, 9, 10, 11, 14 | User-facing text names Google or Gmail for a generic state (rate limit, sign-in, quota, server down, search, rebuild). | leak | One `providerName(account)` helper; template the copy with it. |
 | `apps/desktop/src/renderer/shell/AddAccountHost.tsx` | 3, 33, 52, 54, 55, 73, 77, 111, 172 | Adding an account offers only a "Continue with Google" choice and always connects `provider: 'google'`. | leak | Build the choices from `Session` kinds (`methods/session.ts`) and pass the chosen kind to connect. |
