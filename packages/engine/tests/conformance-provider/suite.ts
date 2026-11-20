@@ -56,9 +56,10 @@ class Session {
   constructor(
     readonly rig: ConformanceRig,
     readonly account: AdapterAccount,
+    memory: Record<string, string> = {},
   ) {
     this.adapter = rig.factory.open(account);
-    this.store = new SuiteStore(account, () => rig.clock.now());
+    this.store = new SuiteStore(account, () => rig.clock.now(), memory);
     this.governor = recording(rig.governor(account), this.reported);
   }
 
@@ -165,7 +166,7 @@ async function connect(rig: ConformanceRig): Promise<Session> {
     grantedScopes: result.grantedScopes,
     capabilities: result.capabilities,
   };
-  return new Session(rig, account);
+  return new Session(rig, account, result.memory);
 }
 
 /** A connected session whose first sync has finished. */

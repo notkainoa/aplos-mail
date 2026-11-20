@@ -49,9 +49,11 @@ export class SuiteStore {
   private readonly db: StorePort;
   private ops = 0;
 
+  /** `memory` is what connect returned, stored with the account as the engine stores it. */
   constructor(
     private readonly account: AdapterAccount,
     private readonly now: () => number,
+    memory: Record<string, string> = {},
   ) {
     this.db = openStore(openSqlite(':memory:'), { now, extensions: [draftExtension] });
     this.db.commit({
@@ -66,6 +68,9 @@ export class SuiteStore {
           capabilities: { ...account.capabilities },
           status: { state: 'syncing' },
         },
+        ...(Object.keys(memory).length
+          ? [{ kind: 'providerMemory' as const, accountId: account.id, values: memory }]
+          : []),
       ],
     });
     this.lookup = createKnownLookup(this.db, account.id);
