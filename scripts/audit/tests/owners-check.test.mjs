@@ -240,6 +240,39 @@ describe('change check', () => {
     assert.equal(check(dir, ['--lane', 'nonsense']).code, 2);
   });
 
+  test('next-<job>-<slug> acts as every lane that is not reserved', () => {
+    const owners = `${OWNERS}
+| \`apps/desktop/src/host/providers/imap/**\` | Round 2 (reserved) | | |
+`;
+    const dir = makeRepo({ branch: 'next-01-provider-test-bar', owners });
+    commit(dir, { 'apps/web/a.ts': 'a', 'packages/engine/src/b.ts': 'b', 'plans/c.md': 'c' });
+    const res = check(dir);
+    assert.equal(res.code, 0, res.out + res.err);
+    assert.doesNotMatch(res.out, /acting lane\(s\)[^\n]*reserved/);
+    commit(dir, { 'brand-new-folder/x.ts': 'x' });
+    assert.deepEqual(violationFiles(check(dir, ['--json'])), ['brand-new-folder/x.ts']);
+    const reserved = makeRepo({ branch: 'next-02-x', owners });
+    commit(reserved, { 'apps/desktop/src/host/providers/imap/a.ts': 'a' });
+    assert.equal(check(reserved).code, 1);
+  });
+
+  test('next branches diff from origin/next, and next itself is skipped', () => {
+    const dir = makeRepo({ branch: 'next' });
+    git(dir, 'update-ref', 'refs/remotes/origin/next', 'main');
+    commit(dir, { 'brand-new-folder/x.ts': 'x' });
+    assert.match(run(dir, []).out, /^skipped: next is an integration branch/m);
+    git(dir, 'update-ref', 'refs/remotes/origin/next', 'HEAD');
+    git(dir, 'checkout', '-q', '-b', 'next-01-job');
+    assert.match(run(dir, []).out, /no changed files/);
+    commit(dir, { 'other-new-folder/y.ts': 'y' });
+    const res = run(dir, ['--json']);
+    assert.equal(res.code, 1, res.out + res.err);
+    assert.deepEqual(violationFiles(res), ['other-new-folder/y.ts']);
+    const bare = makeRepo({ branch: 'next-03-no-base' });
+    commit(bare, { 'apps/web/a.ts': 'a' });
+    assert.match(run(bare, []).err, /cannot find origin\/next or next/);
+  });
+
   test('base defaults to the merge-base with origin/revamp', () => {
     const dir = makeRepo();
     git(dir, 'update-ref', 'refs/remotes/origin/revamp', 'main');
