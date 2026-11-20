@@ -2136,3 +2136,11 @@ From the owner's review of the UI council. A failed send ("Couldn’t send to Jo
 - **Report:** a plain-text file written only where the owner chooses: the counts, then the drafts' and scheduled sends' own words, then the Done/Later items by subject.
 - **Rebuild:** removes `mail.db` (the copy stays in `damaged/`). The accounts table goes with it, so the owner signs in to Google again.
 - **Contract:** one desktop method, `Engine/recover` (`inspect`, `export`, `restore`, `rebuild`), served by main only while parked on a damaged database.
+
+## 2026-11-20: rethink from first principles (draft in plans/RETHINK.md)
+
+- **What changed:** the day after 0.0.1 the owner reopened the product from first principles. The agreed draft is `plans/RETHINK.md`. Each email gets two separate decisions (where it goes, how much of it is shown), decided by the job the email is doing. The app becomes a small core with everything else as building blocks, and the version people download is our own set of blocks. Most screens get rebuilt; the owner accepted that. The calendar view leaves the default version and is planned as an official plug-in.
+- **Status:** a draft the owner is still checking. Its "Things I assumed" and "Still open" sections are not decisions.
+- **Engine core size cap:** the owner agreed to raise it above 470,000 bytes for the record in the core. The new number is not set; it will be proposed from a measurement. Until then new work stays out of the core.
+- **Branch:** rethink work goes to `next`, so `main` stays ready for 0.0.x fixes. Jobs are in `plans/next/`.
+- **Old provider code:** Outlook, iCloud, Fastmail and CalDAV code is removed with the rest of the legacy code, kept at tag `legacy-final` with a note in `plans/next/legacy-providers.md` (the owner asked that the head start not be lost; a tag does that without dead code in the tree. My reading; say if you want the files kept in the tree instead).

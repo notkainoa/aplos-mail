@@ -1,6 +1,8 @@
 # Work on Aplos Mail
 
-Read SPEC.md, TODO.md, DECISIONS.md and PROGRESS.md before continuing. Resume the next unchecked acceptance item. Keep observed reference behavior, design choices and unknowns distinct; use REA in small inventory → feature → module stages, narrowing scope if analysis stalls. Never copy reference code, assets, branding, mailbox data or credentials.
+**Current work (from 2026-11-20):** the rethink in `plans/RETHINK.md`. Its jobs are in `plans/next/`; read `plans/next/README.md`, take the one job you were given and nothing else, branch from `next` and open your pull request into `next`. The unchecked items in TODO.md are not the current work.
+
+For background, read SPEC.md, TODO.md, DECISIONS.md and PROGRESS.md. Keep observed reference behavior, design choices and unknowns distinct; use REA in small inventory → feature → module stages, narrowing scope if analysis stalls. Never copy reference code, assets, branding, mailbox data or credentials.
 
 Prefer simple working solutions and a few meaningful tests. Implement the feature, verify it, check it off only with evidence, record progress/decisions, then commit. Keep working autonomously until complete or an actual external prerequisite blocks further work. Do not treat mocked Google verification as live acceptance.
 
