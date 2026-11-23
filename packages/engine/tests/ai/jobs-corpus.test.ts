@@ -156,9 +156,10 @@ function safeText(value: string) {
       safeEmails(decodeURIComponent(url.pathname + url.search + url.hash));
     } else if (token.includes('@')) {
       safeEmails(token);
-    } else if (/\.[a-z]{2,}$/i.test(token)) {
+    } else {
+      const host = /^((?:[a-z\d-]+\.)+[a-z]{2,})(?=[/:?#]|$)/i.exec(token);
       const filename = /^[^.]+\.(pdf|csv|png|jpg|txt|ics|zip)$/i.test(token);
-      if (!filename || /^www\./i.test(token)) reservedHost(token);
+      if (host && (!filename || /^www\./i.test(token))) reservedHost(host[1]);
     }
   }
 }
@@ -451,6 +452,8 @@ test('reserved-domain validation covers nested headers and free text', () => {
     { text: 'https://garden.example%2ecom/' },
     { text: 'https://garden.example,outside.invalid' },
     { text: 'www.vendor.zip' },
+    { text: 'www.outside.invalid/help' },
+    { text: 'www.outside.invalid:8080' },
     { text: 'vendor.report.pdf' },
     { text: 'https://garden.example/contact/person%40outside.invalid' },
     { text: 'https://garden.example/?email=person%40outside.invalid' },
