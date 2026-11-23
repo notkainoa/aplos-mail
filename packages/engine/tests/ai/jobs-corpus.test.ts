@@ -156,7 +156,7 @@ function safeText(value: string) {
       safeEmails(decodeURIComponent(url.pathname + url.search + url.hash));
     } else if (token.includes('@')) {
       safeEmails(token);
-    } else if (token.includes('.')) {
+    } else if (/\.[a-z]{2,}$/i.test(token)) {
       const filename = /^[^.]+\.(pdf|csv|png|jpg|txt|ics|zip)$/i.test(token);
       if (!filename || /^www\./i.test(token)) reservedHost(token);
     }
@@ -426,6 +426,8 @@ test('reserved-domain validation covers nested headers and free text', () => {
     encodedEmail: 'https://garden.example/contact/person%40garden.example',
     mailto: 'mailto:person@garden.example',
     emailPath: 'https://garden.example/contact/person@garden.example',
+    amount: '$12.50',
+    coordinate: '-122.4194',
   });
   for (const value of [
     { subject: 'Visit https://outside.invalid/path' },
