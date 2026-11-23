@@ -4,11 +4,11 @@ The plan is [../RETHINK.md](../RETHINK.md). Read it first. This folder holds one
 
 ## In plain English
 
-Three jobs are ready, and all three are judged by tests. Two more wait: the record in the core waits for a careful review, and the screen blocks wait until we have decided what a block is.
+Job 1 is done. Jobs 2 and 3 are ready, and both are judged by tests. Two more wait: the record in the core waits for a careful review, and the screen blocks wait until we have decided what a block is.
 
 | # | Job | Brief | Status |
 |---|---|---|---|
-| 1 | A test bar every mail provider must pass, and a list of Gmail-only leaks | [01-provider-test-bar.md](01-provider-test-bar.md) | Ready |
+| 1 | A test bar every mail provider must pass, and a list of Gmail-only leaks | [01-provider-test-bar.md](01-provider-test-bar.md) | Done: #590 ([provider-leaks.md](provider-leaks.md)), #591 (`packages/engine/tests/conformance-provider/`); two capability checks left as `todo` |
 | 2 | Made-up emails with known answers, then the no-AI sorter for the six jobs | [02-sorting-test-set.md](02-sorting-test-set.md) | Ready |
 | 3 | Remove the old screens and the old engine | [03-remove-old-app.md](03-remove-old-app.md) | Ready |
 | 4 | The record and corrections in the core | not written | Waits for review time (the store's write path) |
