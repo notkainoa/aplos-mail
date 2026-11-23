@@ -139,18 +139,27 @@ function validInput(value: unknown) {
   }
 }
 
-function safeText(value: string) {
-  for (const match of value.matchAll(/:\/\/([a-z\d.-]+)/gi)) {
+function safeEmails(value: string) {
+  for (const match of value.matchAll(/[\w.!#$%&'*+/=?^`{|}~-]+@([a-z\d.-]+\.[a-z]+)/gi)) {
     reservedHost(match[1].replace(/\.$/, ''));
   }
-  const emails = /@([a-z\d.-]+)/gi;
-  for (const match of value.matchAll(emails)) reservedHost(match[1].replace(/\.$/, ''));
-  const withoutUrls = value.replace(/:\/\/[^\s<>"'()[\]]*/g, '');
-  const withoutEmails = withoutUrls.replace(/[\w.!#$%&'*+/=?^`{|}~-]+@[a-z\d.-]+/gi, '');
-  for (const match of withoutEmails.matchAll(
-    /\b(?:[a-z\d](?:[a-z\d-]*[a-z\d])?\.)+[a-z]{2,}\b/gi,
-  )) {
-    if (!/\.(pdf|csv|png|jpg|txt|ics|zip)$/i.test(match[0])) reservedHost(match[0]);
+}
+
+function safeText(value: string) {
+  for (const part of value.split(/[\s<>"'()[\],;]+/)) {
+    const token = part.replace(/[.!?:]+$/, '');
+    if (token.includes('://')) {
+      assert.equal(token.split('://').length, 2, 'A URL token must contain exactly one scheme');
+      const url = new URL(token);
+      assert.ok(['http:', 'https:'].includes(url.protocol));
+      reservedHost(url.hostname.replace(/\.$/, ''));
+      safeEmails(decodeURIComponent(url.pathname + url.search + url.hash));
+    } else if (token.includes('@')) {
+      safeEmails(token);
+    } else if (token.includes('.')) {
+      const filename = /^[^.]+\.(pdf|csv|png|jpg|txt|ics|zip)$/i.test(token);
+      if (!filename || /^www\./i.test(token)) reservedHost(token);
+    }
   }
 }
 
@@ -413,6 +422,10 @@ test('reserved-domain validation covers nested headers and free text', () => {
     adjacent: '[a](https://garden.example),[b](https://pond.test/receipt.pdf)',
     listId: '<news.garden.example>',
     roles: ['category.personal'],
+    handle: 'https://garden.example/@gardens @gardens',
+    encodedEmail: 'https://garden.example/contact/person%40garden.example',
+    mailto: 'mailto:person@garden.example',
+    emailPath: 'https://garden.example/contact/person@garden.example',
   });
   for (const value of [
     { subject: 'Visit https://outside.invalid/path' },
@@ -433,6 +446,16 @@ test('reserved-domain validation covers nested headers and free text', () => {
     { text: 'https://outside.invalidhttps://garden.example' },
     { text: 'outside.invalidhttps://garden.example' },
     { text: 'outside.invalid' },
+    { text: 'https://garden.example%2ecom/' },
+    { text: 'https://garden.example,outside.invalid' },
+    { text: 'www.vendor.zip' },
+    { text: 'vendor.report.pdf' },
+    { text: 'https://garden.example/contact/person%40outside.invalid' },
+    { text: 'https://garden.example/?email=person%40outside.invalid' },
+    { text: 'https://garden.example/#person%40outside.invalid' },
+    { text: 'https://garden.example/%ZZ' },
+    { text: 'https://' },
+    { text: 'ftp://garden.example/path' },
   ]) {
     assert.throws(() => safeStrings(value));
   }
