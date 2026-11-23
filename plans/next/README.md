@@ -1,6 +1,6 @@
 # Next: jobs for the rethink
 
-The plan is [../RETHINK.md](../RETHINK.md). Read it first. This folder holds one brief per job that can start now. Each job is one branch and one or more small pull requests into `next`.
+The plan is [../RETHINK.md](../RETHINK.md). Read it first. This folder holds one brief per job that can start now. Each job is one branch and one or more small pull requests into `next`. GitHub's CI runs on every pull request into `next`.
 
 ## In plain English
 
@@ -17,7 +17,7 @@ Three jobs are ready, and all three are judged by tests. Two more wait: the reco
 
 ## Rules for every job
 
-- Branch from `next`, name the branch `next/<job>-<slug>`, and open the pull request into `next`. Never push to `main` or `revamp`.
+- Branch from `next`, name the branch `next-<job>-<slug>` (git cannot hold `next/...` beside a branch named `next`), and open the pull request into `next`. Never push to `main` or `revamp`.
 - Do the one job you were given. If the brief is wrong or something blocks you, stop and say so in the pull request instead of widening the job.
 - Run `npm ci` once, then `npm run check` before every commit. It must pass.
 - The repository is public. Never commit real mail, real addresses, keys or tokens. Made-up mail uses reserved domains (`.example`, `.test`).

@@ -2144,3 +2144,8 @@ From the owner's review of the UI council. A failed send ("Couldn’t send to Jo
 - **Engine core size cap:** the owner agreed to raise it above 470,000 bytes for the record in the core. The new number is not set; it will be proposed from a measurement. Until then new work stays out of the core.
 - **Branch:** rethink work goes to `next`, so `main` stays ready for 0.0.x fixes. Jobs are in `plans/next/`.
 - **Old provider code:** Outlook, iCloud, Fastmail and CalDAV code is removed with the rest of the legacy code, kept at tag `legacy-final` with a note in `plans/next/legacy-providers.md` (the owner asked that the head start not be lost; a tag does that without dead code in the tree. My reading; say if you want the files kept in the tree instead).
+
+## 2026-11-22: unmeasured budgets are due 2027-01-15 (was 2026-11-20 to 12-01)
+
+- **Why:** 42 rows in `budgets.json` were never given a first measurement, and `check:budgets` fails CI once a row's `dueBy` passes. From 2026-11-21 every CI run failed on the `slots` job, `main` included, for a date and not for any change. Most of these rows time screens and paths the rethink (`plans/RETHINK.md`) rebuilds, so measuring them now would time code that is about to go.
+- **What:** every row with no `lastMeasured` now has `dueBy` 2027-01-15. Measured rows and every limit are unchanged. Rows that still apply to the rebuilt app get measured before that date; rows for removed screens get deleted.
