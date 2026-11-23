@@ -464,6 +464,10 @@ function nameStatusFiles(output) {
 const changedFiles = (base, head, cwd) =>
   [...nameStatusFiles(git(['diff', '--name-status', '-M', '-z', `${base}...${head}`], cwd))].sort();
 
+/** Every path that exists at head: a changed path missing from it was deleted (or renamed away). */
+const filesAt = (head, cwd) =>
+  new Set(git(['ls-tree', '-r', '--name-only', '-z', head], cwd).split('\0').filter(Boolean));
+
 /** Approvals that cover the whole change: --approved and PR labels. */
 function globalApprovals(opts, cwd) {
   const found = new Map();
@@ -668,9 +672,12 @@ function runCheck(parsed, opts, cwd, out, rulesRef) {
     return covered;
   };
   const violations = [];
+  const present = filesAt(head, cwd);
   for (const file of files) {
     const owner = resolveOwner(parsed.rules, file);
     if (!owner) {
+      // An owner row is for files that stay. Deleting a file no row covers needs no owner.
+      if (!present.has(file)) continue;
       if (!coveredByTrailer(file, null)) violations.push({ file, owner: null, reason: 'unowned' });
     } else if (owner.ambiguous) {
       if (!coveredByTrailer(file, null))
