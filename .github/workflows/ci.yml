@@ -235,6 +235,9 @@ jobs:
       - run: npm run test:audit
       # Renderer (Vite), main/engine bundles (esbuild) and the native helper (swiftc).
       - run: npm run build -w @aplos/desktop
+      # Electron downloads its binary on first use, not at install. Fetch it once here: two Playwright
+      # workers downloading it at the same moment leave a half-written framework that fails to launch.
+      - run: node node_modules/electron/install.js
       # Electron tier: the built app starts hidden on a temporary data directory (APLOS_TEST=1, never a visible window).
       - run: APLOS_E2E_ELECTRON=1 npx playwright test -c tests/e2e/playwright.config.ts --project electron
 
