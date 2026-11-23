@@ -71,11 +71,18 @@ function validStoredHeaders(list: Record<string, unknown>) {
     (list.autoSubmitted === undefined ? 0 : HDR.autoSubmitted);
   const urls =
     typeof list.listUnsubscribe === 'string'
-      ? [...list.listUnsubscribe.matchAll(/<([^<>]+)>/g)].map(match => match[1])
+      ? [...list.listUnsubscribe.matchAll(/<([^<>]*)>/g)]
+          .map(match => match[1].trim())
+          .filter(Boolean)
       : [];
-  const oneClick = list.listUnsubscribePost !== undefined;
-  const auth = list.authenticated === true ? 1 : list.authenticated === false ? 0 : null;
-  const stored = listHeaders(bits, JSON.stringify({ urls, oneClick }), auth);
+  const oneClick = list.listUnsubscribePost === 'List-Unsubscribe=One-Click';
+  const auth =
+    urls.length && list.authenticated === true
+      ? 1
+      : urls.length && list.authenticated === false
+        ? 0
+        : null;
+  const stored = listHeaders(bits, urls.length ? JSON.stringify({ urls, oneClick }) : null, auth);
   const expected = Object.fromEntries(
     Object.entries(stored).filter(([, value]) => value !== undefined),
   );
@@ -133,21 +140,17 @@ function validInput(value: unknown) {
 }
 
 function safeText(value: string) {
-  const withoutUrls = value.replace(
-    /[a-z][a-z\d+.-]*:\/\/(?:(?![a-z][a-z\d+.-]*:\/\/)[^\s<>"'()[\],])+/gi,
-    token => {
-      const url = new URL(token.replace(/[.,;!?)}\]]+$/, ''));
-      reservedHost(url.hostname.replace(/\.$/, ''));
-      return '';
-    },
-  );
-  const emails = /[\w.!#$%&'*+/=?^`{|}~-]+@([a-z\d.-]+\.[a-z]+)/gi;
-  for (const match of value.matchAll(emails)) reservedHost(match[1]);
-  const withoutEmails = withoutUrls.replace(emails, '');
+  for (const match of value.matchAll(/:\/\/([a-z\d.-]+)/gi)) {
+    reservedHost(match[1].replace(/\.$/, ''));
+  }
+  const emails = /@([a-z\d.-]+)/gi;
+  for (const match of value.matchAll(emails)) reservedHost(match[1].replace(/\.$/, ''));
+  const withoutUrls = value.replace(/:\/\/[^\s<>"'()[\]]*/g, '');
+  const withoutEmails = withoutUrls.replace(/[\w.!#$%&'*+/=?^`{|}~-]+@[a-z\d.-]+/gi, '');
   for (const match of withoutEmails.matchAll(
     /\b(?:[a-z\d](?:[a-z\d-]*[a-z\d])?\.)+[a-z]{2,}\b/gi,
   )) {
-    reservedHost(match[0]);
+    if (!/\.(pdf|csv|png|jpg|txt|ics|zip)$/i.test(match[0])) reservedHost(match[0]);
   }
 }
 
@@ -262,6 +265,11 @@ test('jobs corpus: frequently used header values occur across jobs', () => {
 
 test('header shape guard rejects values ingest normalizes or cannot produce', () => {
   validStoredHeaders({});
+  validStoredHeaders({
+    listUnsubscribe: '<https://garden.example/leave>',
+    listUnsubscribePost: 'List-Unsubscribe=One-Click',
+    authenticated: true,
+  });
   for (const list of [
     { precedence: 'list' },
     { precedence: 'junk' },
@@ -270,6 +278,10 @@ test('header shape guard rejects values ingest normalizes or cannot produce', ()
     { listUnsubscribe: 'mailto:leave@garden.example' },
     { listUnsubscribePost: 'One-Click' },
     { authenticated: 'true' },
+    { authenticated: true },
+    { authenticated: false },
+    { listUnsubscribePost: 'List-Unsubscribe=One-Click' },
+    { listUnsubscribe: '< >', authenticated: true },
   ]) {
     assert.throws(() => validStoredHeaders(list));
   }
@@ -396,6 +408,8 @@ test('reserved-domain validation covers nested headers and free text', () => {
     text: 'See https://garden.example/path and write wren.alder@home.test.',
     sentence: 'Visit https://garden.example.',
     file: 'Download https://garden.example/receipt.pdf.',
+    commaPath: 'Download https://garden.example/files/report,receipt.pdf.',
+    attachments: 'report.pdf table.csv photo.png image.jpg notes.txt event.ics archive.zip',
     adjacent: '[a](https://garden.example),[b](https://pond.test/receipt.pdf)',
     listId: '<news.garden.example>',
     roles: ['category.personal'],
@@ -414,6 +428,11 @@ test('reserved-domain validation covers nested headers and free text', () => {
     { text: '[a](https://garden.example),[b](https://outside.invalid)' },
     { text: 'https://garden.example,https://outside.invalid' },
     { text: 'https://garden.examplehttps://outside.invalid' },
+    { text: '[a](https://outside.invalid),[b](https://garden.example)' },
+    { text: 'https://outside.invalid,https://garden.example' },
+    { text: 'https://outside.invalidhttps://garden.example' },
+    { text: 'outside.invalidhttps://garden.example' },
+    { text: 'outside.invalid' },
   ]) {
     assert.throws(() => safeStrings(value));
   }
