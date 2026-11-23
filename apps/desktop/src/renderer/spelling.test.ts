@@ -35,7 +35,7 @@ const STEMS = [
 const BRITISH = new RegExp(
   `\\b(?:${STEMS.map(stem => `[${stem[0]!.toUpperCase()}${stem[0]}]${stem.slice(1)}`).join('|')})[a-z]*\\b`,
 );
-const SKIP_DIRS = new Set(['legacy', 'generated', 'node_modules', 'mailframe']);
+const SKIP_DIRS = new Set(['generated', 'node_modules', 'mailframe']);
 const root = fileURLToPath(new URL('.', import.meta.url));
 
 function sourceFiles(dir: string): string[] {

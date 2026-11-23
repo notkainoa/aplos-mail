@@ -8,7 +8,6 @@ import {
   ENGINE_EXIT_AFTER_KILL_MS,
   ENGINE_QUIT_MS,
   createEngineSupervisor,
-  draftOpenable,
   realEngineRequested,
   type EngineLink,
 } from '../../src/host/transports/port';
@@ -44,7 +43,7 @@ test('the real engine runs in every build; only a development build honours APLO
   assert.equal(realEngineRequested({ APLOS_ENGINE: 'legacy' }, true), true);
 });
 
-test('real path: a window gets its own port, Session/get answers, main validates compose through Draft/get', async t => {
+test('real path: a window gets its own port and Session/get answers', async t => {
   const main = mainSide(t);
   const link = await main.supervisor.start();
   const ready = await link.ready;
@@ -78,26 +77,9 @@ test('real path: a window gets its own port, Session/get answers, main validates
   await assert.rejects(direct.call('Notification/claim', {}), { type: 'forbidden' });
   direct.close();
 
-  // `window.compose` validates through main's own connection, never a mirror.
-  assert.equal(await draftOpenable(link, 'no-such-draft'), false);
-  const demo = (await one.client.call('Demo/load', {})) as { accountIds: string[] };
-  const saved = (await one.client.call('Draft/set', {
-    opId: 'contract4-draft-1',
-    fields: {
-      accountId: demo.accountIds[0],
-      mode: 'new',
-      to: [],
-      cc: [],
-      bcc: [],
-      subject: 'Hello',
-      html: '<p>Hi</p>',
-      attachments: [],
-      signature: false,
-    },
-  })) as { draft: { id: string } };
-  assert.equal(await draftOpenable(link, saved.draft.id), true);
   // Main's control connection is limited to its named queries.
   await assert.rejects(link.call('Thread/act', {}), /Not a control method/);
+  await assert.rejects(link.call('Draft/get', { ids: ['d1'] }), /Not a control method/);
 
   // A second window gets its own port; closing one leaves the other working.
   const two = fakeWindow(2);

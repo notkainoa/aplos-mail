@@ -2,13 +2,10 @@
  * Which renderer the entry boots, read from the renderer URL's query (plan 30 U8; main hands the onboarding
  * window `?window=onboarding&mode=<mode>` through `loadRenderer`, and `showWelcome.ts` builds the same URL
  * for the browser preview). Pure: no React, no DOM, no engine — `tests/ui-onboard/mount.test.ts` covers it.
- *
- * `legacy=1` wins first because `VITE_APLOS_LEGACY` and every production build already load today's renderer
- * in `main.tsx` before this runs, and a `legacy` param must not open onboarding over it.
  */
 
 /** What `main.tsx` mounts. */
-export type RendererRoute = 'legacy' | 'onboarding' | 'mail';
+export type RendererRoute = 'onboarding' | 'mail';
 
 /** The onboarding window's mode: `first` is the first run, `review` is "Show welcome" from Settings. */
 export type OnboardingRouteMode = 'first' | 'review';
@@ -19,9 +16,7 @@ function params(search: string): URLSearchParams {
 
 /** The route for one renderer URL. */
 export function chooseRoute(search: string): RendererRoute {
-  const query = params(search);
-  if (query.get('legacy') === '1') return 'legacy';
-  if (query.get('window') === 'onboarding') return 'onboarding';
+  if (params(search).get('window') === 'onboarding') return 'onboarding';
   return 'mail';
 }
 
@@ -37,7 +32,7 @@ export function onboardingMode(search: string): OnboardingRouteMode {
 /**
  * The stand-in scenario a development URL asks for (`?scenario=empty` gives the zero-accounts pane). The
  * value is passed through untyped; `connectStandIn` owns the scenario list, so an unknown name fails there
- * in development, never silently in a release (releases load the legacy renderer before this is read).
+ * in development, never silently in a release (a release never uses the stand-in).
  */
 export function scenarioParam(search: string): string | undefined {
   return params(search).get('scenario') ?? undefined;

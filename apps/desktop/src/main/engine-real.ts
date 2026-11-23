@@ -19,7 +19,6 @@ import {
   createEngineLink,
   createEngineSupervisor,
   createPortBroker,
-  draftOpenable,
   REAL_ENGINE_ARG,
   REAL_ENGINE_SERVICE,
   revokeOnNewDocument,
@@ -50,7 +49,7 @@ import { allowMailFrames, assertCaller, trustedURL } from './security';
 import { installMailProtocol } from './mail-protocol';
 import { limitInFlight, SERVE_TIMEOUT_MS, type ServeArgs } from '../host/protocol/relay';
 import { isTest } from './test-mode';
-import { hostTheme, popout } from './windows';
+import { hostTheme } from './windows';
 
 /**
  * Main's half of the real engine path (lane eng-contract, contract-4), the default (`realEngineRequested`). Main forks the
@@ -261,14 +260,6 @@ const callerWindow = (event: IpcMainInvokeEvent) =>
     },
   });
 
-async function composeWindow(event: IpcMainInvokeEvent, draftId: string) {
-  // Through main's own engine connection (`Draft/get`), never a copy of the mailbox in main.
-  if (!(await draftOpenable(link(), draftId)))
-    throw new Error('Save this draft before opening a separate window.');
-  popout('draft', draftId, BrowserWindow.fromWebContents(event.sender)!.id);
-  return ok;
-}
-
 /** The desktop methods main serves on this path today, by their v1 names; each maps to main's own handler. */
 /** Main's host-only diagnostics: content-free facts about this install, for when the engine cannot give its own bundle. */
 function hostBundle(): Record<string, unknown> {
@@ -313,7 +304,6 @@ function desktopMethod(event: IpcMainInvokeEvent, method: unknown, input: unknow
 async function desktopMethodFor(event: IpcMainInvokeEvent, method: unknown, input: unknown) {
   if (typeof method !== 'string') throw new Error('Unsupported application method.');
   const args = parseArgs(method as MethodName, input ?? {}) as Record<string, unknown>;
-  if (method === 'Window/compose') return composeWindow(event, String(args.draftId));
   if (method === 'Engine/restart') {
     if (!supervisor) throw new Error('The mailbox engine is not running on this build.');
     await supervisor.restart();
@@ -338,19 +328,13 @@ async function desktopMethodFor(event: IpcMainInvokeEvent, method: unknown, inpu
 
 /**
  * Today's renderer still runs on this path and still calls `aplos:invoke`. It keeps main's native methods (its window
- * closes, quits and pop-outs work), and every engine call is refused with a plain sentence: there is no legacy engine
+ * closes and quits work), and every engine call is refused with a plain sentence: there is no legacy engine
  * here and main forwards nothing.
  */
 async function legacyInvoke(event: IpcMainInvokeEvent, method: unknown, payload: unknown) {
   assertCaller(event);
   if (typeof method !== 'string' || !nativeMethods.has(method))
     throw new Error('This screen is not on the new engine yet.');
-  if (method === 'window.compose') {
-    const draftId = (payload as { draftId?: unknown } | undefined)?.draftId;
-    if (typeof draftId !== 'string' || draftId.length > 200) throw new Error('Invalid draft ID.');
-    await composeWindow(event, draftId);
-    return true;
-  }
   return invokeNative(event, method, payload);
 }
 
