@@ -55,7 +55,7 @@
         "subject": "Trip permission due",
         "date": 1796083260000,
         "list": {
-          "precedence": "bulk",
+          "precedence": "list",
           "listId": "<notices.northfield-school.test>",
           "autoSubmitted": "auto-generated"
         },
@@ -348,7 +348,7 @@
         "subject": "Workshop location poll",
         "date": 1796083680000,
         "list": {
-          "precedence": "bulk",
+          "precedence": "list",
           "listId": "<notices.loomhouse.test>",
           "listUnsubscribe": "<mailto:leave@loomhouse.test>, <https://loomhouse.test/leave>",
           "autoSubmitted": "auto-generated"
@@ -583,7 +583,7 @@
         "subject": "Survey for registered exhibitors",
         "date": 1796084040000,
         "list": {
-          "precedence": "bulk",
+          "precedence": "list",
           "listId": "<notices.northfield-school.test>",
           "listUnsubscribe": "<mailto:leave@northfield-school.test>, <https://northfield-school.test/leave>",
           "autoSubmitted": "auto-generated"

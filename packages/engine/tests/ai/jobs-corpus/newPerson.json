@@ -55,7 +55,7 @@
         "subject": "A fellow map maker",
         "date": 1796083260000,
         "list": {
-          "precedence": "bulk",
+          "precedence": "list",
           "listId": "<notices.mapcabinet.example>"
         },
         "flags": {
@@ -388,7 +388,7 @@
         "subject": "Your hinge demonstration",
         "date": 1796083800000,
         "list": {
-          "precedence": "bulk",
+          "precedence": "list",
           "listId": "<notices.loomhouse.test>",
           "listUnsubscribe": "<mailto:leave@loomhouse.test>, <https://loomhouse.test/leave>"
         },

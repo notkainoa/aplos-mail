@@ -632,7 +632,7 @@
         "subject": "Try the larger plan",
         "date": 1796084220000,
         "list": {
-          "precedence": "bulk",
+          "precedence": "junk",
           "listId": "<notices.folioport.example>",
           "autoSubmitted": "auto-generated"
         },
@@ -711,7 +711,7 @@
         "subject": "Studio tools sale",
         "date": 1796084340000,
         "list": {
-          "precedence": "bulk",
+          "precedence": "junk",
           "listId": "<notices.greenframe.example>",
           "listUnsubscribe": "<mailto:leave@greenframe.example>, <https://greenframe.example/leave>",
           "autoSubmitted": "auto-generated"
@@ -869,7 +869,7 @@
         "subject": "Your streak misses you",
         "date": 1796084580000,
         "list": {
-          "precedence": "bulk",
+          "precedence": "junk",
           "listId": "<notices.mapcabinet.example>",
           "listUnsubscribe": "<mailto:leave@mapcabinet.example>, <https://mapcabinet.example/leave>",
           "autoSubmitted": "auto-generated"
@@ -986,7 +986,7 @@
         "subject": "A directory placement offer",
         "date": 1796084760000,
         "list": {
-          "precedence": "bulk",
+          "precedence": "junk",
           "listId": "<notices.loomhouse.test>",
           "listUnsubscribe": "<mailto:leave@loomhouse.test>, <https://loomhouse.test/leave>",
           "autoSubmitted": "auto-generated"
@@ -1143,7 +1143,7 @@
         "subject": "Seasonal pottery sale",
         "date": 1796085000000,
         "list": {
-          "precedence": "bulk",
+          "precedence": "junk",
           "listId": "<notices.clayhaven.example>",
           "listUnsubscribe": "<mailto:leave@clayhaven.example>, <https://clayhaven.example/leave>",
           "autoSubmitted": "auto-generated"
@@ -1262,7 +1262,7 @@
         "subject": "A badge is waiting",
         "date": 1796085180000,
         "list": {
-          "precedence": "bulk",
+          "precedence": "junk",
           "listId": "<notices.mapcabinet.example>",
           "autoSubmitted": "auto-generated"
         },
@@ -1341,7 +1341,7 @@
         "subject": "Sponsored studio roundup",
         "date": 1796085300000,
         "list": {
-          "precedence": "bulk",
+          "precedence": "junk",
           "listId": "<notices.reedstudio.test>",
           "listUnsubscribe": "<mailto:leave@reedstudio.test>, <https://reedstudio.test/leave>",
           "autoSubmitted": "auto-generated"
@@ -1458,7 +1458,7 @@
         "subject": "A sale on storage boxes",
         "date": 1796085480000,
         "list": {
-          "precedence": "bulk",
+          "precedence": "junk",
           "listId": "<notices.parcel.example>",
           "listUnsubscribe": "<mailto:leave@parcel.example>, <https://parcel.example/leave>",
           "autoSubmitted": "auto-generated"

@@ -55,7 +55,7 @@
         "subject": "School gate change on December 4",
         "date": 1796083260000,
         "list": {
-          "precedence": "bulk",
+          "precedence": "list",
           "listId": "<notices.northfield-school.test>",
           "autoSubmitted": "auto-generated"
         },
@@ -290,7 +290,7 @@
         "subject": "Calendar room moved",
         "date": 1796083620000,
         "list": {
-          "precedence": "bulk",
+          "precedence": "list",
           "listId": "<notices.sessionloom.test>",
           "listUnsubscribe": "<mailto:leave@sessionloom.test>, <https://sessionloom.test/leave>",
           "autoSubmitted": "auto-generated"
@@ -452,7 +452,7 @@
         "subject": "Temporary water outage",
         "date": 1796083860000,
         "list": {
-          "precedence": "bulk",
+          "precedence": "list",
           "listId": "<notices.plotgate.example>",
           "listUnsubscribe": "<mailto:leave@plotgate.example>, <https://plotgate.example/leave>",
           "autoSubmitted": "auto-generated"
@@ -1247,7 +1247,7 @@
           "precedence": "bulk",
           "listId": "<notices.folioport.example>",
           "listUnsubscribe": "<mailto:leave@folioport.example>, <https://folioport.example/leave>",
-          "autoSubmitted": "auto-generated"
+          "autoSubmitted": "auto-replied"
         },
         "flags": {
           "seen": false,
@@ -1515,7 +1515,7 @@
         "subject": "Event moved indoors",
         "date": 1796085480000,
         "list": {
-          "precedence": "bulk",
+          "precedence": "list",
           "listId": "<notices.plotgate.example>",
           "listUnsubscribe": "<mailto:leave@plotgate.example>, <https://plotgate.example/leave>",
           "autoSubmitted": "auto-generated"

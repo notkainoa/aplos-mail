@@ -216,7 +216,7 @@
         "flags": {
           "seen": false,
           "flagged": false,
-          "answered": false,
+          "answered": true,
           "draft": false,
           "fromMe": false
         },
@@ -225,7 +225,7 @@
       },
       "self": ["me@home.example"],
       "knownCorrespondent": true,
-      "userReplied": false,
+      "userReplied": true,
       "userEndedThread": true,
       "text": "We both signed the studio agreement this morning. Here is the final copy for your files; no further signature is required."
     }
@@ -436,7 +436,9 @@
         "cc": [],
         "subject": "Delivery proof copy",
         "date": 1796083860000,
-        "list": {},
+        "list": {
+          "autoSubmitted": "auto-replied"
+        },
         "flags": {
           "seen": false,
           "flagged": true,
@@ -1053,7 +1055,7 @@
         "subject": "Club dues receipt",
         "date": 1796084820000,
         "list": {
-          "precedence": "bulk",
+          "precedence": "list",
           "listId": "<notices.plotgate.example>",
           "listUnsubscribe": "<mailto:leave@plotgate.example>, <https://plotgate.example/leave>",
           "autoSubmitted": "auto-generated"

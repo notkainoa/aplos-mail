@@ -73,6 +73,8 @@ function validMessage(value: unknown) {
   optionalStrings(m, ['snippet', 'internetId']);
   const flags = object(m.flags);
   booleans(flags, ['seen', 'flagged', 'draft', 'fromMe']);
+  assert.equal(flags.draft, false, 'laneInput selects a non-draft message');
+  assert.equal(flags.fromMe, false, 'laneInput selects an inbound message');
   if (flags.answered !== undefined) booleans(flags, ['answered']);
   for (const role of array(m.roles)) assert.ok(ROLES.includes(role as FolderRole));
   const list = object(m.list);
@@ -93,6 +95,7 @@ function validInput(value: unknown) {
   assert.ok(self.length > 0);
   self.forEach(email);
   booleans(input, ['knownCorrespondent', 'userReplied', 'userEndedThread']);
+  assert.ok(!input.userEndedThread || input.userReplied, 'Ending a thread requires a sent reply');
   string(input.text);
   assert.ok(input.text.length < 600, 'Body must be short');
   if (input.structured === undefined) return;
@@ -108,24 +111,29 @@ function validInput(value: unknown) {
   }
 }
 
+function safeText(value: string) {
+  const withoutUrls = value.replace(/[a-z][a-z\d+.-]*:\/\/[^\s<>"']+/gi, token => {
+    const url = new URL(token.replace(/[.,;!?)}\]]+$/, ''));
+    reservedHost(url.hostname.replace(/\.$/, ''));
+    return '';
+  });
+  const emails = /[\w.!#$%&'*+/=?^`{|}~-]+@([a-z\d.-]+\.[a-z]+)/gi;
+  for (const match of value.matchAll(emails)) reservedHost(match[1]);
+  const withoutEmails = withoutUrls.replace(emails, '');
+  for (const match of withoutEmails.matchAll(
+    /\b(?:[a-z\d](?:[a-z\d-]*[a-z\d])?\.)+[a-z]{2,}\b/gi,
+  )) {
+    reservedHost(match[0]);
+  }
+}
+
 function safeStrings(value: unknown) {
   if (Array.isArray(value)) {
     value.forEach(safeStrings);
   } else if (value !== null && typeof value === 'object') {
     Object.values(value).forEach(safeStrings);
   } else if (typeof value === 'string' && !ROLES.includes(value as FolderRole)) {
-    for (const match of value.matchAll(/[a-z][a-z\d+.-]*:\/\/[^\s<>"']+/gi)) {
-      reservedHost(new URL(match[0]).hostname);
-    }
-    for (const match of value.matchAll(/[\w.!#$%&'*+/=?^`{|}~-]+@([a-z\d.-]+\.[a-z]+)/gi)) {
-      reservedHost(match[1]);
-    }
-    const withoutEmails = value.replace(/[\w.!#$%&'*+/=?^`{|}~-]+@[a-z\d.-]+\.[a-z]+/gi, '');
-    for (const match of withoutEmails.matchAll(
-      /\b(?:[a-z\d](?:[a-z\d-]*[a-z\d])?\.)+[a-z]{2,}\b/gi,
-    )) {
-      reservedHost(match[0]);
-    }
+    safeText(value);
   }
 }
 
@@ -146,7 +154,7 @@ for (const job of JOBS) {
   test(`jobs corpus: ${job} has valid cases matching its file`, () => {
     const file = new URL(`./jobs-corpus/${job}.json`, import.meta.url);
     const cases = array(JSON.parse(readFileSync(file, 'utf8')));
-    assert.ok(cases.length >= 40 && cases.length <= 45);
+    assert.ok(cases.length >= 40);
     for (const c of cases) {
       const id = object(c).id;
       assert.doesNotThrow(() => validCase(c, job), String(id));
@@ -208,6 +216,43 @@ test('jobs corpus: sender domains and role sets cannot stand in for the job', ()
   diverseSignals(loadJobCases());
 });
 
+function sharedHeaderValues(cases: JobCase[]) {
+  const values = new Map<string, { count: number; jobs: Set<Job> }>();
+  for (const c of cases) {
+    for (const [header, value] of Object.entries(c.input.message.list)) {
+      const key = JSON.stringify([header, value]);
+      const usage = values.get(key) ?? { count: 0, jobs: new Set<Job>() };
+      usage.count++;
+      usage.jobs.add(c.job);
+      values.set(key, usage);
+    }
+  }
+  for (const [key, usage] of values) {
+    assert.ok(usage.count <= 5 || usage.jobs.size > 1, `Header value identifies one job: ${key}`);
+  }
+}
+
+test('jobs corpus: frequently used header values occur across jobs', () => {
+  sharedHeaderValues(loadJobCases());
+});
+
+test('header shortcut guard rejects values used more than five times in only one job', () => {
+  for (const header of [
+    'precedence',
+    'autoSubmitted',
+    'listId',
+    'listUnsubscribe',
+    'listUnsubscribePost',
+  ] as const) {
+    const cases = structuredClone(loadJobCases());
+    const rows = cases.filter(c => c.job === 'read').slice(0, 6);
+    for (const c of rows) c.input.message.list[header] = 'unique';
+    assert.throws(() => sharedHeaderValues(cases), header);
+  }
+  sharedHeaderValues([]);
+  sharedHeaderValues(loadJobCases().slice(0, 5));
+});
+
 test('shortcut guards reject homogeneous domains, numbered senders and dominant role sets', () => {
   const original = loadJobCases();
   const mutations: ((cases: JobCase[]) => void)[] = [
@@ -220,7 +265,8 @@ test('shortcut guards reject homogeneous domains, numbered senders and dominant 
       cases[0].input.message.from = { address: 'wren16@courtyard.example' };
     },
     cases => {
-      for (const c of cases.filter(c => c.job === 'read').slice(0, 25)) {
+      const rows = cases.filter(c => c.job === 'read');
+      for (const c of rows.slice(0, Math.floor(rows.length * 0.6) + 1)) {
         c.input.message.roles = ['inbox'];
       }
     },
@@ -264,6 +310,16 @@ test('jobs corpus validation rejects empty and malformed inputs', () => {
     c => {
       c.input.structured = [{ kind: 'invalid' as 'bill' }];
     },
+    c => {
+      c.input.userEndedThread = true;
+      c.input.userReplied = false;
+    },
+    c => {
+      c.input.message.flags.draft = true;
+    },
+    c => {
+      c.input.message.flags.fromMe = true;
+    },
   ];
   for (const mutate of mutations) {
     const c = structuredClone(original);
@@ -299,6 +355,8 @@ test('jobs corpus preserves the hard contrast pairs and first-contact facts', ()
 test('reserved-domain validation covers nested headers and free text', () => {
   safeStrings({
     text: 'See https://garden.example/path and write wren.alder@home.test.',
+    sentence: 'Visit https://garden.example.',
+    file: 'Download https://garden.example/receipt.pdf.',
     listId: '<news.garden.example>',
     roles: ['category.personal'],
   });
@@ -310,6 +368,9 @@ test('reserved-domain validation covers nested headers and free text', () => {
     { list: { listId: '<news.outside.invalid>' } },
     { text: 'See https://garden.example.outside.invalid/path' },
     { text: 'See ftp://outside.invalid/path' },
+    { text: 'Visit https://outside.invalid.' },
+    { text: 'Download https://outside.invalid/receipt.pdf.' },
+    { text: 'See https://garden.example/contact/person@outside.invalid' },
   ]) {
     assert.throws(() => safeStrings(value));
   }

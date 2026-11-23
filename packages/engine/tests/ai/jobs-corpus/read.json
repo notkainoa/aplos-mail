@@ -606,7 +606,7 @@
         "subject": "The weekly reed journal",
         "date": 1796084160000,
         "list": {
-          "precedence": "list",
+          "precedence": "junk",
           "listId": "<letters.plotgate.example>",
           "listUnsubscribe": "<mailto:leave@plotgate.example>, <https://plotgate.example/leave>"
         },
@@ -719,7 +719,7 @@
         "subject": "Night pond dispatch",
         "date": 1796084340000,
         "list": {
-          "precedence": "list",
+          "precedence": "bulk",
           "listId": "<letters.nightpond.test>",
           "listUnsubscribe": "<mailto:leave@nightpond.test>, <https://nightpond.test/leave>"
         },
@@ -948,7 +948,7 @@
         "subject": "A small atlas letter",
         "date": 1796084700000,
         "list": {
-          "precedence": "list",
+          "precedence": "bulk",
           "listId": "<letters.mapcabinet.example>"
         },
         "flags": {
@@ -1062,7 +1062,7 @@
         "subject": "Thread and timber",
         "date": 1796084880000,
         "list": {
-          "precedence": "list",
+          "precedence": "bulk",
           "listId": "<letters.loomhouse.test>",
           "listUnsubscribe": "<mailto:leave@loomhouse.test>, <https://loomhouse.test/leave>"
         },
@@ -1176,7 +1176,7 @@
         "subject": "The seed cabinet",
         "date": 1796085060000,
         "list": {
-          "precedence": "list",
+          "precedence": "bulk",
           "listId": "<letters.plotgate.example>",
           "listUnsubscribe": "<mailto:leave@plotgate.example>, <https://plotgate.example/leave>"
         },
@@ -1290,7 +1290,7 @@
         "subject": "The bent branch",
         "date": 1796085240000,
         "list": {
-          "precedence": "list",
+          "precedence": "bulk",
           "listId": "<letters.plotgate.example>",
           "listUnsubscribe": "<mailto:leave@plotgate.example>, <https://plotgate.example/leave>"
         },
@@ -1405,7 +1405,7 @@
         "subject": "Small stage journal",
         "date": 1796085420000,
         "list": {
-          "precedence": "list",
+          "precedence": "bulk",
           "listId": "<letters.smallstage.test>"
         },
         "flags": {
