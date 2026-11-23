@@ -16,7 +16,7 @@
       "source": "plans/DESIGN.md section 5 (Budgets) and 12.6",
       "maxAgeDays": null,
       "lastMeasured": null,
-      "dueBy": "2026-11-27"
+      "dueBy": "2027-01-15"
     },
     {
       "id": "ui.triage-key-to-paint",
@@ -32,7 +32,7 @@
       "source": "plans/DESIGN.md section 5 (Budgets) and 12.6",
       "maxAgeDays": null,
       "lastMeasured": null,
-      "dueBy": "2026-11-27"
+      "dueBy": "2027-01-15"
     },
     {
       "id": "ui.triage-key-to-paint-cap",
@@ -48,7 +48,7 @@
       "source": "plans/DESIGN.md section 5 (Budgets) and 12.6",
       "maxAgeDays": null,
       "lastMeasured": null,
-      "dueBy": "2026-11-27"
+      "dueBy": "2027-01-15"
     },
     {
       "id": "ui.triage-burst",
@@ -65,7 +65,7 @@
       "notes": "Pass or fail check; a 3x margin does not apply to a dropped key.",
       "maxAgeDays": null,
       "lastMeasured": null,
-      "dueBy": "2026-11-27"
+      "dueBy": "2027-01-15"
     },
     {
       "id": "ui.open-cached-letter",
@@ -80,7 +80,7 @@
       "source": "plans/DESIGN.md section 5 (Budgets) and 12.6",
       "maxAgeDays": null,
       "lastMeasured": null,
-      "dueBy": "2026-11-27"
+      "dueBy": "2027-01-15"
     },
     {
       "id": "ui.jk-prefetched",
@@ -95,7 +95,7 @@
       "source": "plans/DESIGN.md section 5 (Budgets) and 12.6",
       "maxAgeDays": null,
       "lastMeasured": null,
-      "dueBy": "2026-11-27"
+      "dueBy": "2027-01-15"
     },
     {
       "id": "ui.palette-open",
@@ -110,7 +110,7 @@
       "source": "plans/DESIGN.md section 5 (Budgets) and 12.6",
       "maxAgeDays": null,
       "lastMeasured": null,
-      "dueBy": "2026-11-27"
+      "dueBy": "2027-01-15"
     },
     {
       "id": "ui.palette-filter",
@@ -125,7 +125,7 @@
       "source": "plans/DESIGN.md section 5 (Budgets) and 12.6",
       "maxAgeDays": null,
       "lastMeasured": null,
-      "dueBy": "2026-11-27"
+      "dueBy": "2027-01-15"
     },
     {
       "id": "ui.scroll-10k-rows",
@@ -141,7 +141,7 @@
       "source": "plans/DESIGN.md section 5 (Budgets) and 12.6",
       "maxAgeDays": null,
       "lastMeasured": null,
-      "dueBy": "2026-11-27"
+      "dueBy": "2027-01-15"
     },
     {
       "id": "ui.cold-start-shell",
@@ -157,7 +157,7 @@
       "source": "plans/DESIGN.md section 5 (Budgets) and 12.6",
       "maxAgeDays": null,
       "lastMeasured": null,
-      "dueBy": "2026-11-27"
+      "dueBy": "2027-01-15"
     },
     {
       "id": "ui.home-interactive",
@@ -173,7 +173,7 @@
       "source": "plans/DESIGN.md section 5 (Budgets) and 12.6",
       "maxAgeDays": null,
       "lastMeasured": null,
-      "dueBy": "2026-11-27"
+      "dueBy": "2027-01-15"
     },
     {
       "id": "store.first-page",
@@ -188,7 +188,7 @@
       "source": "plans/10-engine-foundation.md E2 (store-bench list)",
       "maxAgeDays": null,
       "lastMeasured": null,
-      "dueBy": "2026-11-20"
+      "dueBy": "2027-01-15"
     },
     {
       "id": "store.unread-counts",
@@ -202,7 +202,7 @@
       "source": "plans/10-engine-foundation.md E2 (store-bench list)",
       "maxAgeDays": null,
       "lastMeasured": null,
-      "dueBy": "2026-11-20"
+      "dueBy": "2027-01-15"
     },
     {
       "id": "store.label-commit",
@@ -217,7 +217,7 @@
       "source": "plans/10-engine-foundation.md E2 (store-bench list)",
       "maxAgeDays": null,
       "lastMeasured": null,
-      "dueBy": "2026-11-20"
+      "dueBy": "2027-01-15"
     },
     {
       "id": "store.page-commit-throughput",
@@ -232,7 +232,7 @@
       "source": "plans/10-engine-foundation.md E2 (store-bench list)",
       "maxAgeDays": null,
       "lastMeasured": null,
-      "dueBy": "2026-11-20"
+      "dueBy": "2027-01-15"
     },
     {
       "id": "store.cold-open",
@@ -246,7 +246,7 @@
       "source": "plans/10-engine-foundation.md E2 (store-bench list)",
       "maxAgeDays": null,
       "lastMeasured": null,
-      "dueBy": "2026-11-20"
+      "dueBy": "2027-01-15"
     },
     {
       "id": "store.rss-first-page",
@@ -260,7 +260,7 @@
       "source": "plans/10-engine-foundation.md E2 (store-bench list)",
       "maxAgeDays": null,
       "lastMeasured": null,
-      "dueBy": "2026-11-20"
+      "dueBy": "2027-01-15"
     },
     {
       "id": "store.search-newest-50",
@@ -274,7 +274,7 @@
       "source": "plans/10-engine-foundation.md E2 (store-bench list)",
       "maxAgeDays": null,
       "lastMeasured": null,
-      "dueBy": "2026-11-20"
+      "dueBy": "2027-01-15"
     },
     {
       "id": "soak.rss-slope",
@@ -289,7 +289,7 @@
       "source": "plans/10-engine-foundation.md E8 acceptance; plans/40-platform-quality.md Q3 deliverable 6",
       "maxAgeDays": null,
       "lastMeasured": null,
-      "dueBy": "2026-11-20"
+      "dueBy": "2027-01-15"
     },
     {
       "id": "soak.rss-net-24h",
@@ -304,7 +304,7 @@
       "source": "plans/10-engine-foundation.md E8 acceptance; plans/40-platform-quality.md Q3 deliverable 6",
       "maxAgeDays": null,
       "lastMeasured": null,
-      "dueBy": "2026-11-20"
+      "dueBy": "2027-01-15"
     },
     {
       "id": "soak.wal-size",
@@ -319,7 +319,7 @@
       "source": "plans/10-engine-foundation.md E8 acceptance; plans/40-platform-quality.md Q3 deliverable 6",
       "maxAgeDays": null,
       "lastMeasured": null,
-      "dueBy": "2026-11-20"
+      "dueBy": "2027-01-15"
     },
     {
       "id": "soak.event-loop-p99",
@@ -334,7 +334,7 @@
       "source": "plans/10-engine-foundation.md E8 acceptance; plans/40-platform-quality.md Q3 deliverable 6",
       "maxAgeDays": null,
       "lastMeasured": null,
-      "dueBy": "2026-11-20"
+      "dueBy": "2027-01-15"
     },
     {
       "id": "idle.engine-rss",
@@ -516,7 +516,7 @@
       "source": "plans/40-platform-quality.md Q3 deliverable 6; plans/40-platform-quality.md Q3 acceptance",
       "maxAgeDays": null,
       "lastMeasured": null,
-      "dueBy": "2026-12-01"
+      "dueBy": "2027-01-15"
     },
     {
       "id": "sync.first-sync-first50",
@@ -530,7 +530,7 @@
       "source": "plans/40-platform-quality.md Q3 deliverable 6; plans/40-platform-quality.md journey J2",
       "maxAgeDays": null,
       "lastMeasured": null,
-      "dueBy": "2026-11-20"
+      "dueBy": "2027-01-15"
     },
     {
       "id": "sync.first-sync-refusals",
@@ -544,7 +544,7 @@
       "source": "plans/40-platform-quality.md Q3 deliverable 6; plans/20-providers-sync.md PV3 acceptance",
       "maxAgeDays": null,
       "lastMeasured": null,
-      "dueBy": "2026-11-20"
+      "dueBy": "2027-01-15"
     },
     {
       "id": "views.window-rerun",
@@ -557,7 +557,7 @@
       "unit": "ms",
       "stat": "p95",
       "source": "plans/10-engine-foundation.md E3 acceptance",
-      "dueBy": "2026-11-20",
+      "dueBy": "2027-01-15",
       "maxAgeDays": null,
       "lastMeasured": null
     },
@@ -572,7 +572,7 @@
       "unit": "ms",
       "stat": "p95",
       "source": "plans/10-engine-foundation.md E3 acceptance",
-      "dueBy": "2026-11-20",
+      "dueBy": "2027-01-15",
       "maxAgeDays": null,
       "lastMeasured": null
     },
@@ -587,7 +587,7 @@
       "unit": "ms",
       "stat": "p95",
       "source": "plans/10-engine-foundation.md E3 acceptance",
-      "dueBy": "2026-11-20",
+      "dueBy": "2027-01-15",
       "maxAgeDays": null,
       "lastMeasured": null
     },
@@ -602,7 +602,7 @@
       "unit": "rows",
       "stat": "at most",
       "source": "plans/10-engine-foundation.md E3 acceptance",
-      "dueBy": "2026-11-20",
+      "dueBy": "2027-01-15",
       "maxAgeDays": null,
       "lastMeasured": null
     },
@@ -617,7 +617,7 @@
       "unit": "KB",
       "stat": "at most",
       "source": "plans/10-engine-foundation.md E3 acceptance",
-      "dueBy": "2026-11-20",
+      "dueBy": "2027-01-15",
       "maxAgeDays": null,
       "lastMeasured": null
     },
@@ -632,7 +632,7 @@
       "unit": "ms",
       "stat": "minimum interval",
       "source": "plans/10-engine-foundation.md E3 acceptance",
-      "dueBy": "2026-11-20",
+      "dueBy": "2027-01-15",
       "maxAgeDays": null,
       "lastMeasured": null
     },
@@ -647,7 +647,7 @@
       "unit": "KB",
       "stat": "at most",
       "source": "plans/10-engine-foundation.md E3 acceptance",
-      "dueBy": "2026-11-20",
+      "dueBy": "2027-01-15",
       "maxAgeDays": null,
       "lastMeasured": null
     },
@@ -662,7 +662,7 @@
       "unit": "ms",
       "stat": "median",
       "source": "plans/10-engine-foundation.md E4 acceptance (calibrate on first run)",
-      "dueBy": "2026-11-20",
+      "dueBy": "2027-01-15",
       "maxAgeDays": null,
       "lastMeasured": null
     },
@@ -677,7 +677,7 @@
       "unit": "ms",
       "stat": "p99",
       "source": "plans/10-engine-foundation.md E4 acceptance (calibrate on first run)",
-      "dueBy": "2026-11-20",
+      "dueBy": "2027-01-15",
       "maxAgeDays": null,
       "lastMeasured": null
     },
@@ -692,7 +692,7 @@
       "unit": "ms",
       "stat": "at most",
       "source": "plans/30-ui-revamp.md U9 acceptance 2",
-      "dueBy": "2026-11-27",
+      "dueBy": "2027-01-15",
       "maxAgeDays": null,
       "lastMeasured": null
     },
@@ -707,7 +707,7 @@
       "unit": "ms",
       "stat": "p95",
       "source": "plans/30-ui-revamp.md U9 acceptance 2",
-      "dueBy": "2026-11-27",
+      "dueBy": "2027-01-15",
       "maxAgeDays": null,
       "lastMeasured": null
     },
@@ -722,7 +722,7 @@
       "unit": "units",
       "stat": "at most",
       "source": "plans/20-providers-sync.md Gmail pacing and error handling acceptance (emulator)",
-      "dueBy": "2026-11-20",
+      "dueBy": "2027-01-15",
       "maxAgeDays": null,
       "lastMeasured": null
     },
@@ -737,7 +737,7 @@
       "unit": "units",
       "stat": "at most",
       "source": "plans/20-providers-sync.md Gmail pacing and error handling acceptance (emulator)",
-      "dueBy": "2026-11-20",
+      "dueBy": "2027-01-15",
       "maxAgeDays": null,
       "lastMeasured": null
     },
@@ -752,7 +752,7 @@
       "unit": "units/min",
       "stat": "never above",
       "source": "plans/20-providers-sync.md Gmail pacing and error handling acceptance (live)",
-      "dueBy": "2026-11-24",
+      "dueBy": "2027-01-15",
       "maxAgeDays": null,
       "lastMeasured": null
     },
@@ -767,7 +767,7 @@
       "unit": "s",
       "stat": "at most",
       "source": "plans/20-providers-sync.md Gmail pacing and error handling acceptance (live)",
-      "dueBy": "2026-11-24",
+      "dueBy": "2027-01-15",
       "maxAgeDays": null,
       "lastMeasured": null
     },
@@ -782,7 +782,7 @@
       "unit": "min",
       "stat": "about",
       "source": "plans/20-providers-sync.md PV3 acceptance",
-      "dueBy": "2026-11-20",
+      "dueBy": "2027-01-15",
       "maxAgeDays": null,
       "lastMeasured": null
     },
@@ -797,7 +797,7 @@
       "unit": "units",
       "stat": "at most",
       "source": "plans/20-providers-sync.md PV3 acceptance",
-      "dueBy": "2026-11-24",
+      "dueBy": "2027-01-15",
       "maxAgeDays": null,
       "lastMeasured": null
     }

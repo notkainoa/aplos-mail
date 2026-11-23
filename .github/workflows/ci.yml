@@ -1,11 +1,11 @@
 name: CI
 
 # The repository is public, so Actions minutes (macOS included) are free: every job runs on pushes
-# to revamp and main and on pull requests into them. The workflow never uses pull_request_target and
-# holds no secrets, so a fork's pull request runs with a read-only token.
+# to revamp, main and next (the rethink) and on pull requests into them. The workflow never uses
+# pull_request_target and holds no secrets, so a fork's pull request runs with a read-only token.
 on:
   push:
-    branches: [revamp, main]
+    branches: [revamp, main, next]
     # Coordination and docs pushes (STATUS.md entries land on revamp many times a day) run nothing.
     # A push that also changes code still runs everything.
     paths-ignore:
@@ -14,7 +14,7 @@ on:
       - 'research/**'
       - '**/*.md'
   pull_request:
-    branches: [revamp, main]
+    branches: [revamp, main, next]
     paths-ignore:
       - 'plans/**'
       - 'mockups/**'
@@ -235,6 +235,9 @@ jobs:
       - run: npm run test:audit
       # Renderer (Vite), main/engine bundles (esbuild) and the native helper (swiftc).
       - run: npm run build -w @aplos/desktop
+      # Electron downloads its binary on first use, not at install. Fetch it once here: two Playwright
+      # workers downloading it at the same moment leave a half-written framework that fails to launch.
+      - run: node node_modules/electron/install.js
       # Electron tier: the built app starts hidden on a temporary data directory (APLOS_TEST=1, never a visible window).
       - run: APLOS_E2E_ELECTRON=1 npx playwright test -c tests/e2e/playwright.config.ts --project electron
 
