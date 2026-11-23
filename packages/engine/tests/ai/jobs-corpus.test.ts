@@ -1,0 +1,316 @@
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import { readFileSync } from 'node:fs';
+import type { FolderRole } from '../../src/ports/provider';
+import { JOBS, loadJobCases, type Job, type JobCase } from './jobs-corpus';
+
+const ROLES: readonly FolderRole[] = [
+  'inbox',
+  'sent',
+  'drafts',
+  'trash',
+  'spam',
+  'archive',
+  'starred',
+  'important',
+  'all',
+  'category.personal',
+  'category.social',
+  'category.promotions',
+  'category.updates',
+  'category.forums',
+];
+
+function object(value: unknown): Record<string, unknown> {
+  assert.ok(value !== null && typeof value === 'object' && !Array.isArray(value));
+  return value as Record<string, unknown>;
+}
+
+function string(value: unknown): asserts value is string {
+  assert.equal(typeof value, 'string');
+  assert.ok((value as string).trim().length > 0);
+}
+
+function array(value: unknown): unknown[] {
+  assert.ok(Array.isArray(value));
+  return value;
+}
+
+function reservedHost(host: string) {
+  assert.match(host, /\.(?:example|test)$/i, `Non-reserved host: ${host}`);
+}
+
+function email(value: unknown) {
+  string(value);
+  assert.match(value, /^[^\s@<>]+@[^\s@<>]+$/);
+  reservedHost(value.split('@')[1]);
+}
+
+function address(value: unknown) {
+  const a = object(value);
+  email(a.address);
+  if (a.name !== undefined) string(a.name);
+}
+
+function optionalStrings(value: Record<string, unknown>, keys: string[]) {
+  for (const key of keys) {
+    if (value[key] !== undefined) assert.equal(typeof value[key], 'string', key);
+  }
+}
+
+function booleans(value: Record<string, unknown>, keys: string[]) {
+  for (const key of keys) assert.equal(typeof value[key], 'boolean', key);
+}
+
+function validMessage(value: unknown) {
+  const m = object(value);
+  address(m.from);
+  array(m.to).forEach(address);
+  array(m.cc).forEach(address);
+  string(m.subject);
+  assert.equal(typeof m.date, 'number');
+  assert.ok(Number.isFinite(m.date));
+  optionalStrings(m, ['snippet', 'internetId']);
+  const flags = object(m.flags);
+  booleans(flags, ['seen', 'flagged', 'draft', 'fromMe']);
+  if (flags.answered !== undefined) booleans(flags, ['answered']);
+  for (const role of array(m.roles)) assert.ok(ROLES.includes(role as FolderRole));
+  const list = object(m.list);
+  optionalStrings(list, [
+    'listUnsubscribe',
+    'listUnsubscribePost',
+    'listId',
+    'precedence',
+    'autoSubmitted',
+  ]);
+  if (list.authenticated !== undefined) booleans(list, ['authenticated']);
+}
+
+function validInput(value: unknown) {
+  const input = object(value);
+  validMessage(input.message);
+  const self = array(input.self);
+  assert.ok(self.length > 0);
+  self.forEach(email);
+  booleans(input, ['knownCorrespondent', 'userReplied', 'userEndedThread']);
+  string(input.text);
+  assert.ok(input.text.length < 600, 'Body must be short');
+  if (input.structured === undefined) return;
+  for (const value of array(input.structured)) {
+    const hint = object(value);
+    assert.ok(['invite', 'delivery', 'reservation', 'bill'].includes(hint.kind as string));
+    if (hint.final !== undefined) booleans(hint, ['final']);
+    if (hint.due !== undefined) {
+      string(hint.due);
+      assert.match(hint.due, /^\d{4}-\d{2}-\d{2}$/);
+      assert.equal(new Date(hint.due).toISOString().slice(0, 10), hint.due);
+    }
+  }
+}
+
+function safeStrings(value: unknown) {
+  if (Array.isArray(value)) {
+    value.forEach(safeStrings);
+  } else if (value !== null && typeof value === 'object') {
+    Object.values(value).forEach(safeStrings);
+  } else if (typeof value === 'string' && !ROLES.includes(value as FolderRole)) {
+    for (const match of value.matchAll(/[a-z][a-z\d+.-]*:\/\/[^\s<>"']+/gi)) {
+      reservedHost(new URL(match[0]).hostname);
+    }
+    for (const match of value.matchAll(/[\w.!#$%&'*+/=?^`{|}~-]+@([a-z\d.-]+\.[a-z]+)/gi)) {
+      reservedHost(match[1]);
+    }
+    const withoutEmails = value.replace(/[\w.!#$%&'*+/=?^`{|}~-]+@[a-z\d.-]+\.[a-z]+/gi, '');
+    for (const match of withoutEmails.matchAll(
+      /\b(?:[a-z\d](?:[a-z\d-]*[a-z\d])?\.)+[a-z]{2,}\b/gi,
+    )) {
+      reservedHost(match[0]);
+    }
+  }
+}
+
+function validCase(value: unknown, job: Job) {
+  const c = object(value);
+  string(c.id);
+  assert.match(c.id, new RegExp(`^${job}-\\d{2}$`));
+  assert.ok(JOBS.includes(c.job as Job));
+  assert.equal(c.job, job);
+  booleans(c, ['hard']);
+  string(c.why);
+  assert.match(c.why, /^[^.!?\n]+[.!?]$/, 'Why must be one sentence');
+  validInput(c.input);
+  safeStrings(c);
+}
+
+for (const job of JOBS) {
+  test(`jobs corpus: ${job} has valid cases matching its file`, () => {
+    const file = new URL(`./jobs-corpus/${job}.json`, import.meta.url);
+    const cases = array(JSON.parse(readFileSync(file, 'utf8')));
+    assert.ok(cases.length >= 40 && cases.length <= 45);
+    for (const c of cases) {
+      const id = object(c).id;
+      assert.doesNotThrow(() => validCase(c, job), String(id));
+    }
+    assert.ok(cases.some(c => object(c).hard === true));
+  });
+}
+
+test('jobs corpus: coverage, unique ids and unique emails', () => {
+  const cases = loadJobCases();
+  assert.ok(cases.length >= 240);
+  assert.ok(cases.filter(c => c.hard).length >= cases.length / 3);
+  assert.equal(new Set(cases.map(c => c.id)).size, cases.length);
+  const emails = cases.map(c =>
+    JSON.stringify([
+      c.input.message.from?.address.toLowerCase(),
+      c.input.message.subject,
+      c.input.text,
+    ]),
+  );
+  assert.equal(new Set(emails).size, cases.length);
+  assert.deepEqual(loadJobCases(), cases);
+  assert.deepEqual([...new Set(cases.map(c => c.input.self.join(',')))], ['me@home.example']);
+});
+
+function senderDomain(c: JobCase) {
+  const sender = c.input.message.from?.address;
+  assert.ok(sender, c.id);
+  const [local, domain] = sender.toLowerCase().split('@');
+  assert.doesNotMatch(local, /\d$/, `Numbered sender local part: ${c.id}`);
+  return domain;
+}
+
+function diverseSignals(cases: JobCase[]) {
+  const jobsByDomain = new Map<string, Set<Job>>();
+  for (const job of JOBS) {
+    const rows = cases.filter(c => c.job === job);
+    assert.ok(new Set(rows.map(senderDomain)).size >= 8, `${job}: too few sender domains`);
+    const roleCounts = new Map<string, number>();
+    for (const c of rows) {
+      const domain = senderDomain(c);
+      const jobs = jobsByDomain.get(domain) ?? new Set<Job>();
+      jobs.add(job);
+      jobsByDomain.set(domain, jobs);
+      const roles = JSON.stringify([...new Set(c.input.message.roles)].sort());
+      roleCounts.set(roles, (roleCounts.get(roles) ?? 0) + 1);
+    }
+    for (const count of roleCounts.values()) {
+      assert.ok(count <= rows.length * 0.6, `${job}: a role set covers more than 60%`);
+    }
+  }
+  assert.ok(
+    [...jobsByDomain.values()].filter(jobs => jobs.size >= 2).length >= 6,
+    'Too few sender domains shared across jobs',
+  );
+}
+
+test('jobs corpus: sender domains and role sets cannot stand in for the job', () => {
+  diverseSignals(loadJobCases());
+});
+
+test('shortcut guards reject homogeneous domains, numbered senders and dominant role sets', () => {
+  const original = loadJobCases();
+  const mutations: ((cases: JobCase[]) => void)[] = [
+    cases => {
+      for (const c of cases.filter(c => c.job === 'ask')) {
+        c.input.message.from = { address: 'wren@single.example' };
+      }
+    },
+    cases => {
+      cases[0].input.message.from = { address: 'wren16@courtyard.example' };
+    },
+    cases => {
+      for (const c of cases.filter(c => c.job === 'read').slice(0, 25)) {
+        c.input.message.roles = ['inbox'];
+      }
+    },
+    cases => {
+      for (const c of cases) {
+        const sender = c.input.message.from;
+        assert.ok(sender);
+        sender.address = sender.address.replace('@', `@${c.job.toLowerCase()}.`);
+      }
+    },
+  ];
+  for (const mutate of mutations) {
+    const cases = structuredClone(original);
+    mutate(cases);
+    assert.throws(() => diverseSignals(cases));
+  }
+  assert.throws(() => diverseSignals([]));
+});
+
+test('jobs corpus validation rejects empty and malformed inputs', () => {
+  for (const value of [null, [], {}, '', { message: {} }]) {
+    assert.throws(() => validCase(value, 'ask'));
+  }
+  const original = loadJobCases()[0];
+  const mutations: ((c: ReturnType<typeof loadJobCases>[number]) => void)[] = [
+    c => {
+      c.job = 'other';
+    },
+    c => {
+      c.why = 'Two sentences. Not one.';
+    },
+    c => {
+      c.input.text = '';
+    },
+    c => {
+      c.input.text = 'x'.repeat(600);
+    },
+    c => {
+      c.input.message.roles = ['invalid' as FolderRole];
+    },
+    c => {
+      c.input.structured = [{ kind: 'invalid' as 'bill' }];
+    },
+  ];
+  for (const mutate of mutations) {
+    const c = structuredClone(original);
+    mutate(c);
+    assert.throws(() => validCase(c, 'ask'));
+  }
+});
+
+test('jobs corpus preserves the hard contrast pairs and first-contact facts', () => {
+  const cases = loadJobCases();
+  const byId = (id: string) => {
+    const c = cases.find(c => c.id === id);
+    assert.ok(c, id);
+    assert.equal(c.hard, true, id);
+    return c;
+  };
+  const approval = byId('ask-01');
+  const fyi = byId('update-01');
+  assert.equal(approval.input.message.from?.address, fyi.input.message.from?.address);
+  assert.equal(approval.input.knownCorrespondent, true);
+  assert.equal(fyi.input.knownCorrespondent, true);
+  assert.equal(
+    byId('other-02').input.message.from?.address,
+    byId('update-05').input.message.from?.address,
+  );
+  for (const id of ['update-02', 'update-03', 'update-04', 'other-01', 'newPerson-01']) byId(id);
+  for (const c of cases.filter(c => c.job === 'newPerson')) {
+    assert.equal(c.input.knownCorrespondent, false, c.id);
+    assert.equal(c.input.userReplied, false, c.id);
+  }
+});
+
+test('reserved-domain validation covers nested headers and free text', () => {
+  safeStrings({
+    text: 'See https://garden.example/path and write wren.alder@home.test.',
+    listId: '<news.garden.example>',
+    roles: ['category.personal'],
+  });
+  for (const value of [
+    { subject: 'Visit https://outside.invalid/path' },
+    { input: { text: 'Contact person@outside.invalid' } },
+    { snippet: 'See www.outside.invalid' },
+    { list: { listUnsubscribe: '<mailto:leave@outside.invalid>' } },
+    { list: { listId: '<news.outside.invalid>' } },
+    { text: 'See https://garden.example.outside.invalid/path' },
+    { text: 'See ftp://outside.invalid/path' },
+  ]) {
+    assert.throws(() => safeStrings(value));
+  }
+});
