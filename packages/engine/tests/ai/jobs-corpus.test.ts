@@ -2,6 +2,8 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import type { FolderRole } from '../../src/ports/provider';
+import { HDR } from '../../src/store/commit';
+import { listHeaders } from '../../src/store/ingest';
 import { JOBS, loadJobCases, type Job, type JobCase } from './jobs-corpus';
 
 const ROLES: readonly FolderRole[] = [
@@ -62,6 +64,24 @@ function booleans(value: Record<string, unknown>, keys: string[]) {
   for (const key of keys) assert.equal(typeof value[key], 'boolean', key);
 }
 
+function validStoredHeaders(list: Record<string, unknown>) {
+  const bits =
+    (list.listId === undefined ? 0 : HDR.list) |
+    (list.precedence === undefined ? 0 : HDR.bulk) |
+    (list.autoSubmitted === undefined ? 0 : HDR.autoSubmitted);
+  const urls =
+    typeof list.listUnsubscribe === 'string'
+      ? [...list.listUnsubscribe.matchAll(/<([^<>]+)>/g)].map(match => match[1])
+      : [];
+  const oneClick = list.listUnsubscribePost !== undefined;
+  const auth = list.authenticated === true ? 1 : list.authenticated === false ? 0 : null;
+  const stored = listHeaders(bits, JSON.stringify({ urls, oneClick }), auth);
+  const expected = Object.fromEntries(
+    Object.entries(stored).filter(([, value]) => value !== undefined),
+  );
+  assert.deepEqual(list, expected, 'Headers must match the values produced by ingest');
+}
+
 function validMessage(value: unknown) {
   const m = object(value);
   address(m.from);
@@ -86,6 +106,7 @@ function validMessage(value: unknown) {
     'autoSubmitted',
   ]);
   if (list.authenticated !== undefined) booleans(list, ['authenticated']);
+  validStoredHeaders(list);
 }
 
 function validInput(value: unknown) {
@@ -112,11 +133,14 @@ function validInput(value: unknown) {
 }
 
 function safeText(value: string) {
-  const withoutUrls = value.replace(/[a-z][a-z\d+.-]*:\/\/[^\s<>"']+/gi, token => {
-    const url = new URL(token.replace(/[.,;!?)}\]]+$/, ''));
-    reservedHost(url.hostname.replace(/\.$/, ''));
-    return '';
-  });
+  const withoutUrls = value.replace(
+    /[a-z][a-z\d+.-]*:\/\/(?:(?![a-z][a-z\d+.-]*:\/\/)[^\s<>"'()[\],])+/gi,
+    token => {
+      const url = new URL(token.replace(/[.,;!?)}\]]+$/, ''));
+      reservedHost(url.hostname.replace(/\.$/, ''));
+      return '';
+    },
+  );
   const emails = /[\w.!#$%&'*+/=?^`{|}~-]+@([a-z\d.-]+\.[a-z]+)/gi;
   for (const match of value.matchAll(emails)) reservedHost(match[1]);
   const withoutEmails = withoutUrls.replace(emails, '');
@@ -234,6 +258,21 @@ function sharedHeaderValues(cases: JobCase[]) {
 
 test('jobs corpus: frequently used header values occur across jobs', () => {
   sharedHeaderValues(loadJobCases());
+});
+
+test('header shape guard rejects values ingest normalizes or cannot produce', () => {
+  validStoredHeaders({});
+  for (const list of [
+    { precedence: 'list' },
+    { precedence: 'junk' },
+    { autoSubmitted: 'auto-replied' },
+    { listId: '<notices.garden.example>' },
+    { listUnsubscribe: 'mailto:leave@garden.example' },
+    { listUnsubscribePost: 'One-Click' },
+    { authenticated: 'true' },
+  ]) {
+    assert.throws(() => validStoredHeaders(list));
+  }
 });
 
 test('header shortcut guard rejects values used more than five times in only one job', () => {
@@ -357,6 +396,7 @@ test('reserved-domain validation covers nested headers and free text', () => {
     text: 'See https://garden.example/path and write wren.alder@home.test.',
     sentence: 'Visit https://garden.example.',
     file: 'Download https://garden.example/receipt.pdf.',
+    adjacent: '[a](https://garden.example),[b](https://pond.test/receipt.pdf)',
     listId: '<news.garden.example>',
     roles: ['category.personal'],
   });
@@ -371,6 +411,9 @@ test('reserved-domain validation covers nested headers and free text', () => {
     { text: 'Visit https://outside.invalid.' },
     { text: 'Download https://outside.invalid/receipt.pdf.' },
     { text: 'See https://garden.example/contact/person@outside.invalid' },
+    { text: '[a](https://garden.example),[b](https://outside.invalid)' },
+    { text: 'https://garden.example,https://outside.invalid' },
+    { text: 'https://garden.examplehttps://outside.invalid' },
   ]) {
     assert.throws(() => safeStrings(value));
   }

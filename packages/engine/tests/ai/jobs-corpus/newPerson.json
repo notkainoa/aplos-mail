@@ -55,8 +55,8 @@
         "subject": "A fellow map maker",
         "date": 1796083260000,
         "list": {
-          "precedence": "list",
-          "listId": "<notices.mapcabinet.example>"
+          "precedence": "bulk",
+          "listId": "(present)"
         },
         "flags": {
           "seen": false,
@@ -166,7 +166,7 @@
         "date": 1796083440000,
         "list": {
           "precedence": "bulk",
-          "listId": "<notices.reedstudio.test>",
+          "listId": "(present)",
           "listUnsubscribe": "<mailto:leave@reedstudio.test>, <https://reedstudio.test/leave>"
         },
         "flags": {
@@ -278,7 +278,7 @@
         "date": 1796083620000,
         "list": {
           "precedence": "bulk",
-          "listId": "<notices.mapcabinet.example>",
+          "listId": "(present)",
           "listUnsubscribe": "<mailto:leave@mapcabinet.example>, <https://mapcabinet.example/leave>"
         },
         "flags": {
@@ -388,8 +388,8 @@
         "subject": "Your hinge demonstration",
         "date": 1796083800000,
         "list": {
-          "precedence": "list",
-          "listId": "<notices.loomhouse.test>",
+          "precedence": "bulk",
+          "listId": "(present)",
           "listUnsubscribe": "<mailto:leave@loomhouse.test>, <https://loomhouse.test/leave>"
         },
         "flags": {
@@ -501,7 +501,7 @@
         "date": 1796083980000,
         "list": {
           "precedence": "bulk",
-          "listId": "<notices.folioport.example>"
+          "listId": "(present)"
         },
         "flags": {
           "seen": false,
@@ -575,7 +575,7 @@
         "date": 1796084100000,
         "list": {
           "precedence": "bulk",
-          "listId": "<notices.smallstage.test>",
+          "listId": "(present)",
           "listUnsubscribe": "<mailto:leave@smallstage.test>, <https://smallstage.test/leave>"
         },
         "flags": {

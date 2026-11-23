@@ -55,8 +55,8 @@
         "subject": "School gate change on December 4",
         "date": 1796083260000,
         "list": {
-          "precedence": "list",
-          "listId": "<notices.northfield-school.test>",
+          "precedence": "bulk",
+          "listId": "(present)",
           "autoSubmitted": "auto-generated"
         },
         "flags": {
@@ -95,7 +95,7 @@
         "date": 1796083320000,
         "list": {
           "precedence": "bulk",
-          "listId": "<notices.ledgergrove.example>",
+          "listId": "(present)",
           "listUnsubscribe": "<mailto:leave@ledgergrove.example>, <https://ledgergrove.example/leave>",
           "autoSubmitted": "auto-generated"
         },
@@ -170,7 +170,7 @@
         "date": 1796083440000,
         "list": {
           "precedence": "bulk",
-          "listId": "<notices.clayhaven.example>",
+          "listId": "(present)",
           "listUnsubscribe": "<mailto:leave@clayhaven.example>, <https://clayhaven.example/leave>",
           "autoSubmitted": "auto-generated"
         },
@@ -216,7 +216,7 @@
         "date": 1796083500000,
         "list": {
           "precedence": "bulk",
-          "listId": "<notices.folioport.example>",
+          "listId": "(present)",
           "autoSubmitted": "auto-generated"
         },
         "flags": {
@@ -290,8 +290,8 @@
         "subject": "Calendar room moved",
         "date": 1796083620000,
         "list": {
-          "precedence": "list",
-          "listId": "<notices.sessionloom.test>",
+          "precedence": "bulk",
+          "listId": "(present)",
           "listUnsubscribe": "<mailto:leave@sessionloom.test>, <https://sessionloom.test/leave>",
           "autoSubmitted": "auto-generated"
         },
@@ -336,7 +336,7 @@
         "date": 1796083680000,
         "list": {
           "precedence": "bulk",
-          "listId": "<notices.plotgate.example>",
+          "listId": "(present)",
           "listUnsubscribe": "<mailto:leave@plotgate.example>, <https://plotgate.example/leave>",
           "autoSubmitted": "auto-generated"
         },
@@ -412,7 +412,7 @@
         "date": 1796083800000,
         "list": {
           "precedence": "bulk",
-          "listId": "<notices.clayhaven.example>",
+          "listId": "(present)",
           "listUnsubscribe": "<mailto:leave@clayhaven.example>, <https://clayhaven.example/leave>",
           "autoSubmitted": "auto-generated"
         },
@@ -452,8 +452,8 @@
         "subject": "Temporary water outage",
         "date": 1796083860000,
         "list": {
-          "precedence": "list",
-          "listId": "<notices.plotgate.example>",
+          "precedence": "bulk",
+          "listId": "(present)",
           "listUnsubscribe": "<mailto:leave@plotgate.example>, <https://plotgate.example/leave>",
           "autoSubmitted": "auto-generated"
         },
@@ -533,7 +533,7 @@
         "date": 1796083980000,
         "list": {
           "precedence": "bulk",
-          "listId": "<notices.lampdock.example>",
+          "listId": "(present)",
           "autoSubmitted": "auto-generated"
         },
         "flags": {
@@ -578,7 +578,7 @@
         "date": 1796084040000,
         "list": {
           "precedence": "bulk",
-          "listId": "<notices.nightpond.test>",
+          "listId": "(present)",
           "listUnsubscribe": "<mailto:leave@nightpond.test>, <https://nightpond.test/leave>",
           "autoSubmitted": "auto-generated"
         },
@@ -660,7 +660,7 @@
         "date": 1796084160000,
         "list": {
           "precedence": "bulk",
-          "listId": "<notices.parcel.example>",
+          "listId": "(present)",
           "listUnsubscribe": "<mailto:leave@parcel.example>, <https://parcel.example/leave>",
           "autoSubmitted": "auto-generated"
         },
@@ -706,7 +706,7 @@
         "date": 1796084220000,
         "list": {
           "precedence": "bulk",
-          "listId": "<notices.reedrail.test>",
+          "listId": "(present)",
           "autoSubmitted": "auto-generated"
         },
         "flags": {
@@ -780,7 +780,7 @@
         "date": 1796084340000,
         "list": {
           "precedence": "bulk",
-          "listId": "<notices.lampdock.example>",
+          "listId": "(present)",
           "listUnsubscribe": "<mailto:leave@lampdock.example>, <https://lampdock.example/leave>",
           "autoSubmitted": "auto-generated"
         },
@@ -892,7 +892,7 @@
         "date": 1796084520000,
         "list": {
           "precedence": "bulk",
-          "listId": "<notices.sessionloom.test>",
+          "listId": "(present)",
           "listUnsubscribe": "<mailto:leave@sessionloom.test>, <https://sessionloom.test/leave>",
           "autoSubmitted": "auto-generated"
         },
@@ -937,7 +937,7 @@
         "date": 1796084580000,
         "list": {
           "precedence": "bulk",
-          "listId": "<notices.cloudheron.test>",
+          "listId": "(present)",
           "listUnsubscribe": "<mailto:leave@cloudheron.test>, <https://cloudheron.test/leave>",
           "autoSubmitted": "auto-generated"
         },
@@ -1014,7 +1014,7 @@
         "date": 1796084700000,
         "list": {
           "precedence": "bulk",
-          "listId": "<notices.greenframe.example>",
+          "listId": "(present)",
           "autoSubmitted": "auto-generated"
         },
         "flags": {
@@ -1054,7 +1054,7 @@
         "date": 1796084760000,
         "list": {
           "precedence": "bulk",
-          "listId": "<notices.mapcabinet.example>",
+          "listId": "(present)",
           "listUnsubscribe": "<mailto:leave@mapcabinet.example>, <https://mapcabinet.example/leave>",
           "autoSubmitted": "auto-generated"
         },
@@ -1129,7 +1129,7 @@
         "date": 1796084880000,
         "list": {
           "precedence": "bulk",
-          "listId": "<notices.greenframe.example>",
+          "listId": "(present)",
           "listUnsubscribe": "<mailto:leave@greenframe.example>, <https://greenframe.example/leave>",
           "autoSubmitted": "auto-generated"
         },
@@ -1169,7 +1169,7 @@
         "date": 1796084940000,
         "list": {
           "precedence": "bulk",
-          "listId": "<notices.ledgergrove.example>",
+          "listId": "(present)",
           "autoSubmitted": "auto-generated"
         },
         "flags": {
@@ -1245,9 +1245,9 @@
         "date": 1796085060000,
         "list": {
           "precedence": "bulk",
-          "listId": "<notices.folioport.example>",
+          "listId": "(present)",
           "listUnsubscribe": "<mailto:leave@folioport.example>, <https://folioport.example/leave>",
-          "autoSubmitted": "auto-replied"
+          "autoSubmitted": "auto-generated"
         },
         "flags": {
           "seen": false,
@@ -1285,7 +1285,7 @@
         "date": 1796085120000,
         "list": {
           "precedence": "bulk",
-          "listId": "<notices.northfield-school.test>",
+          "listId": "(present)",
           "listUnsubscribe": "<mailto:leave@northfield-school.test>, <https://northfield-school.test/leave>",
           "autoSubmitted": "auto-generated"
         },
@@ -1360,7 +1360,7 @@
         "date": 1796085240000,
         "list": {
           "precedence": "bulk",
-          "listId": "<notices.reedstudio.test>",
+          "listId": "(present)",
           "listUnsubscribe": "<mailto:leave@reedstudio.test>, <https://reedstudio.test/leave>",
           "autoSubmitted": "auto-generated"
         },
@@ -1400,7 +1400,7 @@
         "date": 1796085300000,
         "list": {
           "precedence": "bulk",
-          "listId": "<notices.plotgate.example>",
+          "listId": "(present)",
           "listUnsubscribe": "<mailto:leave@plotgate.example>, <https://plotgate.example/leave>",
           "autoSubmitted": "auto-generated"
         },
@@ -1477,7 +1477,7 @@
         "date": 1796085420000,
         "list": {
           "precedence": "bulk",
-          "listId": "<notices.folioport.example>",
+          "listId": "(present)",
           "autoSubmitted": "auto-generated"
         },
         "flags": {
@@ -1515,8 +1515,8 @@
         "subject": "Event moved indoors",
         "date": 1796085480000,
         "list": {
-          "precedence": "list",
-          "listId": "<notices.plotgate.example>",
+          "precedence": "bulk",
+          "listId": "(present)",
           "listUnsubscribe": "<mailto:leave@plotgate.example>, <https://plotgate.example/leave>",
           "autoSubmitted": "auto-generated"
         },

@@ -55,8 +55,8 @@
         "subject": "Trip permission due",
         "date": 1796083260000,
         "list": {
-          "precedence": "list",
-          "listId": "<notices.northfield-school.test>",
+          "precedence": "bulk",
+          "listId": "(present)",
           "autoSubmitted": "auto-generated"
         },
         "flags": {
@@ -95,7 +95,7 @@
         "date": 1796083320000,
         "list": {
           "precedence": "bulk",
-          "listId": "<notices.plotgate.example>",
+          "listId": "(present)",
           "listUnsubscribe": "<mailto:leave@plotgate.example>, <https://plotgate.example/leave>",
           "autoSubmitted": "auto-generated"
         },
@@ -135,7 +135,7 @@
         "date": 1796083380000,
         "list": {
           "precedence": "bulk",
-          "listId": "<notices.sessionloom.test>",
+          "listId": "(present)",
           "listUnsubscribe": "<mailto:leave@sessionloom.test>, <https://sessionloom.test/leave>",
           "autoSubmitted": "auto-generated"
         },
@@ -181,7 +181,7 @@
         "date": 1796083440000,
         "list": {
           "precedence": "bulk",
-          "listId": "<policies.folioport.example>",
+          "listId": "(present)",
           "listUnsubscribe": "<mailto:leave@folioport.example>",
           "autoSubmitted": "auto-generated"
         },
@@ -221,7 +221,7 @@
         "date": 1796083500000,
         "list": {
           "precedence": "bulk",
-          "listId": "<notices.ledgergrove.example>",
+          "listId": "(present)",
           "autoSubmitted": "auto-generated"
         },
         "flags": {
@@ -267,7 +267,7 @@
         "date": 1796083560000,
         "list": {
           "precedence": "bulk",
-          "listId": "<notices.lampdock.example>",
+          "listId": "(present)",
           "listUnsubscribe": "<mailto:leave@lampdock.example>, <https://lampdock.example/leave>",
           "autoSubmitted": "auto-generated"
         },
@@ -348,8 +348,8 @@
         "subject": "Workshop location poll",
         "date": 1796083680000,
         "list": {
-          "precedence": "list",
-          "listId": "<notices.loomhouse.test>",
+          "precedence": "bulk",
+          "listId": "(present)",
           "listUnsubscribe": "<mailto:leave@loomhouse.test>, <https://loomhouse.test/leave>",
           "autoSubmitted": "auto-generated"
         },
@@ -389,7 +389,7 @@
         "date": 1796083740000,
         "list": {
           "precedence": "bulk",
-          "listId": "<notices.folioport.example>",
+          "listId": "(present)",
           "autoSubmitted": "auto-generated"
         },
         "flags": {
@@ -428,7 +428,7 @@
         "date": 1796083800000,
         "list": {
           "precedence": "bulk",
-          "listId": "<notices.parcel.example>",
+          "listId": "(present)",
           "listUnsubscribe": "<mailto:leave@parcel.example>, <https://parcel.example/leave>",
           "autoSubmitted": "auto-generated"
         },
@@ -545,7 +545,7 @@
         "date": 1796083980000,
         "list": {
           "precedence": "bulk",
-          "listId": "<notices.clayhaven.example>",
+          "listId": "(present)",
           "autoSubmitted": "auto-generated"
         },
         "flags": {
@@ -583,8 +583,8 @@
         "subject": "Survey for registered exhibitors",
         "date": 1796084040000,
         "list": {
-          "precedence": "list",
-          "listId": "<notices.northfield-school.test>",
+          "precedence": "bulk",
+          "listId": "(present)",
           "listUnsubscribe": "<mailto:leave@northfield-school.test>, <https://northfield-school.test/leave>",
           "autoSubmitted": "auto-generated"
         },

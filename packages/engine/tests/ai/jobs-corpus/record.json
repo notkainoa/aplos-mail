@@ -437,7 +437,7 @@
         "subject": "Delivery proof copy",
         "date": 1796083860000,
         "list": {
-          "autoSubmitted": "auto-replied"
+          "autoSubmitted": "auto-generated"
         },
         "flags": {
           "seen": false,
@@ -713,7 +713,7 @@
         "date": 1796084280000,
         "list": {
           "precedence": "bulk",
-          "listId": "<notices.lampdock.example>",
+          "listId": "(present)",
           "listUnsubscribe": "<mailto:leave@lampdock.example>, <https://lampdock.example/leave>",
           "autoSubmitted": "auto-generated"
         },
@@ -827,7 +827,7 @@
         "date": 1796084460000,
         "list": {
           "precedence": "bulk",
-          "listId": "<notices.clayhaven.example>",
+          "listId": "(present)",
           "autoSubmitted": "auto-generated"
         },
         "flags": {
@@ -1055,8 +1055,8 @@
         "subject": "Club dues receipt",
         "date": 1796084820000,
         "list": {
-          "precedence": "list",
-          "listId": "<notices.plotgate.example>",
+          "precedence": "bulk",
+          "listId": "(present)",
           "listUnsubscribe": "<mailto:leave@plotgate.example>, <https://plotgate.example/leave>",
           "autoSubmitted": "auto-generated"
         },
@@ -1169,7 +1169,7 @@
         "date": 1796085000000,
         "list": {
           "precedence": "bulk",
-          "listId": "<notices.ledgergrove.example>",
+          "listId": "(present)",
           "listUnsubscribe": "<mailto:leave@ledgergrove.example>, <https://ledgergrove.example/leave>",
           "autoSubmitted": "auto-generated"
         },
@@ -1283,7 +1283,7 @@
         "date": 1796085180000,
         "list": {
           "precedence": "bulk",
-          "listId": "<notices.mapcabinet.example>",
+          "listId": "(present)",
           "autoSubmitted": "auto-generated"
         },
         "flags": {
@@ -1507,7 +1507,7 @@
         "date": 1796085540000,
         "list": {
           "precedence": "bulk",
-          "listId": "<notices.reedstudio.test>",
+          "listId": "(present)",
           "listUnsubscribe": "<mailto:leave@reedstudio.test>, <https://reedstudio.test/leave>",
           "autoSubmitted": "auto-generated"
         },

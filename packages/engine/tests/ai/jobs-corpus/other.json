@@ -632,8 +632,8 @@
         "subject": "Try the larger plan",
         "date": 1796084220000,
         "list": {
-          "precedence": "junk",
-          "listId": "<notices.folioport.example>",
+          "precedence": "bulk",
+          "listId": "(present)",
           "autoSubmitted": "auto-generated"
         },
         "flags": {
@@ -672,7 +672,7 @@
         "date": 1796084280000,
         "list": {
           "precedence": "bulk",
-          "listId": "<notices.clayhaven.example>",
+          "listId": "(present)",
           "listUnsubscribe": "<mailto:leave@clayhaven.example>, <https://clayhaven.example/leave>",
           "autoSubmitted": "auto-generated"
         },
@@ -711,8 +711,8 @@
         "subject": "Studio tools sale",
         "date": 1796084340000,
         "list": {
-          "precedence": "junk",
-          "listId": "<notices.greenframe.example>",
+          "precedence": "bulk",
+          "listId": "(present)",
           "listUnsubscribe": "<mailto:leave@greenframe.example>, <https://greenframe.example/leave>",
           "autoSubmitted": "auto-generated"
         },
@@ -791,7 +791,7 @@
         "date": 1796084460000,
         "list": {
           "precedence": "bulk",
-          "listId": "<notices.mapcabinet.example>",
+          "listId": "(present)",
           "autoSubmitted": "auto-generated"
         },
         "flags": {
@@ -830,7 +830,7 @@
         "date": 1796084520000,
         "list": {
           "precedence": "bulk",
-          "listId": "<notices.clayhaven.example>",
+          "listId": "(present)",
           "listUnsubscribe": "<mailto:leave@clayhaven.example>, <https://clayhaven.example/leave>",
           "autoSubmitted": "auto-generated"
         },
@@ -869,8 +869,8 @@
         "subject": "Your streak misses you",
         "date": 1796084580000,
         "list": {
-          "precedence": "junk",
-          "listId": "<notices.mapcabinet.example>",
+          "precedence": "bulk",
+          "listId": "(present)",
           "listUnsubscribe": "<mailto:leave@mapcabinet.example>, <https://mapcabinet.example/leave>",
           "autoSubmitted": "auto-generated"
         },
@@ -947,7 +947,7 @@
         "date": 1796084700000,
         "list": {
           "precedence": "bulk",
-          "listId": "<notices.folioport.example>",
+          "listId": "(present)",
           "autoSubmitted": "auto-generated"
         },
         "flags": {
@@ -986,8 +986,8 @@
         "subject": "A directory placement offer",
         "date": 1796084760000,
         "list": {
-          "precedence": "junk",
-          "listId": "<notices.loomhouse.test>",
+          "precedence": "bulk",
+          "listId": "(present)",
           "listUnsubscribe": "<mailto:leave@loomhouse.test>, <https://loomhouse.test/leave>",
           "autoSubmitted": "auto-generated"
         },
@@ -1027,7 +1027,7 @@
         "date": 1796084820000,
         "list": {
           "precedence": "bulk",
-          "listId": "<notices.lampdock.example>",
+          "listId": "(present)",
           "listUnsubscribe": "<mailto:leave@lampdock.example>, <https://lampdock.example/leave>",
           "autoSubmitted": "auto-generated"
         },
@@ -1105,7 +1105,7 @@
         "date": 1796084940000,
         "list": {
           "precedence": "bulk",
-          "listId": "<notices.mapcabinet.example>",
+          "listId": "(present)",
           "autoSubmitted": "auto-generated"
         },
         "flags": {
@@ -1143,8 +1143,8 @@
         "subject": "Seasonal pottery sale",
         "date": 1796085000000,
         "list": {
-          "precedence": "junk",
-          "listId": "<notices.clayhaven.example>",
+          "precedence": "bulk",
+          "listId": "(present)",
           "listUnsubscribe": "<mailto:leave@clayhaven.example>, <https://clayhaven.example/leave>",
           "autoSubmitted": "auto-generated"
         },
@@ -1185,7 +1185,7 @@
         "date": 1796085060000,
         "list": {
           "precedence": "bulk",
-          "listId": "<notices.reedstudio.test>",
+          "listId": "(present)",
           "listUnsubscribe": "<mailto:leave@reedstudio.test>, <https://reedstudio.test/leave>",
           "autoSubmitted": "auto-generated"
         },
@@ -1262,8 +1262,8 @@
         "subject": "A badge is waiting",
         "date": 1796085180000,
         "list": {
-          "precedence": "junk",
-          "listId": "<notices.mapcabinet.example>",
+          "precedence": "bulk",
+          "listId": "(present)",
           "autoSubmitted": "auto-generated"
         },
         "flags": {
@@ -1302,7 +1302,7 @@
         "date": 1796085240000,
         "list": {
           "precedence": "bulk",
-          "listId": "<notices.clayhaven.example>",
+          "listId": "(present)",
           "listUnsubscribe": "<mailto:leave@clayhaven.example>, <https://clayhaven.example/leave>",
           "autoSubmitted": "auto-generated"
         },
@@ -1341,8 +1341,8 @@
         "subject": "Sponsored studio roundup",
         "date": 1796085300000,
         "list": {
-          "precedence": "junk",
-          "listId": "<notices.reedstudio.test>",
+          "precedence": "bulk",
+          "listId": "(present)",
           "listUnsubscribe": "<mailto:leave@reedstudio.test>, <https://reedstudio.test/leave>",
           "autoSubmitted": "auto-generated"
         },
@@ -1420,7 +1420,7 @@
         "date": 1796085420000,
         "list": {
           "precedence": "bulk",
-          "listId": "<notices.folioport.example>",
+          "listId": "(present)",
           "autoSubmitted": "auto-generated"
         },
         "flags": {
@@ -1458,8 +1458,8 @@
         "subject": "A sale on storage boxes",
         "date": 1796085480000,
         "list": {
-          "precedence": "junk",
-          "listId": "<notices.parcel.example>",
+          "precedence": "bulk",
+          "listId": "(present)",
           "listUnsubscribe": "<mailto:leave@parcel.example>, <https://parcel.example/leave>",
           "autoSubmitted": "auto-generated"
         },
@@ -1499,7 +1499,7 @@
         "date": 1796085540000,
         "list": {
           "precedence": "bulk",
-          "listId": "<notices.folioport.example>",
+          "listId": "(present)",
           "listUnsubscribe": "<mailto:leave@folioport.example>, <https://folioport.example/leave>",
           "autoSubmitted": "auto-generated"
         },
