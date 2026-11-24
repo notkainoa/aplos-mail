@@ -261,10 +261,31 @@ export interface StartupEngine {
   call(method: string, args: unknown): unknown;
 }
 
+export interface StartupRecovery {
+  /** Asks main for `Engine/restart` when there is a bridge, then reloads the window either way. */
+  readonly restart: () => Promise<void>;
+  /** Asks main for `Diagnostics/copy`; absent without a bridge, since nothing could answer it. */
+  readonly diagnostics?: () => void;
+}
+
+export function startupRecovery(engine: StartupEngine | null, reload: () => void): StartupRecovery {
+  const restart = () =>
+    Promise.resolve()
+      .then(() => engine?.call('Engine/restart', {}))
+      .catch(() => undefined)
+      .then(reload);
+  if (!engine) return { restart };
+  const diagnostics = () => {
+    void Promise.resolve()
+      .then(() => engine.call('Diagnostics/copy', {}))
+      .catch(() => undefined);
+  };
+  return { restart, diagnostics };
+}
+
 /**
  * The fatal screen when the window could not start (DESIGN 7.15): no data runtime and no toasts, so it renders with
- * nothing connected. Restart asks main for `Engine/restart` when the window has the engine bridge, then reloads the
- * window either way; Copy diagnostics asks main directly. Without the bridge there is nothing to copy.
+ * nothing connected. Its actions are `startupRecovery`'s.
  */
 export function StartupFatalHost({
   engine,
@@ -274,17 +295,10 @@ export function StartupFatalHost({
   readonly reload: () => void;
 }) {
   const [restarting, setRestarting] = useState(false);
+  const recovery = startupRecovery(engine, reload);
   const restart = () => {
     setRestarting(true);
-    Promise.resolve()
-      .then(() => engine?.call('Engine/restart', {}))
-      .catch(() => undefined)
-      .finally(reload);
-  };
-  const diagnostics = () => {
-    Promise.resolve()
-      .then(() => engine?.call('Diagnostics/copy', {}))
-      .catch(() => undefined);
+    void recovery.restart();
   };
   return (
     <div className="aplos-shell">
@@ -293,7 +307,7 @@ export function StartupFatalHost({
           kind="unreachable"
           restarting={restarting}
           onRestart={restart}
-          onDiagnostics={diagnostics}
+          onDiagnostics={recovery.diagnostics}
         />
       </Pane>
     </div>

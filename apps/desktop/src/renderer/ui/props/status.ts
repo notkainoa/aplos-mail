@@ -253,8 +253,8 @@ export interface FatalScreenProps {
   restarting: boolean;
   /** Restart engine / Try again (Return). */
   onRestart: () => void;
-  /** Copy or export the content-free diagnostics. */
-  onDiagnostics: () => void;
+  /** Copy or export the content-free diagnostics. Absent when nothing can answer it: the button is left out. */
+  onDiagnostics?: () => void;
 }
 
 /** The damaged-database screen's facts and its three ways out (FatalScreen `kind: 'damaged'`). */
