@@ -20,6 +20,7 @@
 import { StrictMode } from 'react';
 import { createRoot } from 'react-dom/client';
 import { chooseEntry, hasBridgeShape, onboardingMode, transportOf, type EntryInput } from './entry';
+import type { StartupEngine } from './shell/Shell';
 import { answerPrepareClose } from './shell/closeHandshake';
 import { startSystemTheme } from './shell/theme';
 import { scenarioParam } from './onboarding/route';
@@ -71,6 +72,22 @@ async function connectEngine(): Promise<{ layer: DataConnection; client: Client 
   }
 }
 
+/** Whether a root installed its close answer; the fatal screen installs its own only when none did. */
+let closeServed = false;
+
+/** The fatal screen's close answer: it holds no drafts, so it is always ready, over the native bridge (no engine). */
+function serveFatalClose(): void {
+  const bridge = window.aplos;
+  if (closeServed || !bridge) return;
+  closeServed = true;
+  answerPrepareClose(bridge, {
+    save: async () => 'saved',
+    ready: () => bridge.invoke('window.closeReady'),
+    cancel: () => bridge.invoke('window.closeCancel'),
+    notify: () => undefined,
+  });
+}
+
 /**
  * Answers main's `prepare-close` (main keeps the window disabled until it hears `Window/closeReady`). Installed the
  * moment the engine connects, before any chunk loads, so a window that is still loading or shows the fatal screen
@@ -79,6 +96,7 @@ async function connectEngine(): Promise<{ layer: DataConnection; client: Client 
  * close comes, and a chunk that fails there is an unsaved answer, not a window left disabled.
  */
 function serveClose(kind: 'mail' | 'onboarding'): void {
+  closeServed = true;
   const data = () => import('./data');
   answerPrepareClose(window.aplos, {
     save:
@@ -194,11 +212,14 @@ async function bootOnboarding(): Promise<void> {
  * connect, or a root that threw while booting. A development build keeps its blank window and the console.
  */
 async function bootFatal(): Promise<void> {
+  serveFatalClose();
   startSystemTheme();
-  const [{ FatalHost }] = await Promise.all([import('./shell/Shell'), loadMailStyles()]);
+  const [{ StartupFatalHost }] = await Promise.all([import('./shell/Shell'), loadMailStyles()]);
+  const host = (window as { aplosEngine?: Partial<StartupEngine> }).aplosEngine;
+  const engine = typeof host?.call === 'function' ? (host as StartupEngine) : null;
   createRoot(document.getElementById('root')!).render(
     <StrictMode>
-      <FatalHost kind="unreachable" />
+      <StartupFatalHost engine={engine} reload={() => window.location.reload()} />
     </StrictMode>,
   );
 }
