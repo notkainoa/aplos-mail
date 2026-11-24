@@ -240,6 +240,16 @@ describe('change check', () => {
     assert.equal(check(dir, ['--lane', 'nonsense']).code, 2);
   });
 
+  test('deleting a file no row covers is allowed; adding one is not', () => {
+    const dir = makeRepo({ files: { 'old-folder/a.ts': 'a', 'old-folder/b.ts': 'b' } });
+    git(dir, 'rm', '-q', '-r', 'old-folder');
+    git(dir, 'commit', '-q', '-m', 'remove');
+    const res = check(dir);
+    assert.equal(res.code, 0, res.out + res.err);
+    commit(dir, { 'loose-folder/x.ts': 'x' });
+    assert.deepEqual(violationFiles(check(dir, ['--json'])), ['loose-folder/x.ts']);
+  });
+
   test('next-<job>-<slug> acts as every lane that is not reserved', () => {
     const owners = `${OWNERS}
 | \`apps/desktop/src/host/providers/imap/**\` | Round 2 (reserved) | | |
