@@ -79,6 +79,7 @@ Two things change from today's app:
 
 - **Promos** are the user's choice. Onboarding asks; until then they sit in Everything else.
 - **Calendar:** the full week and month view leaves the default version and is planned as an official plug-in later. The calendar smarts stay in the engine: spotting a date in an email, checking you're free, offering to add it, adding it when you say yes. Invitations appear in Needs you with Yes, Maybe and No.
+- **Ask and Today (owner, 2026-11-24):** today's Ask panel becomes the sidebar agent (Part 4). Today's Today panel leaves the default version and moves into the calendar plug-in. The small peek at a day when Aplos offers to add an event stays.
 - **Onboarding** learns from your real mailbox. It shows real examples of your highest-volume kinds and asks what you want done with them, with good defaults for the rest.
 - **Everything is customisable.**
 
@@ -126,7 +127,6 @@ Please correct any of these.
 - Which models the decider uses, and where the confidence line sits.
 - The exact onboarding questions.
 - How to tell a real cold email from mass outreach.
-- What becomes of today's Ask and Today panels.
 - The first milestone.
 
 ## To check before building

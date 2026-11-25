@@ -2155,3 +2155,9 @@ From the owner's review of the UI council. A failed send ("Couldn’t send to Jo
 - **Decision (owner):** sorting works per conversation, not per email. The conversation's newest email decides its job and section, and the short version covers only what is new since the owner last looked.
 - **Why:** one conversation never shows in two sections, and a reply moves the whole conversation to where it now belongs.
 - **Where:** `plans/RETHINK.md` Part 1 item 13; the question is removed from "Still open". Nothing is built yet.
+
+## 2026-11-24: Ask becomes the sidebar agent, Today moves to the calendar plug-in
+
+- **Decision (owner):** today's Ask panel becomes the sidebar agent from `plans/RETHINK.md` Part 4, the one agent that both answers questions and changes the app. Today's Today panel leaves the default version and moves into the calendar plug-in, with the full week and month view. The small peek at a day, shown when Aplos offers to add an event, stays in the default version.
+- **Why:** there is one agent rather than two, and everything calendar-shaped beyond the engine's calendar smarts lives in one optional plug-in.
+- **Where:** `plans/RETHINK.md` Part 2 "Other choices"; the question is removed from "Still open". Nothing is built yet.
