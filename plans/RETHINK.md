@@ -55,6 +55,7 @@ Two things change from today's app:
 10. **The order the decider works in.** Your corrections first, then plain facts about the email (bulk markers, no-reply senders, whether you've written to them), then a decisions model, then a thinking model for the ones the first model was unsure of. The thinking model also settles which section.
 11. **Without any AI model**, sorting still works from the plain facts. Mail from people then all goes to Needs you, in full.
 12. **A newsletter is defined by its job**: recurring writing sent the same to everyone, where nothing in it is about you or needs you. A bulk email with a real date or ask in it is treated as an update or an ask.
+13. **A conversation is one item.** Its newest email decides its job and section, and its short version covers only what is new since you last looked. One conversation never shows in two sections, and a reply moves the whole conversation. (Owner, 2026-11-24.)
 
 ## Part 2: the default version
 
@@ -124,7 +125,6 @@ Please correct any of these.
 - Which kinds get a brief first (shipping, flights, bills and so on).
 - Which models the decider uses, and where the confidence line sits.
 - The exact onboarding questions.
-- Whether a conversation is treated as a whole or message by message.
 - How to tell a real cold email from mass outreach.
 - What becomes of today's Ask and Today panels.
 - The first milestone.

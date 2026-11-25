@@ -2149,3 +2149,9 @@ From the owner's review of the UI council. A failed send ("Couldn’t send to Jo
 
 - **Why:** 42 rows in `budgets.json` were never given a first measurement, and `check:budgets` fails CI once a row's `dueBy` passes. From 2026-11-21 every CI run failed on the `slots` job, `main` included, for a date and not for any change. Most of these rows time screens and paths the rethink (`plans/RETHINK.md`) rebuilds, so measuring them now would time code that is about to go.
 - **What:** every row with no `lastMeasured` now has `dueBy` 2027-01-15. Measured rows and every limit are unchanged. Rows that still apply to the rebuilt app get measured before that date; rows for removed screens get deleted.
+
+## 2026-11-24: a conversation is sorted as one item
+
+- **Decision (owner):** sorting works per conversation, not per email. The conversation's newest email decides its job and section, and the short version covers only what is new since the owner last looked.
+- **Why:** one conversation never shows in two sections, and a reply moves the whole conversation to where it now belongs.
+- **Where:** `plans/RETHINK.md` Part 1 item 13; the question is removed from "Still open". Nothing is built yet.
