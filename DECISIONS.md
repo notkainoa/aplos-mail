@@ -2161,3 +2161,9 @@ From the owner's review of the UI council. A failed send ("Couldn’t send to Jo
 - **Decision (owner):** today's Ask panel becomes the sidebar agent from `plans/RETHINK.md` Part 4, the one agent that both answers questions and changes the app. Today's Today panel leaves the default version and moves into the calendar plug-in, with the full week and month view. The small peek at a day, shown when Aplos offers to add an event, stays in the default version.
 - **Why:** there is one agent rather than two, and everything calendar-shaped beyond the engine's calendar smarts lives in one optional plug-in.
 - **Where:** `plans/RETHINK.md` Part 2 "Other choices"; the question is removed from "Still open". Nothing is built yet.
+
+## 2026-11-24: the first milestone is the block system
+
+- **Decision (owner):** the block system comes first. The default version is then built from those blocks and the sorting is made good, and only after that is the door opened to coding agents. This confirms the order of work that `plans/RETHINK.md` had listed as an assumption.
+- **Rejected:** a Gmail-only new Home first (the owner using new screens on his own mailbox before the blocks exist), and sorting alone, measured on the test set, before any new screens.
+- **Where:** `plans/RETHINK.md` Part 3 item 10. The order-of-work assumption, the day-peek assumption (confirmed with Ask and Today above) and "The first milestone" are removed from their lists. Nothing is built yet.

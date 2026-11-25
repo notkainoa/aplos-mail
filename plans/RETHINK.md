@@ -96,6 +96,7 @@ Two things change from today's app:
 7. **Other mail accounts come after** the default version works well on Gmail. To keep that easy: nothing Gmail-only leaks up into the blocks, and the old Outlook, iCloud and Fastmail code is kept until it is ported.
 8. **Permissions follow one rule.** Anything you can undo, an extension can just do. Anything you can't undo (sending, forwarding, permanent delete) asks first. You can switch the asking off for one extension, and back on. An agent can never grant itself that.
 9. **The engine core's size cap goes up.** The owner agreed on 2026-11-20; the new number will be proposed from a measurement of what the record needs.
+10. **The first milestone is the block system (owner, 2026-11-24).** Define the blocks first, then build the default version from them and get the sorting good, then open the door to coding agents.
 
 The jobs that can start now are in [next/README.md](next/README.md).
 
@@ -116,8 +117,6 @@ Please correct any of these.
 - The three shapes are called line, brief and full.
 - When even the thinking model is unsure, the email is shown in full and stays visible.
 - A model's stated confidence is checked against real corrections before we rely on it.
-- A small peek at that day is shown when Aplos offers to add an event.
-- Order of work: define the blocks, build the default version from them and get the sorting good, then open the door to coding agents.
 
 ## Still open
 
@@ -127,7 +126,6 @@ Please correct any of these.
 - Which models the decider uses, and where the confidence line sits.
 - The exact onboarding questions.
 - How to tell a real cold email from mass outreach.
-- The first milestone.
 
 ## To check before building
 
