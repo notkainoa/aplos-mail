@@ -97,6 +97,7 @@ Two things change from today's app:
 8. **Permissions follow one rule.** Anything you can undo, an extension can just do. Anything you can't undo (sending, forwarding, permanent delete) asks first. You can switch the asking off for one extension, and back on. An agent can never grant itself that.
 9. **The engine core's size cap goes up.** The owner agreed on 2026-11-20; the new number will be proposed from a measurement of what the record needs.
 10. **The first milestone is the block system (owner, 2026-11-24).** Define the blocks first, then build the default version from them and get the sorting good, then open the door to coding agents.
+11. **Two kinds of block (owner, 2026-11-25).** Sections, treatments, rules, themes and keys are settings: a description that runs no code, so anyone can make one by asking the agent. Only panels are code, run walled off from your mail under the same permission rule.
 
 The jobs that can start now are in [next/README.md](next/README.md).
 
@@ -121,7 +122,7 @@ Please correct any of these.
 ## Still open
 
 - How Aplos should differ from Powermove.
-- What a block is technically: its format, how it is kept safe, how it is shared.
+- What a block is technically, beyond the two kinds in Part 3 item 11: each kind's format, how a code panel is kept safe, how blocks are shared.
 - Which kinds get a brief first (shipping, flights, bills and so on).
 - Which models the decider uses, and where the confidence line sits.
 - The exact onboarding questions.

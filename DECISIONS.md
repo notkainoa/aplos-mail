@@ -2167,3 +2167,10 @@ From the owner's review of the UI council. A failed send ("Couldn’t send to Jo
 - **Decision (owner):** the block system comes first. The default version is then built from those blocks and the sorting is made good, and only after that is the door opened to coding agents. This confirms the order of work that `plans/RETHINK.md` had listed as an assumption.
 - **Rejected:** a Gmail-only new Home first (the owner using new screens on his own mailbox before the blocks exist), and sorting alone, measured on the test set, before any new screens.
 - **Where:** `plans/RETHINK.md` Part 3 item 10. The order-of-work assumption, the day-peek assumption (confirmed with Ask and Today above) and "The first milestone" are removed from their lists. Nothing is built yet.
+
+## 2026-11-25: two kinds of block, settings and code panels
+
+- **Decision (owner):** sections, treatments, rules, themes and keys are settings blocks: a description that runs no code, so anyone can make one by asking the agent. Only panels are code blocks, and they run walled off from the mailbox under the same permission rule as every extension.
+- **Rejected:** settings only (nobody could build a new panel), and code only (even a simple section would be a program, and every block would need the strictest checks).
+- **Why:** it matches the split already in `plans/RETHINK.md`: "make a section for my kid's soccer" works for anyone, and someone with a coding agent can redo a panel.
+- **Where:** `plans/RETHINK.md` Part 3 item 11. Still open: each kind's format, how a code panel is kept safe, how blocks are shared. Nothing is built yet.
