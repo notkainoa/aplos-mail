@@ -2195,3 +2195,10 @@ From the owner's review of the UI council. A failed send ("Couldn’t send to Jo
 - **Rejected:** all or nothing (a soccer panel would see bank mail too), and one switch per field and action (people click through long lists, and agents writing panels would ask for everything).
 - **Why:** a niche panel stays inside its own mail, the choice is two questions a person can answer, and it works with topic sections.
 - **Where:** `plans/RETHINK.md` Part 3 item 14; "Still open" narrowed. Nothing is built yet.
+
+## 2026-11-25: a settings block is one text file, with every version kept
+
+- **Decision (owner):** each settings block (section, treatment, rule, theme, keys) is one small text file in Aplos's data folder. Aplos keeps every earlier version, so a block change is undoable and falls on the "can just do it" side of the permission rule. Each file is checked when it loads; a broken one is skipped and named in Settings, never breaking Home.
+- **Rejected:** rows in the mail database (a coding agent could change blocks only through Aplos's own API, and sharing needs an export step), and the database as the truth with file export and import (two copies of every block, and editing an exported file does nothing until it is imported).
+- **Why:** an outside coding agent and a person sharing a block both work with no extra step, and the version history covers undo.
+- **Where:** `plans/RETHINK.md` Part 3 item 15; "Still open" narrowed. Nothing is built yet.
