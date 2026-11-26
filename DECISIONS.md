@@ -2209,3 +2209,10 @@ From the owner's review of the UI council. A failed send ("Couldn’t send to Jo
 - **Rejected:** which mail plus a shape only (what a brief contains is left to the decider, so "show the arrival date and tracking number" cannot be said), and free plain-words instructions ("short, lead with the amount due"), which are hard to check, drift between models and weaken the exact-copy rule in `plans/RETHINK.md` Part 1 item 6.
 - **Why:** briefs become predictable and testable per kind, and the kinds that get a brief are files, not code.
 - **Where:** `plans/RETHINK.md` Part 3 item 16; "Still open" narrowed, and "Which kinds get a brief first" now notes each one is a treatment file. Affects Job 4 (the record, brief not written yet) and the decider: a brief's facts come from its treatment file. Nothing is built yet.
+
+## 2026-11-25: a rule file is which mail plus undoable actions only
+
+- **Decision (owner):** a rule block chooses mail with the same picker as a section and runs only actions that can be undone: archive, label, mark read, snooze, pin, notify. Under the permission rule these just happen, so a rule never asks. Sending, forwarding and deleting are not allowed in a rule.
+- **Rejected:** irreversible actions that ask first unless the owner switches asking off (useful for "forward my receipts to my accountant", but once rule files are shared, a forwarding rule is the easiest way to steal mail; left for its own later decision, with the switch in the core, never in the file), and a plain-words instruction the agent carries out per email (a model call per email, unpredictable, hard to test).
+- **Why:** the first milestone needs no rules that send, and a shared rule file can never move mail out of the mailbox.
+- **Where:** `plans/RETHINK.md` Part 3 item 17; "Still open" narrowed. Nothing is built yet.
