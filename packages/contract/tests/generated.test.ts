@@ -43,7 +43,6 @@ test('the generated tables partition the registry', () => {
   assert.ok(
     !tables.rendererMethods.some(name => (tables.hostMethods as readonly string[]).includes(name)),
   );
-  assert.equal(tables.legacyMethods.length, 66);
 });
 
 /** Freeze FR-9 (ARCH 12.3 item 6): an MCP agent following injected mail must not delete anything unprompted. */

@@ -298,7 +298,7 @@
         },
         {
           "kind": "fact",
-          "ref": "packages/contract/src/legacy/ask.ts: voice feature with Groq or OpenAI speech to text",
+          "ref": "packages/engine/src/ai/providers.ts: voice feature with Groq or OpenAI speech to text",
           "maxAgeDays": null
         }
       ],
@@ -385,7 +385,7 @@
         },
         {
           "kind": "fact",
-          "ref": "packages/contract/src/legacy/ask.ts: Groq \"The default for every feature\"",
+          "ref": "packages/engine/src/ai/providers.ts: Groq \"The default for every feature\"",
           "maxAgeDays": null
         }
       ],
@@ -423,7 +423,7 @@
       "evidence": [
         {
           "kind": "fact",
-          "ref": "packages/contract/src/legacy/ask.ts askProviders and speech-to-text list",
+          "ref": "packages/engine/src/ai/providers.ts askProviders and speech-to-text list",
           "maxAgeDays": null
         },
         {
@@ -442,7 +442,7 @@
       "evidence": [
         {
           "kind": "fact",
-          "ref": "packages/contract/src/legacy/ask.ts: OpenRouter \"Hundreds of models on one key\"; OpenCode Go serves third-party models (Kimi, GLM, DeepSeek) on one plan",
+          "ref": "packages/engine/src/ai/providers.ts: OpenRouter \"Hundreds of models on one key\"; OpenCode Go serves third-party models (Kimi, GLM, DeepSeek) on one plan",
           "maxAgeDays": null
         },
         {
@@ -716,7 +716,7 @@
         },
         {
           "kind": "fact",
-          "ref": "packages/contract/src/legacy/ask.ts Ollama and LM Studio default local base URLs",
+          "ref": "packages/engine/src/ai/providers.ts Ollama and LM Studio default local base URLs",
           "maxAgeDays": null
         }
       ],

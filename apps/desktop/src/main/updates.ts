@@ -1,4 +1,19 @@
-import type { UpdateInfo, UpdateStatus } from '@aplos/contract/legacy/types';
+/** In-app update state, from the main process (`update.status`, `update` events). */
+export type UpdateStatus =
+  | { state: 'disabled'; reason: string }
+  | { state: 'idle' }
+  | { state: 'checking' }
+  | { state: 'current' }
+  | { state: 'downloading'; version: string; percent?: number }
+  | { state: 'ready'; version: string }
+  | { state: 'error'; message: string };
+/** `dismissed`: the owner chose Later for the ready update; the notice stays hidden until a manual check or the next launch. */
+export interface UpdateInfo {
+  currentVersion: string;
+  status: UpdateStatus;
+  lastCheck?: string;
+  dismissed?: boolean;
+}
 
 /** The part of electron-updater's AppUpdater this app uses; tests pass a fake. */
 export interface Updater {

@@ -1,7 +1,9 @@
 import { app, BrowserWindow, nativeTheme } from 'electron';
 import { join } from 'node:path';
 import { DraftOwnership } from './desktop-policy';
-import type { AppState, Listener } from '@aplos/contract/legacy/types';
+import type { Listener } from '../shared/native-bridge';
+
+type Theme = 'light' | 'dark' | 'system';
 import { rendererFile, devURL, trustedURL, external } from './security';
 import { handleLink, pendingLinks } from './protocol';
 import { realEngine } from './engine-host';
@@ -80,11 +82,11 @@ function focusMain(): Promise<BrowserWindow | undefined> {
 }
 // Runs on every state change. Assigning themeSource, even to the same value, resets the macOS app appearance
 // and notifies theme observers, and the badge redraws the Dock tile, so only touch what actually changed.
-let activeTheme: AppState['settings']['theme'] | undefined,
+let activeTheme: Theme | undefined,
   syncingTheme = false;
 // The one theme mirror: the engine feeds it through its `appearance` host event (seeded at every engine start — main
 // holds no settings copy).
-function hostTheme(theme: AppState['settings']['theme']) {
+function hostTheme(theme: Theme) {
   if (activeTheme === theme) return;
   activeTheme = theme;
   syncTheme(true);

@@ -9,7 +9,7 @@ import {
   teamIdentifier,
   type Updater,
 } from '../src/main/updates';
-import type { UpdateInfo } from '@aplos/contract/legacy/types';
+import type { UpdateInfo } from '../src/main/updates';
 
 /** Stands in for electron-updater: each check runs the scripted events, like the real updater emits them. */
 class FakeUpdater extends EventEmitter implements Updater {

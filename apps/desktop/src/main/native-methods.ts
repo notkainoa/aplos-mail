@@ -23,14 +23,15 @@ import {
 } from './windows';
 import { updates, restartToUpdate, cancelInstall } from './updater';
 import { cancelQuit } from './lifecycle';
-import { legacyDesktopMethods, type desktopMethods } from '@aplos/contract/allowlists';
+import type { desktopMethods } from '@aplos/contract/allowlists';
+import { nativeMethodNames } from '../shared/native-bridge';
 import { isTest, recordNotification } from './test-mode';
 import { finishOptionsOf, settingsPaneUrl } from '../host/lifecycle';
 import { fileNameOf } from '../shared/desktop-v1';
 import { openAttachment, saveAttachment, sweepTemp, type FileIo } from '../shared/attachment-files';
 import { markQuarantined } from '../shared/quarantine';
 
-const nativeMethods = new Set<string>(legacyDesktopMethods);
+const nativeMethods = new Set<string>(nativeMethodNames);
 // Contract v1 desktop methods main already answers. A window reaches them once preload moves to the generated v1 table.
 const v1Served: (typeof desktopMethods)[number][] = [
   'Window/openOnboarding',

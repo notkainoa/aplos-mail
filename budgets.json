@@ -437,7 +437,7 @@
       "calibration": "calibrate",
       "value": null,
       "unit": null,
-      "notes": "No number in the plans. Measured 727,525 bytes on the legacy renderer (2026-10-28); the value stays unset until the new renderer lands, then it is recorded with --record and only tightens.",
+      "notes": "No number in the plans. The value stays unset until it is recorded with --record; then it only tightens.",
       "source": "plans/40-platform-quality.md Q3 deliverable 6; plans/40-platform-quality.md Q3 acceptance",
       "maxAgeDays": 30,
       "lastMeasured": "2026-10-28",

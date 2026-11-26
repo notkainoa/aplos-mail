@@ -75,7 +75,6 @@ Every path in the repo belongs to exactly one lane, and each lane belongs to one
 | `package-lock.json` | Changes only together with a manifest change in the same PR. On conflict, take `revamp`'s lockfile and re-run `npm install`; never hand-merge it. |
 | `apps/desktop/package.json`, root `package.json` | `plat-ci` owns them. A lane that needs a dependency or a script adds it in its own PR with `plat-ci`'s written approval on the PR, or asks `plat-ci` with a REQUEST. A package's own `package.json` under `packages/<name>/` belongs to that package's lane. |
 | `AGENTS.md` | `ui-foundation` adds the design rule from plan 30 U0 by PR; the integrator approves. |
-| Legacy folder: `packages/contract/src/legacy/**` | Read-only reference after the restructure. A lane edits a legacy file only when it moves that file's code into its own paths. The integrator deletes them in Phase 2 with each owning lane (roadmap 2.6). |
 | Today's tests, `apps/desktop/tests/*.test.ts` and `apps/desktop/tests/fixtures/**` | Kept green as long as their legacy code exists. Edited only by the restructure and by the lane that replaces the code under test; deleted in Phase 2 with that code. |
 | `research/**` | Read-only reference. Nobody edits it in this round. (`mockups/**` is the integrator's row above: an owner-decision edit only.) |
 | `packages/engine/src/methods/<area>.ts` not listed above | F5 creates one stub per contract area. If F5 adds an area this file does not name, `eng-contract` names the owning lane in its PR and the integrator adds it here. |
