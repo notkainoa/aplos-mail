@@ -77,7 +77,7 @@ function input(text = ''): LaneInput {
   };
 }
 
-test('ambiguous and empty person mail stays visible without mutating its input', () => {
+test('new person mail stays visible without mutating its input', () => {
   for (const text of [
     '',
     'Hello there',
@@ -90,8 +90,8 @@ test('ambiguous and empty person mail stays visible without mutating its input',
     const result = jobFor(value);
     assert.ok(!['other', 'record'].includes(result.job));
     assert.deepEqual(value, before);
-    assert.equal(result.confidence, 'unsure');
-    assert.equal(result.job, 'ask');
+    assert.equal(result.job, 'newPerson');
+    if (!text) assert.equal(result.confidence, 'unsure');
   }
   const value = input();
   value.message.from = undefined;
@@ -123,7 +123,7 @@ test('an old request in a reply subject is not a confident new ask', () => {
   value.knownCorrespondent = true;
   value.userReplied = true;
   value.message.subject = 'Re: Could you sign this?';
-  assert.equal(jobFor(value).confidence, 'unsure');
+  assert.deepEqual(jobFor(value), { job: 'update', confidence: 'sure' });
 });
 
 test('automated job signals and conflicts', () => {
@@ -144,4 +144,50 @@ test('automated job signals and conflicts', () => {
   assert.deepEqual(jobFor(value), { job: 'ask', confidence: 'unsure' });
   value.text = '> Could you review this?';
   assert.equal(jobFor(value).confidence, 'unsure');
+});
+
+test('unknown nonautomated senders are new people even when asking a question', () => {
+  const value = input('Could you tell me more?');
+  assert.deepEqual(jobFor(value), { job: 'newPerson', confidence: 'sure' });
+  value.message.list = { listUnsubscribe: '<https://sender.example/leave>' };
+  assert.deepEqual(jobFor(value), { job: 'ask', confidence: 'unsure' });
+});
+
+test('known personal updates, questions and documentary conflicts', () => {
+  const value = input('The rehearsal went well.');
+  value.knownCorrespondent = true;
+  assert.deepEqual(jobFor(value), { job: 'update', confidence: 'sure' });
+  value.text = 'Are you attending?';
+  assert.equal(jobFor(value).job, 'ask');
+  value.text = 'The signed copy is attached.';
+  assert.deepEqual(jobFor(value), { job: 'update', confidence: 'unsure' });
+  value.text = 'See you by tomorrow';
+  assert.equal(jobFor(value).job, 'ask');
+});
+
+test('editorial, promotional, app and structured mail use distinct signal families', () => {
+  const value = input('This edition contains essays.');
+  value.message.from = { address: 'news@sender.example' };
+  value.message.list = { precedence: 'bulk', listId: '(present)' };
+  assert.deepEqual(jobFor(value), { job: 'read', confidence: 'sure' });
+  value.text = 'A discount coupon';
+  assert.deepEqual(jobFor(value), { job: 'other', confidence: 'sure' });
+  value.message.from = { address: 'notifications@sender.example' };
+  value.text = 'Activity in the application';
+  assert.deepEqual(jobFor(value), { job: 'other', confidence: 'sure' });
+  value.text = 'Your receipt';
+  assert.deepEqual(jobFor(value), { job: 'record', confidence: 'sure' });
+  value.text = 'A refund receipt';
+  assert.deepEqual(jobFor(value), { job: 'update', confidence: 'unsure' });
+  value.text = 'Details attached';
+  for (const kind of ['delivery', 'reservation'] as const) {
+    value.structured = [{ kind }];
+    assert.equal(jobFor(value).job, 'update');
+  }
+  value.structured = [{ kind: 'bill', final: true }];
+  assert.equal(jobFor(value).job, 'record');
+  value.structured = [{ kind: 'bill', due: '2027-01-10' }];
+  assert.equal(jobFor(value).job, 'ask');
+  value.structured = [{ kind: 'invite' }];
+  assert.equal(jobFor(value).job, 'ask');
 });
