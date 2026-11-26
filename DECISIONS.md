@@ -2188,3 +2188,10 @@ From the owner's review of the UI council. A failed send ("Couldn’t send to Jo
 - **Rejected:** panels running inside the app, trusted once installed (one bad panel could read all mail and send, so the permission rule would be a promise, not a wall), and our panels inside with other people's walled off (two paths that drift, and our Home would get powers the public blocks lack, against `plans/RETHINK.md` Part 3 item 2).
 - **Why:** the permission rule is enforced rather than trusted, and the default version proves the public blocks are enough.
 - **Where:** `plans/RETHINK.md` Part 3 item 13; "Still open" narrowed. Job 6 (screen blocks) in `plans/next/README.md` now names the speed experiment it waits on. Nothing is built yet.
+
+## 2026-11-25: what a panel may see is two choices
+
+- **Decision (owner):** when a panel is added, the owner makes two choices. Which mail: all of it, or only named sections. How much: the record only (job, sender, subject, the short version), or the full text too. Our own Home asks for all mail and the record only, because email bodies render in the core's safe frame. What a panel may do is unchanged: the permission rule in `plans/RETHINK.md` Part 3 item 8.
+- **Rejected:** all or nothing (a soccer panel would see bank mail too), and one switch per field and action (people click through long lists, and agents writing panels would ask for everything).
+- **Why:** a niche panel stays inside its own mail, the choice is two questions a person can answer, and it works with topic sections.
+- **Where:** `plans/RETHINK.md` Part 3 item 14; "Still open" narrowed. Nothing is built yet.
