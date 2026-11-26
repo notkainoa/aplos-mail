@@ -2,11 +2,13 @@
 
 Paths below are relative to `apps/desktop` since the repo became a monorepo.
 
+**Status:** this spike measured the old engine, which Job 3 deleted (readable at the tag `legacy-final`; its provider adapters are listed in `plans/next/legacy-providers.md`). What still holds for the current engine: `packages/engine/tests/portability.test.ts` bundles `packages/engine/src` for `platform: 'neutral'` and fails on any Node or Electron import. The file names, sizes and adapter rows below are the old engine's.
+
 Question: can an iOS/Android app reuse the Aplos mail engine, with no server, the way the desktop app does?
 
 ## What was checked (2026-10-16)
 
-- `packages/engine/src` (today's engine in `legacy/`: store, merge rules, sync gate, provider contract, address discovery, DNS checker) bundles with esbuild for `platform: 'neutral'`. That build has no Node or Electron modules and no CommonJS `require`, and is about 93 KB minified, `fast-xml-parser` included. `packages/engine/tests/portability.test.ts` keeps it that way: it walks every subfolder, and adding a Node import anywhere in the engine fails `npm test`.
+- `packages/engine/src` (then the old engine: store, merge rules, sync gate, provider contract, address discovery, DNS checker) bundles with esbuild for `platform: 'neutral'`. That build has no Node or Electron modules and no CommonJS `require`, and is about 93 KB minified, `fast-xml-parser` included. `packages/engine/tests/portability.test.ts` keeps it that way: it walks every subfolder, and adding a Node import anywhere in the engine fails `npm test`.
 - The bundle loads and runs in plain JavaScriptCore (macOS `jsc -m`, the engine iOS uses under React Native's JSC mode). The merge rules, sync gate, known-domain lookup, autoconfig parsing and full-text query building all gave the same results as under Node.
 - Bare JavaScriptCore has no `URL`, `URLSearchParams`, `fetch` or `AbortSignal`, so converting non-ASCII domain names to ASCII returned "not a domain", and DNS lookups need a fetch. React Native and Hermes provide `fetch` and `AbortController`. Their built-in `URL` is incomplete, so a mobile build needs `react-native-url-polyfill` (or a small punycode function in `dns.ts`).
 

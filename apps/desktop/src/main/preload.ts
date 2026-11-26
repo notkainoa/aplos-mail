@@ -1,11 +1,10 @@
 import { contextBridge, ipcRenderer } from 'electron';
-import type { Bridge, Listener } from '@aplos/contract/legacy/types';
-import { legacyMethods } from '@aplos/contract/allowlists';
+import { nativeMethodNames, type Bridge, type Listener } from '../shared/native-bridge';
 import { exposeEngineBridge } from '../host/transports/port';
 import { createEventHub } from '../shared/event-hub';
 import { MAIL_KEY_CHANNEL, mailKeyEvent } from '../shared/mail-keys';
 
-const allowed = new Set<string>(legacyMethods);
+const allowed = new Set<string>(nativeMethodNames);
 const hub = createEventHub();
 ipcRenderer.on('aplos:event', (_event: Electron.IpcRendererEvent, event: Parameters<Listener>[0]) =>
   hub.emit(event),

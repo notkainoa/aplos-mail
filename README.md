@@ -10,9 +10,9 @@ An npm-workspaces monorepo. Run every command from the repo root.
 
 | Path | What it is |
 |---|---|
-| `apps/desktop` | The Electron app (macOS now; Windows and Linux would be more electron-builder targets). Its source, tests, scripts, assets and build config live here. Paths elsewhere in these docs, such as `src/main` or `scripts/verify-release.mjs`, are relative to this folder. |
+| `apps/desktop` | The Electron app (macOS now; Windows and Linux would be more electron-builder targets). Its source, tests, scripts, assets and build config live here. Paths elsewhere in these docs, such as `src/main` or `scripts/verify-release-real.mjs`, are relative to this folder. |
 | `apps/web` | The marketing website and a draft privacy policy (Vite + React, static output). See `apps/web/README.md`. |
-| `packages/` | Reserved for shared code, such as the platform-neutral engine when an iOS app needs it (see DECISIONS.md). |
+| `packages/` | Shared workspaces: `engine` (the platform-neutral engine), `contract` (contract v1), plus `contract-fixture`, `emulators` and `mail-html`. |
 | `scripts/launch.mjs` | Root shim for the desktop launcher. |
 
 ## Run
@@ -33,7 +33,7 @@ npm run web       # Website dev server: http://127.0.0.1:5273
 npm run web:build # Build the website to apps/web/dist
 ```
 
-Put the ignored `.env` at the repo root (`apps/desktop/.env` also works). `npm run verify:release`, `npm run verify:release:real` and `npm run verify:large` run the post-package checks described below.
+Put the ignored `.env` at the repo root (`apps/desktop/.env` also works). `npm run verify:release:real` runs the post-package check described below.
 
 Original demo mail works immediately and stays local, including Send. Demo recipients use reserved `.example` addresses. Connect a real account only when you want real mailbox access; Send and calendar changes then affect that account.
 
@@ -42,10 +42,6 @@ Original demo mail works immediately and stays local, including Send. Demo recip
 Pushing a `vX.Y.Z` tag builds signed (when the certificate secrets exist), notarized DMGs and ZIPs on GitHub Actions and publishes them to a draft GitHub Release; see [RELEASING.md](RELEASING.md). Installed copies check GitHub Releases a minute after launch and every 6 hours, download in the background and offer **Restart** / **Later**; nothing installs until you choose Restart. electron-updater on macOS can only install an update into an app signed with a Developer ID, so updates are switched off (with the reason in Settings → General) in development, the browser preview, and unsigned or ad-hoc signed builds, including every build made before the owner's certificate is configured.
 
 ## AI configuration
-
-Run `npm run eval:groq -- --runs=2` for eight focused semantic evaluations per run against the actual Groq adapter. These use only original synthetic text, covering facts, deadlines, exact event times, ambiguity, citations, missing evidence, recipients and email prompt injection. The backend reads `GROQ_API_KEY`; no key is written to the ignored `artifacts/groq-evaluation.json` report. Missing keys or any failed assertion produce a failing exit status. Ordinary `npm test` stays offline. A passing corpus provides evidence for those cases, not a guarantee of all model behavior.
-
-For isolated provider development, run `npm run dev:emulated` and open the displayed local URL. Add Google or Outlook through the normal account dialog: the real adapters complete OAuth/PKCE, refresh and mailbox operations against a loopback-only protocol emulator. Profiles and mail are original synthetic fixtures; delivery stays inside the emulator and only `.test`/`.example` recipients are accepted. Other providers and network discovery are disabled. Storage is a new temporary folder per run, removed at shutdown; normal desktop/preview data and real OAuth configuration are not used. AI is disabled by default; `npm run dev:emulated -- --live-ai` enables actual Groq calls with the backend environment key. The emulator covers the implemented development scenarios, not the complete provider APIs or live-provider acceptance. `tests/emulation.test.ts` repeats onboarding, refresh, incremental sync, triage retry/Undo, reconnect, local send and credential/database restart through the application HTTP API on a random loopback port.
 
 Groq is the default for every AI feature: Groq-hosted `openai/gpt-oss-120b` for Ask, summaries, drafts and plans, and `whisper-large-v3-turbo` for speech. Settings → AI lists the providers (Groq, ChatGPT, Claude, Gemini, OpenRouter, OpenCode Go, Ollama, LM Studio, a custom OpenAI-compatible server) and lets you pick the model for each feature; Voice can use Groq or OpenAI speech models. Ollama and LM Studio running on this Mac need no key: start the app and pick a model that can use tools. When a feature runs, its email context is sent only to the provider you chose for it. Automatic classification runs for new Google mail; automatic calendar writes require enabling the calendar preference.
 
@@ -65,18 +61,9 @@ Microphone recording requires macOS permission; the app explains permission fail
 
 The implemented adapter supports mailbox sync/search, label mutations, attachments, verified sending aliases and their Gmail signatures, MIME sending with reply headers and Bcc, calendar listing and event create/update/delete. Alias/signature access uses the Gmail settings scope; a missing grant falls back visibly to the primary address. Live Google verification is **not complete** without Aplos-owned OAuth configuration and an authorized test mailbox. Mocked adapter tests are not a substitute for that verification. Aplos never reuses the reference app’s credentials.
 
-## Connect Outlook, iCloud, Fastmail and other accounts
+## Other accounts
 
-Choose **Add account** (Settings → Accounts, or the welcome screen) and enter your address. Aplos recognizes common mail domains, looks up a custom domain's MX records over DNS-over-HTTPS, then tries the domain's published autoconfig file and Thunderbird's ISPDB. You can also pick a provider directly.
-
-- **Outlook / Microsoft 365** uses Microsoft Graph with browser sign-in (PKCE, loopback redirect, no client secret). Register your own app in Microsoft Entra under "Mobile and desktop applications" with redirect URI `http://localhost`, allow public client flows, grant `Mail.ReadWrite`, `Mail.Send`, `Calendars.ReadWrite`, `MailboxSettings.Read`, `User.Read` and `offline_access`, then set `MICROSOFT_CLIENT_ID` (and optionally `MICROSOFT_TENANT`). Saving a calendar event with guests through Outlook sends invitations; Graph has no silent option.
-- **iCloud Mail** uses IMAP/SMTP with an app-specific password from your Apple Account, plus iCloud Calendar over CalDAV. Yahoo and AOL use app passwords. **Other** accepts any IMAP/SMTP server over TLS or STARTTLS, with an optional CalDAV calendar.
-- **Fastmail** uses JMAP with an API token (Settings → Privacy & Security → Connected apps & API tokens; Email and Email submission access). Calendar is not connected for Fastmail yet.
-- Proton Mail needs Proton Mail Bridge, which Aplos does not support yet.
-
-Folder-based hosts (Outlook, IMAP, JMAP) have no labels: Done or Later with the archive action moves mail to the Archive folder, and the read/unread actions leave it in the inbox. Passwords, tokens and refresh tokens are encrypted in per-provider files under the data folder with a key that the macOS keychain protects (`engine-key.bin`), and never reach the renderer or app state. None of these providers has been verified against a live mailbox yet; their tests run against fake servers.
-
-**Custom domain check** (Settings → Accounts) reads a domain's MX, SPF, DKIM, DMARC and MTA-STS records over DNS-over-HTTPS and explains each problem with the record to add.
+This build connects Gmail and Google Calendar. The earlier Outlook, iCloud/IMAP, Fastmail/JMAP and CalDAV adapters were removed; `plans/next/legacy-providers.md` lists where their code is at the tag `legacy-final` and what was ever tested.
 
 ## Use Aplos on more than one device
 
@@ -94,11 +81,7 @@ Desktop state is stored under `~/Library/Application Support/Aplos Mail`; browse
 
 `npm test` covers persistence, triage/undo, reminders, draft concurrency/recovery, delayed sends, validation, scoped AI proposals/citations/cancellation, OAuth PKCE/state, MIME, label mapping, encrypted credentials, calendar mutations, and desktop request/ownership policies. Live Groq was verified with synthetic text and audio. Browser and packaged-app acceptance results, exact remaining blockers, and REA limitations are recorded in `PROGRESS.md` and `TODO.md`.
 
-After packaging, run `npm run verify:release` for a repeatable check of the actual release bundle. It uses a fresh temporary demo mailbox and separate Chromium profile, checks the renderer/preload/engine bridge, search/paging, triage/Undo, attachments, local send/Undo, calendar, popout ownership and immediate-close draft saving, then kills the engine and restarts the desktop to verify recovery. It never connects a mailbox or sends external email. The temporary folder retains its log and JSON report. Add `--live-ai` to verify Groq summaries, proofreading, proposals, Ask/citations, calendar extraction and transcription of generated speech with an existing backend key. Add `--keep-open` to leave the isolated test app running for manual inspection; quit it afterward. The test enables a temporary loopback debugging port only for its own app process.
-
-`verify:release` pins the legacy engine (`APLOS_ENGINE=legacy`) until the legacy code is deleted. `npm run verify:release:real` is its twin for the new engine, the default in every build: it launches the packaged app in hidden test mode (`APLOS_TEST=1`, `APLOS_ENGINE=real`) on a throwaway folder, loads the demo mail (no account, nothing sent outside the folder) and checks that the new engine starts and `mail.db` (never `aplos.db`) is created, then triage and Undo, message reads, a draft and a queued send with Undo, settings, refusal of invalid and unknown calls, recovery after the engine process is killed, and a desktop restart. Package first: `npm run package`.
-
-`npm run bench:mailbox -- --label=optimized --keep` creates 10,000 original synthetic threads with 20,000 messages, approximately 2,000 characters of text plus HTML per message. It measures ingestion, search, changed-row writes, database reopen, service startup, paging and compact triage/Undo. Results go to ignored `artifacts/mailbox-optimized.json`. `--count=N` changes the size; omit `--keep` to remove its temporary database automatically. The ordinary suite includes one lighter 10,000-thread regression. After packaging, `npm run verify:large` uses the retained default fixture to verify actual desktop windowing, scrolling to both ends, keyboard navigation, search and compact mutations, with a separate Chromium profile. Only synthetic demo accounts are accepted. Its report is `artifacts/large-desktop-verification.json`; no live mailbox is used. Measurements are host/fixture-specific; benchmark peak RSS includes harness copies, not just the app. The engine and renderer still cache message bodies in memory; windowing limits mounted rows, not mailbox memory.
+After packaging, `npm run verify:release:real` launches the packaged app in hidden test mode (`APLOS_TEST=1`) on a throwaway folder, loads the demo mail (no account, nothing sent outside the folder) and checks that the new engine starts and `mail.db` (never `aplos.db`) is created, then triage and Undo, message reads, a draft and a queued send with Undo, settings, refusal of invalid and unknown calls, recovery after the engine process is killed, and a desktop restart. Package first: `npm run package`.
 
 This is a local personal build. It has no automatic distribution/update server or Developer ID notarization. Rebuild to update.
 

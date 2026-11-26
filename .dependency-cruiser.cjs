@@ -29,11 +29,8 @@ module.exports = {
     {
       name: 'contract-isolation',
       severity: 'error',
-      comment: "boundaries contract: only zod and the package's own files (except src/legacy)",
-      from: {
-        path: '^packages/contract/(src|generated)/',
-        pathNot: '^packages/contract/src/legacy/',
-      },
+      comment: "boundaries contract: only zod and the package's own files",
+      from: { path: '^packages/contract/(src|generated)/' },
       to: {
         pathNot: '^(packages/contract/(src|generated)/|node_modules/zod/)',
         dependencyTypesNot: ['core'],
@@ -44,10 +41,7 @@ module.exports = {
       severity: 'error',
       comment:
         'boundaries contract: builtins are not zod or own files, so they are denied too (the allow-list is exhaustive)',
-      from: {
-        path: '^packages/contract/(src|generated)/',
-        pathNot: '^packages/contract/src/legacy/',
-      },
+      from: { path: '^packages/contract/(src|generated)/' },
       to: { dependencyTypes: ['core'] },
     },
     {
@@ -64,13 +58,6 @@ module.exports = {
       comment: 'boundaries renderer: the renderer must not spawn processes',
       from: { path: '^apps/desktop/src/renderer/' },
       to: { path: '^(node:)?child_process$' },
-    },
-    {
-      name: 'no-legacy-imports',
-      severity: 'error',
-      comment: 'boundaries legacy: legacy/ code may be imported only by other legacy code',
-      from: { pathNot: '(^|/)legacy/' },
-      to: { path: '(^|/)legacy/' },
     },
     {
       name: 'no-circular-engine',

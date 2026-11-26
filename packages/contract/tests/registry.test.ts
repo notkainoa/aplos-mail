@@ -9,7 +9,6 @@ import {
   methodsByArea,
   scopes,
 } from '../src/index';
-import { legacyCoverage, legacyMethods } from '../src/legacy-methods';
 
 test('every method is Type/verb with a host, an owning area, a scope, a kind and a summary', () => {
   for (const name of methodNames) {
@@ -120,17 +119,4 @@ test('every method the plans name exists', () => {
     named.filter(name => !isMethod(name)),
     [],
   );
-});
-
-test('every legacy method is tagged once and covered by v1 methods that exist', () => {
-  assert.equal(
-    Object.keys(legacyMethods).length,
-    66,
-    'the 47 engine and 19 desktop methods of plan 10 E1 item 3',
-  );
-  assert.equal(Object.values(legacyMethods).filter(h => h === 'engine').length, 47);
-  for (const [legacy, replacements] of Object.entries(legacyCoverage)) {
-    assert.ok(replacements.length > 0, legacy);
-    for (const name of replacements) assert.ok(isMethod(name), `${legacy} → ${name}`);
-  }
 });

@@ -10,7 +10,6 @@ import { format, resolveConfig } from 'prettier';
 import * as z from 'zod/mini';
 import * as contract from '../src/index';
 import { apiVersion, Bytes, getMethod, methodNames, scopes, type MethodDef } from '../src/index';
-import { legacyMethods } from '../src/legacy-methods';
 
 const root = join(import.meta.dirname, '..');
 const sorted = (names: Iterable<string>) => [...names].sort();
@@ -110,29 +109,6 @@ export function renderMethods(): string {
       'The data-dependent scope check a handler adds (`MethodSpec.scopeRule`, freeze FR-3 and FR-4).',
     ),
     `/** Argument paths a listener caller may not set (\`MethodSpec.windowOnlyArgs\`, freeze FR-5). */\nexport const windowOnlyArgs: Record<string, readonly string[]> = {\n${defs.flatMap(([n, d]) => (d.windowOnlyArgs ? [`  '${n}': [${d.windowOnlyArgs.map(a => `'${a}'`).join(', ')}],`] : [])).join('\n')}\n};\n`,
-    list(
-      'legacyEngineMethods',
-      sorted(
-        Object.entries(legacyMethods)
-          .filter(([, h]) => h === 'engine')
-          .map(([n]) => n),
-      ),
-      "Today's engine method names (0.2.3), until Phase 2.",
-    ),
-    list(
-      'legacyDesktopMethods',
-      sorted(
-        Object.entries(legacyMethods)
-          .filter(([, h]) => h === 'desktop')
-          .map(([n]) => n),
-      ),
-      "Today's desktop method names (0.2.3), until Phase 2.",
-    ),
-    list(
-      'legacyMethods',
-      sorted(Object.keys(legacyMethods)),
-      "The union of today's three hand lists (preload, electron, server).",
-    ),
   ];
   return parts.join('\n');
 }

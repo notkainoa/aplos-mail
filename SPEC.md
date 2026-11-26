@@ -38,10 +38,10 @@ Limits: broad REA pass timed out after retaining inventory and some syntax facts
 
 ## Implementation boundaries
 
-- Shared typed domain contracts in `packages/contract/src/legacy/types.ts`; renderer uses `window.aplos.invoke(method, payload)` and `window.aplos.subscribe(listener)`. Browser development uses a loopback-only local API exposing the same bridge.
-- Service orchestration lives in `packages/engine/src/legacy/service.ts` and receives platform dependencies through `packages/engine/src/legacy/ports.ts`; `src/main/service.ts` constructs the desktop implementations. The same engine is bundled into the Electron utility process; windows follow paged snapshots and commit changes.
-- Storage is a local SQLite database (`aplos.db`) in the app data directory, accessed through the engine's SQL port; mail hosts remain the source of truth for mail and flags, and no Aplos server stores user data. Providers implement the contract in `packages/engine/src/legacy/provider.ts`; see DECISIONS.md (multi-provider architecture) for the planned adapters and mobile path.
-- Main/server service method names and JSON contract are documented in `API.md`. Persist local application state under macOS Application Support, not the source tree; tests use isolated temporary directories.
+- Shared typed contract (contract v1) in `packages/contract`: zod schemas, the method registry and the generated method tables. The renderer calls the engine over `window.aplosEngine`, a MessagePort per window; `window.aplos` carries only main's native methods and events. Browser development runs the renderer on Vite with an in-process stand-in engine.
+- The engine is `packages/engine/src`; the desktop runs it in an Electron utility process (`src/main/engine-utility.ts`). Main keeps the keychain, windows, links and notifications.
+- Storage is a local SQLite database (`mail.db`) in the app data directory, accessed through the engine's SQL port; mail hosts remain the source of truth for mail and flags, and no Aplos server stores user data. Provider adapters live in `src/host/providers/`; the removed Outlook, IMAP, JMAP and CalDAV adapters are listed in `plans/next/legacy-providers.md`.
+- The method contract is summarized in `API.md`. Persist local application state under macOS Application Support, not the source tree; tests use isolated temporary directories.
 - Secrets are environment-only configuration or OS-encrypted OAuth tokens. Local `.env` is ignored and can populate process environment; it is never bundled. Production launch instructions must explain environment loading.
 - No sending external mail or modifying the reference mailbox as part of autonomous testing. Use original local/demo data and mock Google adapters; only synthetic content is used for live Groq verification.
 

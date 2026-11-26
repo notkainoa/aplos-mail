@@ -88,17 +88,14 @@
         "src/access.ts!",
         "src/allowlists.ts!",
         "src/contract-error.ts!",
-        "src/legacy-methods.ts!",
         "src/rules.ts!",
         "src/client/index.ts!",
         "src/log/*.ts!",
-        "src/legacy/*.ts!",
         "generated/**/*!",
         "scripts/**/*.{ts,mjs}",
         "tests/**/*.ts"
       ],
-      "project": ["src/**/*.ts!", "generated/**/*!", "tests/**/*.ts"],
-      "ignore": ["**/legacy/**"]
+      "project": ["src/**/*.ts!", "generated/**/*!", "tests/**/*.ts"]
     },
     "packages/contract-fixture": {
       // Test support package, never shipped — but it is imported by shipped dev/demo paths

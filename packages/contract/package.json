@@ -13,10 +13,8 @@
     "./access": "./src/access.ts",
     "./measure": "./src/measure.ts",
     "./contract-error": "./src/contract-error.ts",
-    "./legacy-methods": "./src/legacy-methods.ts",
     "./generated/openapi.json": "./generated/openapi.json",
-    "./rules": "./src/rules.ts",
-    "./legacy/*": "./src/legacy/*.ts"
+    "./rules": "./src/rules.ts"
   },
   "scripts": {
     "typecheck": "tsc --noEmit && tsc --noEmit -p tsconfig.test.json",
