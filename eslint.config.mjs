@@ -17,12 +17,11 @@ const ENGINE_CORE = 'packages/engine/src/**';
 const CONTRACT = ['packages/contract/src/**', 'packages/contract/generated/**'];
 const RENDERER = 'apps/desktop/src/renderer/**';
 const MAILFRAME = 'apps/desktop/src/renderer/mailframe/**';
-// Legacy code lives only in these three roots (restructure step 1). A folder that merely happens
+// Legacy code lives only in these two roots (restructure step 1). A folder that merely happens
 // to be called legacy elsewhere gets no exemption.
 const ENGINE_LEGACY = 'packages/engine/src/legacy/**';
 const CONTRACT_LEGACY = 'packages/contract/src/legacy/**';
-const RENDERER_LEGACY = 'apps/desktop/src/renderer/legacy/**';
-const LEGACY_ROOTS = [ENGINE_LEGACY, CONTRACT_LEGACY, RENDERER_LEGACY];
+const LEGACY_ROOTS = [ENGINE_LEGACY, CONTRACT_LEGACY];
 
 export const boundaryZones = [
   {

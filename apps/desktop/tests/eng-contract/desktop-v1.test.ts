@@ -11,14 +11,13 @@ test('every row of the v1 table names a real desktop method', () => {
 
 test('the methods main handles itself, not through the table, are the ones the table omits on purpose', () => {
   const handledInEngineReal = [
-    'Window/compose',
     'Engine/restart',
     'Engine/recover',
     'Diagnostics/copy',
     'File/save',
     'File/open',
   ];
-  const notServed = ['Symbols/render', 'Ai/pasteKey'];
+  const notServed = ['Symbols/render', 'Ai/pasteKey', 'Window/compose', 'Window/thread'];
   const covered = new Set([...Object.keys(legacyNames), ...handledInEngineReal, ...notServed]);
   for (const method of desktopMethods) assert.ok(covered.has(method), `${method} has no owner`);
 });

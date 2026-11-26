@@ -344,7 +344,7 @@ export interface UtilityInit {
 }
 
 /**
- * Main's own control connection may ask only these (plan 10 E3 item 6: `window.compose` uses `Draft/get`).
+ * Main's own control connection may ask only these.
  * `Mail/serve` is the `aplos-mail://` relay (html-5); the utility rewrites its `windowId` with `hostServeArgs`.
  * `Blob/get` is main's `File/save`/`File/open` (plans/engine/blob-area.md decision 6): main reads the bytes itself, so
  * 25 MB never has to sit in a renderer to be saved. `Account/get` is the menu-bar item's status poll
@@ -352,7 +352,6 @@ export interface UtilityInit {
  * "Starting…" for the whole session. Main is the `app` principal, as every window is.
  */
 export const controlMethods: ReadonlySet<string> = new Set([
-  'Draft/get',
   'Outbox/pending',
   'Session/get',
   'Counts/get',
@@ -682,18 +681,6 @@ export function revokeOnNewDocument(contents: RevokeSource, revoke: () => void):
   contents.on('did-navigate', revoke);
   contents.on('render-process-gone', revoke);
   contents.on('destroyed', revoke);
-}
-
-/** `window.compose` through main's own connection: the draft must exist in the engine (`Draft/get`). */
-export async function draftOpenable(
-  link: EngineLink | undefined,
-  draftId: string,
-): Promise<boolean> {
-  if (!link) throw unavailable();
-  const result = (await link.call('Draft/get', { ids: [draftId] })) as {
-    list?: { id?: unknown }[];
-  };
-  return Array.isArray(result?.list) && result.list.some(draft => draft?.id === draftId);
 }
 
 /** Sign-in pages the engine may ask main to open (the host channel's `openExternal`, purpose `oauth`). */

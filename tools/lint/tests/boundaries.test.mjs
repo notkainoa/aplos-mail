@@ -55,9 +55,9 @@ tester.run('aplos/boundaries', plugin.rules.boundaries, {
       "import { x } from './legacy/helper'; export * from '../legacy/other';",
     ),
     valid(
-      'legacy file anywhere may import legacy',
-      'apps/desktop/src/renderer/legacy/App.tsx',
-      "import { y } from '../legacy/Shell';",
+      'contract legacy may import other legacy code',
+      'packages/contract/src/legacy/types.ts',
+      "import { y } from '../legacy/live';",
     ),
     valid(
       'contract: zod and relative files',

@@ -12,10 +12,6 @@ export class DraftOwnership {
     if (owner !== undefined && owner !== windowId)
       throw new Error('This draft is being edited in another window.');
   }
-  transfer(draftId: string, fromWindowId: number, toWindowId: number): void {
-    this.assertEditable(draftId, fromWindowId);
-    this.owners.set(draftId, toWindowId);
-  }
   release(draftId: string, windowId: number): boolean {
     if (this.owners.get(draftId) !== windowId) return false;
     this.owners.delete(draftId);

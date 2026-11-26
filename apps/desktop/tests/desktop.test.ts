@@ -28,10 +28,9 @@ test('draft send and delete parse IDs without a nested draft object', () => {
   assert.throws(() => draftMutationId('draft.save', { id: 'draft-1' }), /Invalid draft ID/);
 });
 
-test('popout transfer blocks stale parent edits until the child releases or closes', () => {
+test('a claimed draft blocks other windows until its owner releases or closes', () => {
   const ownership = new DraftOwnership();
-  assert.equal(ownership.claim('draft-1', 10), true);
-  ownership.transfer('draft-1', 10, 20);
+  assert.equal(ownership.claim('draft-1', 20), true);
   assert.equal(ownership.claim('draft-1', 10), false);
   assert.throws(() => ownership.assertEditable('draft-1', 10), /another window/);
   assert.doesNotThrow(() => ownership.assertEditable('draft-1', 20));

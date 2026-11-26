@@ -18,7 +18,6 @@ export const repoRoot = path.resolve(here, '../../..');
 export const include = ['apps/desktop/src/renderer/**/*.{css,ts,tsx}'];
 
 export const alwaysExclude = [
-  'apps/desktop/src/renderer/legacy/**',
   'apps/desktop/src/renderer/ui/tokens.json',
   'apps/desktop/src/renderer/ui/generated/**',
   'tools/lint/design/fixtures/**',
@@ -26,6 +25,4 @@ export const alwaysExclude = [
   '**/*.d.ts',
 ];
 
-// Today's renderer lives in renderer/legacy/ (restructure step 1) and is never linted;
-// Phase 2 deletes it.
 export const exclude = alwaysExclude;

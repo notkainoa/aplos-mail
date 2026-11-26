@@ -196,11 +196,13 @@ export function FatalScreen({
           softDisabled={restarting}
           onPress={() => onRestart()}
         />
-        <PartButton
-          variant="text"
-          label={kind === 'parked' ? 'Export diagnostics' : 'Copy diagnostics'}
-          onPress={() => onDiagnostics()}
-        />
+        {onDiagnostics ? (
+          <PartButton
+            variant="text"
+            label={kind === 'parked' ? 'Export diagnostics' : 'Copy diagnostics'}
+            onPress={() => onDiagnostics()}
+          />
+        ) : null}
       </div>
     </div>
   );
