@@ -1,0 +1,1502 @@
+[
+  {
+    "id": "read-01",
+    "job": "read",
+    "hard": true,
+    "why": "This is recurring subscribed writing whose content is the point.",
+    "input": {
+      "message": {
+        "from": {
+          "address": "wren.alder@northfield-school.test",
+          "name": "Wren Alder"
+        },
+        "to": [
+          {
+            "address": "me@home.example"
+          }
+        ],
+        "cc": [],
+        "subject": "Field margins, issue 12",
+        "date": 1796083200000,
+        "list": {},
+        "flags": {
+          "seen": true,
+          "flagged": true,
+          "answered": false,
+          "draft": false,
+          "fromMe": false
+        },
+        "roles": ["inbox"],
+        "snippet": "This week's Field Margins essay follows the shape of abandoned hedges. Every subscriber receives this same edi"
+      },
+      "self": ["me@home.example"],
+      "knownCorrespondent": true,
+      "userReplied": false,
+      "userEndedThread": false,
+      "text": "This week's Field Margins essay follows the shape of abandoned hedges. Every subscriber receives this same edition, with no account news."
+    }
+  },
+  {
+    "id": "read-02",
+    "job": "read",
+    "hard": true,
+    "why": "This personal-address newsletter is recurring writing rather than a personal request.",
+    "input": {
+      "message": {
+        "from": {
+          "address": "rowan.brook@clayhaven.example",
+          "name": "Rowan Brook"
+        },
+        "to": [
+          {
+            "address": "me@home.example"
+          }
+        ],
+        "cc": [],
+        "subject": "Clay letters from Wren",
+        "date": 1796083260000,
+        "list": {},
+        "flags": {
+          "seen": false,
+          "flagged": false,
+          "answered": true,
+          "draft": false,
+          "fromMe": false
+        },
+        "roles": ["inbox", "category.promotions"]
+      },
+      "self": ["me@home.example"],
+      "knownCorrespondent": true,
+      "userReplied": true,
+      "userEndedThread": false,
+      "text": "In this month's subscriber letter I explore why shallow bowls dry unevenly. This edition goes unchanged to the whole reading list."
+    }
+  },
+  {
+    "id": "read-03",
+    "job": "read",
+    "hard": true,
+    "why": "This is a chosen recurring essay with nothing specific about the recipient.",
+    "input": {
+      "message": {
+        "from": {
+          "address": "fern.vale@mapcabinet.example",
+          "name": "Fern Vale"
+        },
+        "to": [
+          {
+            "address": "me@home.example"
+          }
+        ],
+        "cc": [],
+        "subject": "The weekly bridge notebook",
+        "date": 1796083320000,
+        "list": {
+          "listUnsubscribe": "<mailto:leave@mapcabinet.example>"
+        },
+        "flags": {
+          "seen": false,
+          "flagged": false,
+          "answered": false,
+          "draft": false,
+          "fromMe": false
+        },
+        "roles": ["inbox", "category.personal"]
+      },
+      "self": ["me@home.example"],
+      "knownCorrespondent": true,
+      "userReplied": false,
+      "userEndedThread": false,
+      "text": "This edition studies a fictional footbridge made from woven reeds. You subscribed to these weekly essays; there are no booking details."
+    }
+  },
+  {
+    "id": "read-04",
+    "job": "read",
+    "hard": true,
+    "why": "This is newsletter writing despite arriving from a familiar person's address.",
+    "input": {
+      "message": {
+        "from": {
+          "address": "reed.moss@plotgate.example",
+          "name": "Reed Moss"
+        },
+        "to": [
+          {
+            "address": "me@home.example"
+          }
+        ],
+        "cc": [],
+        "subject": "Orchard notes, winter issue",
+        "date": 1796083380000,
+        "list": {},
+        "flags": {
+          "seen": true,
+          "flagged": false,
+          "answered": true,
+          "draft": false,
+          "fromMe": false
+        },
+        "roles": ["inbox"]
+      },
+      "self": ["me@home.example"],
+      "knownCorrespondent": true,
+      "userReplied": true,
+      "userEndedThread": false,
+      "text": "Today I compare three ways of drawing bare branches. This is the same seasonal letter for all subscribers."
+    }
+  },
+  {
+    "id": "read-05",
+    "job": "read",
+    "hard": true,
+    "why": "This is recurring reading rather than an update about the recipient.",
+    "input": {
+      "message": {
+        "from": {
+          "address": "lark.birch@reedstudio.test",
+          "name": "Lark Birch"
+        },
+        "to": [
+          {
+            "address": "me@home.example"
+          }
+        ],
+        "cc": [],
+        "subject": "A letter about quiet rooms",
+        "date": 1796083440000,
+        "list": {},
+        "flags": {
+          "seen": false,
+          "flagged": false,
+          "answered": false,
+          "draft": false,
+          "fromMe": false
+        },
+        "roles": ["inbox", "important"]
+      },
+      "self": ["me@home.example"],
+      "knownCorrespondent": true,
+      "userReplied": false,
+      "userEndedThread": false,
+      "text": "The latest essay in your subscription considers the sound of empty halls. There are no service changes in this edition."
+    }
+  },
+  {
+    "id": "read-06",
+    "job": "read",
+    "hard": true,
+    "why": "This is a recurring editorial newsletter rather than a travel update.",
+    "input": {
+      "message": {
+        "from": {
+          "address": "ash.clove@nightpond.test",
+          "name": "Ash Clove"
+        },
+        "to": [
+          {
+            "address": "me@home.example"
+          }
+        ],
+        "cc": [],
+        "subject": "The invented coast review",
+        "date": 1796083500000,
+        "list": {},
+        "flags": {
+          "seen": false,
+          "flagged": false,
+          "answered": false,
+          "draft": false,
+          "fromMe": false
+        },
+        "roles": ["inbox", "category.forums"],
+        "snippet": "This month's edition describes imaginary tidal gardens. The subscriber edition is identical for everyone."
+      },
+      "self": ["me@home.example"],
+      "knownCorrespondent": true,
+      "userReplied": false,
+      "userEndedThread": false,
+      "text": "This month's edition describes imaginary tidal gardens. The subscriber edition is identical for everyone."
+    }
+  },
+  {
+    "id": "read-07",
+    "job": "read",
+    "hard": true,
+    "why": "This newsletter is reading rather than an account or appointment notice.",
+    "input": {
+      "message": {
+        "from": {
+          "address": "moss.hazel@loomhouse.test",
+          "name": "Moss Hazel"
+        },
+        "to": [
+          {
+            "address": "me@home.example"
+          }
+        ],
+        "cc": [],
+        "subject": "Workshop stories number 9",
+        "date": 1796083560000,
+        "list": {
+          "listUnsubscribe": "<mailto:leave@loomhouse.test>"
+        },
+        "flags": {
+          "seen": true,
+          "flagged": false,
+          "answered": false,
+          "draft": false,
+          "fromMe": false
+        },
+        "roles": ["inbox"]
+      },
+      "self": ["me@home.example"],
+      "knownCorrespondent": true,
+      "userReplied": false,
+      "userEndedThread": false,
+      "text": "This week I write about the history of wooden hinges. You receive this through your essay subscription, not your workshop booking."
+    }
+  },
+  {
+    "id": "read-08",
+    "job": "read",
+    "hard": true,
+    "why": "This is recurring writing without an ask or personal update.",
+    "input": {
+      "message": {
+        "from": {
+          "address": "elm.sage@greenframe.example",
+          "name": "Elm Sage"
+        },
+        "to": [
+          {
+            "address": "me@home.example"
+          }
+        ],
+        "cc": [],
+        "subject": "Common soil reader",
+        "date": 1796083620000,
+        "list": {},
+        "flags": {
+          "seen": false,
+          "flagged": false,
+          "answered": false,
+          "draft": false,
+          "fromMe": false
+        },
+        "roles": ["inbox", "category.updates"]
+      },
+      "self": ["me@home.example"],
+      "knownCorrespondent": true,
+      "userReplied": false,
+      "userEndedThread": false,
+      "text": "This issue explores fictional communal orchards. There is no event to attend or answer to send."
+    }
+  },
+  {
+    "id": "read-09",
+    "job": "read",
+    "hard": true,
+    "why": "This known person's recurring essay is a newsletter rather than personal correspondence.",
+    "input": {
+      "message": {
+        "from": {
+          "address": "rue.linden@folioport.example",
+          "name": "Rue Linden"
+        },
+        "to": [
+          {
+            "address": "me@home.example"
+          }
+        ],
+        "cc": [],
+        "subject": "Archive essays from a friend",
+        "date": 1796083680000,
+        "list": {},
+        "flags": {
+          "seen": false,
+          "flagged": false,
+          "answered": true,
+          "draft": false,
+          "fromMe": false
+        },
+        "roles": ["inbox"]
+      },
+      "self": ["me@home.example"],
+      "knownCorrespondent": true,
+      "userReplied": true,
+      "userEndedThread": false,
+      "text": "Here is the monthly archive essay you subscribed to. This one traces the marks left by old binding tools and goes to every reader."
+    }
+  },
+  {
+    "id": "read-10",
+    "job": "read",
+    "hard": true,
+    "why": "This is recurring editorial reading despite a person-like sender.",
+    "input": {
+      "message": {
+        "from": {
+          "address": "alder.fenn@mapcabinet.example",
+          "name": "Alder Fenn"
+        },
+        "to": [
+          {
+            "address": "me@home.example"
+          }
+        ],
+        "cc": [],
+        "subject": "The map letter",
+        "date": 1796083740000,
+        "list": {},
+        "flags": {
+          "seen": true,
+          "flagged": false,
+          "answered": false,
+          "draft": false,
+          "fromMe": false
+        },
+        "roles": ["inbox", "category.promotions"]
+      },
+      "self": ["me@home.example"],
+      "knownCorrespondent": true,
+      "userReplied": false,
+      "userEndedThread": false,
+      "text": "This edition compares ways artists draw imaginary islands. It is the weekly edition shared by every subscriber."
+    }
+  },
+  {
+    "id": "read-11",
+    "job": "read",
+    "hard": true,
+    "why": "This automated delivery contains chosen writing rather than a service notification.",
+    "input": {
+      "message": {
+        "from": {
+          "address": "hazel.reed@reedstudio.test",
+          "name": "Hazel Reed"
+        },
+        "to": [
+          {
+            "address": "me@home.example"
+          }
+        ],
+        "cc": [],
+        "subject": "A scheduled reading letter",
+        "date": 1796083800000,
+        "list": {
+          "listUnsubscribe": "<mailto:leave@reedstudio.test>"
+        },
+        "flags": {
+          "seen": false,
+          "flagged": false,
+          "answered": false,
+          "draft": false,
+          "fromMe": false
+        },
+        "roles": ["inbox", "category.personal"],
+        "snippet": "For this week's subscriber essay, I considered the geometry of folded paper. The same text is being delivered "
+      },
+      "self": ["me@home.example"],
+      "knownCorrespondent": true,
+      "userReplied": false,
+      "userEndedThread": false,
+      "text": "For this week's subscriber essay, I considered the geometry of folded paper. The same text is being delivered to the entire reading list."
+    }
+  },
+  {
+    "id": "read-12",
+    "job": "read",
+    "hard": true,
+    "why": "This newsletter discusses policy as reading rather than updating the recipient's policy.",
+    "input": {
+      "message": {
+        "from": {
+          "address": "birch.fern@ledgergrove.example",
+          "name": "Birch Fern"
+        },
+        "to": [
+          {
+            "address": "me@home.example"
+          }
+        ],
+        "cc": [],
+        "subject": "Policy histories, issue 7",
+        "date": 1796083860000,
+        "list": {},
+        "flags": {
+          "seen": false,
+          "flagged": true,
+          "answered": false,
+          "draft": false,
+          "fromMe": false
+        },
+        "roles": ["inbox"]
+      },
+      "self": ["me@home.example"],
+      "knownCorrespondent": true,
+      "userReplied": false,
+      "userEndedThread": false,
+      "text": "This week's essay considers how imaginary towns wrote their market rules. It does not change any terms or accounts."
+    }
+  },
+  {
+    "id": "read-13",
+    "job": "read",
+    "hard": true,
+    "why": "This is newsletter writing about receipts rather than a financial record.",
+    "input": {
+      "message": {
+        "from": {
+          "address": "sage.elm@clayhaven.example",
+          "name": "Sage Elm"
+        },
+        "to": [
+          {
+            "address": "me@home.example"
+          }
+        ],
+        "cc": [],
+        "subject": "What makes a receipt legible",
+        "date": 1796083920000,
+        "list": {},
+        "flags": {
+          "seen": true,
+          "flagged": false,
+          "answered": false,
+          "draft": false,
+          "fromMe": false
+        },
+        "roles": ["inbox", "important"]
+      },
+      "self": ["me@home.example"],
+      "knownCorrespondent": true,
+      "userReplied": false,
+      "userEndedThread": false,
+      "text": "This monthly design essay studies spacing in fictional receipts. It contains no purchase or charge for you."
+    }
+  },
+  {
+    "id": "read-14",
+    "job": "read",
+    "hard": true,
+    "why": "This recurring essay is reading rather than an actionable question.",
+    "input": {
+      "message": {
+        "from": {
+          "address": "brook.wren@plotgate.example",
+          "name": "Brook Wren"
+        },
+        "to": [
+          {
+            "address": "me@home.example"
+          }
+        ],
+        "cc": [],
+        "subject": "Should a garden have walls",
+        "date": 1796083980000,
+        "list": {},
+        "flags": {
+          "seen": false,
+          "flagged": false,
+          "answered": false,
+          "draft": false,
+          "fromMe": false
+        },
+        "roles": ["inbox", "category.forums"]
+      },
+      "self": ["me@home.example"],
+      "knownCorrespondent": true,
+      "userReplied": false,
+      "userEndedThread": false,
+      "text": "This issue asks a rhetorical question about garden design. It is an essay for all subscribers and does not request your reply."
+    }
+  },
+  {
+    "id": "read-15",
+    "job": "read",
+    "hard": true,
+    "why": "This date-bearing newsletter is chosen writing rather than a dated notice affecting the recipient.",
+    "input": {
+      "message": {
+        "from": {
+          "address": "vale.ash@nightpond.test",
+          "name": "Vale Ash"
+        },
+        "to": [
+          {
+            "address": "me@home.example"
+          }
+        ],
+        "cc": [],
+        "subject": "December 8 in invented history",
+        "date": 1796084040000,
+        "list": {
+          "listUnsubscribe": "<mailto:leave@nightpond.test>"
+        },
+        "flags": {
+          "seen": false,
+          "flagged": false,
+          "answered": false,
+          "draft": false,
+          "fromMe": false
+        },
+        "roles": ["inbox"]
+      },
+      "self": ["me@home.example"],
+      "knownCorrespondent": true,
+      "userReplied": false,
+      "userEndedThread": false,
+      "text": "This issue tells a story set on December 8 in an imaginary town. There is no scheduled event or registration."
+    }
+  },
+  {
+    "id": "read-16",
+    "job": "read",
+    "hard": true,
+    "why": "This remains recurring newsletter writing despite earlier correspondence with its author.",
+    "input": {
+      "message": {
+        "from": {
+          "address": "clove.rue@clayhaven.example",
+          "name": "Clove Rue"
+        },
+        "to": [
+          {
+            "address": "me@home.example"
+          }
+        ],
+        "cc": [],
+        "subject": "Replying to last month's edition",
+        "date": 1796084100000,
+        "list": {},
+        "flags": {
+          "seen": true,
+          "flagged": false,
+          "answered": true,
+          "draft": false,
+          "fromMe": false
+        },
+        "roles": ["inbox", "category.updates"],
+        "snippet": "As promised, this month's subscriber letter expands on my essay about glaze. It is the same full edition for e"
+      },
+      "self": ["me@home.example"],
+      "knownCorrespondent": true,
+      "userReplied": true,
+      "userEndedThread": false,
+      "text": "As promised, this month's subscriber letter expands on my essay about glaze. It is the same full edition for every reader, including those who replied last month."
+    }
+  },
+  {
+    "id": "read-17",
+    "job": "read",
+    "hard": false,
+    "why": "This is recurring writing chosen by the recipient.",
+    "input": {
+      "message": {
+        "from": {
+          "address": "editor@plotgate.example"
+        },
+        "to": [
+          {
+            "address": "me@home.example"
+          }
+        ],
+        "cc": [],
+        "subject": "The weekly reed journal",
+        "date": 1796084160000,
+        "list": {
+          "precedence": "bulk",
+          "listId": "(present)",
+          "listUnsubscribe": "<mailto:leave@plotgate.example>, <https://plotgate.example/leave>"
+        },
+        "flags": {
+          "seen": false,
+          "flagged": false,
+          "answered": false,
+          "draft": false,
+          "fromMe": false
+        },
+        "roles": ["inbox"]
+      },
+      "self": ["me@home.example"],
+      "knownCorrespondent": false,
+      "userReplied": false,
+      "userEndedThread": false,
+      "text": "This edition explores how reeds bend in still air. It is part of your ongoing essay subscription."
+    }
+  },
+  {
+    "id": "read-18",
+    "job": "read",
+    "hard": false,
+    "why": "This is a recurring architecture newsletter.",
+    "input": {
+      "message": {
+        "from": {
+          "address": "letters@reedstudio.test"
+        },
+        "to": [
+          {
+            "address": "me@home.example"
+          }
+        ],
+        "cc": [],
+        "subject": "Unbuilt rooms issue 4",
+        "date": 1796084220000,
+        "list": {
+          "precedence": "bulk",
+          "listId": "(present)"
+        },
+        "flags": {
+          "seen": false,
+          "flagged": false,
+          "answered": false,
+          "draft": false,
+          "fromMe": false
+        },
+        "roles": ["inbox", "category.promotions"]
+      },
+      "self": ["me@home.example"],
+      "knownCorrespondent": false,
+      "userReplied": false,
+      "userEndedThread": false,
+      "text": "This month's essay imagines libraries without corridors. The full article is included for subscribers."
+    }
+  },
+  {
+    "id": "read-19",
+    "job": "read",
+    "hard": false,
+    "why": "This is a subscribed craft newsletter.",
+    "input": {
+      "message": {
+        "from": {
+          "address": "fern.vale@clayhaven.example",
+          "name": "Fern Vale"
+        },
+        "to": [
+          {
+            "address": "me@home.example"
+          }
+        ],
+        "cc": [],
+        "subject": "The patient potter",
+        "date": 1796084280000,
+        "list": {},
+        "flags": {
+          "seen": true,
+          "flagged": false,
+          "answered": false,
+          "draft": false,
+          "fromMe": false
+        },
+        "roles": ["inbox", "category.personal"]
+      },
+      "self": ["me@home.example"],
+      "knownCorrespondent": false,
+      "userReplied": false,
+      "userEndedThread": false,
+      "text": "This week we discuss the marks left by hand trimming. This edition is sent to the reading list in full."
+    }
+  },
+  {
+    "id": "read-20",
+    "job": "read",
+    "hard": false,
+    "why": "This is recurring nature writing.",
+    "input": {
+      "message": {
+        "from": {
+          "address": "no-reply@nightpond.test"
+        },
+        "to": [
+          {
+            "address": "me@home.example"
+          }
+        ],
+        "cc": [],
+        "subject": "Night pond dispatch",
+        "date": 1796084340000,
+        "list": {
+          "precedence": "bulk",
+          "listId": "(present)",
+          "listUnsubscribe": "<mailto:leave@nightpond.test>, <https://nightpond.test/leave>"
+        },
+        "flags": {
+          "seen": false,
+          "flagged": false,
+          "answered": false,
+          "draft": false,
+          "fromMe": false
+        },
+        "roles": ["inbox"]
+      },
+      "self": ["me@home.example"],
+      "knownCorrespondent": false,
+      "userReplied": false,
+      "userEndedThread": false,
+      "text": "Our fortnightly essay looks at reflections in shallow ponds. There is no event or account information."
+    }
+  },
+  {
+    "id": "read-21",
+    "job": "read",
+    "hard": false,
+    "why": "This is recurring design writing.",
+    "input": {
+      "message": {
+        "from": {
+          "address": "editor@mapcabinet.example"
+        },
+        "to": [
+          {
+            "address": "me@home.example"
+          }
+        ],
+        "cc": [],
+        "subject": "Letterforms on stone",
+        "date": 1796084400000,
+        "list": {
+          "precedence": "bulk",
+          "listId": "(present)",
+          "listUnsubscribe": "<mailto:leave@mapcabinet.example>, <https://mapcabinet.example/leave>"
+        },
+        "flags": {
+          "seen": false,
+          "flagged": false,
+          "answered": false,
+          "draft": false,
+          "fromMe": false
+        },
+        "roles": ["inbox", "important"],
+        "snippet": "This issue examines invented inscriptions on garden stones. It is the monthly edition of your reading subscrip"
+      },
+      "self": ["me@home.example"],
+      "knownCorrespondent": true,
+      "userReplied": false,
+      "userEndedThread": false,
+      "text": "This issue examines invented inscriptions on garden stones. It is the monthly edition of your reading subscription."
+    }
+  },
+  {
+    "id": "read-22",
+    "job": "read",
+    "hard": false,
+    "why": "This is newsletter reading rather than news about the recipient's order.",
+    "input": {
+      "message": {
+        "from": {
+          "address": "ash.clove@clayhaven.example",
+          "name": "Ash Clove"
+        },
+        "to": [
+          {
+            "address": "me@home.example"
+          }
+        ],
+        "cc": [],
+        "subject": "The slow kiln",
+        "date": 1796084460000,
+        "list": {},
+        "flags": {
+          "seen": true,
+          "flagged": false,
+          "answered": false,
+          "draft": false,
+          "fromMe": false
+        },
+        "roles": ["inbox", "category.forums"]
+      },
+      "self": ["me@home.example"],
+      "knownCorrespondent": false,
+      "userReplied": false,
+      "userEndedThread": false,
+      "text": "This week's article follows a fictional kiln through its cooling cycle. All readers receive the same text."
+    }
+  },
+  {
+    "id": "read-23",
+    "job": "read",
+    "hard": false,
+    "why": "This is recurring creative writing.",
+    "input": {
+      "message": {
+        "from": {
+          "address": "hello@mapcabinet.example"
+        },
+        "to": [
+          {
+            "address": "me@home.example"
+          }
+        ],
+        "cc": [],
+        "subject": "Paper paths",
+        "date": 1796084520000,
+        "list": {
+          "precedence": "bulk",
+          "listId": "(present)",
+          "listUnsubscribe": "<mailto:leave@mapcabinet.example>, <https://mapcabinet.example/leave>"
+        },
+        "flags": {
+          "seen": false,
+          "flagged": true,
+          "answered": false,
+          "draft": false,
+          "fromMe": false
+        },
+        "roles": ["inbox"]
+      },
+      "self": ["me@home.example"],
+      "knownCorrespondent": false,
+      "userReplied": false,
+      "userEndedThread": false,
+      "text": "This month's essay explores paths drawn on folded maps. It continues the series you subscribed to."
+    }
+  },
+  {
+    "id": "read-24",
+    "job": "read",
+    "hard": false,
+    "why": "This is a chosen editorial newsletter.",
+    "input": {
+      "message": {
+        "from": {
+          "address": "no-reply@greenframe.example"
+        },
+        "to": [
+          {
+            "address": "me@home.example"
+          }
+        ],
+        "cc": [],
+        "subject": "The roof garden reader",
+        "date": 1796084580000,
+        "list": {
+          "precedence": "bulk",
+          "listId": "(present)",
+          "listUnsubscribe": "<mailto:leave@greenframe.example>, <https://greenframe.example/leave>"
+        },
+        "flags": {
+          "seen": false,
+          "flagged": false,
+          "answered": true,
+          "draft": false,
+          "fromMe": false
+        },
+        "roles": ["inbox", "category.updates"]
+      },
+      "self": ["me@home.example"],
+      "knownCorrespondent": false,
+      "userReplied": true,
+      "userEndedThread": false,
+      "text": "In this edition we consider shade in imaginary rooftop gardens. The essay is delivered to all subscribers."
+    }
+  },
+  {
+    "id": "read-25",
+    "job": "read",
+    "hard": false,
+    "why": "This is recurring writing with no personal update.",
+    "input": {
+      "message": {
+        "from": {
+          "address": "rue.linden@loomhouse.test",
+          "name": "Rue Linden"
+        },
+        "to": [
+          {
+            "address": "me@home.example"
+          }
+        ],
+        "cc": [],
+        "subject": "Tools and traces",
+        "date": 1796084640000,
+        "list": {},
+        "flags": {
+          "seen": true,
+          "flagged": false,
+          "answered": false,
+          "draft": false,
+          "fromMe": false
+        },
+        "roles": ["inbox"]
+      },
+      "self": ["me@home.example"],
+      "knownCorrespondent": false,
+      "userReplied": false,
+      "userEndedThread": false,
+      "text": "This week's essay studies the wear on old wooden planes. Nothing in this edition concerns your account."
+    }
+  },
+  {
+    "id": "read-26",
+    "job": "read",
+    "hard": false,
+    "why": "This is a recurring literary newsletter.",
+    "input": {
+      "message": {
+        "from": {
+          "address": "letters@mapcabinet.example"
+        },
+        "to": [
+          {
+            "address": "me@home.example"
+          }
+        ],
+        "cc": [],
+        "subject": "A small atlas letter",
+        "date": 1796084700000,
+        "list": {
+          "precedence": "bulk",
+          "listId": "(present)"
+        },
+        "flags": {
+          "seen": false,
+          "flagged": false,
+          "answered": false,
+          "draft": false,
+          "fromMe": false
+        },
+        "roles": ["inbox", "category.promotions"],
+        "snippet": "This issue describes an imaginary archipelago made of floating gardens. It is the next installment in your sub"
+      },
+      "self": ["me@home.example"],
+      "knownCorrespondent": true,
+      "userReplied": false,
+      "userEndedThread": false,
+      "text": "This issue describes an imaginary archipelago made of floating gardens. It is the next installment in your subscription."
+    }
+  },
+  {
+    "id": "read-27",
+    "job": "read",
+    "hard": false,
+    "why": "This is recurring craft reading.",
+    "input": {
+      "message": {
+        "from": {
+          "address": "hello@clayhaven.example"
+        },
+        "to": [
+          {
+            "address": "me@home.example"
+          }
+        ],
+        "cc": [],
+        "subject": "Glaze observations",
+        "date": 1796084760000,
+        "list": {
+          "precedence": "bulk",
+          "listId": "(present)",
+          "listUnsubscribe": "<mailto:leave@clayhaven.example>, <https://clayhaven.example/leave>"
+        },
+        "flags": {
+          "seen": false,
+          "flagged": false,
+          "answered": false,
+          "draft": false,
+          "fromMe": false
+        },
+        "roles": ["inbox", "category.personal"]
+      },
+      "self": ["me@home.example"],
+      "knownCorrespondent": false,
+      "userReplied": false,
+      "userEndedThread": false,
+      "text": "The monthly article compares matte and glossy surfaces. It is general craft writing for the subscriber list."
+    }
+  },
+  {
+    "id": "read-28",
+    "job": "read",
+    "hard": false,
+    "why": "This is a newsletter rather than an event invitation.",
+    "input": {
+      "message": {
+        "from": {
+          "address": "birch.fern@plotgate.example",
+          "name": "Birch Fern"
+        },
+        "to": [
+          {
+            "address": "me@home.example"
+          }
+        ],
+        "cc": [],
+        "subject": "The commons essay",
+        "date": 1796084820000,
+        "list": {},
+        "flags": {
+          "seen": true,
+          "flagged": false,
+          "answered": false,
+          "draft": false,
+          "fromMe": false
+        },
+        "roles": ["inbox"]
+      },
+      "self": ["me@home.example"],
+      "knownCorrespondent": false,
+      "userReplied": false,
+      "userEndedThread": false,
+      "text": "This week's essay explores benches in invented public squares. No meeting or action is scheduled."
+    }
+  },
+  {
+    "id": "read-29",
+    "job": "read",
+    "hard": false,
+    "why": "This is recurring subscribed storytelling.",
+    "input": {
+      "message": {
+        "from": {
+          "address": "editor@loomhouse.test"
+        },
+        "to": [
+          {
+            "address": "me@home.example"
+          }
+        ],
+        "cc": [],
+        "subject": "Thread and timber",
+        "date": 1796084880000,
+        "list": {
+          "precedence": "bulk",
+          "listId": "(present)",
+          "listUnsubscribe": "<mailto:leave@loomhouse.test>, <https://loomhouse.test/leave>"
+        },
+        "flags": {
+          "seen": false,
+          "flagged": false,
+          "answered": false,
+          "draft": false,
+          "fromMe": false
+        },
+        "roles": ["inbox", "important"]
+      },
+      "self": ["me@home.example"],
+      "knownCorrespondent": false,
+      "userReplied": false,
+      "userEndedThread": false,
+      "text": "This issue tells the story of a fictional loom maker. It is the same story for every subscriber."
+    }
+  },
+  {
+    "id": "read-30",
+    "job": "read",
+    "hard": false,
+    "why": "This is recurring editorial writing.",
+    "input": {
+      "message": {
+        "from": {
+          "address": "letters@reedstudio.test"
+        },
+        "to": [
+          {
+            "address": "me@home.example"
+          }
+        ],
+        "cc": [],
+        "subject": "Lines in sand",
+        "date": 1796084940000,
+        "list": {
+          "precedence": "bulk",
+          "listId": "(present)"
+        },
+        "flags": {
+          "seen": false,
+          "flagged": false,
+          "answered": false,
+          "draft": false,
+          "fromMe": false
+        },
+        "roles": ["inbox", "category.forums"]
+      },
+      "self": ["me@home.example"],
+      "knownCorrespondent": false,
+      "userReplied": false,
+      "userEndedThread": false,
+      "text": "Our monthly design letter considers temporary drawings. The full essay is included below for readers."
+    }
+  },
+  {
+    "id": "read-31",
+    "job": "read",
+    "hard": false,
+    "why": "This is a transport-themed newsletter rather than a personal travel update.",
+    "input": {
+      "message": {
+        "from": {
+          "address": "vale.ash@reedrail.test",
+          "name": "Vale Ash"
+        },
+        "to": [
+          {
+            "address": "me@home.example"
+          }
+        ],
+        "cc": [],
+        "subject": "Quiet transit",
+        "date": 1796085000000,
+        "list": {},
+        "flags": {
+          "seen": true,
+          "flagged": false,
+          "answered": false,
+          "draft": false,
+          "fromMe": false
+        },
+        "roles": ["inbox"],
+        "snippet": "This week's article imagines a tram network for a town on stilts. It is not a notice about booked travel."
+      },
+      "self": ["me@home.example"],
+      "knownCorrespondent": true,
+      "userReplied": false,
+      "userEndedThread": false,
+      "text": "This week's article imagines a tram network for a town on stilts. It is not a notice about booked travel."
+    }
+  },
+  {
+    "id": "read-32",
+    "job": "read",
+    "hard": false,
+    "why": "This is recurring subscribed reading.",
+    "input": {
+      "message": {
+        "from": {
+          "address": "no-reply@plotgate.example"
+        },
+        "to": [
+          {
+            "address": "me@home.example"
+          }
+        ],
+        "cc": [],
+        "subject": "The seed cabinet",
+        "date": 1796085060000,
+        "list": {
+          "precedence": "bulk",
+          "listId": "(present)",
+          "listUnsubscribe": "<mailto:leave@plotgate.example>, <https://plotgate.example/leave>"
+        },
+        "flags": {
+          "seen": false,
+          "flagged": false,
+          "answered": false,
+          "draft": false,
+          "fromMe": false
+        },
+        "roles": ["inbox", "category.updates"]
+      },
+      "self": ["me@home.example"],
+      "knownCorrespondent": false,
+      "userReplied": false,
+      "userEndedThread": false,
+      "text": "This edition traces the history of imaginary seed labels. It continues your monthly essay series."
+    }
+  },
+  {
+    "id": "read-33",
+    "job": "read",
+    "hard": false,
+    "why": "This is a chosen visual-design newsletter.",
+    "input": {
+      "message": {
+        "from": {
+          "address": "editor@loomhouse.test"
+        },
+        "to": [
+          {
+            "address": "me@home.example"
+          }
+        ],
+        "cc": [],
+        "subject": "Light through linen",
+        "date": 1796085120000,
+        "list": {
+          "precedence": "bulk",
+          "listId": "(present)",
+          "listUnsubscribe": "<mailto:leave@loomhouse.test>, <https://loomhouse.test/leave>"
+        },
+        "flags": {
+          "seen": false,
+          "flagged": false,
+          "answered": false,
+          "draft": false,
+          "fromMe": false
+        },
+        "roles": ["inbox"]
+      },
+      "self": ["me@home.example"],
+      "knownCorrespondent": false,
+      "userReplied": false,
+      "userEndedThread": false,
+      "text": "This month's photo essay discusses woven shade screens. Everyone on the subscriber list receives this edition."
+    }
+  },
+  {
+    "id": "read-34",
+    "job": "read",
+    "hard": false,
+    "why": "This is recurring writing rather than a booking notice.",
+    "input": {
+      "message": {
+        "from": {
+          "address": "rowan.brook@greenframe.example",
+          "name": "Rowan Brook"
+        },
+        "to": [
+          {
+            "address": "me@home.example"
+          }
+        ],
+        "cc": [],
+        "subject": "River workshop letter",
+        "date": 1796085180000,
+        "list": {},
+        "flags": {
+          "seen": true,
+          "flagged": true,
+          "answered": false,
+          "draft": false,
+          "fromMe": false
+        },
+        "roles": ["inbox", "category.promotions"]
+      },
+      "self": ["me@home.example"],
+      "knownCorrespondent": false,
+      "userReplied": false,
+      "userEndedThread": false,
+      "text": "Our weekly essay describes a fictional water-powered lathe. There are no workshop bookings in this message."
+    }
+  },
+  {
+    "id": "read-35",
+    "job": "read",
+    "hard": false,
+    "why": "This is a subscribed nature newsletter.",
+    "input": {
+      "message": {
+        "from": {
+          "address": "hello@plotgate.example"
+        },
+        "to": [
+          {
+            "address": "me@home.example"
+          }
+        ],
+        "cc": [],
+        "subject": "The bent branch",
+        "date": 1796085240000,
+        "list": {
+          "precedence": "bulk",
+          "listId": "(present)",
+          "listUnsubscribe": "<mailto:leave@plotgate.example>, <https://plotgate.example/leave>"
+        },
+        "flags": {
+          "seen": false,
+          "flagged": false,
+          "answered": true,
+          "draft": false,
+          "fromMe": false
+        },
+        "roles": ["inbox", "category.personal"]
+      },
+      "self": ["me@home.example"],
+      "knownCorrespondent": false,
+      "userReplied": true,
+      "userEndedThread": false,
+      "text": "This edition studies the shapes of old orchard trees. It is part of the newsletter you chose to receive."
+    }
+  },
+  {
+    "id": "read-36",
+    "job": "read",
+    "hard": false,
+    "why": "This is recurring creative reading.",
+    "input": {
+      "message": {
+        "from": {
+          "address": "no-reply@mapcabinet.example"
+        },
+        "to": [
+          {
+            "address": "me@home.example"
+          }
+        ],
+        "cc": [],
+        "subject": "Folds and edges",
+        "date": 1796085300000,
+        "list": {
+          "precedence": "bulk",
+          "listId": "(present)",
+          "listUnsubscribe": "<mailto:leave@mapcabinet.example>, <https://mapcabinet.example/leave>"
+        },
+        "flags": {
+          "seen": false,
+          "flagged": false,
+          "answered": false,
+          "draft": false,
+          "fromMe": false
+        },
+        "roles": ["inbox"],
+        "snippet": "Our fortnightly letter explores paper models of imaginary houses. The complete article is included."
+      },
+      "self": ["me@home.example"],
+      "knownCorrespondent": true,
+      "userReplied": false,
+      "userEndedThread": false,
+      "text": "Our fortnightly letter explores paper models of imaginary houses. The complete article is included."
+    }
+  },
+  {
+    "id": "read-37",
+    "job": "read",
+    "hard": false,
+    "why": "This is newsletter writing rather than an appointment update.",
+    "input": {
+      "message": {
+        "from": {
+          "address": "lark.birch@nightpond.test",
+          "name": "Lark Birch"
+        },
+        "to": [
+          {
+            "address": "me@home.example"
+          }
+        ],
+        "cc": [],
+        "subject": "The observatory reader",
+        "date": 1796085360000,
+        "list": {},
+        "flags": {
+          "seen": true,
+          "flagged": false,
+          "answered": false,
+          "draft": false,
+          "fromMe": false
+        },
+        "roles": ["inbox", "important"]
+      },
+      "self": ["me@home.example"],
+      "knownCorrespondent": false,
+      "userReplied": false,
+      "userEndedThread": false,
+      "text": "This month's essay describes an invented observatory built inside a tower. It contains no viewing reservation."
+    }
+  },
+  {
+    "id": "read-38",
+    "job": "read",
+    "hard": false,
+    "why": "This is recurring theatre-design reading.",
+    "input": {
+      "message": {
+        "from": {
+          "address": "letters@smallstage.test"
+        },
+        "to": [
+          {
+            "address": "me@home.example"
+          }
+        ],
+        "cc": [],
+        "subject": "Small stage journal",
+        "date": 1796085420000,
+        "list": {
+          "precedence": "bulk",
+          "listId": "(present)"
+        },
+        "flags": {
+          "seen": false,
+          "flagged": false,
+          "answered": false,
+          "draft": false,
+          "fromMe": false
+        },
+        "roles": ["inbox", "category.forums"]
+      },
+      "self": ["me@home.example"],
+      "knownCorrespondent": false,
+      "userReplied": false,
+      "userEndedThread": false,
+      "text": "This edition examines scenery built from reusable panels. It is general writing for all subscribers."
+    }
+  },
+  {
+    "id": "read-39",
+    "job": "read",
+    "hard": false,
+    "why": "This is a recurring literary newsletter.",
+    "input": {
+      "message": {
+        "from": {
+          "address": "hello@clayhaven.example"
+        },
+        "to": [
+          {
+            "address": "me@home.example"
+          }
+        ],
+        "cc": [],
+        "subject": "Mud and memory",
+        "date": 1796085480000,
+        "list": {
+          "precedence": "bulk",
+          "listId": "(present)",
+          "listUnsubscribe": "<mailto:leave@clayhaven.example>, <https://clayhaven.example/leave>"
+        },
+        "flags": {
+          "seen": false,
+          "flagged": false,
+          "answered": false,
+          "draft": false,
+          "fromMe": false
+        },
+        "roles": ["inbox"]
+      },
+      "self": ["me@home.example"],
+      "knownCorrespondent": false,
+      "userReplied": false,
+      "userEndedThread": false,
+      "text": "This week's essay follows pottery fragments in a fictional town. It is the next edition of your subscription."
+    }
+  },
+  {
+    "id": "read-40",
+    "job": "read",
+    "hard": false,
+    "why": "This is recurring chosen writing with nothing about the recipient.",
+    "input": {
+      "message": {
+        "from": {
+          "address": "elm.sage@mapcabinet.example",
+          "name": "Elm Sage"
+        },
+        "to": [
+          {
+            "address": "me@home.example"
+          }
+        ],
+        "cc": [],
+        "subject": "The long shelf",
+        "date": 1796085540000,
+        "list": {},
+        "flags": {
+          "seen": true,
+          "flagged": false,
+          "answered": false,
+          "draft": false,
+          "fromMe": false
+        },
+        "roles": ["inbox", "category.updates"]
+      },
+      "self": ["me@home.example"],
+      "knownCorrespondent": false,
+      "userReplied": false,
+      "userEndedThread": false,
+      "text": "Our monthly reading letter considers how imaginary libraries organize maps. It is sent unchanged to the whole subscriber list."
+    }
+  }
+]

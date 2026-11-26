@@ -1,0 +1,1530 @@
+[
+  {
+    "id": "record-01",
+    "job": "record",
+    "hard": true,
+    "why": "This person's message documents a settled payment rather than asking for money.",
+    "input": {
+      "message": {
+        "from": {
+          "address": "wren.alder@plotgate.example",
+          "name": "Wren Alder"
+        },
+        "to": [
+          {
+            "address": "me@home.example"
+          }
+        ],
+        "cc": [],
+        "subject": "Receipt for the shared seed order",
+        "date": 1796083200000,
+        "list": {},
+        "flags": {
+          "seen": true,
+          "flagged": true,
+          "answered": true,
+          "draft": false,
+          "fromMe": false
+        },
+        "roles": ["inbox", "category.personal"],
+        "snippet": "I received your 9 credits for the shared seed order today. This is your receipt; the balance is zero and nothi"
+      },
+      "self": ["me@home.example"],
+      "knownCorrespondent": true,
+      "userReplied": true,
+      "userEndedThread": false,
+      "text": "I received your 9 credits for the shared seed order today. This is your receipt; the balance is zero and nothing is due."
+    }
+  },
+  {
+    "id": "record-02",
+    "job": "record",
+    "hard": true,
+    "why": "This routine statement is a record rather than a financial alert.",
+    "input": {
+      "message": {
+        "from": {
+          "address": "rowan.brook@ledgergrove.example",
+          "name": "Rowan Brook"
+        },
+        "to": [
+          {
+            "address": "me@home.example"
+          }
+        ],
+        "cc": [],
+        "subject": "Monthly statement with no changes",
+        "date": 1796083260000,
+        "list": {},
+        "flags": {
+          "seen": false,
+          "flagged": false,
+          "answered": false,
+          "draft": false,
+          "fromMe": false
+        },
+        "roles": ["inbox"]
+      },
+      "self": ["me@home.example"],
+      "knownCorrespondent": true,
+      "userReplied": false,
+      "userEndedThread": false,
+      "text": "Your monthly plot account statement is attached. The closing balance is zero and there are no unusual transactions."
+    }
+  },
+  {
+    "id": "record-03",
+    "job": "record",
+    "hard": true,
+    "why": "This invoice documents completed payment rather than an unpaid bill.",
+    "input": {
+      "message": {
+        "from": {
+          "address": "fern.vale@loomhouse.test",
+          "name": "Fern Vale"
+        },
+        "to": [
+          {
+            "address": "me@home.example"
+          }
+        ],
+        "cc": [],
+        "subject": "Paid invoice for your shelf",
+        "date": 1796083320000,
+        "list": {},
+        "flags": {
+          "seen": false,
+          "flagged": false,
+          "answered": false,
+          "draft": false,
+          "fromMe": false
+        },
+        "roles": ["inbox", "important"]
+      },
+      "self": ["me@home.example"],
+      "knownCorrespondent": true,
+      "userReplied": false,
+      "userEndedThread": false,
+      "text": "The shelf invoice has been paid in full. Keep this copy for your records; there is no outstanding balance.",
+      "structured": [
+        {
+          "kind": "bill"
+        }
+      ]
+    }
+  },
+  {
+    "id": "record-04",
+    "job": "record",
+    "hard": true,
+    "why": "This automated message is a receipt for a settled purchase.",
+    "input": {
+      "message": {
+        "from": {
+          "address": "reed.moss@clayhaven.example",
+          "name": "Reed Moss"
+        },
+        "to": [
+          {
+            "address": "me@home.example"
+          }
+        ],
+        "cc": [],
+        "subject": "Workshop purchase receipt",
+        "date": 1796083380000,
+        "list": {
+          "autoSubmitted": "auto-generated",
+          "listUnsubscribe": "<mailto:leave@clayhaven.example>"
+        },
+        "flags": {
+          "seen": true,
+          "flagged": false,
+          "answered": true,
+          "draft": false,
+          "fromMe": false
+        },
+        "roles": ["inbox", "category.forums"]
+      },
+      "self": ["me@home.example"],
+      "knownCorrespondent": true,
+      "userReplied": true,
+      "userEndedThread": false,
+      "text": "Your 18-credit workshop payment was received. This copy records the completed sale and does not require a reply.",
+      "structured": [
+        {
+          "kind": "bill"
+        }
+      ]
+    }
+  },
+  {
+    "id": "record-05",
+    "job": "record",
+    "hard": true,
+    "why": "This policy copy is documentation with no new effect on the recipient.",
+    "input": {
+      "message": {
+        "from": {
+          "address": "lark.birch@plotgate.example",
+          "name": "Lark Birch"
+        },
+        "to": [
+          {
+            "address": "me@home.example"
+          }
+        ],
+        "cc": [],
+        "subject": "Policy wording archive",
+        "date": 1796083440000,
+        "list": {},
+        "flags": {
+          "seen": false,
+          "flagged": false,
+          "answered": false,
+          "draft": false,
+          "fromMe": false
+        },
+        "roles": ["inbox"]
+      },
+      "self": ["me@home.example"],
+      "knownCorrespondent": true,
+      "userReplied": false,
+      "userEndedThread": false,
+      "text": "Here is the annual copy of the storage policy already in force. There are no changes to your access, price or obligations."
+    }
+  },
+  {
+    "id": "record-06",
+    "job": "record",
+    "hard": true,
+    "why": "This known person's email supplies a completed agreement as a record.",
+    "input": {
+      "message": {
+        "from": {
+          "address": "ash.clove@reedstudio.test",
+          "name": "Ash Clove"
+        },
+        "to": [
+          {
+            "address": "me@home.example"
+          }
+        ],
+        "cc": [],
+        "subject": "Signed agreement copy",
+        "date": 1796083500000,
+        "list": {},
+        "flags": {
+          "seen": false,
+          "flagged": false,
+          "answered": true,
+          "draft": false,
+          "fromMe": false
+        },
+        "roles": ["inbox", "category.updates"],
+        "snippet": "We both signed the studio agreement this morning. Here is the final copy for your files; no further signature "
+      },
+      "self": ["me@home.example"],
+      "knownCorrespondent": true,
+      "userReplied": true,
+      "userEndedThread": true,
+      "text": "We both signed the studio agreement this morning. Here is the final copy for your files; no further signature is required."
+    }
+  },
+  {
+    "id": "record-07",
+    "job": "record",
+    "hard": true,
+    "why": "This personal mail is a record of settled payment.",
+    "input": {
+      "message": {
+        "from": {
+          "address": "moss.hazel@lampdock.example",
+          "name": "Moss Hazel"
+        },
+        "to": [
+          {
+            "address": "me@home.example"
+          }
+        ],
+        "cc": [],
+        "subject": "Receipt sent manually",
+        "date": 1796083560000,
+        "list": {},
+        "flags": {
+          "seen": true,
+          "flagged": false,
+          "answered": true,
+          "draft": false,
+          "fromMe": false
+        },
+        "roles": ["inbox"]
+      },
+      "self": ["me@home.example"],
+      "knownCorrespondent": true,
+      "userReplied": true,
+      "userEndedThread": false,
+      "text": "I have logged your 6-credit cash payment for the repaired handle. Nothing remains to pay, and this note is the receipt."
+    }
+  },
+  {
+    "id": "record-08",
+    "job": "record",
+    "hard": true,
+    "why": "This certificate is a record rather than a new task.",
+    "input": {
+      "message": {
+        "from": {
+          "address": "elm.sage@lampdock.example",
+          "name": "Elm Sage"
+        },
+        "to": [
+          {
+            "address": "me@home.example"
+          }
+        ],
+        "cc": [],
+        "subject": "Warranty certificate enclosed",
+        "date": 1796083620000,
+        "list": {},
+        "flags": {
+          "seen": false,
+          "flagged": false,
+          "answered": false,
+          "draft": false,
+          "fromMe": false
+        },
+        "roles": ["inbox", "category.promotions"]
+      },
+      "self": ["me@home.example"],
+      "knownCorrespondent": true,
+      "userReplied": false,
+      "userEndedThread": false,
+      "text": "This is the warranty certificate for the kettle you collected last week. It documents the existing cover and asks for no registration."
+    }
+  },
+  {
+    "id": "record-09",
+    "job": "record",
+    "hard": true,
+    "why": "This app-generated ledger is routine documentation.",
+    "input": {
+      "message": {
+        "from": {
+          "address": "rue.linden@folioport.example",
+          "name": "Rue Linden"
+        },
+        "to": [
+          {
+            "address": "me@home.example"
+          }
+        ],
+        "cc": [],
+        "subject": "Your routine activity ledger",
+        "date": 1796083680000,
+        "list": {
+          "autoSubmitted": "auto-generated",
+          "listUnsubscribe": "<mailto:leave@folioport.example>"
+        },
+        "flags": {
+          "seen": false,
+          "flagged": false,
+          "answered": false,
+          "draft": false,
+          "fromMe": false
+        },
+        "roles": ["inbox", "category.personal"]
+      },
+      "self": ["me@home.example"],
+      "knownCorrespondent": true,
+      "userReplied": false,
+      "userEndedThread": false,
+      "text": "Attached is the monthly ledger for your archive account. There were no exceptional events and no action is required."
+    }
+  },
+  {
+    "id": "record-10",
+    "job": "record",
+    "hard": true,
+    "why": "This reply preserves a completed document rather than repeating the old signature request.",
+    "input": {
+      "message": {
+        "from": {
+          "address": "alder.fenn@smallstage.test",
+          "name": "Alder Fenn"
+        },
+        "to": [
+          {
+            "address": "me@home.example"
+          }
+        ],
+        "cc": [],
+        "subject": "Re: Please sign the release",
+        "date": 1796083740000,
+        "list": {},
+        "flags": {
+          "seen": true,
+          "flagged": false,
+          "answered": true,
+          "draft": false,
+          "fromMe": false
+        },
+        "roles": ["inbox"]
+      },
+      "self": ["me@home.example"],
+      "knownCorrespondent": true,
+      "userReplied": true,
+      "userEndedThread": true,
+      "text": "The release is now signed by everyone. I am sending the completed copy for your records only."
+    }
+  },
+  {
+    "id": "record-11",
+    "job": "record",
+    "hard": true,
+    "why": "This bulk acknowledgment records a completed donation rather than asking for another.",
+    "input": {
+      "message": {
+        "from": {
+          "address": "hazel.reed@northfield-school.test",
+          "name": "Hazel Reed"
+        },
+        "to": [
+          {
+            "address": "me@home.example"
+          }
+        ],
+        "cc": [],
+        "subject": "Donation acknowledgment",
+        "date": 1796083800000,
+        "list": {
+          "autoSubmitted": "auto-generated",
+          "listUnsubscribe": "<mailto:leave@northfield-school.test>"
+        },
+        "flags": {
+          "seen": false,
+          "flagged": false,
+          "answered": false,
+          "draft": false,
+          "fromMe": false
+        },
+        "roles": ["inbox", "important"],
+        "snippet": "Your 4-credit gift was received and recorded. This acknowledgment is for your files and contains no further ap"
+      },
+      "self": ["me@home.example"],
+      "knownCorrespondent": true,
+      "userReplied": false,
+      "userEndedThread": false,
+      "text": "Your 4-credit gift was received and recorded. This acknowledgment is for your files and contains no further appeal."
+    }
+  },
+  {
+    "id": "record-12",
+    "job": "record",
+    "hard": true,
+    "why": "This is a historical delivery record rather than a fresh shipping update.",
+    "input": {
+      "message": {
+        "from": {
+          "address": "birch.fern@parcel.example",
+          "name": "Birch Fern"
+        },
+        "to": [
+          {
+            "address": "me@home.example"
+          }
+        ],
+        "cc": [],
+        "subject": "Delivery proof copy",
+        "date": 1796083860000,
+        "list": {
+          "autoSubmitted": "auto-generated"
+        },
+        "flags": {
+          "seen": false,
+          "flagged": true,
+          "answered": false,
+          "draft": false,
+          "fromMe": false
+        },
+        "roles": ["inbox", "category.forums"]
+      },
+      "self": ["me@home.example"],
+      "knownCorrespondent": true,
+      "userReplied": false,
+      "userEndedThread": false,
+      "text": "Here is the archived proof for the delivery completed last month. This is a document copy you requested, not a new delivery event.",
+      "structured": [
+        {
+          "kind": "delivery",
+          "final": true
+        }
+      ]
+    }
+  },
+  {
+    "id": "record-13",
+    "job": "record",
+    "hard": true,
+    "why": "This known person's note is a receipt rather than a request.",
+    "input": {
+      "message": {
+        "from": {
+          "address": "sage.elm@sessionloom.test",
+          "name": "Sage Elm"
+        },
+        "to": [
+          {
+            "address": "me@home.example"
+          }
+        ],
+        "cc": [],
+        "subject": "Room rental receipt",
+        "date": 1796083920000,
+        "list": {},
+        "flags": {
+          "seen": true,
+          "flagged": false,
+          "answered": true,
+          "draft": false,
+          "fromMe": false
+        },
+        "roles": ["inbox"]
+      },
+      "self": ["me@home.example"],
+      "knownCorrespondent": true,
+      "userReplied": true,
+      "userEndedThread": true,
+      "text": "I confirm receipt of your 11-credit room rental payment. Your balance is zero and this is the copy for your ledger.",
+      "structured": [
+        {
+          "kind": "reservation"
+        }
+      ]
+    }
+  },
+  {
+    "id": "record-14",
+    "job": "record",
+    "hard": true,
+    "why": "This policy message is an unchanged record rather than an actionable policy update.",
+    "input": {
+      "message": {
+        "from": {
+          "address": "brook.wren@folioport.example",
+          "name": "Brook Wren"
+        },
+        "to": [
+          {
+            "address": "me@home.example"
+          }
+        ],
+        "cc": [],
+        "subject": "Annual terms copy",
+        "date": 1796083980000,
+        "list": {
+          "autoSubmitted": "auto-generated",
+          "listUnsubscribe": "<mailto:leave@folioport.example>"
+        },
+        "flags": {
+          "seen": false,
+          "flagged": false,
+          "answered": false,
+          "draft": false,
+          "fromMe": false
+        },
+        "roles": ["inbox", "category.updates"]
+      },
+      "self": ["me@home.example"],
+      "knownCorrespondent": true,
+      "userReplied": false,
+      "userEndedThread": false,
+      "text": "We are sending the annual copy of the terms you already accepted. No clause has changed and no acceptance is requested."
+    }
+  },
+  {
+    "id": "record-15",
+    "job": "record",
+    "hard": true,
+    "why": "This structured bill documents settled payment rather than asking for it.",
+    "input": {
+      "message": {
+        "from": {
+          "address": "vale.ash@ledgergrove.example",
+          "name": "Vale Ash"
+        },
+        "to": [
+          {
+            "address": "me@home.example"
+          }
+        ],
+        "cc": [],
+        "subject": "Bill marked paid",
+        "date": 1796084040000,
+        "list": {},
+        "flags": {
+          "seen": false,
+          "flagged": false,
+          "answered": false,
+          "draft": false,
+          "fromMe": false
+        },
+        "roles": ["inbox"]
+      },
+      "self": ["me@home.example"],
+      "knownCorrespondent": true,
+      "userReplied": false,
+      "userEndedThread": false,
+      "text": "The attached bill is marked paid in full as of yesterday. Its original due date is retained on the document for reference only.",
+      "structured": [
+        {
+          "kind": "bill",
+          "due": "2026-11-29"
+        }
+      ]
+    }
+  },
+  {
+    "id": "record-16",
+    "job": "record",
+    "hard": true,
+    "why": "This personal-address message supplies a routine financial record.",
+    "input": {
+      "message": {
+        "from": {
+          "address": "clove.rue@ledgergrove.example",
+          "name": "Clove Rue"
+        },
+        "to": [
+          {
+            "address": "me@home.example"
+          }
+        ],
+        "cc": [],
+        "subject": "Account statement from the treasurer",
+        "date": 1796084100000,
+        "list": {},
+        "flags": {
+          "seen": true,
+          "flagged": false,
+          "answered": true,
+          "draft": false,
+          "fromMe": false
+        },
+        "roles": ["inbox", "category.promotions"],
+        "snippet": "Here is your routine quarterly club statement as requested. It lists your settled dues and shows nothing outst"
+      },
+      "self": ["me@home.example"],
+      "knownCorrespondent": true,
+      "userReplied": true,
+      "userEndedThread": false,
+      "text": "Here is your routine quarterly club statement as requested. It lists your settled dues and shows nothing outstanding."
+    }
+  },
+  {
+    "id": "record-17",
+    "job": "record",
+    "hard": false,
+    "why": "This is a receipt for a completed purchase.",
+    "input": {
+      "message": {
+        "from": {
+          "address": "wren.alder@clayhaven.example",
+          "name": "Wren Alder"
+        },
+        "to": [
+          {
+            "address": "me@home.example"
+          }
+        ],
+        "cc": [],
+        "subject": "Receipt for brush set",
+        "date": 1796084160000,
+        "list": {},
+        "flags": {
+          "seen": false,
+          "flagged": false,
+          "answered": false,
+          "draft": false,
+          "fromMe": false
+        },
+        "roles": ["inbox", "category.personal"]
+      },
+      "self": ["me@home.example"],
+      "knownCorrespondent": true,
+      "userReplied": false,
+      "userEndedThread": false,
+      "text": "We received 13 credits for your brush set. Keep this receipt as proof of purchase."
+    }
+  },
+  {
+    "id": "record-18",
+    "job": "record",
+    "hard": false,
+    "why": "This is a routine statement with no exception or action.",
+    "input": {
+      "message": {
+        "from": {
+          "address": "no-reply@folioport.example"
+        },
+        "to": [
+          {
+            "address": "me@home.example"
+          }
+        ],
+        "cc": [],
+        "subject": "Archive storage statement",
+        "date": 1796084220000,
+        "list": {
+          "autoSubmitted": "auto-generated"
+        },
+        "flags": {
+          "seen": false,
+          "flagged": false,
+          "answered": false,
+          "draft": false,
+          "fromMe": false
+        },
+        "roles": ["inbox"]
+      },
+      "self": ["me@home.example"],
+      "knownCorrespondent": false,
+      "userReplied": false,
+      "userEndedThread": false,
+      "text": "Your monthly storage statement is attached. It records the normal 3-credit charge already settled."
+    }
+  },
+  {
+    "id": "record-19",
+    "job": "record",
+    "hard": false,
+    "why": "This is a reference document for an existing warranty.",
+    "input": {
+      "message": {
+        "from": {
+          "address": "hello@lampdock.example"
+        },
+        "to": [
+          {
+            "address": "me@home.example"
+          }
+        ],
+        "cc": [],
+        "subject": "Warranty terms copy",
+        "date": 1796084280000,
+        "list": {
+          "precedence": "bulk",
+          "listId": "(present)",
+          "listUnsubscribe": "<mailto:leave@lampdock.example>, <https://lampdock.example/leave>",
+          "autoSubmitted": "auto-generated"
+        },
+        "flags": {
+          "seen": true,
+          "flagged": false,
+          "answered": false,
+          "draft": false,
+          "fromMe": false
+        },
+        "roles": ["inbox", "important"]
+      },
+      "self": ["me@home.example"],
+      "knownCorrespondent": false,
+      "userReplied": false,
+      "userEndedThread": false,
+      "text": "Here is the warranty wording for your desk lamp. It records the cover included with your completed purchase."
+    }
+  },
+  {
+    "id": "record-20",
+    "job": "record",
+    "hard": false,
+    "why": "This is a documentary record of membership.",
+    "input": {
+      "message": {
+        "from": {
+          "address": "records@plotgate.example"
+        },
+        "to": [
+          {
+            "address": "me@home.example"
+          }
+        ],
+        "cc": [],
+        "subject": "Membership certificate",
+        "date": 1796084340000,
+        "list": {
+          "autoSubmitted": "auto-generated"
+        },
+        "flags": {
+          "seen": false,
+          "flagged": false,
+          "answered": false,
+          "draft": false,
+          "fromMe": false
+        },
+        "roles": ["inbox", "category.forums"]
+      },
+      "self": ["me@home.example"],
+      "knownCorrespondent": false,
+      "userReplied": false,
+      "userEndedThread": false,
+      "text": "Attached is your membership certificate for the current year. It is a copy for your files."
+    }
+  },
+  {
+    "id": "record-21",
+    "job": "record",
+    "hard": false,
+    "why": "This is a historical transaction record.",
+    "input": {
+      "message": {
+        "from": {
+          "address": "lark.birch@ledgergrove.example",
+          "name": "Lark Birch"
+        },
+        "to": [
+          {
+            "address": "me@home.example"
+          }
+        ],
+        "cc": [],
+        "subject": "Completed transfer receipt",
+        "date": 1796084400000,
+        "list": {},
+        "flags": {
+          "seen": false,
+          "flagged": false,
+          "answered": false,
+          "draft": false,
+          "fromMe": false
+        },
+        "roles": ["inbox"],
+        "snippet": "This receipt records the 10-credit transfer completed last week. You requested a copy for your bookkeeping."
+      },
+      "self": ["me@home.example"],
+      "knownCorrespondent": true,
+      "userReplied": false,
+      "userEndedThread": false,
+      "text": "This receipt records the 10-credit transfer completed last week. You requested a copy for your bookkeeping."
+    }
+  },
+  {
+    "id": "record-22",
+    "job": "record",
+    "hard": false,
+    "why": "This is a paid invoice rather than a payment request.",
+    "input": {
+      "message": {
+        "from": {
+          "address": "orders@clayhaven.example"
+        },
+        "to": [
+          {
+            "address": "me@home.example"
+          }
+        ],
+        "cc": [],
+        "subject": "Paid pottery class invoice",
+        "date": 1796084460000,
+        "list": {
+          "precedence": "bulk",
+          "listId": "(present)",
+          "autoSubmitted": "auto-generated"
+        },
+        "flags": {
+          "seen": true,
+          "flagged": false,
+          "answered": false,
+          "draft": false,
+          "fromMe": false
+        },
+        "roles": ["inbox", "category.updates"]
+      },
+      "self": ["me@home.example"],
+      "knownCorrespondent": true,
+      "userReplied": false,
+      "userEndedThread": false,
+      "text": "Your pottery class invoice is settled in full. This email contains the paid copy for your records.",
+      "structured": [
+        {
+          "kind": "bill"
+        }
+      ]
+    }
+  },
+  {
+    "id": "record-23",
+    "job": "record",
+    "hard": false,
+    "why": "This policy copy is a record with no new personal effect.",
+    "input": {
+      "message": {
+        "from": {
+          "address": "no-reply@loomhouse.test"
+        },
+        "to": [
+          {
+            "address": "me@home.example"
+          }
+        ],
+        "cc": [],
+        "subject": "Insurance wording archive",
+        "date": 1796084520000,
+        "list": {
+          "autoSubmitted": "auto-generated"
+        },
+        "flags": {
+          "seen": false,
+          "flagged": true,
+          "answered": false,
+          "draft": false,
+          "fromMe": false
+        },
+        "roles": ["inbox"]
+      },
+      "self": ["me@home.example"],
+      "knownCorrespondent": false,
+      "userReplied": false,
+      "userEndedThread": false,
+      "text": "Attached is the unchanged wording of your existing tool cover. No benefits, prices or requirements have changed."
+    }
+  },
+  {
+    "id": "record-24",
+    "job": "record",
+    "hard": false,
+    "why": "This is a record of a settled deposit.",
+    "input": {
+      "message": {
+        "from": {
+          "address": "hello@reedstudio.test"
+        },
+        "to": [
+          {
+            "address": "me@home.example"
+          }
+        ],
+        "cc": [],
+        "subject": "Deposit receipt",
+        "date": 1796084580000,
+        "list": {
+          "autoSubmitted": "auto-generated"
+        },
+        "flags": {
+          "seen": false,
+          "flagged": false,
+          "answered": false,
+          "draft": false,
+          "fromMe": false
+        },
+        "roles": ["inbox", "category.promotions"]
+      },
+      "self": ["me@home.example"],
+      "knownCorrespondent": false,
+      "userReplied": false,
+      "userEndedThread": false,
+      "text": "Your 5-credit key deposit was received. This receipt documents the payment already made."
+    }
+  },
+  {
+    "id": "record-25",
+    "job": "record",
+    "hard": false,
+    "why": "This is a routine financial summary.",
+    "input": {
+      "message": {
+        "from": {
+          "address": "rue.linden@ledgergrove.example",
+          "name": "Rue Linden"
+        },
+        "to": [
+          {
+            "address": "me@home.example"
+          }
+        ],
+        "cc": [],
+        "subject": "Tax summary copy",
+        "date": 1796084640000,
+        "list": {},
+        "flags": {
+          "seen": true,
+          "flagged": false,
+          "answered": true,
+          "draft": false,
+          "fromMe": false
+        },
+        "roles": ["inbox", "category.personal"]
+      },
+      "self": ["me@home.example"],
+      "knownCorrespondent": true,
+      "userReplied": true,
+      "userEndedThread": false,
+      "text": "Here is the routine annual summary of your fictional craft stall account. All listed amounts are historical and settled."
+    }
+  },
+  {
+    "id": "record-26",
+    "job": "record",
+    "hard": false,
+    "why": "This is a record of completed payment.",
+    "input": {
+      "message": {
+        "from": {
+          "address": "accounts@loomhouse.test"
+        },
+        "to": [
+          {
+            "address": "me@home.example"
+          }
+        ],
+        "cc": [],
+        "subject": "Tool purchase invoice paid",
+        "date": 1796084700000,
+        "list": {
+          "autoSubmitted": "auto-generated"
+        },
+        "flags": {
+          "seen": false,
+          "flagged": false,
+          "answered": false,
+          "draft": false,
+          "fromMe": false
+        },
+        "roles": ["inbox"],
+        "snippet": "The invoice for your hand plane has been paid. Keep this document for your workshop ledger."
+      },
+      "self": ["me@home.example"],
+      "knownCorrespondent": false,
+      "userReplied": false,
+      "userEndedThread": false,
+      "text": "The invoice for your hand plane has been paid. Keep this document for your workshop ledger."
+    }
+  },
+  {
+    "id": "record-27",
+    "job": "record",
+    "hard": false,
+    "why": "This is a historical completion record.",
+    "input": {
+      "message": {
+        "from": {
+          "address": "orders@northfield-school.test"
+        },
+        "to": [
+          {
+            "address": "me@home.example"
+          }
+        ],
+        "cc": [],
+        "subject": "Course completion certificate",
+        "date": 1796084760000,
+        "list": {
+          "autoSubmitted": "auto-generated"
+        },
+        "flags": {
+          "seen": false,
+          "flagged": false,
+          "answered": false,
+          "draft": false,
+          "fromMe": false
+        },
+        "roles": ["inbox", "important"]
+      },
+      "self": ["me@home.example"],
+      "knownCorrespondent": false,
+      "userReplied": false,
+      "userEndedThread": false,
+      "text": "Attached is the certificate for the course you completed last season. This is the duplicate copy you requested."
+    }
+  },
+  {
+    "id": "record-28",
+    "job": "record",
+    "hard": false,
+    "why": "This is a settled membership payment record.",
+    "input": {
+      "message": {
+        "from": {
+          "address": "no-reply@plotgate.example"
+        },
+        "to": [
+          {
+            "address": "me@home.example"
+          }
+        ],
+        "cc": [],
+        "subject": "Club dues receipt",
+        "date": 1796084820000,
+        "list": {
+          "precedence": "bulk",
+          "listId": "(present)",
+          "listUnsubscribe": "<mailto:leave@plotgate.example>, <https://plotgate.example/leave>",
+          "autoSubmitted": "auto-generated"
+        },
+        "flags": {
+          "seen": true,
+          "flagged": false,
+          "answered": false,
+          "draft": false,
+          "fromMe": false
+        },
+        "roles": ["inbox", "category.forums"]
+      },
+      "self": ["me@home.example"],
+      "knownCorrespondent": false,
+      "userReplied": false,
+      "userEndedThread": false,
+      "text": "Your 8-credit dues payment is recorded. No further balance is due for this term."
+    }
+  },
+  {
+    "id": "record-29",
+    "job": "record",
+    "hard": false,
+    "why": "This is a completed agreement record.",
+    "input": {
+      "message": {
+        "from": {
+          "address": "sage.elm@sessionloom.test",
+          "name": "Sage Elm"
+        },
+        "to": [
+          {
+            "address": "me@home.example"
+          }
+        ],
+        "cc": [],
+        "subject": "Room use agreement archive",
+        "date": 1796084880000,
+        "list": {},
+        "flags": {
+          "seen": false,
+          "flagged": false,
+          "answered": false,
+          "draft": false,
+          "fromMe": false
+        },
+        "roles": ["inbox"]
+      },
+      "self": ["me@home.example"],
+      "knownCorrespondent": true,
+      "userReplied": false,
+      "userEndedThread": false,
+      "text": "Here is the fully executed room use agreement from last month. It is supplied for reference only."
+    }
+  },
+  {
+    "id": "record-30",
+    "job": "record",
+    "hard": false,
+    "why": "This documents a completed purchase.",
+    "input": {
+      "message": {
+        "from": {
+          "address": "records@clayhaven.example"
+        },
+        "to": [
+          {
+            "address": "me@home.example"
+          }
+        ],
+        "cc": [],
+        "subject": "Materials receipt",
+        "date": 1796084940000,
+        "list": {
+          "autoSubmitted": "auto-generated"
+        },
+        "flags": {
+          "seen": false,
+          "flagged": false,
+          "answered": false,
+          "draft": false,
+          "fromMe": false
+        },
+        "roles": ["inbox", "category.updates"]
+      },
+      "self": ["me@home.example"],
+      "knownCorrespondent": false,
+      "userReplied": false,
+      "userEndedThread": false,
+      "text": "We received your 17 credits for the clay and glaze order. This is your itemized receipt."
+    }
+  },
+  {
+    "id": "record-31",
+    "job": "record",
+    "hard": false,
+    "why": "This is routine financial documentation.",
+    "input": {
+      "message": {
+        "from": {
+          "address": "accounts@ledgergrove.example"
+        },
+        "to": [
+          {
+            "address": "me@home.example"
+          }
+        ],
+        "cc": [],
+        "subject": "Ordinary monthly account statement",
+        "date": 1796085000000,
+        "list": {
+          "precedence": "bulk",
+          "listId": "(present)",
+          "listUnsubscribe": "<mailto:leave@ledgergrove.example>, <https://ledgergrove.example/leave>",
+          "autoSubmitted": "auto-generated"
+        },
+        "flags": {
+          "seen": true,
+          "flagged": false,
+          "answered": false,
+          "draft": false,
+          "fromMe": false
+        },
+        "roles": ["inbox"],
+        "snippet": "This statement lists the same regular charges already settled this month. It contains no missed payments or un"
+      },
+      "self": ["me@home.example"],
+      "knownCorrespondent": false,
+      "userReplied": false,
+      "userEndedThread": false,
+      "text": "This statement lists the same regular charges already settled this month. It contains no missed payments or unusual amounts."
+    }
+  },
+  {
+    "id": "record-32",
+    "job": "record",
+    "hard": false,
+    "why": "This is a completed consent record.",
+    "input": {
+      "message": {
+        "from": {
+          "address": "orders@smallstage.test"
+        },
+        "to": [
+          {
+            "address": "me@home.example"
+          }
+        ],
+        "cc": [],
+        "subject": "Saved consent copy",
+        "date": 1796085060000,
+        "list": {
+          "autoSubmitted": "auto-generated"
+        },
+        "flags": {
+          "seen": false,
+          "flagged": false,
+          "answered": false,
+          "draft": false,
+          "fromMe": false
+        },
+        "roles": ["inbox", "category.promotions"]
+      },
+      "self": ["me@home.example"],
+      "knownCorrespondent": false,
+      "userReplied": false,
+      "userEndedThread": false,
+      "text": "Attached is the recording consent you signed earlier. You asked us to send a copy for your files."
+    }
+  },
+  {
+    "id": "record-33",
+    "job": "record",
+    "hard": false,
+    "why": "This is a receipt for a completed service.",
+    "input": {
+      "message": {
+        "from": {
+          "address": "wren.alder@lampdock.example",
+          "name": "Wren Alder"
+        },
+        "to": [
+          {
+            "address": "me@home.example"
+          }
+        ],
+        "cc": [],
+        "subject": "Repair payment acknowledgment",
+        "date": 1796085120000,
+        "list": {},
+        "flags": {
+          "seen": false,
+          "flagged": false,
+          "answered": false,
+          "draft": false,
+          "fromMe": false
+        },
+        "roles": ["inbox", "category.personal"]
+      },
+      "self": ["me@home.example"],
+      "knownCorrespondent": true,
+      "userReplied": false,
+      "userEndedThread": false,
+      "text": "Your 12-credit repair payment has been received in full. This note is proof of settlement."
+    }
+  },
+  {
+    "id": "record-34",
+    "job": "record",
+    "hard": false,
+    "why": "This records a normal settled subscription charge.",
+    "input": {
+      "message": {
+        "from": {
+          "address": "hello@mapcabinet.example"
+        },
+        "to": [
+          {
+            "address": "me@home.example"
+          }
+        ],
+        "cc": [],
+        "subject": "Annual subscription receipt",
+        "date": 1796085180000,
+        "list": {
+          "precedence": "bulk",
+          "listId": "(present)",
+          "autoSubmitted": "auto-generated"
+        },
+        "flags": {
+          "seen": true,
+          "flagged": true,
+          "answered": false,
+          "draft": false,
+          "fromMe": false
+        },
+        "roles": ["inbox"]
+      },
+      "self": ["me@home.example"],
+      "knownCorrespondent": false,
+      "userReplied": false,
+      "userEndedThread": false,
+      "text": "The ordinary 15-credit annual subscription charge was paid successfully. This is the routine receipt."
+    }
+  },
+  {
+    "id": "record-35",
+    "job": "record",
+    "hard": false,
+    "why": "This is a reference record of ownership.",
+    "input": {
+      "message": {
+        "from": {
+          "address": "records@loomhouse.test"
+        },
+        "to": [
+          {
+            "address": "me@home.example"
+          }
+        ],
+        "cc": [],
+        "subject": "Inventory ownership certificate",
+        "date": 1796085240000,
+        "list": {
+          "autoSubmitted": "auto-generated"
+        },
+        "flags": {
+          "seen": false,
+          "flagged": false,
+          "answered": false,
+          "draft": false,
+          "fromMe": false
+        },
+        "roles": ["inbox", "important"]
+      },
+      "self": ["me@home.example"],
+      "knownCorrespondent": false,
+      "userReplied": false,
+      "userEndedThread": false,
+      "text": "Here is the ownership certificate for the loom you bought last month. It is a duplicate document copy."
+    }
+  },
+  {
+    "id": "record-36",
+    "job": "record",
+    "hard": false,
+    "why": "This is historical bookkeeping documentation.",
+    "input": {
+      "message": {
+        "from": {
+          "address": "accounts@reedstudio.test"
+        },
+        "to": [
+          {
+            "address": "me@home.example"
+          }
+        ],
+        "cc": [],
+        "subject": "Expense ledger export",
+        "date": 1796085300000,
+        "list": {
+          "autoSubmitted": "auto-generated"
+        },
+        "flags": {
+          "seen": false,
+          "flagged": false,
+          "answered": false,
+          "draft": false,
+          "fromMe": false
+        },
+        "roles": ["inbox", "category.forums"],
+        "snippet": "Your requested ledger copy lists settled workshop expenses from last season. No new charges are included."
+      },
+      "self": ["me@home.example"],
+      "knownCorrespondent": true,
+      "userReplied": false,
+      "userEndedThread": false,
+      "text": "Your requested ledger copy lists settled workshop expenses from last season. No new charges are included."
+    }
+  },
+  {
+    "id": "record-37",
+    "job": "record",
+    "hard": false,
+    "why": "This is a completed handover record.",
+    "input": {
+      "message": {
+        "from": {
+          "address": "lark.birch@parcel.example",
+          "name": "Lark Birch"
+        },
+        "to": [
+          {
+            "address": "me@home.example"
+          }
+        ],
+        "cc": [],
+        "subject": "Signed handover form",
+        "date": 1796085360000,
+        "list": {},
+        "flags": {
+          "seen": true,
+          "flagged": false,
+          "answered": true,
+          "draft": false,
+          "fromMe": false
+        },
+        "roles": ["inbox"]
+      },
+      "self": ["me@home.example"],
+      "knownCorrespondent": true,
+      "userReplied": true,
+      "userEndedThread": false,
+      "text": "Attached is the handover form both parties signed last week. There is nothing left to sign."
+    }
+  },
+  {
+    "id": "record-38",
+    "job": "record",
+    "hard": false,
+    "why": "This is a normal purchase receipt.",
+    "input": {
+      "message": {
+        "from": {
+          "address": "no-reply@mapcabinet.example"
+        },
+        "to": [
+          {
+            "address": "me@home.example"
+          }
+        ],
+        "cc": [],
+        "subject": "Receipt for printed maps",
+        "date": 1796085420000,
+        "list": {
+          "autoSubmitted": "auto-generated"
+        },
+        "flags": {
+          "seen": false,
+          "flagged": false,
+          "answered": false,
+          "draft": false,
+          "fromMe": false
+        },
+        "roles": ["inbox", "category.updates"]
+      },
+      "self": ["me@home.example"],
+      "knownCorrespondent": false,
+      "userReplied": false,
+      "userEndedThread": false,
+      "text": "Your payment of 14 credits for the printed maps is settled. Keep this receipt for your files."
+    }
+  },
+  {
+    "id": "record-39",
+    "job": "record",
+    "hard": false,
+    "why": "This is policy documentation rather than a change requiring attention.",
+    "input": {
+      "message": {
+        "from": {
+          "address": "hello@folioport.example"
+        },
+        "to": [
+          {
+            "address": "me@home.example"
+          }
+        ],
+        "cc": [],
+        "subject": "Unchanged privacy policy copy",
+        "date": 1796085480000,
+        "list": {
+          "autoSubmitted": "auto-generated"
+        },
+        "flags": {
+          "seen": false,
+          "flagged": false,
+          "answered": false,
+          "draft": false,
+          "fromMe": false
+        },
+        "roles": ["inbox"]
+      },
+      "self": ["me@home.example"],
+      "knownCorrespondent": false,
+      "userReplied": false,
+      "userEndedThread": false,
+      "text": "This is a copy of the privacy policy currently in effect. It is unchanged and does not require consent."
+    }
+  },
+  {
+    "id": "record-40",
+    "job": "record",
+    "hard": false,
+    "why": "This is a routine closing record with no remaining action.",
+    "input": {
+      "message": {
+        "from": {
+          "address": "records@reedstudio.test"
+        },
+        "to": [
+          {
+            "address": "me@home.example"
+          }
+        ],
+        "cc": [],
+        "subject": "Zero-balance closing statement",
+        "date": 1796085540000,
+        "list": {
+          "precedence": "bulk",
+          "listId": "(present)",
+          "listUnsubscribe": "<mailto:leave@reedstudio.test>, <https://reedstudio.test/leave>",
+          "autoSubmitted": "auto-generated"
+        },
+        "flags": {
+          "seen": true,
+          "flagged": false,
+          "answered": false,
+          "draft": false,
+          "fromMe": false
+        },
+        "roles": ["inbox", "category.promotions"]
+      },
+      "self": ["me@home.example"],
+      "knownCorrespondent": false,
+      "userReplied": false,
+      "userEndedThread": false,
+      "text": "Your closed studio account has a zero balance. This final statement is for retention only."
+    }
+  }
+]

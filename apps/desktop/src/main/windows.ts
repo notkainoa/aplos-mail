@@ -34,7 +34,6 @@ import type { FrameLinkSinks } from '../host/protocol/frame-links';
 
 const windows = new Set<BrowserWindow>();
 const claims = new DraftOwnership();
-const popouts = new Map<string, BrowserWindow>();
 const pendingClose = new Set<number>();
 const permittedClose = new Set<number>();
 let main: BrowserWindow | undefined;
@@ -238,7 +237,7 @@ function announceShown(win: BrowserWindow) {
   announced.add(win);
   win.webContents.send('aplos:event', { type: 'shown' });
 }
-function createWindow(query?: { draft?: string; thread?: string }) {
+function createWindow() {
   const mac = process.platform === 'darwin';
   // macOS: a transparent window base lets the native sidebar material show through the
   // renderer's transparent sidebar; the content pane paints its own opaque surface.
@@ -255,9 +254,9 @@ function createWindow(query?: { draft?: string; thread?: string }) {
         backgroundColor: nativeTheme.shouldUseDarkColors ? '#000000' : '#e6e5e2',
       };
   const win = new BrowserWindow({
-    width: query ? 900 : 1360,
-    height: query ? 800 : 900,
-    minWidth: query ? 640 : 960,
+    width: 1360,
+    height: 900,
+    minWidth: 960,
     minHeight: 560,
     title: 'Aplos Mail',
     ...chrome,
@@ -319,30 +318,11 @@ function createWindow(query?: { draft?: string; thread?: string }) {
     permittedClose.delete(win.id);
     for (const id of claims.releaseWindow(win.id))
       emit({ type: 'draft-owner', payload: { draftId: id } });
-    for (const [key, popout] of popouts) if (popout === win) popouts.delete(key);
     if (main === win) main = undefined;
     if (quitting && !windows.size) finishQuit();
   });
-  loadRenderer(win, query);
+  loadRenderer(win);
   return win;
-}
-function popout(kind: 'draft' | 'thread', id: string, fromWindowId: number) {
-  const key = `${kind}:${id}`;
-  const existing = popouts.get(key);
-  if (existing && !existing.isDestroyed()) {
-    if (!isTest) {
-      existing.show();
-      existing.focus();
-    }
-    return;
-  }
-  if (kind === 'draft') claims.assertEditable(id, fromWindowId);
-  const win = createWindow({ [kind]: id });
-  popouts.set(key, win);
-  if (kind === 'draft') {
-    claims.transfer(id, fromWindowId, win.id);
-    emit({ type: 'draft-owner', payload: { draftId: id, windowId: win.id } });
-  }
 }
 /**
  * The one mail window (F3): the startup choice and every activation share this guard, so whichever answer lands
@@ -454,7 +434,6 @@ async function activateWindows(): Promise<Activation> {
 export {
   windows,
   claims,
-  popouts,
   pendingClose,
   permittedClose,
   main,
@@ -465,7 +444,6 @@ export {
   hostTheme,
   syncTheme,
   createWindow,
-  popout,
   setMain,
   ensureMain,
   sendWhenReady,

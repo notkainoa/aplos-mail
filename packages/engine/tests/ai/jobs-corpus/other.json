@@ -1,0 +1,1522 @@
+[
+  {
+    "id": "other-01",
+    "job": "other",
+    "hard": true,
+    "why": "This is mass promotional outreach with a name inserted rather than a personal introduction.",
+    "input": {
+      "message": {
+        "from": {
+          "address": "wren.alder@courtyard.example",
+          "name": "Wren Alder"
+        },
+        "to": [
+          {
+            "address": "me@home.example"
+          }
+        ],
+        "cc": [],
+        "subject": "A special offer for you, Mica",
+        "date": 1796083200000,
+        "list": {},
+        "flags": {
+          "seen": true,
+          "flagged": true,
+          "answered": false,
+          "draft": false,
+          "fromMe": false
+        },
+        "roles": ["inbox"],
+        "snippet": "Hi Mica, your creative work deserves better tools. We send this offer to makers everywhere: try our premium te"
+      },
+      "self": ["me@home.example"],
+      "knownCorrespondent": false,
+      "userReplied": false,
+      "userEndedThread": false,
+      "text": "Hi Mica, your creative work deserves better tools. We send this offer to makers everywhere: try our premium template pack today."
+    }
+  },
+  {
+    "id": "other-02",
+    "job": "other",
+    "hard": true,
+    "why": "This shop email promotes a new purchase rather than updating an existing order.",
+    "input": {
+      "message": {
+        "from": {
+          "address": "orders@clayhaven.example",
+          "name": "Rowan Brook"
+        },
+        "to": [
+          {
+            "address": "me@home.example"
+          }
+        ],
+        "cc": [],
+        "subject": "New colors in our shop",
+        "date": 1796083260000,
+        "list": {},
+        "flags": {
+          "seen": false,
+          "flagged": false,
+          "answered": false,
+          "draft": false,
+          "fromMe": false
+        },
+        "roles": ["inbox", "important"]
+      },
+      "self": ["me@home.example"],
+      "knownCorrespondent": true,
+      "userReplied": false,
+      "userEndedThread": false,
+      "text": "Our new clay label colors are here. Browse the range and use code SHADE for a discount on any new order."
+    }
+  },
+  {
+    "id": "other-03",
+    "job": "other",
+    "hard": true,
+    "why": "This is mass outreach dressed as a personal follow-up.",
+    "input": {
+      "message": {
+        "from": {
+          "address": "fern.vale@loomhouse.test",
+          "name": "Fern Vale"
+        },
+        "to": [
+          {
+            "address": "me@home.example"
+          }
+        ],
+        "cc": [],
+        "subject": "Following up on my invitation",
+        "date": 1796083320000,
+        "list": {},
+        "flags": {
+          "seen": false,
+          "flagged": false,
+          "answered": false,
+          "draft": false,
+          "fromMe": false
+        },
+        "roles": ["inbox", "category.forums"]
+      },
+      "self": ["me@home.example"],
+      "knownCorrespondent": false,
+      "userReplied": false,
+      "userEndedThread": false,
+      "text": "Hi Mica, I picked your profile for our exclusive growth circle. This identical invitation is being sent to every studio in our directory."
+    }
+  },
+  {
+    "id": "other-04",
+    "job": "other",
+    "hard": true,
+    "why": "This sales question is unsolicited promotion rather than a real individual ask.",
+    "input": {
+      "message": {
+        "from": {
+          "address": "reed.moss@folioport.example",
+          "name": "Reed Moss"
+        },
+        "to": [
+          {
+            "address": "me@home.example"
+          }
+        ],
+        "cc": [],
+        "subject": "A quick question about your workflow",
+        "date": 1796083380000,
+        "list": {},
+        "flags": {
+          "seen": true,
+          "flagged": false,
+          "answered": false,
+          "draft": false,
+          "fromMe": false
+        },
+        "roles": ["inbox"]
+      },
+      "self": ["me@home.example"],
+      "knownCorrespondent": false,
+      "userReplied": false,
+      "userEndedThread": false,
+      "text": "Do you want to save hours on every project? Our bulk outreach campaign is offering a demo of a generic planning tool."
+    }
+  },
+  {
+    "id": "other-05",
+    "job": "other",
+    "hard": true,
+    "why": "This is a generic app upsell rather than a meaningful personal update.",
+    "input": {
+      "message": {
+        "from": {
+          "address": "alerts@folioport.example"
+        },
+        "to": [
+          {
+            "address": "me@home.example"
+          }
+        ],
+        "cc": [],
+        "subject": "Your account could do more",
+        "date": 1796083440000,
+        "list": {},
+        "flags": {
+          "seen": false,
+          "flagged": false,
+          "answered": false,
+          "draft": false,
+          "fromMe": false
+        },
+        "roles": ["inbox", "category.updates"]
+      },
+      "self": ["me@home.example"],
+      "knownCorrespondent": true,
+      "userReplied": false,
+      "userEndedThread": false,
+      "text": "Unlock extra themes with the premium plan. This standard suggestion appears for all free accounts and reports no account event."
+    }
+  },
+  {
+    "id": "other-06",
+    "job": "other",
+    "hard": true,
+    "why": "This is templated mass sales outreach despite a reply-like subject.",
+    "input": {
+      "message": {
+        "from": {
+          "address": "ash.clove@reedstudio.test",
+          "name": "Ash Clove"
+        },
+        "to": [
+          {
+            "address": "me@home.example"
+          }
+        ],
+        "cc": [],
+        "subject": "Re: Your studio",
+        "date": 1796083500000,
+        "list": {},
+        "flags": {
+          "seen": false,
+          "flagged": false,
+          "answered": false,
+          "draft": false,
+          "fromMe": false
+        },
+        "roles": ["inbox"],
+        "snippet": "Hi Mica, just circling back with our standard offer for every listed studio. Buy a directory placement this we"
+      },
+      "self": ["me@home.example"],
+      "knownCorrespondent": false,
+      "userReplied": false,
+      "userEndedThread": false,
+      "text": "Hi Mica, just circling back with our standard offer for every listed studio. Buy a directory placement this week."
+    }
+  },
+  {
+    "id": "other-07",
+    "job": "other",
+    "hard": true,
+    "why": "This is a purchase incentive rather than a gift or shipment affecting the recipient.",
+    "input": {
+      "message": {
+        "from": {
+          "address": "moss.hazel@clayhaven.example",
+          "name": "Moss Hazel"
+        },
+        "to": [
+          {
+            "address": "me@home.example"
+          }
+        ],
+        "cc": [],
+        "subject": "A gift selected for you",
+        "date": 1796083560000,
+        "list": {},
+        "flags": {
+          "seen": true,
+          "flagged": false,
+          "answered": false,
+          "draft": false,
+          "fromMe": false
+        },
+        "roles": ["inbox", "category.promotions"]
+      },
+      "self": ["me@home.example"],
+      "knownCorrespondent": false,
+      "userReplied": false,
+      "userEndedThread": false,
+      "text": "Claim a bonus pack when you place a new order. This is a general promotion sent to our full marketing list."
+    }
+  },
+  {
+    "id": "other-08",
+    "job": "other",
+    "hard": true,
+    "why": "This app notification is an engagement prompt rather than a substantive update.",
+    "input": {
+      "message": {
+        "from": {
+          "address": "editor@mapcabinet.example"
+        },
+        "to": [
+          {
+            "address": "me@home.example"
+          }
+        ],
+        "cc": [],
+        "subject": "Your weekly engagement score",
+        "date": 1796083620000,
+        "list": {},
+        "flags": {
+          "seen": false,
+          "flagged": false,
+          "answered": false,
+          "draft": false,
+          "fromMe": false
+        },
+        "roles": ["inbox", "category.personal"]
+      },
+      "self": ["me@home.example"],
+      "knownCorrespondent": true,
+      "userReplied": false,
+      "userEndedThread": false,
+      "text": "People are creating around you. Open the app to keep your activity streak going; this is a generic engagement nudge."
+    }
+  },
+  {
+    "id": "other-09",
+    "job": "other",
+    "hard": true,
+    "why": "This personal-sounding founder note is mass promotion.",
+    "input": {
+      "message": {
+        "from": {
+          "address": "rue.linden@sessionloom.test",
+          "name": "Rue Linden"
+        },
+        "to": [
+          {
+            "address": "me@home.example"
+          }
+        ],
+        "cc": [],
+        "subject": "A note from the founder",
+        "date": 1796083680000,
+        "list": {},
+        "flags": {
+          "seen": false,
+          "flagged": false,
+          "answered": false,
+          "draft": false,
+          "fromMe": false
+        },
+        "roles": ["inbox"]
+      },
+      "self": ["me@home.example"],
+      "knownCorrespondent": false,
+      "userReplied": false,
+      "userEndedThread": false,
+      "text": "I wanted every address in our prospect directory to hear about our launch. Try our generic studio booking service today."
+    }
+  },
+  {
+    "id": "other-10",
+    "job": "other",
+    "hard": true,
+    "why": "This promotional deadline does not make the sale a personal ask or update.",
+    "input": {
+      "message": {
+        "from": {
+          "address": "alder.fenn@lampdock.example",
+          "name": "Alder Fenn"
+        },
+        "to": [
+          {
+            "address": "me@home.example"
+          }
+        ],
+        "cc": [],
+        "subject": "Final reminder for savings",
+        "date": 1796083740000,
+        "list": {},
+        "flags": {
+          "seen": true,
+          "flagged": false,
+          "answered": false,
+          "draft": false,
+          "fromMe": false
+        },
+        "roles": ["inbox", "important"]
+      },
+      "self": ["me@home.example"],
+      "knownCorrespondent": false,
+      "userReplied": false,
+      "userEndedThread": false,
+      "text": "Our storewide sale ends on 2026-12-03. There is no existing order or reservation associated with this promotion."
+    }
+  },
+  {
+    "id": "other-11",
+    "job": "other",
+    "hard": true,
+    "why": "This is name-personalized mass marketing rather than a real cold introduction.",
+    "input": {
+      "message": {
+        "from": {
+          "address": "hazel.reed@northfield-school.test",
+          "name": "Hazel Reed"
+        },
+        "to": [
+          {
+            "address": "me@home.example"
+          }
+        ],
+        "cc": [],
+        "subject": "For your school project",
+        "date": 1796083800000,
+        "list": {},
+        "flags": {
+          "seen": false,
+          "flagged": false,
+          "answered": false,
+          "draft": false,
+          "fromMe": false
+        },
+        "roles": ["inbox", "category.forums"],
+        "snippet": "Hi Mica, our standard learning kit might suit you. This offer is distributed to every address on our purchased"
+      },
+      "self": ["me@home.example"],
+      "knownCorrespondent": false,
+      "userReplied": false,
+      "userEndedThread": false,
+      "text": "Hi Mica, our standard learning kit might suit you. This offer is distributed to every address on our purchased educator list."
+    }
+  },
+  {
+    "id": "other-12",
+    "job": "other",
+    "hard": true,
+    "why": "This receipt-like subject masks a promotion rather than a transaction record.",
+    "input": {
+      "message": {
+        "from": {
+          "address": "birch.fern@ledgergrove.example",
+          "name": "Birch Fern"
+        },
+        "to": [
+          {
+            "address": "me@home.example"
+          }
+        ],
+        "cc": [],
+        "subject": "Your receipt for savings",
+        "date": 1796083860000,
+        "list": {},
+        "flags": {
+          "seen": false,
+          "flagged": true,
+          "answered": false,
+          "draft": false,
+          "fromMe": false
+        },
+        "roles": ["inbox"]
+      },
+      "self": ["me@home.example"],
+      "knownCorrespondent": true,
+      "userReplied": false,
+      "userEndedThread": false,
+      "text": "You have earned an opportunity to save on a future purchase. No payment has been made and this is only a coupon campaign."
+    }
+  },
+  {
+    "id": "other-13",
+    "job": "other",
+    "hard": true,
+    "why": "This is an app upsell rather than a calendar invitation requiring a response.",
+    "input": {
+      "message": {
+        "from": {
+          "address": "alerts@folioport.example"
+        },
+        "to": [
+          {
+            "address": "me@home.example"
+          }
+        ],
+        "cc": [],
+        "subject": "Invitation to upgrade",
+        "date": 1796083920000,
+        "list": {},
+        "flags": {
+          "seen": true,
+          "flagged": false,
+          "answered": false,
+          "draft": false,
+          "fromMe": false
+        },
+        "roles": ["inbox", "category.updates"]
+      },
+      "self": ["me@home.example"],
+      "knownCorrespondent": true,
+      "userReplied": false,
+      "userEndedThread": false,
+      "text": "Accept this invitation to try our paid workspace tier. This generic upgrade offer is sent to all trial accounts."
+    }
+  },
+  {
+    "id": "other-14",
+    "job": "other",
+    "hard": true,
+    "why": "This generic app recommendation is not a chosen recurring newsletter.",
+    "input": {
+      "message": {
+        "from": {
+          "address": "hello@mapcabinet.example"
+        },
+        "to": [
+          {
+            "address": "me@home.example"
+          }
+        ],
+        "cc": [],
+        "subject": "More articles you might like",
+        "date": 1796083980000,
+        "list": {},
+        "flags": {
+          "seen": false,
+          "flagged": false,
+          "answered": false,
+          "draft": false,
+          "fromMe": false
+        },
+        "roles": ["inbox"]
+      },
+      "self": ["me@home.example"],
+      "knownCorrespondent": false,
+      "userReplied": false,
+      "userEndedThread": false,
+      "text": "Our app recommends opening these popular public posts. This is an automated recommendation, not a subscribed editorial edition."
+    }
+  },
+  {
+    "id": "other-15",
+    "job": "other",
+    "hard": true,
+    "why": "This is mass outreach rather than a new person writing individually.",
+    "input": {
+      "message": {
+        "from": {
+          "address": "vale.ash@loomhouse.test",
+          "name": "Vale Ash"
+        },
+        "to": [
+          {
+            "address": "me@home.example"
+          }
+        ],
+        "cc": [],
+        "subject": "We should connect",
+        "date": 1796084040000,
+        "list": {},
+        "flags": {
+          "seen": false,
+          "flagged": false,
+          "answered": false,
+          "draft": false,
+          "fromMe": false
+        },
+        "roles": ["inbox", "category.promotions"]
+      },
+      "self": ["me@home.example"],
+      "knownCorrespondent": false,
+      "userReplied": false,
+      "userEndedThread": false,
+      "text": "Hi Mica, I send this same networking pitch to every new directory listing. Buy a featured slot to reach more visitors."
+    }
+  },
+  {
+    "id": "other-16",
+    "job": "other",
+    "hard": true,
+    "why": "This known sender is promoting another purchase rather than reporting on the recipient's business.",
+    "input": {
+      "message": {
+        "from": {
+          "address": "clove.rue@lampdock.example",
+          "name": "Clove Rue"
+        },
+        "to": [
+          {
+            "address": "me@home.example"
+          }
+        ],
+        "cc": [],
+        "subject": "From your old supplier",
+        "date": 1796084100000,
+        "list": {},
+        "flags": {
+          "seen": true,
+          "flagged": false,
+          "answered": true,
+          "draft": false,
+          "fromMe": false
+        },
+        "roles": ["inbox", "category.personal"],
+        "snippet": "We worked together on a past purchase, so here is our standard winter promotion. This bulk offer has nothing t"
+      },
+      "self": ["me@home.example"],
+      "knownCorrespondent": true,
+      "userReplied": true,
+      "userEndedThread": true,
+      "text": "We worked together on a past purchase, so here is our standard winter promotion. This bulk offer has nothing to do with that completed order."
+    }
+  },
+  {
+    "id": "other-17",
+    "job": "other",
+    "hard": false,
+    "why": "This is a shop promotion.",
+    "input": {
+      "message": {
+        "from": {
+          "address": "offers@mapcabinet.example"
+        },
+        "to": [
+          {
+            "address": "me@home.example"
+          }
+        ],
+        "cc": [],
+        "subject": "Fresh notebook covers",
+        "date": 1796084160000,
+        "list": {
+          "autoSubmitted": "auto-generated",
+          "listUnsubscribe": "<mailto:leave@mapcabinet.example>"
+        },
+        "flags": {
+          "seen": false,
+          "flagged": false,
+          "answered": false,
+          "draft": false,
+          "fromMe": false
+        },
+        "roles": ["inbox"]
+      },
+      "self": ["me@home.example"],
+      "knownCorrespondent": false,
+      "userReplied": false,
+      "userEndedThread": false,
+      "text": "Browse our new notebook covers. The same sale offer is available to every visitor."
+    }
+  },
+  {
+    "id": "other-18",
+    "job": "other",
+    "hard": false,
+    "why": "This is a routine app upsell.",
+    "input": {
+      "message": {
+        "from": {
+          "address": "no-reply@folioport.example"
+        },
+        "to": [
+          {
+            "address": "me@home.example"
+          }
+        ],
+        "cc": [],
+        "subject": "Try the larger plan",
+        "date": 1796084220000,
+        "list": {
+          "precedence": "bulk",
+          "listId": "(present)",
+          "autoSubmitted": "auto-generated"
+        },
+        "flags": {
+          "seen": false,
+          "flagged": false,
+          "answered": false,
+          "draft": false,
+          "fromMe": false
+        },
+        "roles": ["inbox", "important"]
+      },
+      "self": ["me@home.example"],
+      "knownCorrespondent": true,
+      "userReplied": false,
+      "userEndedThread": false,
+      "text": "Upgrade your archive plan for more decorative themes. This is a generic offer with no account warning."
+    }
+  },
+  {
+    "id": "other-19",
+    "job": "other",
+    "hard": false,
+    "why": "This is an app engagement notification.",
+    "input": {
+      "message": {
+        "from": {
+          "address": "news@clayhaven.example"
+        },
+        "to": [
+          {
+            "address": "me@home.example"
+          }
+        ],
+        "cc": [],
+        "subject": "Popular in the gallery",
+        "date": 1796084280000,
+        "list": {
+          "precedence": "bulk",
+          "listId": "(present)",
+          "listUnsubscribe": "<mailto:leave@clayhaven.example>, <https://clayhaven.example/leave>",
+          "autoSubmitted": "auto-generated"
+        },
+        "flags": {
+          "seen": true,
+          "flagged": false,
+          "answered": false,
+          "draft": false,
+          "fromMe": false
+        },
+        "roles": ["inbox", "category.forums"]
+      },
+      "self": ["me@home.example"],
+      "knownCorrespondent": false,
+      "userReplied": false,
+      "userEndedThread": false,
+      "text": "The app has selected popular public images for you to browse. No one has contacted you directly."
+    }
+  },
+  {
+    "id": "other-20",
+    "job": "other",
+    "hard": false,
+    "why": "This is a promotional sale message.",
+    "input": {
+      "message": {
+        "from": {
+          "address": "orders@greenframe.example"
+        },
+        "to": [
+          {
+            "address": "me@home.example"
+          }
+        ],
+        "cc": [],
+        "subject": "Studio tools sale",
+        "date": 1796084340000,
+        "list": {
+          "precedence": "bulk",
+          "listId": "(present)",
+          "listUnsubscribe": "<mailto:leave@greenframe.example>, <https://greenframe.example/leave>",
+          "autoSubmitted": "auto-generated"
+        },
+        "flags": {
+          "seen": false,
+          "flagged": false,
+          "answered": false,
+          "draft": false,
+          "fromMe": false
+        },
+        "roles": ["inbox"]
+      },
+      "self": ["me@home.example"],
+      "knownCorrespondent": false,
+      "userReplied": false,
+      "userEndedThread": false,
+      "text": "All display stands are discounted this week. Visit https://standgrove.example/sale to shop."
+    }
+  },
+  {
+    "id": "other-21",
+    "job": "other",
+    "hard": false,
+    "why": "This is a generic growth promotion.",
+    "input": {
+      "message": {
+        "from": {
+          "address": "hello@folioport.example"
+        },
+        "to": [
+          {
+            "address": "me@home.example"
+          }
+        ],
+        "cc": [],
+        "subject": "Invite your friends",
+        "date": 1796084400000,
+        "list": {
+          "autoSubmitted": "auto-generated",
+          "listUnsubscribe": "<mailto:leave@folioport.example>"
+        },
+        "flags": {
+          "seen": false,
+          "flagged": false,
+          "answered": false,
+          "draft": false,
+          "fromMe": false
+        },
+        "roles": ["inbox", "category.updates"],
+        "snippet": "Earn decorative badges by inviting more people to the app. This standard referral campaign is optional."
+      },
+      "self": ["me@home.example"],
+      "knownCorrespondent": false,
+      "userReplied": false,
+      "userEndedThread": false,
+      "text": "Earn decorative badges by inviting more people to the app. This standard referral campaign is optional."
+    }
+  },
+  {
+    "id": "other-22",
+    "job": "other",
+    "hard": false,
+    "why": "This is marketing for future purchases.",
+    "input": {
+      "message": {
+        "from": {
+          "address": "offers@mapcabinet.example"
+        },
+        "to": [
+          {
+            "address": "me@home.example"
+          }
+        ],
+        "cc": [],
+        "subject": "Our winter catalog",
+        "date": 1796084460000,
+        "list": {
+          "precedence": "bulk",
+          "listId": "(present)",
+          "autoSubmitted": "auto-generated"
+        },
+        "flags": {
+          "seen": true,
+          "flagged": false,
+          "answered": false,
+          "draft": false,
+          "fromMe": false
+        },
+        "roles": ["inbox"]
+      },
+      "self": ["me@home.example"],
+      "knownCorrespondent": false,
+      "userReplied": false,
+      "userEndedThread": false,
+      "text": "Explore our winter range of paper supplies. This is a product catalog, not a status message about an order."
+    }
+  },
+  {
+    "id": "other-23",
+    "job": "other",
+    "hard": false,
+    "why": "This is a product promotion.",
+    "input": {
+      "message": {
+        "from": {
+          "address": "no-reply@clayhaven.example"
+        },
+        "to": [
+          {
+            "address": "me@home.example"
+          }
+        ],
+        "cc": [],
+        "subject": "A new bundle for makers",
+        "date": 1796084520000,
+        "list": {
+          "precedence": "bulk",
+          "listId": "(present)",
+          "listUnsubscribe": "<mailto:leave@clayhaven.example>, <https://clayhaven.example/leave>",
+          "autoSubmitted": "auto-generated"
+        },
+        "flags": {
+          "seen": false,
+          "flagged": true,
+          "answered": false,
+          "draft": false,
+          "fromMe": false
+        },
+        "roles": ["inbox", "category.promotions"]
+      },
+      "self": ["me@home.example"],
+      "knownCorrespondent": true,
+      "userReplied": false,
+      "userEndedThread": false,
+      "text": "Buy the seasonal brush bundle while stock lasts. This offer is sent to the shop's promotion list."
+    }
+  },
+  {
+    "id": "other-24",
+    "job": "other",
+    "hard": false,
+    "why": "This is a low-value engagement notification.",
+    "input": {
+      "message": {
+        "from": {
+          "address": "news@mapcabinet.example"
+        },
+        "to": [
+          {
+            "address": "me@home.example"
+          }
+        ],
+        "cc": [],
+        "subject": "Your streak misses you",
+        "date": 1796084580000,
+        "list": {
+          "precedence": "bulk",
+          "listId": "(present)",
+          "listUnsubscribe": "<mailto:leave@mapcabinet.example>, <https://mapcabinet.example/leave>",
+          "autoSubmitted": "auto-generated"
+        },
+        "flags": {
+          "seen": false,
+          "flagged": false,
+          "answered": false,
+          "draft": false,
+          "fromMe": false
+        },
+        "roles": ["inbox", "category.personal"]
+      },
+      "self": ["me@home.example"],
+      "knownCorrespondent": false,
+      "userReplied": false,
+      "userEndedThread": false,
+      "text": "Open the sketch app today to continue a decorative streak. No project or account access is at risk."
+    }
+  },
+  {
+    "id": "other-25",
+    "job": "other",
+    "hard": false,
+    "why": "This is an app discovery promotion.",
+    "input": {
+      "message": {
+        "from": {
+          "address": "orders@sessionloom.test"
+        },
+        "to": [
+          {
+            "address": "me@home.example"
+          }
+        ],
+        "cc": [],
+        "subject": "Featured workspaces",
+        "date": 1796084640000,
+        "list": {
+          "listUnsubscribe": "<mailto:leave@sessionloom.test>"
+        },
+        "flags": {
+          "seen": true,
+          "flagged": false,
+          "answered": false,
+          "draft": false,
+          "fromMe": false
+        },
+        "roles": ["inbox"]
+      },
+      "self": ["me@home.example"],
+      "knownCorrespondent": false,
+      "userReplied": false,
+      "userEndedThread": false,
+      "text": "Browse this week's promoted workspaces. These are paid placements rather than messages from their owners."
+    }
+  },
+  {
+    "id": "other-26",
+    "job": "other",
+    "hard": false,
+    "why": "This is an optional app upsell.",
+    "input": {
+      "message": {
+        "from": {
+          "address": "hello@folioport.example"
+        },
+        "to": [
+          {
+            "address": "me@home.example"
+          }
+        ],
+        "cc": [],
+        "subject": "Unlock extra palettes",
+        "date": 1796084700000,
+        "list": {
+          "precedence": "bulk",
+          "listId": "(present)",
+          "autoSubmitted": "auto-generated"
+        },
+        "flags": {
+          "seen": false,
+          "flagged": false,
+          "answered": false,
+          "draft": false,
+          "fromMe": false
+        },
+        "roles": ["inbox", "important"],
+        "snippet": "Try the paid palette collection in our drawing app. Your current tools remain unchanged."
+      },
+      "self": ["me@home.example"],
+      "knownCorrespondent": false,
+      "userReplied": false,
+      "userEndedThread": false,
+      "text": "Try the paid palette collection in our drawing app. Your current tools remain unchanged."
+    }
+  },
+  {
+    "id": "other-27",
+    "job": "other",
+    "hard": false,
+    "why": "This is mass commercial outreach.",
+    "input": {
+      "message": {
+        "from": {
+          "address": "offers@loomhouse.test"
+        },
+        "to": [
+          {
+            "address": "me@home.example"
+          }
+        ],
+        "cc": [],
+        "subject": "A directory placement offer",
+        "date": 1796084760000,
+        "list": {
+          "precedence": "bulk",
+          "listId": "(present)",
+          "listUnsubscribe": "<mailto:leave@loomhouse.test>, <https://loomhouse.test/leave>",
+          "autoSubmitted": "auto-generated"
+        },
+        "flags": {
+          "seen": false,
+          "flagged": false,
+          "answered": false,
+          "draft": false,
+          "fromMe": false
+        },
+        "roles": ["inbox", "category.forums"]
+      },
+      "self": ["me@home.example"],
+      "knownCorrespondent": false,
+      "userReplied": false,
+      "userEndedThread": false,
+      "text": "Our campaign is contacting every craft group in the directory. Purchase a highlighted listing to stand out."
+    }
+  },
+  {
+    "id": "other-28",
+    "job": "other",
+    "hard": false,
+    "why": "This is a shop promotion.",
+    "input": {
+      "message": {
+        "from": {
+          "address": "no-reply@lampdock.example"
+        },
+        "to": [
+          {
+            "address": "me@home.example"
+          }
+        ],
+        "cc": [],
+        "subject": "The new lamp range",
+        "date": 1796084820000,
+        "list": {
+          "precedence": "bulk",
+          "listId": "(present)",
+          "listUnsubscribe": "<mailto:leave@lampdock.example>, <https://lampdock.example/leave>",
+          "autoSubmitted": "auto-generated"
+        },
+        "flags": {
+          "seen": true,
+          "flagged": false,
+          "answered": false,
+          "draft": false,
+          "fromMe": false
+        },
+        "roles": ["inbox"]
+      },
+      "self": ["me@home.example"],
+      "knownCorrespondent": false,
+      "userReplied": false,
+      "userEndedThread": false,
+      "text": "Discover our new lamp shapes and colors. This message does not concern any lamp you already bought."
+    }
+  },
+  {
+    "id": "other-29",
+    "job": "other",
+    "hard": false,
+    "why": "This is an engagement prompt rather than an account update.",
+    "input": {
+      "message": {
+        "from": {
+          "address": "news@folioport.example"
+        },
+        "to": [
+          {
+            "address": "me@home.example"
+          }
+        ],
+        "cc": [],
+        "subject": "Come back to the app",
+        "date": 1796084880000,
+        "list": {
+          "autoSubmitted": "auto-generated",
+          "listUnsubscribe": "<mailto:leave@folioport.example>"
+        },
+        "flags": {
+          "seen": false,
+          "flagged": false,
+          "answered": false,
+          "draft": false,
+          "fromMe": false
+        },
+        "roles": ["inbox", "category.updates"]
+      },
+      "self": ["me@home.example"],
+      "knownCorrespondent": true,
+      "userReplied": false,
+      "userEndedThread": false,
+      "text": "We have new decorative themes to show you. Open the app whenever you want to explore them."
+    }
+  },
+  {
+    "id": "other-30",
+    "job": "other",
+    "hard": false,
+    "why": "This is a generic product promotion.",
+    "input": {
+      "message": {
+        "from": {
+          "address": "orders@mapcabinet.example"
+        },
+        "to": [
+          {
+            "address": "me@home.example"
+          }
+        ],
+        "cc": [],
+        "subject": "Premium templates preview",
+        "date": 1796084940000,
+        "list": {
+          "precedence": "bulk",
+          "listId": "(present)",
+          "autoSubmitted": "auto-generated"
+        },
+        "flags": {
+          "seen": false,
+          "flagged": false,
+          "answered": false,
+          "draft": false,
+          "fromMe": false
+        },
+        "roles": ["inbox"]
+      },
+      "self": ["me@home.example"],
+      "knownCorrespondent": false,
+      "userReplied": false,
+      "userEndedThread": false,
+      "text": "Preview our paid template pack. This general campaign offers no personal project information."
+    }
+  },
+  {
+    "id": "other-31",
+    "job": "other",
+    "hard": false,
+    "why": "This is a retail promotion.",
+    "input": {
+      "message": {
+        "from": {
+          "address": "hello@clayhaven.example"
+        },
+        "to": [
+          {
+            "address": "me@home.example"
+          }
+        ],
+        "cc": [],
+        "subject": "Seasonal pottery sale",
+        "date": 1796085000000,
+        "list": {
+          "precedence": "bulk",
+          "listId": "(present)",
+          "listUnsubscribe": "<mailto:leave@clayhaven.example>, <https://clayhaven.example/leave>",
+          "autoSubmitted": "auto-generated"
+        },
+        "flags": {
+          "seen": true,
+          "flagged": false,
+          "answered": false,
+          "draft": false,
+          "fromMe": false
+        },
+        "roles": ["inbox", "category.promotions"],
+        "snippet": "Our shelves are full of discounted pots. Browse the shop for a new purchase."
+      },
+      "self": ["me@home.example"],
+      "knownCorrespondent": false,
+      "userReplied": false,
+      "userEndedThread": false,
+      "text": "Our shelves are full of discounted pots. Browse the shop for a new purchase."
+    }
+  },
+  {
+    "id": "other-32",
+    "job": "other",
+    "hard": false,
+    "why": "This is an app advertising upsell.",
+    "input": {
+      "message": {
+        "from": {
+          "address": "offers@reedstudio.test"
+        },
+        "to": [
+          {
+            "address": "me@home.example"
+          }
+        ],
+        "cc": [],
+        "subject": "Boost your public page",
+        "date": 1796085060000,
+        "list": {
+          "precedence": "bulk",
+          "listId": "(present)",
+          "listUnsubscribe": "<mailto:leave@reedstudio.test>, <https://reedstudio.test/leave>",
+          "autoSubmitted": "auto-generated"
+        },
+        "flags": {
+          "seen": false,
+          "flagged": false,
+          "answered": false,
+          "draft": false,
+          "fromMe": false
+        },
+        "roles": ["inbox", "category.personal"]
+      },
+      "self": ["me@home.example"],
+      "knownCorrespondent": false,
+      "userReplied": false,
+      "userEndedThread": false,
+      "text": "Buy a boost to put your public studio page ahead of others. This standard offer goes to all page owners."
+    }
+  },
+  {
+    "id": "other-33",
+    "job": "other",
+    "hard": false,
+    "why": "This is a product announcement meant to sell.",
+    "input": {
+      "message": {
+        "from": {
+          "address": "no-reply@loomhouse.test"
+        },
+        "to": [
+          {
+            "address": "me@home.example"
+          }
+        ],
+        "cc": [],
+        "subject": "New stock of carving tools",
+        "date": 1796085120000,
+        "list": {
+          "autoSubmitted": "auto-generated",
+          "listUnsubscribe": "<mailto:leave@loomhouse.test>"
+        },
+        "flags": {
+          "seen": false,
+          "flagged": false,
+          "answered": false,
+          "draft": false,
+          "fromMe": false
+        },
+        "roles": ["inbox"]
+      },
+      "self": ["me@home.example"],
+      "knownCorrespondent": false,
+      "userReplied": false,
+      "userEndedThread": false,
+      "text": "Our shop has added carving tools to the catalog. There is no order waiting for you."
+    }
+  },
+  {
+    "id": "other-34",
+    "job": "other",
+    "hard": false,
+    "why": "This is an app engagement nudge.",
+    "input": {
+      "message": {
+        "from": {
+          "address": "news@mapcabinet.example"
+        },
+        "to": [
+          {
+            "address": "me@home.example"
+          }
+        ],
+        "cc": [],
+        "subject": "A badge is waiting",
+        "date": 1796085180000,
+        "list": {
+          "precedence": "bulk",
+          "listId": "(present)",
+          "autoSubmitted": "auto-generated"
+        },
+        "flags": {
+          "seen": true,
+          "flagged": true,
+          "answered": false,
+          "draft": false,
+          "fromMe": false
+        },
+        "roles": ["inbox", "important"]
+      },
+      "self": ["me@home.example"],
+      "knownCorrespondent": false,
+      "userReplied": false,
+      "userEndedThread": false,
+      "text": "Visit the app to collect a decorative browsing badge. This is a generic activity prompt."
+    }
+  },
+  {
+    "id": "other-35",
+    "job": "other",
+    "hard": false,
+    "why": "This is marketing for another purchase.",
+    "input": {
+      "message": {
+        "from": {
+          "address": "orders@clayhaven.example"
+        },
+        "to": [
+          {
+            "address": "me@home.example"
+          }
+        ],
+        "cc": [],
+        "subject": "Save on a second order",
+        "date": 1796085240000,
+        "list": {
+          "precedence": "bulk",
+          "listId": "(present)",
+          "listUnsubscribe": "<mailto:leave@clayhaven.example>, <https://clayhaven.example/leave>",
+          "autoSubmitted": "auto-generated"
+        },
+        "flags": {
+          "seen": false,
+          "flagged": false,
+          "answered": false,
+          "draft": false,
+          "fromMe": false
+        },
+        "roles": ["inbox", "category.forums"]
+      },
+      "self": ["me@home.example"],
+      "knownCorrespondent": true,
+      "userReplied": false,
+      "userEndedThread": false,
+      "text": "Use code EXTRA on a future order of labels. This coupon does not alter your earlier purchase."
+    }
+  },
+  {
+    "id": "other-36",
+    "job": "other",
+    "hard": false,
+    "why": "This is sponsored promotional content.",
+    "input": {
+      "message": {
+        "from": {
+          "address": "hello@reedstudio.test"
+        },
+        "to": [
+          {
+            "address": "me@home.example"
+          }
+        ],
+        "cc": [],
+        "subject": "Sponsored studio roundup",
+        "date": 1796085300000,
+        "list": {
+          "precedence": "bulk",
+          "listId": "(present)",
+          "listUnsubscribe": "<mailto:leave@reedstudio.test>, <https://reedstudio.test/leave>",
+          "autoSubmitted": "auto-generated"
+        },
+        "flags": {
+          "seen": false,
+          "flagged": false,
+          "answered": false,
+          "draft": false,
+          "fromMe": false
+        },
+        "roles": ["inbox"],
+        "snippet": "Browse these paid listings selected by our advertising system. This is not an editorial subscription."
+      },
+      "self": ["me@home.example"],
+      "knownCorrespondent": false,
+      "userReplied": false,
+      "userEndedThread": false,
+      "text": "Browse these paid listings selected by our advertising system. This is not an editorial subscription."
+    }
+  },
+  {
+    "id": "other-37",
+    "job": "other",
+    "hard": false,
+    "why": "This is mass sales outreach.",
+    "input": {
+      "message": {
+        "from": {
+          "address": "offers@loomhouse.test"
+        },
+        "to": [
+          {
+            "address": "me@home.example"
+          }
+        ],
+        "cc": [],
+        "subject": "Expand your audience",
+        "date": 1796085360000,
+        "list": {
+          "listUnsubscribe": "<mailto:leave@loomhouse.test>"
+        },
+        "flags": {
+          "seen": true,
+          "flagged": false,
+          "answered": false,
+          "draft": false,
+          "fromMe": false
+        },
+        "roles": ["inbox", "category.updates"]
+      },
+      "self": ["me@home.example"],
+      "knownCorrespondent": false,
+      "userReplied": false,
+      "userEndedThread": false,
+      "text": "Our standard campaign offers paid exposure to every studio in our contact list. Buy a placement to join."
+    }
+  },
+  {
+    "id": "other-38",
+    "job": "other",
+    "hard": false,
+    "why": "This is an optional app promotion.",
+    "input": {
+      "message": {
+        "from": {
+          "address": "no-reply@folioport.example"
+        },
+        "to": [
+          {
+            "address": "me@home.example"
+          }
+        ],
+        "cc": [],
+        "subject": "Explore the theme shop",
+        "date": 1796085420000,
+        "list": {
+          "precedence": "bulk",
+          "listId": "(present)",
+          "autoSubmitted": "auto-generated"
+        },
+        "flags": {
+          "seen": false,
+          "flagged": false,
+          "answered": false,
+          "draft": false,
+          "fromMe": false
+        },
+        "roles": ["inbox"]
+      },
+      "self": ["me@home.example"],
+      "knownCorrespondent": false,
+      "userReplied": false,
+      "userEndedThread": false,
+      "text": "See the new optional interface themes in the app store. Nothing about your account has changed."
+    }
+  },
+  {
+    "id": "other-39",
+    "job": "other",
+    "hard": false,
+    "why": "This is a shop promotion rather than a shipping update.",
+    "input": {
+      "message": {
+        "from": {
+          "address": "news@parcel.example"
+        },
+        "to": [
+          {
+            "address": "me@home.example"
+          }
+        ],
+        "cc": [],
+        "subject": "A sale on storage boxes",
+        "date": 1796085480000,
+        "list": {
+          "precedence": "bulk",
+          "listId": "(present)",
+          "listUnsubscribe": "<mailto:leave@parcel.example>, <https://parcel.example/leave>",
+          "autoSubmitted": "auto-generated"
+        },
+        "flags": {
+          "seen": false,
+          "flagged": false,
+          "answered": false,
+          "draft": false,
+          "fromMe": false
+        },
+        "roles": ["inbox", "category.promotions"]
+      },
+      "self": ["me@home.example"],
+      "knownCorrespondent": false,
+      "userReplied": false,
+      "userEndedThread": false,
+      "text": "Shop discounted storage boxes while the offer lasts. No box has been ordered or shipped for you."
+    }
+  },
+  {
+    "id": "other-40",
+    "job": "other",
+    "hard": false,
+    "why": "This is a generic discovery notification.",
+    "input": {
+      "message": {
+        "from": {
+          "address": "orders@folioport.example"
+        },
+        "to": [
+          {
+            "address": "me@home.example"
+          }
+        ],
+        "cc": [],
+        "subject": "Discover public collections",
+        "date": 1796085540000,
+        "list": {
+          "precedence": "bulk",
+          "listId": "(present)",
+          "listUnsubscribe": "<mailto:leave@folioport.example>, <https://folioport.example/leave>",
+          "autoSubmitted": "auto-generated"
+        },
+        "flags": {
+          "seen": true,
+          "flagged": false,
+          "answered": false,
+          "draft": false,
+          "fromMe": false
+        },
+        "roles": ["inbox", "category.personal"]
+      },
+      "self": ["me@home.example"],
+      "knownCorrespondent": false,
+      "userReplied": false,
+      "userEndedThread": false,
+      "text": "The app suggests browsing popular public collections. There are no personal messages or security events in this notification."
+    }
+  }
+]

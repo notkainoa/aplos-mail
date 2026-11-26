@@ -1,0 +1,1466 @@
+[
+  {
+    "id": "newPerson-01",
+    "job": "newPerson",
+    "hard": true,
+    "why": "This is a new person making an individual introduction tied to the recipient's work.",
+    "input": {
+      "message": {
+        "from": {
+          "address": "hello@courtyard.example",
+          "name": "Wren Alder"
+        },
+        "to": [
+          {
+            "address": "me@home.example"
+          }
+        ],
+        "cc": [],
+        "subject": "Your courtyard drawing inspired my model",
+        "date": 1796083200000,
+        "list": {},
+        "flags": {
+          "seen": true,
+          "flagged": true,
+          "answered": false,
+          "draft": false,
+          "fromMe": false
+        },
+        "roles": ["inbox", "category.promotions"],
+        "snippet": "Hi Mica, I have not written before, but I saw your drawing of the spiral courtyard at the open studio."
+      },
+      "self": ["me@home.example"],
+      "knownCorrespondent": false,
+      "userReplied": false,
+      "userEndedThread": false,
+      "text": "Hi Mica, I have not written before, but I saw your drawing of the spiral courtyard at the open studio. I built a small paper version and wanted to introduce myself as another local model maker."
+    }
+  },
+  {
+    "id": "newPerson-02",
+    "job": "newPerson",
+    "hard": true,
+    "why": "This is a personal introduction from a previously unknown writer.",
+    "input": {
+      "message": {
+        "from": {
+          "address": "studio@mapcabinet.example"
+        },
+        "to": [
+          {
+            "address": "me@home.example"
+          }
+        ],
+        "cc": [],
+        "subject": "A fellow map maker",
+        "date": 1796083260000,
+        "list": {
+          "precedence": "bulk",
+          "listId": "(present)"
+        },
+        "flags": {
+          "seen": false,
+          "flagged": false,
+          "answered": false,
+          "draft": false,
+          "fromMe": false
+        },
+        "roles": ["inbox", "category.personal"]
+      },
+      "self": ["me@home.example"],
+      "knownCorrespondent": false,
+      "userReplied": false,
+      "userEndedThread": false,
+      "text": "We have not met; I found your hand-drawn marsh map in the community exhibit. The tiny footbridge symbols reminded me of the maps I make for my invented village."
+    }
+  },
+  {
+    "id": "newPerson-03",
+    "job": "newPerson",
+    "hard": true,
+    "why": "This is a specific personal introduction rather than a reusable outreach template.",
+    "input": {
+      "message": {
+        "from": {
+          "address": "orders@clayhaven.example",
+          "name": "Fern Vale"
+        },
+        "to": [
+          {
+            "address": "me@home.example"
+          }
+        ],
+        "cc": [],
+        "subject": "About your blue bowl at the exhibit",
+        "date": 1796083320000,
+        "list": {},
+        "flags": {
+          "seen": false,
+          "flagged": false,
+          "answered": false,
+          "draft": false,
+          "fromMe": false
+        },
+        "roles": ["inbox"]
+      },
+      "self": ["me@home.example"],
+      "knownCorrespondent": false,
+      "userReplied": false,
+      "userEndedThread": false,
+      "text": "I am the maker whose green plate sat beside your blue bowl yesterday. I wanted to introduce myself after noticing we use similar carved rims."
+    }
+  },
+  {
+    "id": "newPerson-04",
+    "job": "newPerson",
+    "hard": true,
+    "why": "This new writer is responding personally to a specific contribution.",
+    "input": {
+      "message": {
+        "from": {
+          "address": "editor@plotgate.example",
+          "name": "Reed Moss"
+        },
+        "to": [
+          {
+            "address": "me@home.example"
+          }
+        ],
+        "cc": [],
+        "subject": "Your note in the seed journal",
+        "date": 1796083380000,
+        "list": {},
+        "flags": {
+          "seen": true,
+          "flagged": false,
+          "answered": false,
+          "draft": false,
+          "fromMe": false
+        },
+        "roles": ["inbox", "important"]
+      },
+      "self": ["me@home.example"],
+      "knownCorrespondent": false,
+      "userReplied": false,
+      "userEndedThread": false,
+      "text": "I read your note about saving striped bean seeds in the club journal. I have not contacted you before and wanted to share that my own tiny garden had the same result."
+    }
+  },
+  {
+    "id": "newPerson-05",
+    "job": "newPerson",
+    "hard": true,
+    "why": "This is a genuine first personal contact.",
+    "input": {
+      "message": {
+        "from": {
+          "address": "welcome@reedstudio.test"
+        },
+        "to": [
+          {
+            "address": "me@home.example"
+          }
+        ],
+        "cc": [],
+        "subject": "Another courtyard sketcher",
+        "date": 1796083440000,
+        "list": {
+          "precedence": "bulk",
+          "listId": "(present)",
+          "listUnsubscribe": "<mailto:leave@reedstudio.test>, <https://reedstudio.test/leave>"
+        },
+        "flags": {
+          "seen": false,
+          "flagged": false,
+          "answered": false,
+          "draft": false,
+          "fromMe": false
+        },
+        "roles": ["inbox", "category.forums"]
+      },
+      "self": ["me@home.example"],
+      "knownCorrespondent": false,
+      "userReplied": false,
+      "userEndedThread": false,
+      "text": "I was sketching opposite you at the courtyard session but left before introductions. Your use of empty space stayed with me, so I wanted to say hello."
+    }
+  },
+  {
+    "id": "newPerson-06",
+    "job": "newPerson",
+    "hard": true,
+    "why": "This is an individual first contact about a specific shared object.",
+    "input": {
+      "message": {
+        "from": {
+          "address": "workshop@loomhouse.test",
+          "name": "Ash Clove"
+        },
+        "to": [
+          {
+            "address": "me@home.example"
+          }
+        ],
+        "cc": [],
+        "subject": "The repaired stool in your window",
+        "date": 1796083500000,
+        "list": {},
+        "flags": {
+          "seen": false,
+          "flagged": false,
+          "answered": false,
+          "draft": false,
+          "fromMe": false
+        },
+        "roles": ["inbox"],
+        "snippet": "I made the little stool you restored for the neighborhood display. We have never spoken, and seeing your caref"
+      },
+      "self": ["me@home.example"],
+      "knownCorrespondent": false,
+      "userReplied": false,
+      "userEndedThread": false,
+      "text": "I made the little stool you restored for the neighborhood display. We have never spoken, and seeing your careful repair prompted this personal note."
+    }
+  },
+  {
+    "id": "newPerson-07",
+    "job": "newPerson",
+    "hard": true,
+    "why": "This is a new neighbor writing personally.",
+    "input": {
+      "message": {
+        "from": {
+          "address": "office@reedstudio.test",
+          "name": "Moss Hazel"
+        },
+        "to": [
+          {
+            "address": "me@home.example"
+          }
+        ],
+        "cc": [],
+        "subject": "Greetings from the annex studio",
+        "date": 1796083560000,
+        "list": {},
+        "flags": {
+          "seen": true,
+          "flagged": false,
+          "answered": false,
+          "draft": false,
+          "fromMe": false
+        },
+        "roles": ["inbox", "category.updates"]
+      },
+      "self": ["me@home.example"],
+      "knownCorrespondent": false,
+      "userReplied": false,
+      "userEndedThread": false,
+      "text": "I have just moved into the studio next to yours. We have not met, so I wanted to introduce myself before our first shared opening."
+    }
+  },
+  {
+    "id": "newPerson-08",
+    "job": "newPerson",
+    "hard": true,
+    "why": "This is a new person's specific response to the recipient's writing.",
+    "input": {
+      "message": {
+        "from": {
+          "address": "letters@mapcabinet.example"
+        },
+        "to": [
+          {
+            "address": "me@home.example"
+          }
+        ],
+        "cc": [],
+        "subject": "Your invented island names",
+        "date": 1796083620000,
+        "list": {
+          "precedence": "bulk",
+          "listId": "(present)",
+          "listUnsubscribe": "<mailto:leave@mapcabinet.example>, <https://mapcabinet.example/leave>"
+        },
+        "flags": {
+          "seen": false,
+          "flagged": false,
+          "answered": false,
+          "draft": false,
+          "fromMe": false
+        },
+        "roles": ["inbox"]
+      },
+      "self": ["me@home.example"],
+      "knownCorrespondent": false,
+      "userReplied": false,
+      "userEndedThread": false,
+      "text": "I came across your island-name booklet at the swap table. The name of the crescent harbor made me laugh, and I wanted to introduce myself as another imaginary-map writer."
+    }
+  },
+  {
+    "id": "newPerson-09",
+    "job": "newPerson",
+    "hard": true,
+    "why": "This is a personal first introduction grounded in a shared encounter.",
+    "input": {
+      "message": {
+        "from": {
+          "address": "hello@nightpond.test",
+          "name": "Rue Linden"
+        },
+        "to": [
+          {
+            "address": "me@home.example"
+          }
+        ],
+        "cc": [],
+        "subject": "A note after the lantern walk",
+        "date": 1796083680000,
+        "list": {},
+        "flags": {
+          "seen": false,
+          "flagged": false,
+          "answered": false,
+          "draft": false,
+          "fromMe": false
+        },
+        "roles": ["inbox", "category.promotions"]
+      },
+      "self": ["me@home.example"],
+      "knownCorrespondent": false,
+      "userReplied": false,
+      "userEndedThread": false,
+      "text": "I was the person carrying the paper heron beside your lantern. We did not exchange names, but the organizer passed on your public studio address so I could introduce myself."
+    }
+  },
+  {
+    "id": "newPerson-10",
+    "job": "newPerson",
+    "hard": true,
+    "why": "This is a new person introducing themselves individually.",
+    "input": {
+      "message": {
+        "from": {
+          "address": "studio@plotgate.example",
+          "name": "Alder Fenn"
+        },
+        "to": [
+          {
+            "address": "me@home.example"
+          }
+        ],
+        "cc": [],
+        "subject": "From the new allotment neighbor",
+        "date": 1796083740000,
+        "list": {},
+        "flags": {
+          "seen": true,
+          "flagged": false,
+          "answered": false,
+          "draft": false,
+          "fromMe": false
+        },
+        "roles": ["inbox", "category.personal"]
+      },
+      "self": ["me@home.example"],
+      "knownCorrespondent": false,
+      "userReplied": false,
+      "userEndedThread": false,
+      "text": "I have taken the plot beside yours and noticed your handmade trellis. We have not met, and I wanted to introduce myself before the next gardening day."
+    }
+  },
+  {
+    "id": "newPerson-11",
+    "job": "newPerson",
+    "hard": true,
+    "why": "This is a first personal contact about the recipient's specific demonstration.",
+    "input": {
+      "message": {
+        "from": {
+          "address": "orders@loomhouse.test"
+        },
+        "to": [
+          {
+            "address": "me@home.example"
+          }
+        ],
+        "cc": [],
+        "subject": "Your hinge demonstration",
+        "date": 1796083800000,
+        "list": {
+          "precedence": "bulk",
+          "listId": "(present)",
+          "listUnsubscribe": "<mailto:leave@loomhouse.test>, <https://loomhouse.test/leave>"
+        },
+        "flags": {
+          "seen": false,
+          "flagged": false,
+          "answered": false,
+          "draft": false,
+          "fromMe": false
+        },
+        "roles": ["inbox"],
+        "snippet": "I watched your hinge demonstration at the small tools gathering. I had never seen that joint before and wanted"
+      },
+      "self": ["me@home.example"],
+      "knownCorrespondent": false,
+      "userReplied": false,
+      "userEndedThread": false,
+      "text": "I watched your hinge demonstration at the small tools gathering. I had never seen that joint before and wanted to send a personal thank-you and introduce myself."
+    }
+  },
+  {
+    "id": "newPerson-12",
+    "job": "newPerson",
+    "hard": true,
+    "why": "This is a new person making an individual social connection.",
+    "input": {
+      "message": {
+        "from": {
+          "address": "editor@northfield-school.test",
+          "name": "Birch Fern"
+        },
+        "to": [
+          {
+            "address": "me@home.example"
+          }
+        ],
+        "cc": [],
+        "subject": "A note from the reading circle",
+        "date": 1796083860000,
+        "list": {},
+        "flags": {
+          "seen": false,
+          "flagged": true,
+          "answered": false,
+          "draft": false,
+          "fromMe": false
+        },
+        "roles": ["inbox", "important"]
+      },
+      "self": ["me@home.example"],
+      "knownCorrespondent": false,
+      "userReplied": false,
+      "userEndedThread": false,
+      "text": "I joined the reading circle after your last visit. Your annotated copy of the invented atlas made its way to me, and I wanted to introduce myself."
+    }
+  },
+  {
+    "id": "newPerson-13",
+    "job": "newPerson",
+    "hard": true,
+    "why": "This is a specific personal introduction rather than machine mail.",
+    "input": {
+      "message": {
+        "from": {
+          "address": "welcome@mapcabinet.example",
+          "name": "Sage Elm"
+        },
+        "to": [
+          {
+            "address": "me@home.example"
+          }
+        ],
+        "cc": [],
+        "subject": "The paper mill model",
+        "date": 1796083920000,
+        "list": {},
+        "flags": {
+          "seen": true,
+          "flagged": false,
+          "answered": false,
+          "draft": false,
+          "fromMe": false
+        },
+        "roles": ["inbox", "category.forums"]
+      },
+      "self": ["me@home.example"],
+      "knownCorrespondent": false,
+      "userReplied": false,
+      "userEndedThread": false,
+      "text": "We have not corresponded before; I saw your paper mill model in the east cabinet. I also make moving paper models and wanted to introduce myself as the new studio resident upstairs."
+    }
+  },
+  {
+    "id": "newPerson-14",
+    "job": "newPerson",
+    "hard": true,
+    "why": "This is a genuine new-person introduction.",
+    "input": {
+      "message": {
+        "from": {
+          "address": "workshop@folioport.example"
+        },
+        "to": [
+          {
+            "address": "me@home.example"
+          }
+        ],
+        "cc": [],
+        "subject": "Hello from a fellow binder",
+        "date": 1796083980000,
+        "list": {
+          "precedence": "bulk",
+          "listId": "(present)"
+        },
+        "flags": {
+          "seen": false,
+          "flagged": false,
+          "answered": false,
+          "draft": false,
+          "fromMe": false
+        },
+        "roles": ["inbox"]
+      },
+      "self": ["me@home.example"],
+      "knownCorrespondent": false,
+      "userReplied": false,
+      "userEndedThread": false,
+      "text": "Your stitched map cover was beside mine at the craft table. We missed each other there, so I am introducing myself directly."
+    }
+  },
+  {
+    "id": "newPerson-15",
+    "job": "newPerson",
+    "hard": true,
+    "why": "This is a personal first message tied to a particular piece of work.",
+    "input": {
+      "message": {
+        "from": {
+          "address": "office@greenframe.example",
+          "name": "Vale Ash"
+        },
+        "to": [
+          {
+            "address": "me@home.example"
+          }
+        ],
+        "cc": [],
+        "subject": "The bench with the curved back",
+        "date": 1796084040000,
+        "list": {},
+        "flags": {
+          "seen": false,
+          "flagged": false,
+          "answered": false,
+          "draft": false,
+          "fromMe": false
+        },
+        "roles": ["inbox", "category.updates"]
+      },
+      "self": ["me@home.example"],
+      "knownCorrespondent": false,
+      "userReplied": false,
+      "userEndedThread": false,
+      "text": "I am the apprentice who helped build the curved bench you sketched. We have not met, but your drawing showed a detail I had worked hard on and I wanted to say hello."
+    }
+  },
+  {
+    "id": "newPerson-16",
+    "job": "newPerson",
+    "hard": true,
+    "why": "This is a real individual introduction despite a provider's bulk-like categorization.",
+    "input": {
+      "message": {
+        "from": {
+          "address": "letters@smallstage.test"
+        },
+        "to": [
+          {
+            "address": "me@home.example"
+          }
+        ],
+        "cc": [],
+        "subject": "A personal note after the exhibit",
+        "date": 1796084100000,
+        "list": {
+          "precedence": "bulk",
+          "listId": "(present)",
+          "listUnsubscribe": "<mailto:leave@smallstage.test>, <https://smallstage.test/leave>"
+        },
+        "flags": {
+          "seen": true,
+          "flagged": false,
+          "answered": false,
+          "draft": false,
+          "fromMe": false
+        },
+        "roles": ["inbox"],
+        "snippet": "Your drawing of the empty stage reminded me of the small theatre I build in my attic. I am writing for the fir"
+      },
+      "self": ["me@home.example"],
+      "knownCorrespondent": false,
+      "userReplied": false,
+      "userEndedThread": false,
+      "text": "Your drawing of the empty stage reminded me of the small theatre I build in my attic. I am writing for the first time to introduce myself, not on behalf of a mailing list."
+    }
+  },
+  {
+    "id": "newPerson-17",
+    "job": "newPerson",
+    "hard": false,
+    "why": "This is a new person personally introducing themselves.",
+    "input": {
+      "message": {
+        "from": {
+          "address": "wren.alder@clayhaven.example",
+          "name": "Wren Alder"
+        },
+        "to": [
+          {
+            "address": "me@home.example"
+          }
+        ],
+        "cc": [],
+        "subject": "New member of the clay circle",
+        "date": 1796084160000,
+        "list": {},
+        "flags": {
+          "seen": false,
+          "flagged": false,
+          "answered": false,
+          "draft": false,
+          "fromMe": false
+        },
+        "roles": ["inbox", "category.promotions"]
+      },
+      "self": ["me@home.example"],
+      "knownCorrespondent": false,
+      "userReplied": false,
+      "userEndedThread": false,
+      "text": "I have just joined your clay circle and saw your coiled vase on the shelf. I wanted to introduce myself before Saturday's open session."
+    }
+  },
+  {
+    "id": "newPerson-18",
+    "job": "newPerson",
+    "hard": false,
+    "why": "This is an individual first contact about a shared craft.",
+    "input": {
+      "message": {
+        "from": {
+          "address": "rowan.brook@plotgate.example",
+          "name": "Rowan Brook"
+        },
+        "to": [
+          {
+            "address": "me@home.example"
+          }
+        ],
+        "cc": [],
+        "subject": "The other reed basket maker",
+        "date": 1796084220000,
+        "list": {},
+        "flags": {
+          "seen": false,
+          "flagged": false,
+          "answered": false,
+          "draft": false,
+          "fromMe": false
+        },
+        "roles": ["inbox", "category.personal"]
+      },
+      "self": ["me@home.example"],
+      "knownCorrespondent": false,
+      "userReplied": false,
+      "userEndedThread": false,
+      "text": "I saw your reed basket at the shared stall and realized we use the same unusual base weave. We have not met, so I wanted to say hello."
+    }
+  },
+  {
+    "id": "newPerson-19",
+    "job": "newPerson",
+    "hard": false,
+    "why": "This is a new neighbor's personal introduction.",
+    "input": {
+      "message": {
+        "from": {
+          "address": "fern.vale@reedstudio.test",
+          "name": "Fern Vale"
+        },
+        "to": [
+          {
+            "address": "me@home.example"
+          }
+        ],
+        "cc": [],
+        "subject": "Hello from the loft",
+        "date": 1796084280000,
+        "list": {},
+        "flags": {
+          "seen": true,
+          "flagged": false,
+          "answered": false,
+          "draft": false,
+          "fromMe": false
+        },
+        "roles": ["inbox"]
+      },
+      "self": ["me@home.example"],
+      "knownCorrespondent": false,
+      "userReplied": false,
+      "userEndedThread": false,
+      "text": "I moved into the loft workspace above your studio this week. I make paper scenery and wanted to introduce myself as your new neighbor."
+    }
+  },
+  {
+    "id": "newPerson-20",
+    "job": "newPerson",
+    "hard": false,
+    "why": "This is a new person responding to specific work.",
+    "input": {
+      "message": {
+        "from": {
+          "address": "reed.moss@greenframe.example",
+          "name": "Reed Moss"
+        },
+        "to": [
+          {
+            "address": "me@home.example"
+          }
+        ],
+        "cc": [],
+        "subject": "Your miniature orchard",
+        "date": 1796084340000,
+        "list": {},
+        "flags": {
+          "seen": false,
+          "flagged": false,
+          "answered": false,
+          "draft": false,
+          "fromMe": false
+        },
+        "roles": ["inbox", "important"]
+      },
+      "self": ["me@home.example"],
+      "knownCorrespondent": false,
+      "userReplied": false,
+      "userEndedThread": false,
+      "text": "I noticed the tiny gates in your miniature orchard at the local exhibit. I build small landscapes too and wanted to make a personal introduction."
+    }
+  },
+  {
+    "id": "newPerson-21",
+    "job": "newPerson",
+    "hard": false,
+    "why": "This is a genuine personal first contact.",
+    "input": {
+      "message": {
+        "from": {
+          "address": "lark.birch@mapcabinet.example",
+          "name": "Lark Birch"
+        },
+        "to": [
+          {
+            "address": "me@home.example"
+          }
+        ],
+        "cc": [],
+        "subject": "The folded roof sketch",
+        "date": 1796084400000,
+        "list": {},
+        "flags": {
+          "seen": false,
+          "flagged": false,
+          "answered": false,
+          "draft": false,
+          "fromMe": false
+        },
+        "roles": ["inbox", "category.forums"],
+        "snippet": "Your folded roof sketch was included in the community booklet. I make experimental paper shelters and wanted t"
+      },
+      "self": ["me@home.example"],
+      "knownCorrespondent": false,
+      "userReplied": false,
+      "userEndedThread": false,
+      "text": "Your folded roof sketch was included in the community booklet. I make experimental paper shelters and wanted to introduce myself after enjoying that page."
+    }
+  },
+  {
+    "id": "newPerson-22",
+    "job": "newPerson",
+    "hard": false,
+    "why": "This is a new person's individual introduction.",
+    "input": {
+      "message": {
+        "from": {
+          "address": "ash.clove@choralbank.test",
+          "name": "Ash Clove"
+        },
+        "to": [
+          {
+            "address": "me@home.example"
+          }
+        ],
+        "cc": [],
+        "subject": "A new voice in the choir",
+        "date": 1796084460000,
+        "list": {},
+        "flags": {
+          "seen": true,
+          "flagged": false,
+          "answered": false,
+          "draft": false,
+          "fromMe": false
+        },
+        "roles": ["inbox"]
+      },
+      "self": ["me@home.example"],
+      "knownCorrespondent": false,
+      "userReplied": false,
+      "userEndedThread": false,
+      "text": "I joined the choir after hearing your solo at the winter rehearsal. We have not met yet, and I wanted to say hello before we sing together."
+    }
+  },
+  {
+    "id": "newPerson-23",
+    "job": "newPerson",
+    "hard": false,
+    "why": "This is a specific personal introduction.",
+    "input": {
+      "message": {
+        "from": {
+          "address": "moss.hazel@courtyard.example",
+          "name": "Moss Hazel"
+        },
+        "to": [
+          {
+            "address": "me@home.example"
+          }
+        ],
+        "cc": [],
+        "subject": "About the mosaic path",
+        "date": 1796084520000,
+        "list": {},
+        "flags": {
+          "seen": false,
+          "flagged": true,
+          "answered": false,
+          "draft": false,
+          "fromMe": false
+        },
+        "roles": ["inbox", "category.updates"]
+      },
+      "self": ["me@home.example"],
+      "knownCorrespondent": false,
+      "userReplied": false,
+      "userEndedThread": false,
+      "text": "I laid the small blue tile at the end of the mosaic path you photographed. Your image reached our group and I wanted to introduce myself."
+    }
+  },
+  {
+    "id": "newPerson-24",
+    "job": "newPerson",
+    "hard": false,
+    "why": "This is a new person connecting personally over shared work.",
+    "input": {
+      "message": {
+        "from": {
+          "address": "elm.sage@mapcabinet.example",
+          "name": "Elm Sage"
+        },
+        "to": [
+          {
+            "address": "me@home.example"
+          }
+        ],
+        "cc": [],
+        "subject": "A fellow fictional cartographer",
+        "date": 1796084580000,
+        "list": {},
+        "flags": {
+          "seen": false,
+          "flagged": false,
+          "answered": false,
+          "draft": false,
+          "fromMe": false
+        },
+        "roles": ["inbox"]
+      },
+      "self": ["me@home.example"],
+      "knownCorrespondent": false,
+      "userReplied": false,
+      "userEndedThread": false,
+      "text": "I found your map of the imaginary salt marsh in the swap box. I draw invented landscapes as well and wanted to say hello."
+    }
+  },
+  {
+    "id": "newPerson-25",
+    "job": "newPerson",
+    "hard": false,
+    "why": "This is a new colleague's personal introduction.",
+    "input": {
+      "message": {
+        "from": {
+          "address": "rue.linden@loomhouse.test",
+          "name": "Rue Linden"
+        },
+        "to": [
+          {
+            "address": "me@home.example"
+          }
+        ],
+        "cc": [],
+        "subject": "The new print room volunteer",
+        "date": 1796084640000,
+        "list": {},
+        "flags": {
+          "seen": true,
+          "flagged": false,
+          "answered": false,
+          "draft": false,
+          "fromMe": false
+        },
+        "roles": ["inbox", "category.promotions"]
+      },
+      "self": ["me@home.example"],
+      "knownCorrespondent": false,
+      "userReplied": false,
+      "userEndedThread": false,
+      "text": "I am starting as a volunteer in your print room next week. I saw the block print you left drying and wanted to introduce myself."
+    }
+  },
+  {
+    "id": "newPerson-26",
+    "job": "newPerson",
+    "hard": false,
+    "why": "This is a new reader writing personally about a specific story.",
+    "input": {
+      "message": {
+        "from": {
+          "address": "alder.fenn@smallstage.test",
+          "name": "Alder Fenn"
+        },
+        "to": [
+          {
+            "address": "me@home.example"
+          }
+        ],
+        "cc": [],
+        "subject": "Your story about the well",
+        "date": 1796084700000,
+        "list": {},
+        "flags": {
+          "seen": false,
+          "flagged": false,
+          "answered": false,
+          "draft": false,
+          "fromMe": false
+        },
+        "roles": ["inbox", "category.personal"],
+        "snippet": "I read your short story about the town with a singing well in the club anthology. I write tiny fables too and "
+      },
+      "self": ["me@home.example"],
+      "knownCorrespondent": false,
+      "userReplied": false,
+      "userEndedThread": false,
+      "text": "I read your short story about the town with a singing well in the club anthology. I write tiny fables too and wanted to introduce myself."
+    }
+  },
+  {
+    "id": "newPerson-27",
+    "job": "newPerson",
+    "hard": false,
+    "why": "This is an individual introduction after a shared event.",
+    "input": {
+      "message": {
+        "from": {
+          "address": "hazel.reed@clayhaven.example",
+          "name": "Hazel Reed"
+        },
+        "to": [
+          {
+            "address": "me@home.example"
+          }
+        ],
+        "cc": [],
+        "subject": "Hello from the next booth",
+        "date": 1796084760000,
+        "list": {},
+        "flags": {
+          "seen": false,
+          "flagged": false,
+          "answered": false,
+          "draft": false,
+          "fromMe": false
+        },
+        "roles": ["inbox"]
+      },
+      "self": ["me@home.example"],
+      "knownCorrespondent": false,
+      "userReplied": false,
+      "userEndedThread": false,
+      "text": "I was selling woven bookmarks beside your ceramics booth but we never got to speak. I wanted to introduce myself now that the fair is over."
+    }
+  },
+  {
+    "id": "newPerson-28",
+    "job": "newPerson",
+    "hard": false,
+    "why": "This is a personal first contact with specific shared context.",
+    "input": {
+      "message": {
+        "from": {
+          "address": "birch.fern@reedstudio.test",
+          "name": "Birch Fern"
+        },
+        "to": [
+          {
+            "address": "me@home.example"
+          }
+        ],
+        "cc": [],
+        "subject": "Your copper leaf sculpture",
+        "date": 1796084820000,
+        "list": {},
+        "flags": {
+          "seen": true,
+          "flagged": false,
+          "answered": false,
+          "draft": false,
+          "fromMe": false
+        },
+        "roles": ["inbox", "important"]
+      },
+      "self": ["me@home.example"],
+      "knownCorrespondent": false,
+      "userReplied": false,
+      "userEndedThread": false,
+      "text": "I helped carry your copper leaf sculpture into the exhibit hall. We did not exchange names, and I wanted to introduce myself as another metalwork hobbyist."
+    }
+  },
+  {
+    "id": "newPerson-29",
+    "job": "newPerson",
+    "hard": false,
+    "why": "This is a new neighbor introducing themselves personally.",
+    "input": {
+      "message": {
+        "from": {
+          "address": "sage.elm@plotgate.example",
+          "name": "Sage Elm"
+        },
+        "to": [
+          {
+            "address": "me@home.example"
+          }
+        ],
+        "cc": [],
+        "subject": "A new gardener in row C",
+        "date": 1796084880000,
+        "list": {},
+        "flags": {
+          "seen": false,
+          "flagged": false,
+          "answered": false,
+          "draft": false,
+          "fromMe": false
+        },
+        "roles": ["inbox", "category.forums"]
+      },
+      "self": ["me@home.example"],
+      "knownCorrespondent": false,
+      "userReplied": false,
+      "userEndedThread": false,
+      "text": "I have just taken the end plot in your row. I admired the labels you carved and wanted to introduce myself before our paths cross."
+    }
+  },
+  {
+    "id": "newPerson-30",
+    "job": "newPerson",
+    "hard": false,
+    "why": "This is a new writer's personal connection to the recipient's contribution.",
+    "input": {
+      "message": {
+        "from": {
+          "address": "brook.wren@mapcabinet.example",
+          "name": "Brook Wren"
+        },
+        "to": [
+          {
+            "address": "me@home.example"
+          }
+        ],
+        "cc": [],
+        "subject": "The atlas annotation",
+        "date": 1796084940000,
+        "list": {},
+        "flags": {
+          "seen": false,
+          "flagged": false,
+          "answered": false,
+          "draft": false,
+          "fromMe": false
+        },
+        "roles": ["inbox"]
+      },
+      "self": ["me@home.example"],
+      "knownCorrespondent": false,
+      "userReplied": false,
+      "userEndedThread": false,
+      "text": "I borrowed the atlas with your tiny annotation about the imaginary canal. It made the whole map clearer, and I wanted to introduce myself as another map enthusiast."
+    }
+  },
+  {
+    "id": "newPerson-31",
+    "job": "newPerson",
+    "hard": false,
+    "why": "This is a genuine first personal introduction.",
+    "input": {
+      "message": {
+        "from": {
+          "address": "vale.ash@greenframe.example",
+          "name": "Vale Ash"
+        },
+        "to": [
+          {
+            "address": "me@home.example"
+          }
+        ],
+        "cc": [],
+        "subject": "A fellow shade-house builder",
+        "date": 1796085000000,
+        "list": {},
+        "flags": {
+          "seen": true,
+          "flagged": false,
+          "answered": false,
+          "draft": false,
+          "fromMe": false
+        },
+        "roles": ["inbox", "category.updates"],
+        "snippet": "I saw your model shade house in the community display. I have been building something similar and wanted to in"
+      },
+      "self": ["me@home.example"],
+      "knownCorrespondent": false,
+      "userReplied": false,
+      "userEndedThread": false,
+      "text": "I saw your model shade house in the community display. I have been building something similar and wanted to introduce myself as the new workshop member."
+    }
+  },
+  {
+    "id": "newPerson-32",
+    "job": "newPerson",
+    "hard": false,
+    "why": "This is a new collaborator writing personally.",
+    "input": {
+      "message": {
+        "from": {
+          "address": "clove.rue@choralbank.test",
+          "name": "Clove Rue"
+        },
+        "to": [
+          {
+            "address": "me@home.example"
+          }
+        ],
+        "cc": [],
+        "subject": "From the new rehearsal pianist",
+        "date": 1796085060000,
+        "list": {},
+        "flags": {
+          "seen": false,
+          "flagged": false,
+          "answered": false,
+          "draft": false,
+          "fromMe": false
+        },
+        "roles": ["inbox"]
+      },
+      "self": ["me@home.example"],
+      "knownCorrespondent": false,
+      "userReplied": false,
+      "userEndedThread": false,
+      "text": "I am joining your rehearsal group as its pianist. We have not spoken yet, and I wanted to introduce myself before the next session."
+    }
+  },
+  {
+    "id": "newPerson-33",
+    "job": "newPerson",
+    "hard": false,
+    "why": "This is an individual first message grounded in shared context.",
+    "input": {
+      "message": {
+        "from": {
+          "address": "wren.alder@nightpond.test",
+          "name": "Wren Alder"
+        },
+        "to": [
+          {
+            "address": "me@home.example"
+          }
+        ],
+        "cc": [],
+        "subject": "The kite beside yours",
+        "date": 1796085120000,
+        "list": {},
+        "flags": {
+          "seen": false,
+          "flagged": false,
+          "answered": false,
+          "draft": false,
+          "fromMe": false
+        },
+        "roles": ["inbox", "category.promotions"]
+      },
+      "self": ["me@home.example"],
+      "knownCorrespondent": false,
+      "userReplied": false,
+      "userEndedThread": false,
+      "text": "My striped kite was hanging beside your bird-shaped one at the hall. We missed introductions, so I wanted to say hello to a fellow maker."
+    }
+  },
+  {
+    "id": "newPerson-34",
+    "job": "newPerson",
+    "hard": false,
+    "why": "This is a personal introduction tied to specific work.",
+    "input": {
+      "message": {
+        "from": {
+          "address": "rowan.brook@clayhaven.example",
+          "name": "Rowan Brook"
+        },
+        "to": [
+          {
+            "address": "me@home.example"
+          }
+        ],
+        "cc": [],
+        "subject": "Your clay bell recording",
+        "date": 1796085180000,
+        "list": {},
+        "flags": {
+          "seen": true,
+          "flagged": true,
+          "answered": false,
+          "draft": false,
+          "fromMe": false
+        },
+        "roles": ["inbox", "category.personal"]
+      },
+      "self": ["me@home.example"],
+      "knownCorrespondent": false,
+      "userReplied": false,
+      "userEndedThread": false,
+      "text": "I heard the recording of your clay bells in the club archive. I make small acoustic sculptures and wanted to introduce myself."
+    }
+  },
+  {
+    "id": "newPerson-35",
+    "job": "newPerson",
+    "hard": false,
+    "why": "This is a new volunteer making a personal introduction.",
+    "input": {
+      "message": {
+        "from": {
+          "address": "fern.vale@loomhouse.test",
+          "name": "Fern Vale"
+        },
+        "to": [
+          {
+            "address": "me@home.example"
+          }
+        ],
+        "cc": [],
+        "subject": "A new keeper for the tool shed",
+        "date": 1796085240000,
+        "list": {},
+        "flags": {
+          "seen": false,
+          "flagged": false,
+          "answered": false,
+          "draft": false,
+          "fromMe": false
+        },
+        "roles": ["inbox"]
+      },
+      "self": ["me@home.example"],
+      "knownCorrespondent": false,
+      "userReplied": false,
+      "userEndedThread": false,
+      "text": "I am taking over the tool shed volunteer role next month. We have not met, so I wanted to introduce myself to the person who made its careful inventory."
+    }
+  },
+  {
+    "id": "newPerson-36",
+    "job": "newPerson",
+    "hard": false,
+    "why": "This is a new person's specific personal contact.",
+    "input": {
+      "message": {
+        "from": {
+          "address": "reed.moss@smallstage.test",
+          "name": "Reed Moss"
+        },
+        "to": [
+          {
+            "address": "me@home.example"
+          }
+        ],
+        "cc": [],
+        "subject": "The tiny stage curtains",
+        "date": 1796085300000,
+        "list": {},
+        "flags": {
+          "seen": false,
+          "flagged": false,
+          "answered": false,
+          "draft": false,
+          "fromMe": false
+        },
+        "roles": ["inbox", "important"],
+        "snippet": "I sewed the tiny curtains used in the model theatre you photographed. Your image reached me through the craft "
+      },
+      "self": ["me@home.example"],
+      "knownCorrespondent": false,
+      "userReplied": false,
+      "userEndedThread": false,
+      "text": "I sewed the tiny curtains used in the model theatre you photographed. Your image reached me through the craft group, and I wanted to say hello."
+    }
+  },
+  {
+    "id": "newPerson-37",
+    "job": "newPerson",
+    "hard": false,
+    "why": "This is a new neighbor personally introducing themselves.",
+    "input": {
+      "message": {
+        "from": {
+          "address": "lark.birch@reedstudio.test",
+          "name": "Lark Birch"
+        },
+        "to": [
+          {
+            "address": "me@home.example"
+          }
+        ],
+        "cc": [],
+        "subject": "Hello from the canal studio",
+        "date": 1796085360000,
+        "list": {},
+        "flags": {
+          "seen": true,
+          "flagged": false,
+          "answered": false,
+          "draft": false,
+          "fromMe": false
+        },
+        "roles": ["inbox", "category.forums"]
+      },
+      "self": ["me@home.example"],
+      "knownCorrespondent": false,
+      "userReplied": false,
+      "userEndedThread": false,
+      "text": "I am the new resident in the canal-side studio. I saw your drawing on our shared noticeboard and wanted to introduce myself as another sketcher."
+    }
+  },
+  {
+    "id": "newPerson-38",
+    "job": "newPerson",
+    "hard": false,
+    "why": "This is a genuine first personal note about the recipient's writing.",
+    "input": {
+      "message": {
+        "from": {
+          "address": "ash.clove@plotgate.example",
+          "name": "Ash Clove"
+        },
+        "to": [
+          {
+            "address": "me@home.example"
+          }
+        ],
+        "cc": [],
+        "subject": "Your orchard poem",
+        "date": 1796085420000,
+        "list": {},
+        "flags": {
+          "seen": false,
+          "flagged": false,
+          "answered": false,
+          "draft": false,
+          "fromMe": false
+        },
+        "roles": ["inbox"]
+      },
+      "self": ["me@home.example"],
+      "knownCorrespondent": false,
+      "userReplied": false,
+      "userEndedThread": false,
+      "text": "I read your orchard poem in the handmade zine at the studio. The image of the leaning ladder stayed with me, and I wanted to introduce myself as another contributor."
+    }
+  },
+  {
+    "id": "newPerson-39",
+    "job": "newPerson",
+    "hard": false,
+    "why": "This is a new person making an individual introduction.",
+    "input": {
+      "message": {
+        "from": {
+          "address": "moss.hazel@folioport.example",
+          "name": "Moss Hazel"
+        },
+        "to": [
+          {
+            "address": "me@home.example"
+          }
+        ],
+        "cc": [],
+        "subject": "A fellow book repairer",
+        "date": 1796085480000,
+        "list": {},
+        "flags": {
+          "seen": false,
+          "flagged": false,
+          "answered": false,
+          "draft": false,
+          "fromMe": false
+        },
+        "roles": ["inbox", "category.updates"]
+      },
+      "self": ["me@home.example"],
+      "knownCorrespondent": false,
+      "userReplied": false,
+      "userEndedThread": false,
+      "text": "Your repaired atlas was on display beside my stitched notebook. I admired the spine and wanted to introduce myself after missing you at the opening."
+    }
+  },
+  {
+    "id": "newPerson-40",
+    "job": "newPerson",
+    "hard": false,
+    "why": "This is a new group member writing personally.",
+    "input": {
+      "message": {
+        "from": {
+          "address": "elm.sage@nightpond.test",
+          "name": "Elm Sage"
+        },
+        "to": [
+          {
+            "address": "me@home.example"
+          }
+        ],
+        "cc": [],
+        "subject": "The new lantern group member",
+        "date": 1796085540000,
+        "list": {},
+        "flags": {
+          "seen": true,
+          "flagged": false,
+          "answered": false,
+          "draft": false,
+          "fromMe": false
+        },
+        "roles": ["inbox"]
+      },
+      "self": ["me@home.example"],
+      "knownCorrespondent": false,
+      "userReplied": false,
+      "userEndedThread": false,
+      "text": "I have joined your lantern-making group and recognized your folded fish design from the window display. I wanted to introduce myself before the first session."
+    }
+  }
+]

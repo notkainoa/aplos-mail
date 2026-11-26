@@ -1,0 +1,1574 @@
+[
+  {
+    "id": "update-01",
+    "job": "update",
+    "hard": true,
+    "why": "This known person's message reports a completed change that affects the recipient.",
+    "input": {
+      "message": {
+        "from": {
+          "address": "wren.alder@courtyard.example",
+          "name": "Wren Alder"
+        },
+        "to": [
+          {
+            "address": "me@home.example"
+          }
+        ],
+        "cc": [],
+        "subject": "Courtyard sign is ready",
+        "date": 1796083200000,
+        "list": {},
+        "flags": {
+          "seen": true,
+          "flagged": true,
+          "answered": true,
+          "draft": false,
+          "fromMe": false
+        },
+        "roles": ["inbox", "category.updates"],
+        "snippet": "FYI, the courtyard sign is finished and stored in the dry shed. No reply or approval is needed."
+      },
+      "self": ["me@home.example"],
+      "knownCorrespondent": true,
+      "userReplied": true,
+      "userEndedThread": true,
+      "text": "FYI, the courtyard sign is finished and stored in the dry shed. No reply or approval is needed."
+    }
+  },
+  {
+    "id": "update-02",
+    "job": "update",
+    "hard": true,
+    "why": "This bulk school notice changes the recipient's arrival arrangements on a real date.",
+    "input": {
+      "message": {
+        "from": {
+          "address": "orders@northfield-school.test"
+        },
+        "to": [
+          {
+            "address": "me@home.example"
+          }
+        ],
+        "cc": [],
+        "subject": "School gate change on December 4",
+        "date": 1796083260000,
+        "list": {
+          "precedence": "bulk",
+          "listId": "(present)",
+          "autoSubmitted": "auto-generated"
+        },
+        "flags": {
+          "seen": false,
+          "flagged": false,
+          "answered": false,
+          "draft": false,
+          "fromMe": false
+        },
+        "roles": ["inbox"]
+      },
+      "self": ["me@home.example"],
+      "knownCorrespondent": false,
+      "userReplied": false,
+      "userEndedThread": false,
+      "text": "The north gate will be closed on 2026-12-04 from 08:00 to 10:00. Your class will enter through the orchard gate instead."
+    }
+  },
+  {
+    "id": "update-03",
+    "job": "update",
+    "hard": true,
+    "why": "This reports an exceptional failed payment rather than a routine record.",
+    "input": {
+      "message": {
+        "from": {
+          "address": "no-reply@ledgergrove.example"
+        },
+        "to": [
+          {
+            "address": "me@home.example"
+          }
+        ],
+        "cc": [],
+        "subject": "Payment attempt failed",
+        "date": 1796083320000,
+        "list": {
+          "precedence": "bulk",
+          "listId": "(present)",
+          "listUnsubscribe": "<mailto:leave@ledgergrove.example>, <https://ledgergrove.example/leave>",
+          "autoSubmitted": "auto-generated"
+        },
+        "flags": {
+          "seen": false,
+          "flagged": false,
+          "answered": false,
+          "draft": false,
+          "fromMe": false
+        },
+        "roles": ["inbox", "category.promotions"]
+      },
+      "self": ["me@home.example"],
+      "knownCorrespondent": false,
+      "userReplied": false,
+      "userEndedThread": false,
+      "text": "Your 12-credit membership payment failed today. We will retry the saved method tomorrow; no payment action is requested now."
+    }
+  },
+  {
+    "id": "update-04",
+    "job": "update",
+    "hard": true,
+    "why": "This reports a refund that changes the recipient's financial position.",
+    "input": {
+      "message": {
+        "from": {
+          "address": "hello@clayhaven.example"
+        },
+        "to": [
+          {
+            "address": "me@home.example"
+          }
+        ],
+        "cc": [],
+        "subject": "Refund issued",
+        "date": 1796083380000,
+        "list": {},
+        "flags": {
+          "seen": true,
+          "flagged": false,
+          "answered": false,
+          "draft": false,
+          "fromMe": false
+        },
+        "roles": ["inbox", "category.personal"]
+      },
+      "self": ["me@home.example"],
+      "knownCorrespondent": false,
+      "userReplied": false,
+      "userEndedThread": false,
+      "text": "We returned 7 credits for the cracked bowl to your original payment method. It should appear within three working days."
+    }
+  },
+  {
+    "id": "update-05",
+    "job": "update",
+    "hard": true,
+    "why": "This shop message reports shipping progress for the recipient's actual order.",
+    "input": {
+      "message": {
+        "from": {
+          "address": "orders@clayhaven.example"
+        },
+        "to": [
+          {
+            "address": "me@home.example"
+          }
+        ],
+        "cc": [],
+        "subject": "Your parcel has shipped",
+        "date": 1796083440000,
+        "list": {
+          "precedence": "bulk",
+          "listId": "(present)",
+          "listUnsubscribe": "<mailto:leave@clayhaven.example>, <https://clayhaven.example/leave>",
+          "autoSubmitted": "auto-generated"
+        },
+        "flags": {
+          "seen": false,
+          "flagged": false,
+          "answered": false,
+          "draft": false,
+          "fromMe": false
+        },
+        "roles": ["inbox"]
+      },
+      "self": ["me@home.example"],
+      "knownCorrespondent": false,
+      "userReplied": false,
+      "userEndedThread": false,
+      "text": "Your order of clay labels has left our workshop. Delivery is expected on 2026-12-05 and needs no signature.",
+      "structured": [
+        {
+          "kind": "delivery",
+          "final": false
+        }
+      ]
+    }
+  },
+  {
+    "id": "update-06",
+    "job": "update",
+    "hard": true,
+    "why": "This app notification reports a specific security event affecting the account.",
+    "input": {
+      "message": {
+        "from": {
+          "address": "bookings@folioport.example"
+        },
+        "to": [
+          {
+            "address": "me@home.example"
+          }
+        ],
+        "cc": [],
+        "subject": "Security alert for your account",
+        "date": 1796083500000,
+        "list": {
+          "precedence": "bulk",
+          "listId": "(present)",
+          "autoSubmitted": "auto-generated"
+        },
+        "flags": {
+          "seen": false,
+          "flagged": false,
+          "answered": false,
+          "draft": false,
+          "fromMe": false
+        },
+        "roles": ["inbox", "important"],
+        "snippet": "A new session accessed your archive from an unfamiliar device. We have blocked that session automatically; det"
+      },
+      "self": ["me@home.example"],
+      "knownCorrespondent": true,
+      "userReplied": false,
+      "userEndedThread": false,
+      "text": "A new session accessed your archive from an unfamiliar device. We have blocked that session automatically; details are at https://folioport.example/security."
+    }
+  },
+  {
+    "id": "update-07",
+    "job": "update",
+    "hard": true,
+    "why": "This reports an unusual charge rather than quietly filing a routine statement.",
+    "input": {
+      "message": {
+        "from": {
+          "address": "alerts@ledgergrove.example"
+        },
+        "to": [
+          {
+            "address": "me@home.example"
+          }
+        ],
+        "cc": [],
+        "subject": "An unusually large charge",
+        "date": 1796083560000,
+        "list": {},
+        "flags": {
+          "seen": true,
+          "flagged": false,
+          "answered": false,
+          "draft": false,
+          "fromMe": false
+        },
+        "roles": ["inbox", "category.forums"]
+      },
+      "self": ["me@home.example"],
+      "knownCorrespondent": false,
+      "userReplied": false,
+      "userEndedThread": false,
+      "text": "Your meter account was charged 480 credits today, well above your usual 20-credit range. This alert is separate from your monthly statement."
+    }
+  },
+  {
+    "id": "update-08",
+    "job": "update",
+    "hard": true,
+    "why": "This bulk calendar notification changes an existing meeting without requesting a response.",
+    "input": {
+      "message": {
+        "from": {
+          "address": "orders@sessionloom.test"
+        },
+        "to": [
+          {
+            "address": "me@home.example"
+          }
+        ],
+        "cc": [],
+        "subject": "Calendar room moved",
+        "date": 1796083620000,
+        "list": {
+          "precedence": "bulk",
+          "listId": "(present)",
+          "listUnsubscribe": "<mailto:leave@sessionloom.test>, <https://sessionloom.test/leave>",
+          "autoSubmitted": "auto-generated"
+        },
+        "flags": {
+          "seen": false,
+          "flagged": false,
+          "answered": false,
+          "draft": false,
+          "fromMe": false
+        },
+        "roles": ["inbox"]
+      },
+      "self": ["me@home.example"],
+      "knownCorrespondent": false,
+      "userReplied": false,
+      "userEndedThread": false,
+      "text": "Your planning session on 2026-12-06 is now in the loft instead of the hall. Your accepted attendance remains unchanged.",
+      "structured": [
+        {
+          "kind": "invite"
+        }
+      ]
+    }
+  },
+  {
+    "id": "update-09",
+    "job": "update",
+    "hard": true,
+    "why": "This policy notice changes the recipient's actual access rather than just documenting terms.",
+    "input": {
+      "message": {
+        "from": {
+          "address": "no-reply@plotgate.example"
+        },
+        "to": [
+          {
+            "address": "me@home.example"
+          }
+        ],
+        "cc": [],
+        "subject": "Policy change for your locker",
+        "date": 1796083680000,
+        "list": {
+          "precedence": "bulk",
+          "listId": "(present)",
+          "listUnsubscribe": "<mailto:leave@plotgate.example>, <https://plotgate.example/leave>",
+          "autoSubmitted": "auto-generated"
+        },
+        "flags": {
+          "seen": false,
+          "flagged": false,
+          "answered": false,
+          "draft": false,
+          "fromMe": false
+        },
+        "roles": ["inbox", "category.updates"]
+      },
+      "self": ["me@home.example"],
+      "knownCorrespondent": false,
+      "userReplied": false,
+      "userEndedThread": false,
+      "text": "From 2026-12-09 your rented locker will open only during staffed hours. Your existing key and rental remain valid."
+    }
+  },
+  {
+    "id": "update-10",
+    "job": "update",
+    "hard": true,
+    "why": "This reply reports progress rather than repeating the old approval request.",
+    "input": {
+      "message": {
+        "from": {
+          "address": "wren.alder@courtyard.example",
+          "name": "Wren Alder"
+        },
+        "to": [
+          {
+            "address": "me@home.example"
+          }
+        ],
+        "cc": [],
+        "subject": "Re: Can you approve this",
+        "date": 1796083740000,
+        "list": {},
+        "flags": {
+          "seen": true,
+          "flagged": false,
+          "answered": true,
+          "draft": false,
+          "fromMe": false
+        },
+        "roles": ["inbox"]
+      },
+      "self": ["me@home.example"],
+      "knownCorrespondent": true,
+      "userReplied": true,
+      "userEndedThread": true,
+      "text": "The review is complete and your earlier approval was sufficient. The printer has started, so nothing further is needed."
+    }
+  },
+  {
+    "id": "update-11",
+    "job": "update",
+    "hard": true,
+    "why": "This bulk booking message reports a real change to the recipient's place.",
+    "input": {
+      "message": {
+        "from": {
+          "address": "notices@clayhaven.example"
+        },
+        "to": [
+          {
+            "address": "me@home.example"
+          }
+        ],
+        "cc": [],
+        "subject": "Your waitlist place is confirmed",
+        "date": 1796083800000,
+        "list": {
+          "precedence": "bulk",
+          "listId": "(present)",
+          "listUnsubscribe": "<mailto:leave@clayhaven.example>, <https://clayhaven.example/leave>",
+          "autoSubmitted": "auto-generated"
+        },
+        "flags": {
+          "seen": false,
+          "flagged": false,
+          "answered": false,
+          "draft": false,
+          "fromMe": false
+        },
+        "roles": ["inbox", "category.promotions"],
+        "snippet": "A place opened for you in the glaze workshop on 2026-12-12. Your prior acceptance has been applied automatical"
+      },
+      "self": ["me@home.example"],
+      "knownCorrespondent": true,
+      "userReplied": false,
+      "userEndedThread": false,
+      "text": "A place opened for you in the glaze workshop on 2026-12-12. Your prior acceptance has been applied automatically."
+    }
+  },
+  {
+    "id": "update-12",
+    "job": "update",
+    "hard": true,
+    "why": "This list notice reports a dated interruption affecting the recipient.",
+    "input": {
+      "message": {
+        "from": {
+          "address": "bookings@plotgate.example"
+        },
+        "to": [
+          {
+            "address": "me@home.example"
+          }
+        ],
+        "cc": [],
+        "subject": "Temporary water outage",
+        "date": 1796083860000,
+        "list": {
+          "precedence": "bulk",
+          "listId": "(present)",
+          "listUnsubscribe": "<mailto:leave@plotgate.example>, <https://plotgate.example/leave>",
+          "autoSubmitted": "auto-generated"
+        },
+        "flags": {
+          "seen": false,
+          "flagged": true,
+          "answered": false,
+          "draft": false,
+          "fromMe": false
+        },
+        "roles": ["inbox", "category.personal"]
+      },
+      "self": ["me@home.example"],
+      "knownCorrespondent": false,
+      "userReplied": false,
+      "userEndedThread": false,
+      "text": "Your allotment tap will be off on 2026-12-14 from 09:00 to 12:00. The repair team has everything it needs from you."
+    }
+  },
+  {
+    "id": "update-13",
+    "job": "update",
+    "hard": true,
+    "why": "This personal mail is an update with no request to answer.",
+    "input": {
+      "message": {
+        "from": {
+          "address": "sage.elm@courtyard.example",
+          "name": "Sage Elm"
+        },
+        "to": [
+          {
+            "address": "fern@people.test"
+          }
+        ],
+        "cc": [
+          {
+            "address": "me@home.example"
+          }
+        ],
+        "subject": "Personal note about the hall",
+        "date": 1796083920000,
+        "list": {},
+        "flags": {
+          "seen": true,
+          "flagged": false,
+          "answered": false,
+          "draft": false,
+          "fromMe": false
+        },
+        "roles": ["inbox"]
+      },
+      "self": ["me@home.example"],
+      "knownCorrespondent": true,
+      "userReplied": false,
+      "userEndedThread": false,
+      "text": "Just to keep you posted, our rehearsal hall has heating again. Your Thursday session can go ahead as planned."
+    }
+  },
+  {
+    "id": "update-14",
+    "job": "update",
+    "hard": true,
+    "why": "This automated delivery notice changes the recipient's expected arrival date.",
+    "input": {
+      "message": {
+        "from": {
+          "address": "orders@lampdock.example"
+        },
+        "to": [
+          {
+            "address": "me@home.example"
+          }
+        ],
+        "cc": [],
+        "subject": "Delivery delayed",
+        "date": 1796083980000,
+        "list": {
+          "precedence": "bulk",
+          "listId": "(present)",
+          "autoSubmitted": "auto-generated"
+        },
+        "flags": {
+          "seen": false,
+          "flagged": false,
+          "answered": false,
+          "draft": false,
+          "fromMe": false
+        },
+        "roles": ["inbox", "important"]
+      },
+      "self": ["me@home.example"],
+      "knownCorrespondent": false,
+      "userReplied": false,
+      "userEndedThread": false,
+      "text": "Your replacement wheel is delayed until 2026-12-15. We have already extended the free loan period to cover the delay.",
+      "structured": [
+        {
+          "kind": "delivery",
+          "final": false
+        }
+      ]
+    }
+  },
+  {
+    "id": "update-15",
+    "job": "update",
+    "hard": true,
+    "why": "This bulk event mail reports cancellation of the recipient's reservation.",
+    "input": {
+      "message": {
+        "from": {
+          "address": "no-reply@nightpond.test"
+        },
+        "to": [
+          {
+            "address": "me@home.example"
+          }
+        ],
+        "cc": [],
+        "subject": "Your reserved session is cancelled",
+        "date": 1796084040000,
+        "list": {
+          "precedence": "bulk",
+          "listId": "(present)",
+          "listUnsubscribe": "<mailto:leave@nightpond.test>, <https://nightpond.test/leave>",
+          "autoSubmitted": "auto-generated"
+        },
+        "flags": {
+          "seen": false,
+          "flagged": false,
+          "answered": false,
+          "draft": false,
+          "fromMe": false
+        },
+        "roles": ["inbox", "category.forums"]
+      },
+      "self": ["me@home.example"],
+      "knownCorrespondent": false,
+      "userReplied": false,
+      "userEndedThread": false,
+      "text": "The telescope session you reserved for 2026-12-16 is cancelled because of roof repairs. Your deposit will return automatically.",
+      "structured": [
+        {
+          "kind": "reservation"
+        }
+      ]
+    }
+  },
+  {
+    "id": "update-16",
+    "job": "update",
+    "hard": true,
+    "why": "This known person's message removes an earlier obligation rather than making an ask.",
+    "input": {
+      "message": {
+        "from": {
+          "address": "wren.alder@courtyard.example",
+          "name": "Wren Alder"
+        },
+        "to": [
+          {
+            "address": "me@home.example"
+          }
+        ],
+        "cc": [],
+        "subject": "No need to sign after all",
+        "date": 1796084100000,
+        "list": {},
+        "flags": {
+          "seen": true,
+          "flagged": false,
+          "answered": true,
+          "draft": false,
+          "fromMe": false
+        },
+        "roles": ["inbox"],
+        "snippet": "The old form asked for your signature, but that requirement has been withdrawn. Your place is secure without a"
+      },
+      "self": ["me@home.example"],
+      "knownCorrespondent": true,
+      "userReplied": true,
+      "userEndedThread": true,
+      "text": "The old form asked for your signature, but that requirement has been withdrawn. Your place is secure without another reply."
+    }
+  },
+  {
+    "id": "update-17",
+    "job": "update",
+    "hard": false,
+    "why": "This reports delivery of the recipient's parcel.",
+    "input": {
+      "message": {
+        "from": {
+          "address": "notices@parcel.example"
+        },
+        "to": [
+          {
+            "address": "me@home.example"
+          }
+        ],
+        "cc": [],
+        "subject": "Parcel delivered",
+        "date": 1796084160000,
+        "list": {
+          "precedence": "bulk",
+          "listId": "(present)",
+          "listUnsubscribe": "<mailto:leave@parcel.example>, <https://parcel.example/leave>",
+          "autoSubmitted": "auto-generated"
+        },
+        "flags": {
+          "seen": false,
+          "flagged": false,
+          "answered": false,
+          "draft": false,
+          "fromMe": false
+        },
+        "roles": ["inbox", "category.updates"]
+      },
+      "self": ["me@home.example"],
+      "knownCorrespondent": false,
+      "userReplied": false,
+      "userEndedThread": false,
+      "text": "Your parcel was placed in the covered collection box today. It is ready whenever you next visit.",
+      "structured": [
+        {
+          "kind": "delivery",
+          "final": true
+        }
+      ]
+    }
+  },
+  {
+    "id": "update-18",
+    "job": "update",
+    "hard": false,
+    "why": "This reports a change to the recipient's booked travel.",
+    "input": {
+      "message": {
+        "from": {
+          "address": "bookings@reedrail.test"
+        },
+        "to": [
+          {
+            "address": "me@home.example"
+          }
+        ],
+        "cc": [],
+        "subject": "Train departure changed",
+        "date": 1796084220000,
+        "list": {
+          "precedence": "bulk",
+          "listId": "(present)",
+          "autoSubmitted": "auto-generated"
+        },
+        "flags": {
+          "seen": false,
+          "flagged": false,
+          "answered": false,
+          "draft": false,
+          "fromMe": false
+        },
+        "roles": ["inbox"]
+      },
+      "self": ["me@home.example"],
+      "knownCorrespondent": false,
+      "userReplied": false,
+      "userEndedThread": false,
+      "text": "Your booked 09:20 service will now depart at 09:45. Your ticket remains valid on that departure."
+    }
+  },
+  {
+    "id": "update-19",
+    "job": "update",
+    "hard": false,
+    "why": "This reports availability of the recipient's reserved item.",
+    "input": {
+      "message": {
+        "from": {
+          "address": "alerts@mapcabinet.example"
+        },
+        "to": [
+          {
+            "address": "me@home.example"
+          }
+        ],
+        "cc": [],
+        "subject": "Library hold available",
+        "date": 1796084280000,
+        "list": {},
+        "flags": {
+          "seen": true,
+          "flagged": false,
+          "answered": false,
+          "draft": false,
+          "fromMe": false
+        },
+        "roles": ["inbox", "category.promotions"]
+      },
+      "self": ["me@home.example"],
+      "knownCorrespondent": false,
+      "userReplied": false,
+      "userEndedThread": false,
+      "text": "The atlas you reserved is ready on the collection shelf. It will stay there until next Tuesday."
+    }
+  },
+  {
+    "id": "update-20",
+    "job": "update",
+    "hard": false,
+    "why": "This reports completion of a service for the recipient.",
+    "input": {
+      "message": {
+        "from": {
+          "address": "orders@lampdock.example"
+        },
+        "to": [
+          {
+            "address": "me@home.example"
+          }
+        ],
+        "cc": [],
+        "subject": "Repair finished",
+        "date": 1796084340000,
+        "list": {
+          "precedence": "bulk",
+          "listId": "(present)",
+          "listUnsubscribe": "<mailto:leave@lampdock.example>, <https://lampdock.example/leave>",
+          "autoSubmitted": "auto-generated"
+        },
+        "flags": {
+          "seen": false,
+          "flagged": false,
+          "answered": false,
+          "draft": false,
+          "fromMe": false
+        },
+        "roles": ["inbox", "category.personal"]
+      },
+      "self": ["me@home.example"],
+      "knownCorrespondent": false,
+      "userReplied": false,
+      "userEndedThread": false,
+      "text": "Your desk fan has been repaired and tested. It is waiting at the workshop counter."
+    }
+  },
+  {
+    "id": "update-21",
+    "job": "update",
+    "hard": false,
+    "why": "This reports a changed location for the recipient's lesson.",
+    "input": {
+      "message": {
+        "from": {
+          "address": "lark.birch@loomhouse.test",
+          "name": "Lark Birch"
+        },
+        "to": [
+          {
+            "address": "me@home.example"
+          }
+        ],
+        "cc": [],
+        "subject": "Venue changed",
+        "date": 1796084400000,
+        "list": {},
+        "flags": {
+          "seen": false,
+          "flagged": false,
+          "answered": false,
+          "draft": false,
+          "fromMe": false
+        },
+        "roles": ["inbox"],
+        "snippet": "Our booked weaving lesson will take place in the annex. The start time is still 11:00."
+      },
+      "self": ["me@home.example"],
+      "knownCorrespondent": true,
+      "userReplied": false,
+      "userEndedThread": false,
+      "text": "Our booked weaving lesson will take place in the annex. The start time is still 11:00."
+    }
+  },
+  {
+    "id": "update-22",
+    "job": "update",
+    "hard": false,
+    "why": "This reports restoration of the recipient's access.",
+    "input": {
+      "message": {
+        "from": {
+          "address": "hello@greenframe.example"
+        },
+        "to": [
+          {
+            "address": "me@home.example"
+          }
+        ],
+        "cc": [],
+        "subject": "Access restored",
+        "date": 1796084460000,
+        "list": {},
+        "flags": {
+          "seen": true,
+          "flagged": false,
+          "answered": false,
+          "draft": false,
+          "fromMe": false
+        },
+        "roles": ["inbox", "important"]
+      },
+      "self": ["me@home.example"],
+      "knownCorrespondent": false,
+      "userReplied": false,
+      "userEndedThread": false,
+      "text": "Your workshop badge now opens the west entrance again. The reader fault has been fixed."
+    }
+  },
+  {
+    "id": "update-23",
+    "job": "update",
+    "hard": false,
+    "why": "This reports confirmation of a specific reservation.",
+    "input": {
+      "message": {
+        "from": {
+          "address": "notices@sessionloom.test"
+        },
+        "to": [
+          {
+            "address": "me@home.example"
+          }
+        ],
+        "cc": [],
+        "subject": "Reservation confirmed",
+        "date": 1796084520000,
+        "list": {
+          "precedence": "bulk",
+          "listId": "(present)",
+          "listUnsubscribe": "<mailto:leave@sessionloom.test>, <https://sessionloom.test/leave>",
+          "autoSubmitted": "auto-generated"
+        },
+        "flags": {
+          "seen": false,
+          "flagged": true,
+          "answered": false,
+          "draft": false,
+          "fromMe": false
+        },
+        "roles": ["inbox", "category.forums"]
+      },
+      "self": ["me@home.example"],
+      "knownCorrespondent": false,
+      "userReplied": false,
+      "userEndedThread": false,
+      "text": "Your study room booking for 2026-12-18 at 15:00 is confirmed. No further reply is needed.",
+      "structured": [
+        {
+          "kind": "reservation"
+        }
+      ]
+    }
+  },
+  {
+    "id": "update-24",
+    "job": "update",
+    "hard": false,
+    "why": "This reports a travel milestone for the recipient.",
+    "input": {
+      "message": {
+        "from": {
+          "address": "bookings@cloudheron.test"
+        },
+        "to": [
+          {
+            "address": "me@home.example"
+          }
+        ],
+        "cc": [],
+        "subject": "Flight check-in open",
+        "date": 1796084580000,
+        "list": {
+          "precedence": "bulk",
+          "listId": "(present)",
+          "listUnsubscribe": "<mailto:leave@cloudheron.test>, <https://cloudheron.test/leave>",
+          "autoSubmitted": "auto-generated"
+        },
+        "flags": {
+          "seen": false,
+          "flagged": false,
+          "answered": false,
+          "draft": false,
+          "fromMe": false
+        },
+        "roles": ["inbox"]
+      },
+      "self": ["me@home.example"],
+      "knownCorrespondent": false,
+      "userReplied": false,
+      "userEndedThread": false,
+      "text": "Check-in is now open for your reserved flight on 2026-12-19. Your booking details have not changed."
+    }
+  },
+  {
+    "id": "update-25",
+    "job": "update",
+    "hard": false,
+    "why": "This reports the outcome of the recipient's application.",
+    "input": {
+      "message": {
+        "from": {
+          "address": "alerts@clayhaven.example"
+        },
+        "to": [
+          {
+            "address": "me@home.example"
+          }
+        ],
+        "cc": [],
+        "subject": "Application accepted",
+        "date": 1796084640000,
+        "list": {
+          "listUnsubscribe": "<mailto:leave@clayhaven.example>"
+        },
+        "flags": {
+          "seen": true,
+          "flagged": false,
+          "answered": false,
+          "draft": false,
+          "fromMe": false
+        },
+        "roles": ["inbox", "category.updates"]
+      },
+      "self": ["me@home.example"],
+      "knownCorrespondent": false,
+      "userReplied": false,
+      "userEndedThread": false,
+      "text": "Your community kiln application has been accepted. Your access starts next Monday."
+    }
+  },
+  {
+    "id": "update-26",
+    "job": "update",
+    "hard": false,
+    "why": "This reports a scheduling change to the recipient's service.",
+    "input": {
+      "message": {
+        "from": {
+          "address": "orders@greenframe.example"
+        },
+        "to": [
+          {
+            "address": "me@home.example"
+          }
+        ],
+        "cc": [],
+        "subject": "Repair team arriving later",
+        "date": 1796084700000,
+        "list": {
+          "precedence": "bulk",
+          "listId": "(present)",
+          "autoSubmitted": "auto-generated"
+        },
+        "flags": {
+          "seen": false,
+          "flagged": false,
+          "answered": false,
+          "draft": false,
+          "fromMe": false
+        },
+        "roles": ["inbox"],
+        "snippet": "The repair team for your window will arrive at 14:00 instead of 12:00. The same team is assigned."
+      },
+      "self": ["me@home.example"],
+      "knownCorrespondent": true,
+      "userReplied": false,
+      "userEndedThread": false,
+      "text": "The repair team for your window will arrive at 14:00 instead of 12:00. The same team is assigned."
+    }
+  },
+  {
+    "id": "update-27",
+    "job": "update",
+    "hard": false,
+    "why": "This reports availability of an ordered document.",
+    "input": {
+      "message": {
+        "from": {
+          "address": "no-reply@mapcabinet.example"
+        },
+        "to": [
+          {
+            "address": "me@home.example"
+          }
+        ],
+        "cc": [],
+        "subject": "Your document is ready",
+        "date": 1796084760000,
+        "list": {
+          "precedence": "bulk",
+          "listId": "(present)",
+          "listUnsubscribe": "<mailto:leave@mapcabinet.example>, <https://mapcabinet.example/leave>",
+          "autoSubmitted": "auto-generated"
+        },
+        "flags": {
+          "seen": false,
+          "flagged": false,
+          "answered": false,
+          "draft": false,
+          "fromMe": false
+        },
+        "roles": ["inbox", "category.promotions"]
+      },
+      "self": ["me@home.example"],
+      "knownCorrespondent": false,
+      "userReplied": false,
+      "userEndedThread": false,
+      "text": "The certified copy you ordered is ready for collection. Your reference is COPY-EX7."
+    }
+  },
+  {
+    "id": "update-28",
+    "job": "update",
+    "hard": false,
+    "why": "This reports a security restriction on the recipient's account.",
+    "input": {
+      "message": {
+        "from": {
+          "address": "hello@folioport.example"
+        },
+        "to": [
+          {
+            "address": "me@home.example"
+          }
+        ],
+        "cc": [],
+        "subject": "Account temporarily locked",
+        "date": 1796084820000,
+        "list": {},
+        "flags": {
+          "seen": true,
+          "flagged": false,
+          "answered": false,
+          "draft": false,
+          "fromMe": false
+        },
+        "roles": ["inbox", "category.personal"]
+      },
+      "self": ["me@home.example"],
+      "knownCorrespondent": false,
+      "userReplied": false,
+      "userEndedThread": false,
+      "text": "Your account was locked after repeated failed access attempts. Existing shared links have also been paused."
+    }
+  },
+  {
+    "id": "update-29",
+    "job": "update",
+    "hard": false,
+    "why": "This reports a decision on the recipient's permit.",
+    "input": {
+      "message": {
+        "from": {
+          "address": "notices@greenframe.example"
+        },
+        "to": [
+          {
+            "address": "me@home.example"
+          }
+        ],
+        "cc": [],
+        "subject": "Permit approved",
+        "date": 1796084880000,
+        "list": {
+          "precedence": "bulk",
+          "listId": "(present)",
+          "listUnsubscribe": "<mailto:leave@greenframe.example>, <https://greenframe.example/leave>",
+          "autoSubmitted": "auto-generated"
+        },
+        "flags": {
+          "seen": false,
+          "flagged": false,
+          "answered": false,
+          "draft": false,
+          "fromMe": false
+        },
+        "roles": ["inbox"]
+      },
+      "self": ["me@home.example"],
+      "knownCorrespondent": false,
+      "userReplied": false,
+      "userEndedThread": false,
+      "text": "Your greenhouse permit has been approved. The approval covers the plan you submitted last week."
+    }
+  },
+  {
+    "id": "update-30",
+    "job": "update",
+    "hard": false,
+    "why": "This reports completion of a requested financial operation.",
+    "input": {
+      "message": {
+        "from": {
+          "address": "bookings@ledgergrove.example"
+        },
+        "to": [
+          {
+            "address": "me@home.example"
+          }
+        ],
+        "cc": [],
+        "subject": "Transfer completed",
+        "date": 1796084940000,
+        "list": {
+          "precedence": "bulk",
+          "listId": "(present)",
+          "autoSubmitted": "auto-generated"
+        },
+        "flags": {
+          "seen": false,
+          "flagged": false,
+          "answered": false,
+          "draft": false,
+          "fromMe": false
+        },
+        "roles": ["inbox", "important"]
+      },
+      "self": ["me@home.example"],
+      "knownCorrespondent": false,
+      "userReplied": false,
+      "userEndedThread": false,
+      "text": "Your requested transfer of 18 credits has completed. The destination ledger now shows the funds."
+    }
+  },
+  {
+    "id": "update-31",
+    "job": "update",
+    "hard": false,
+    "why": "This tells the recipient their scheduled activity is cancelled.",
+    "input": {
+      "message": {
+        "from": {
+          "address": "vale.ash@smallstage.test",
+          "name": "Vale Ash"
+        },
+        "to": [
+          {
+            "address": "me@home.example"
+          }
+        ],
+        "cc": [],
+        "subject": "Rehearsal called off",
+        "date": 1796085000000,
+        "list": {},
+        "flags": {
+          "seen": true,
+          "flagged": false,
+          "answered": false,
+          "draft": false,
+          "fromMe": false
+        },
+        "roles": ["inbox", "category.forums"],
+        "snippet": "I have cancelled tomorrow's rehearsal because the hall is flooded. We will keep next week's booking."
+      },
+      "self": ["me@home.example"],
+      "knownCorrespondent": true,
+      "userReplied": false,
+      "userEndedThread": false,
+      "text": "I have cancelled tomorrow's rehearsal because the hall is flooded. We will keep next week's booking."
+    }
+  },
+  {
+    "id": "update-32",
+    "job": "update",
+    "hard": false,
+    "why": "This reports completion of a requested export.",
+    "input": {
+      "message": {
+        "from": {
+          "address": "orders@folioport.example"
+        },
+        "to": [
+          {
+            "address": "me@home.example"
+          }
+        ],
+        "cc": [],
+        "subject": "Data export ready",
+        "date": 1796085060000,
+        "list": {
+          "precedence": "bulk",
+          "listId": "(present)",
+          "listUnsubscribe": "<mailto:leave@folioport.example>, <https://folioport.example/leave>",
+          "autoSubmitted": "auto-generated"
+        },
+        "flags": {
+          "seen": false,
+          "flagged": false,
+          "answered": false,
+          "draft": false,
+          "fromMe": false
+        },
+        "roles": ["inbox"]
+      },
+      "self": ["me@home.example"],
+      "knownCorrespondent": false,
+      "userReplied": false,
+      "userEndedThread": false,
+      "text": "Your requested archive export is ready at https://folioport.example/export. It contains the folders selected in your request."
+    }
+  },
+  {
+    "id": "update-33",
+    "job": "update",
+    "hard": false,
+    "why": "This reports a staffing change affecting the recipient's class.",
+    "input": {
+      "message": {
+        "from": {
+          "address": "no-reply@northfield-school.test"
+        },
+        "to": [
+          {
+            "address": "me@home.example"
+          }
+        ],
+        "cc": [],
+        "subject": "Your class tutor changed",
+        "date": 1796085120000,
+        "list": {
+          "precedence": "bulk",
+          "listId": "(present)",
+          "listUnsubscribe": "<mailto:leave@northfield-school.test>, <https://northfield-school.test/leave>",
+          "autoSubmitted": "auto-generated"
+        },
+        "flags": {
+          "seen": false,
+          "flagged": false,
+          "answered": false,
+          "draft": false,
+          "fromMe": false
+        },
+        "roles": ["inbox", "category.updates"]
+      },
+      "self": ["me@home.example"],
+      "knownCorrespondent": false,
+      "userReplied": false,
+      "userEndedThread": false,
+      "text": "Your Saturday class will be taught by tutor Rowan instead of tutor Wren. The room and materials stay the same."
+    }
+  },
+  {
+    "id": "update-34",
+    "job": "update",
+    "hard": false,
+    "why": "This reports correction of the recipient's account state.",
+    "input": {
+      "message": {
+        "from": {
+          "address": "hello@mapcabinet.example"
+        },
+        "to": [
+          {
+            "address": "me@home.example"
+          }
+        ],
+        "cc": [],
+        "subject": "Borrowing limit restored",
+        "date": 1796085180000,
+        "list": {},
+        "flags": {
+          "seen": true,
+          "flagged": true,
+          "answered": false,
+          "draft": false,
+          "fromMe": false
+        },
+        "roles": ["inbox"]
+      },
+      "self": ["me@home.example"],
+      "knownCorrespondent": false,
+      "userReplied": false,
+      "userEndedThread": false,
+      "text": "We removed the mistaken overdue flag from your library account. Your normal borrowing limit is restored."
+    }
+  },
+  {
+    "id": "update-35",
+    "job": "update",
+    "hard": false,
+    "why": "This reports a service disruption and changed arrangements.",
+    "input": {
+      "message": {
+        "from": {
+          "address": "notices@reedstudio.test"
+        },
+        "to": [
+          {
+            "address": "me@home.example"
+          }
+        ],
+        "cc": [],
+        "subject": "Lift out of service",
+        "date": 1796085240000,
+        "list": {
+          "precedence": "bulk",
+          "listId": "(present)",
+          "listUnsubscribe": "<mailto:leave@reedstudio.test>, <https://reedstudio.test/leave>",
+          "autoSubmitted": "auto-generated"
+        },
+        "flags": {
+          "seen": false,
+          "flagged": false,
+          "answered": false,
+          "draft": false,
+          "fromMe": false
+        },
+        "roles": ["inbox", "category.promotions"]
+      },
+      "self": ["me@home.example"],
+      "knownCorrespondent": false,
+      "userReplied": false,
+      "userEndedThread": false,
+      "text": "The lift serving your booked studio is unavailable today. Staff have moved your session to the ground floor."
+    }
+  },
+  {
+    "id": "update-36",
+    "job": "update",
+    "hard": false,
+    "why": "This reports a change to the recipient's assigned locker.",
+    "input": {
+      "message": {
+        "from": {
+          "address": "bookings@plotgate.example"
+        },
+        "to": [
+          {
+            "address": "me@home.example"
+          }
+        ],
+        "cc": [],
+        "subject": "Locker assignment changed",
+        "date": 1796085300000,
+        "list": {
+          "precedence": "bulk",
+          "listId": "(present)",
+          "listUnsubscribe": "<mailto:leave@plotgate.example>, <https://plotgate.example/leave>",
+          "autoSubmitted": "auto-generated"
+        },
+        "flags": {
+          "seen": false,
+          "flagged": false,
+          "answered": false,
+          "draft": false,
+          "fromMe": false
+        },
+        "roles": ["inbox", "category.personal"],
+        "snippet": "Your new locker is L-EX4 instead of L-EX2. Your current access card already opens it."
+      },
+      "self": ["me@home.example"],
+      "knownCorrespondent": true,
+      "userReplied": false,
+      "userEndedThread": false,
+      "text": "Your new locker is L-EX4 instead of L-EX2. Your current access card already opens it."
+    }
+  },
+  {
+    "id": "update-37",
+    "job": "update",
+    "hard": false,
+    "why": "This reports an already agreed appointment change.",
+    "input": {
+      "message": {
+        "from": {
+          "address": "lark.birch@sessionloom.test",
+          "name": "Lark Birch"
+        },
+        "to": [
+          {
+            "address": "me@home.example"
+          }
+        ],
+        "cc": [],
+        "subject": "Appointment brought forward",
+        "date": 1796085360000,
+        "list": {},
+        "flags": {
+          "seen": true,
+          "flagged": false,
+          "answered": false,
+          "draft": false,
+          "fromMe": false
+        },
+        "roles": ["inbox"]
+      },
+      "self": ["me@home.example"],
+      "knownCorrespondent": true,
+      "userReplied": false,
+      "userEndedThread": false,
+      "text": "Your consultation is now at 10:15 on 2026-12-20 as agreed on the phone. No confirmation reply is needed."
+    }
+  },
+  {
+    "id": "update-38",
+    "job": "update",
+    "hard": false,
+    "why": "This reports resolution of a problem affecting the recipient.",
+    "input": {
+      "message": {
+        "from": {
+          "address": "orders@folioport.example"
+        },
+        "to": [
+          {
+            "address": "me@home.example"
+          }
+        ],
+        "cc": [],
+        "subject": "Shared project restored",
+        "date": 1796085420000,
+        "list": {
+          "precedence": "bulk",
+          "listId": "(present)",
+          "autoSubmitted": "auto-generated"
+        },
+        "flags": {
+          "seen": false,
+          "flagged": false,
+          "answered": false,
+          "draft": false,
+          "fromMe": false
+        },
+        "roles": ["inbox", "important"]
+      },
+      "self": ["me@home.example"],
+      "knownCorrespondent": false,
+      "userReplied": false,
+      "userEndedThread": false,
+      "text": "The project folder you reported missing has been recovered. Your files and comments are intact."
+    }
+  },
+  {
+    "id": "update-39",
+    "job": "update",
+    "hard": false,
+    "why": "This reports changed arrangements for the recipient's event.",
+    "input": {
+      "message": {
+        "from": {
+          "address": "no-reply@plotgate.example"
+        },
+        "to": [
+          {
+            "address": "me@home.example"
+          }
+        ],
+        "cc": [],
+        "subject": "Event moved indoors",
+        "date": 1796085480000,
+        "list": {
+          "precedence": "bulk",
+          "listId": "(present)",
+          "listUnsubscribe": "<mailto:leave@plotgate.example>, <https://plotgate.example/leave>",
+          "autoSubmitted": "auto-generated"
+        },
+        "flags": {
+          "seen": false,
+          "flagged": false,
+          "answered": false,
+          "draft": false,
+          "fromMe": false
+        },
+        "roles": ["inbox", "category.forums"]
+      },
+      "self": ["me@home.example"],
+      "knownCorrespondent": false,
+      "userReplied": false,
+      "userEndedThread": false,
+      "text": "The seed exchange you registered for will be in the hall because of rain. It still starts at 13:00."
+    }
+  },
+  {
+    "id": "update-40",
+    "job": "update",
+    "hard": false,
+    "why": "This reports a refund following the recipient's completed rental.",
+    "input": {
+      "message": {
+        "from": {
+          "address": "hello@reedstudio.test"
+        },
+        "to": [
+          {
+            "address": "me@home.example"
+          }
+        ],
+        "cc": [],
+        "subject": "Deposit returned",
+        "date": 1796085540000,
+        "list": {},
+        "flags": {
+          "seen": true,
+          "flagged": false,
+          "answered": false,
+          "draft": false,
+          "fromMe": false
+        },
+        "roles": ["inbox"]
+      },
+      "self": ["me@home.example"],
+      "knownCorrespondent": false,
+      "userReplied": false,
+      "userEndedThread": false,
+      "text": "Your studio key deposit of 5 credits has been returned. The rental is now closed."
+    }
+  }
+]

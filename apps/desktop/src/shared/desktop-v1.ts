@@ -4,7 +4,6 @@
 /** The v1 desktop methods main answers through its existing handlers, by their handler name (a legacy dotted name or the v1 name itself). */
 export const legacyNames: Readonly<Record<string, string>> = {
   'App/info': 'app.info',
-  'Window/thread': 'window.thread',
   'Window/closeReady': 'window.closeReady',
   'Window/closeCancel': 'window.closeCancel',
   'Window/claim': 'window.claim',

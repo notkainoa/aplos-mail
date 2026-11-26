@@ -179,7 +179,6 @@ test("the default scope over today's tree passes, and the exempt files are exemp
   const { status, stdout } = runCli([]);
   assert.equal(status, 0, stdout);
   const exempt = [
-    'apps/desktop/src/renderer/legacy/App.tsx',
     'apps/desktop/src/renderer/ui/tokens.json',
     'apps/desktop/src/renderer/ui/generated/tokens.css',
     'apps/desktop/src/renderer/ui/generated/motion.ts',
@@ -195,8 +194,7 @@ test("the default scope over today's tree passes, and the exempt files are exemp
     'apps/desktop/src/renderer/ui/tokens.css',
     'apps/desktop/src/renderer/ui/motion.ts',
   ];
-  for (const file of covered) assert.ok(!matchesAny(file, alwaysExclude), file);
-  assert.ok(matchesAny('apps/desktop/src/renderer/legacy/App.tsx', exclude));
+  for (const file of covered) assert.ok(!matchesAny(file, exclude), file);
 });
 
 test('evasions from plan 30 WP1.3 are caught', () => {
