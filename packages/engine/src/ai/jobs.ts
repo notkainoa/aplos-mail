@@ -21,7 +21,7 @@ const CONSENT =
 const DATED_DEADLINE =
   /\b(by|before|due( on)?)\s+(\d{1,4}[-/]\d{1,2}([-/]\d{1,4})?|(jan(uary)?|feb(ruary)?|mar(ch)?|apr(il)?|may|jun(e)?|jul(y)?|aug(ust)?|sep(tember)?|oct(ober)?|nov(ember)?|dec(ember)?)\.?\s+\d{1,2})\b/i;
 const CHANGE =
-  /\b(refund|failed|declined|unusual|security|new (sign[- ]?in|device)|password|cancelled|canceled|rescheduled|delayed|shipped|shipping|delivered|delivery|tracking|in transit|appointment|reservation|check[- ]?in|change|changed|moved|returned|restored|locked|unavailable|available|ready|confirmed|scheduled|closed)\b/i;
+  /\b(refund|failed|declined|unusual|security (alert|warning|incident)|new (sign[- ]?in|device)|password (reset|changed)|cancelled|canceled|rescheduled|delayed|shipped|shipping|delivered|delivery|tracking|in transit|appointment|reservation|check[- ]?in|changes?|changed|moved|returned|restored|locked|unavailable|available|ready|confirmed|scheduled|closed)\b/i;
 const RECORD =
   /\b(receipt|statement|payment (received|processed)|payment has been received|paid in full|policy|warranty|certificate|tax|records|copy|archive|signed|settled|summary|acknowledgment|settlement)\b/i;
 const READING =
@@ -70,6 +70,18 @@ function senderSignals(input: LaneInput) {
   return { person, machine, engaged, promotion, social, editorial, clean, app, explicit };
 }
 
+function hasChange(words: string) {
+  return [...words.matchAll(new RegExp(CHANGE, 'gi'))].some(match => {
+    const clause =
+      words
+        .slice(0, match.index)
+        .split(/[.!?;\n]|\b(but|however|yet)\b/i)
+        .at(-1) ?? '';
+    const preceding = clause.trim().split(/\s+/).slice(-5).join(' ');
+    return !/\b(no|not|never|nothing|without|neither|nor)\b|\b\w+n['’]t\b/i.test(preceding);
+  });
+}
+
 function contentSignals(input: LaneInput) {
   const { message } = input;
   const body = ownWords(input.text ?? message.snippet ?? '');
@@ -78,7 +90,7 @@ function contentSignals(input: LaneInput) {
   const request = [REQUEST, ACTION, IMPERATIVE, CONSENT, DATED_DEADLINE].some(cue =>
     cue.test(words),
   );
-  const changed = CHANGE.test(words);
+  const changed = hasChange(words);
   const record = RECORD.test(words);
   const reading = READING.test(words);
   const promo = PROMOTION.test(words);

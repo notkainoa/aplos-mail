@@ -191,6 +191,34 @@ test('consent and dated deadlines prevent confident personal or automated update
   assert.deepEqual(jobFor(value), { job: 'update', confidence: 'sure' });
 });
 
+test('nearby negation suppresses changes without suppressing a later affirmative clause', () => {
+  for (const text of [
+    'No changes.',
+    'Nothing has changed.',
+    'No new sign-in.',
+    'We did not detect unusual activity.',
+    "We haven't detected unusual activity.",
+    'There is no security alert.',
+    'No action needed.',
+    '',
+  ]) {
+    const value = input(text);
+    value.message.from = { address: 'billing@sender.example' };
+    assert.deepEqual(jobFor(value), { job: 'update', confidence: 'unsure' });
+  }
+  for (const text of [
+    'There are changes.',
+    'We detected unusual activity.',
+    'No changes yesterday. A new device appeared today.',
+    'Nothing has changed, but a refund was issued.',
+    'We did not detect unusual activity; your password changed.',
+  ]) {
+    const value = input(text);
+    value.message.from = { address: 'billing@sender.example' };
+    assert.deepEqual(jobFor(value), { job: 'update', confidence: 'sure' });
+  }
+});
+
 test('unknown nonautomated senders are new people even when asking a question', () => {
   const value = input('Could you tell me more?');
   assert.deepEqual(jobFor(value), { job: 'newPerson', confidence: 'sure' });
