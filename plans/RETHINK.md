@@ -99,6 +99,7 @@ Two things change from today's app:
 10. **The first milestone is the block system (owner, 2026-11-24).** Define the blocks first, then build the default version from them and get the sorting good, then open the door to coding agents.
 11. **Two kinds of block (owner, 2026-11-25).** Sections, treatments, rules, themes and keys are settings: a description that runs no code, so anyone can make one by asking the agent. Only panels are code, run walled off from your mail under the same permission rule.
 12. **A section chooses mail by fixed fields plus an optional topic (owner, 2026-11-25).** The fixed fields are job, kind, sender, account, label, date and whether you have written to them; our own Home sections use only these (Needs you is job "ask"). A topic is a few plain words, such as "my kid's soccer team". The decider checks each email against every topic while it fills in the record, in the same model call, so a topic adds no extra requests and catches senders the section has never seen. With AI off, a topic section falls back to its fixed fields. Topic matches can be wrong, so the uncertain ones show in "check my work", like the six jobs.
+13. **Every code panel is walled off, ours included (owner, 2026-11-25).** A panel sees mail only through the core's API, and only what its permissions allow. Email bodies always render in the core's safe frame, never inside the panel. Our own Home and reader are panels like any other, so the default version proves the public blocks are enough (item 2). Before any panel is built, one speed experiment checks that a walled-off panel still meets DESIGN.md §5's budgets (key to state 8 ms or less p95, key to next paint 16.7 ms or less p95). If it cannot, this decision is reopened before building.
 
 The jobs that can start now are in [next/README.md](next/README.md).
 
@@ -123,7 +124,7 @@ Please correct any of these.
 ## Still open
 
 - How Aplos should differ from Powermove.
-- What a block is technically, beyond Part 3 items 11 and 12: the format of treatments, rules, themes and keys, how a code panel is kept safe, how blocks are shared.
+- What a block is technically, beyond Part 3 items 11 to 13: the format of treatments, rules, themes and keys, what a panel's permissions are and how it asks for them, how blocks are shared.
 - Which kinds get a brief first (shipping, flights, bills and so on).
 - Which models the decider uses, and where the confidence line sits.
 - The exact onboarding questions.

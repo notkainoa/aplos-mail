@@ -2181,3 +2181,10 @@ From the owner's review of the UI council. A failed send ("Couldn’t send to Jo
 - **Rejected:** fixed fields only (a section for "my kid's soccer" works only if the owner can name every sender), and fixed fields the agent writes once from plain words (no model per email, but it misses every new sender, such as a new coach).
 - **Why:** it is the only option where "make a section for my kid's soccer" works the way people expect, it costs no extra model requests, and a section stays a settings block with no code.
 - **Where:** `plans/RETHINK.md` Part 3 item 12 and the Record row in "Words we use"; "Still open" narrowed. Affects Job 4 (the record in the core, brief not written yet): the record gains topic matches. Nothing is built yet.
+
+## 2026-11-25: every code panel is walled off, ours included
+
+- **Decision (owner):** every code panel runs walled off from the mailbox, including our own Home and reader. A panel sees mail only through the core's API and only what its permissions allow, and email bodies always render in the core's safe frame, never inside a panel. Before any panel is built, one speed experiment checks that a walled-off panel still meets the `plans/DESIGN.md` §5 budgets (key to state 8 ms or less p95, key to next paint 16.7 ms or less p95). If it cannot, the decision is reopened before building.
+- **Rejected:** panels running inside the app, trusted once installed (one bad panel could read all mail and send, so the permission rule would be a promise, not a wall), and our panels inside with other people's walled off (two paths that drift, and our Home would get powers the public blocks lack, against `plans/RETHINK.md` Part 3 item 2).
+- **Why:** the permission rule is enforced rather than trusted, and the default version proves the public blocks are enough.
+- **Where:** `plans/RETHINK.md` Part 3 item 13; "Still open" narrowed. Job 6 (screen blocks) in `plans/next/README.md` now names the speed experiment it waits on. Nothing is built yet.
