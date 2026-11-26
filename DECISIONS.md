@@ -2202,3 +2202,10 @@ From the owner's review of the UI council. A failed send ("Couldn’t send to Jo
 - **Rejected:** rows in the mail database (a coding agent could change blocks only through Aplos's own API, and sharing needs an export step), and the database as the truth with file export and import (two copies of every block, and editing an exported file does nothing until it is imported).
 - **Why:** an outside coding agent and a person sharing a block both work with no extra step, and the version history covers undo.
 - **Where:** `plans/RETHINK.md` Part 3 item 15; "Still open" narrowed. Nothing is built yet.
+
+## 2026-11-25: a treatment file is which mail, a shape, and a brief's facts
+
+- **Decision (owner):** a treatment block chooses mail with the same picker as a section (fixed fields plus an optional topic) and sets one shape: line, brief, full or not shown. A brief also lists, in plain words, the facts it must show ("arrival date, carrier, tracking number"). The decider fills those facts in the same call and copies them exactly; if one is missing, the email is not shortened.
+- **Rejected:** which mail plus a shape only (what a brief contains is left to the decider, so "show the arrival date and tracking number" cannot be said), and free plain-words instructions ("short, lead with the amount due"), which are hard to check, drift between models and weaken the exact-copy rule in `plans/RETHINK.md` Part 1 item 6.
+- **Why:** briefs become predictable and testable per kind, and the kinds that get a brief are files, not code.
+- **Where:** `plans/RETHINK.md` Part 3 item 16; "Still open" narrowed, and "Which kinds get a brief first" now notes each one is a treatment file. Affects Job 4 (the record, brief not written yet) and the decider: a brief's facts come from its treatment file. Nothing is built yet.

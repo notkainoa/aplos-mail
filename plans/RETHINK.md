@@ -102,6 +102,7 @@ Two things change from today's app:
 13. **Every code panel is walled off, ours included (owner, 2026-11-25).** A panel sees mail only through the core's API, and only what its permissions allow. Email bodies always render in the core's safe frame, never inside the panel. Our own Home and reader are panels like any other, so the default version proves the public blocks are enough (item 2). Before any panel is built, one speed experiment checks that a walled-off panel still meets DESIGN.md §5's budgets (key to state 8 ms or less p95, key to next paint 16.7 ms or less p95). If it cannot, this decision is reopened before building.
 14. **What a panel may see is two choices made when you add it (owner, 2026-11-25).** Which mail: all of it, or only named sections. How much: the record only (job, sender, subject, the short version), or the full text too. Our own Home asks for all mail and the record only; email bodies render in the core's safe frame, so it never needs the full text. What a panel may do follows the permission rule in item 8.
 15. **A settings block is one small text file in Aplos's data folder (owner, 2026-11-25).** A coding agent such as Claude Code or Codex edits it like any other file, and sharing a block is sending its file. Aplos keeps every earlier version, so changing a block can be undone, and under item 8 an extension or the agent can just do it. Aplos checks each file when it loads it; a broken file is skipped and named in Settings, and Home never breaks because of it.
+16. **A treatment file is which mail, a shape, and for a brief the facts it must show (owner, 2026-11-25).** Which mail uses the same picker as a section (item 12). The shape is line, brief, full or not shown. A brief lists its facts in plain words, such as "arrival date, carrier, tracking number". The decider fills them in during the same call and copies them exactly (Part 1 item 6); if one is missing, the email is not shortened. So each brief is predictable and can be tested per kind.
 
 The jobs that can start now are in [next/README.md](next/README.md).
 
@@ -126,8 +127,8 @@ Please correct any of these.
 ## Still open
 
 - How Aplos should differ from Powermove.
-- What a block is technically, beyond Part 3 items 11 to 15: what goes inside the files for treatments, rules, themes and keys, and how blocks are shared beyond sending a file.
-- Which kinds get a brief first (shipping, flights, bills and so on).
+- What a block is technically, beyond Part 3 items 11 to 16: what goes inside the files for rules, themes and keys, and how blocks are shared beyond sending a file.
+- Which kinds get a brief first (shipping, flights, bills and so on). Each one is a treatment file (Part 3 item 16).
 - Which models the decider uses, and where the confidence line sits.
 - The exact onboarding questions.
 - How to tell a real cold email from mass outreach.
