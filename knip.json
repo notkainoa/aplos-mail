@@ -65,7 +65,7 @@
     },
     "packages/engine": {
       // Production entries: the package's real public surface (index, host ports, the store
-      // barrel) plus legacy/, which still ships. src/store/*.ts and src/diag/*.ts are NOT
+      // barrel). src/store/*.ts and src/diag/*.ts are NOT
       // entries — every one of those modules is reachable from index/ports through the
       // import graph, and as entries they would hide real dead-code findings.
       // tests/bench/scripts are development-only entries.
@@ -73,13 +73,11 @@
         "src/index.ts!",
         "src/ports.ts!",
         "src/store/index.ts!",
-        "src/legacy/*.ts!",
         "tests/**/*.ts",
         "bench/**/*.ts",
         "scripts/**/*.{ts,mjs}"
       ],
-      "project": ["src/**/*.ts!", "tests/**/*.ts", "bench/**/*.ts"],
-      "ignore": ["**/legacy/**"]
+      "project": ["src/**/*.ts!", "tests/**/*.ts", "bench/**/*.ts"]
     },
     "packages/contract": {
       // Production entries: the package's public surface including the per-topic barrels

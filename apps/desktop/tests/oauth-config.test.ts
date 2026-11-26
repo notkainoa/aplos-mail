@@ -6,81 +6,11 @@ import { mkdtemp, readFile, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { build } from 'esbuild';
-import { createGoogle } from '../src/main/google';
 import { oauthEnv } from '../src/main/oauth-config';
 import { resolveGoogleClient } from '../src/host/providers/oauth/client';
 import { checkReleaseOAuth, oauthDefines } from '../scripts/oauth-defines.mjs';
 
 const bundled = { clientId: 'bundled-id.apps.example.test', clientSecret: 'bundled-secret' };
-
-async function withEnv<T>(
-  patch: Record<string, string | undefined>,
-  run: () => Promise<T>,
-): Promise<T> {
-  const saved = Object.fromEntries(Object.keys(patch).map(k => [k, process.env[k]]));
-  for (const [k, v] of Object.entries(patch))
-    if (v === undefined) delete process.env[k];
-    else process.env[k] = v;
-  try {
-    return await run();
-  } finally {
-    for (const [k, v] of Object.entries(saved))
-      if (v === undefined) delete process.env[k];
-      else process.env[k] = v;
-  }
-}
-
-test('Google client: the .env value wins over the bundled one, which wins over none', async () => {
-  const dataDir = await mkdtemp(join(tmpdir(), 'aplos-oauth-'));
-  // Which client a sign-in uses is visible in the authorization URL it opens.
-  const clientFor = async (options: { bundled?: typeof bundled }) => {
-    let opened = '';
-    const google = await createGoogle({
-      dataDir,
-      ...options,
-      encrypt: v => Buffer.from(v),
-      decrypt: b => b.toString(),
-      oauthTimeoutMs: 50,
-      openExternal: async url => {
-        opened = url;
-      },
-    });
-    try {
-      if (!google.available) return { available: false, reason: google.unavailableReason };
-      await google.connect({ provider: 'google' }).catch(() => {});
-      return { available: true, clientId: new URL(opened).searchParams.get('client_id') };
-    } finally {
-      google.close();
-    }
-  };
-  try {
-    await withEnv(
-      { GOOGLE_CLIENT_ID: 'env-id.apps.example.test', GOOGLE_CLIENT_SECRET: 'env-secret' },
-      async () => {
-        assert.deepEqual(await clientFor({ bundled }), {
-          available: true,
-          clientId: 'env-id.apps.example.test',
-        });
-      },
-    );
-    await withEnv({ GOOGLE_CLIENT_ID: '', GOOGLE_CLIENT_SECRET: undefined }, async () => {
-      assert.deepEqual(await clientFor({ bundled }), {
-        available: true,
-        clientId: bundled.clientId,
-      });
-      const none = await clientFor({ bundled: { clientId: '', clientSecret: '' } });
-      assert.equal(none.available, false);
-      assert.match(none.reason ?? '', /^Google sign-in isn’t available in this build\./);
-      assert.match(
-        none.reason ?? '',
-        /GOOGLE_CLIENT_ID/,
-        'a development build keeps the developer hint',
-      );
-    });
-  } finally {
-    await rm(dataDir, { recursive: true, force: true });
-  }
-});
 
 test('release builds inline the OAuth clients from the build environment, and nothing in the repository carries them', async () => {
   const placeholder = `placeholder-${process.pid}-${Date.now()}`;

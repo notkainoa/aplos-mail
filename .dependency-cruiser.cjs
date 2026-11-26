@@ -13,8 +13,8 @@ module.exports = {
       name: 'engine-core-no-electron',
       severity: 'error',
       comment:
-        'boundaries engine-core: packages/engine/src (except src/legacy) must run outside Electron (ARCHITECTURE 2.6)',
-      from: { path: '^packages/engine/src', pathNot: '^packages/engine/src/legacy/' },
+        'boundaries engine-core: packages/engine/src must run outside Electron (ARCHITECTURE 2.6)',
+      from: { path: '^packages/engine/src' },
       // electron, electron-* and @electron/*, like the zone's specifier regex.
       to: { path: 'node_modules/@?electron' },
     },
@@ -23,7 +23,7 @@ module.exports = {
       severity: 'error',
       comment:
         'boundaries engine-core: no node: or bare Node builtins; go through a port (ARCHITECTURE 2.6)',
-      from: { path: '^packages/engine/src', pathNot: '^packages/engine/src/legacy/' },
+      from: { path: '^packages/engine/src' },
       to: { dependencyTypes: ['core'] },
     },
     {
@@ -75,9 +75,9 @@ module.exports = {
     {
       name: 'no-circular-engine',
       severity: 'error',
-      comment: 'no circular dependencies inside packages/engine/src (legacy excluded)',
-      from: { path: '^packages/engine/src', pathNot: '/legacy/' },
-      to: { circular: true, path: '^packages/engine/src', pathNot: '/legacy/' },
+      comment: 'no circular dependencies inside packages/engine/src',
+      from: { path: '^packages/engine/src' },
+      to: { circular: true, path: '^packages/engine/src' },
     },
     {
       name: 'packages-no-apps',

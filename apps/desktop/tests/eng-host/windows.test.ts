@@ -137,15 +137,9 @@ test('the onboarding window is the default first-run path; only APLOS_ONBOARDING
   assert.equal(onboardingOptedOut({ APLOS_ONBOARDING_WINDOW: '0' }), true, 'the explicit opt-out');
 });
 
-test('the onboarding window is the default only on the real-engine path (the legacy engine would load the whole mail app into it)', () => {
-  assert.equal(onboardingEnabledFor({}, true), true, 'real engine, unset: on');
-  assert.equal(onboardingEnabledFor({}, false), false, 'legacy engine (every release build): off');
-  assert.equal(onboardingEnabledFor({ APLOS_ONBOARDING_WINDOW: '1' }, false), false);
-  assert.equal(
-    onboardingEnabledFor({ APLOS_ONBOARDING_WINDOW: '0' }, true),
-    false,
-    'the opt-out still wins',
-  );
+test('the onboarding window is the default unless opted out', () => {
+  assert.equal(onboardingEnabledFor({}), true, 'unset: on');
+  assert.equal(onboardingEnabledFor({ APLOS_ONBOARDING_WINDOW: '0' }), false, 'the opt-out wins');
 });
 
 test('first run: exactly one window exists, the onboarding window, and no mail window until the handoff', async () => {

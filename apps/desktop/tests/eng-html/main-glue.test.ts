@@ -374,13 +374,13 @@ test('mail-protocol.ts is the only owner of webRequest listeners and scheme priv
   assert.deepEqual(filesWith(/protocol\s*\.\s*handle\s*\(/), ['main/mail-protocol.ts']);
 });
 
-test('real path only: the scheme is registered under `if (realPath)` and the relay installed from bootRealEngine', () => {
+test('the scheme is registered once at engine-host import and the relay installed from bootRealEngine', () => {
   assert.deepEqual(filesWith(/registerMailScheme\(\)/), [
     'main/engine-host.ts',
     'main/mail-protocol.ts',
   ]);
   const host = all.find(s => s.file === 'main/engine-host.ts')!.text;
-  assert.match(host, /^if \(realPath\) registerMailScheme\(\);$/m);
+  assert.match(host, /^registerMailScheme\(\);$/m);
   assert.equal(host.match(/registerMailScheme\(\)/g)?.length, 1);
   assert.deepEqual(filesWith(/installMailProtocol\(/), [
     'main/engine-real.ts',

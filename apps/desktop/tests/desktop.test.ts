@@ -1,25 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { DraftOwnership, draftMutationId } from '../src/main/desktop-policy';
-import { isTrustedRequest } from '../src/main/server';
-
-test('loopback bridge rejects cross-site origins and DNS rebinding hosts', () => {
-  assert.equal(
-    isTrustedRequest({ headers: { host: '127.0.0.1:4317', origin: 'http://127.0.0.1:5173' } }),
-    true,
-  );
-  assert.equal(
-    isTrustedRequest({ headers: { host: 'localhost:4317', origin: 'http://localhost:5173' } }),
-    true,
-  );
-  assert.equal(isTrustedRequest({ headers: { host: '127.0.0.1:4317' } }), true);
-  assert.equal(
-    isTrustedRequest({ headers: { host: '127.0.0.1:4317', origin: 'https://malicious.example' } }),
-    false,
-  );
-  assert.equal(isTrustedRequest({ headers: { host: 'malicious.example:4317' } }), false);
-  assert.equal(isTrustedRequest({ headers: { host: '127.0.0.1:4317', origin: 'null' } }), false);
-});
 
 test('draft send and delete parse IDs without a nested draft object', () => {
   assert.equal(draftMutationId('draft.send', { id: 'draft-1' }), 'draft-1');

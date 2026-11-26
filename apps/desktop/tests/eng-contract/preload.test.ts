@@ -87,14 +87,13 @@ test('LOW-1: with the engine argument the bridge works over its port', async t =
   );
 });
 
-test('LOW-1: main passes the argument only on the real path, and preload never exposes the bridge itself', () => {
-  assert.deepEqual(engineWindowArguments(false), []);
-  assert.deepEqual(engineWindowArguments(true), [ENGINE_PORT_ARG]);
+test('LOW-1: main passes the argument to every window, and preload never exposes the bridge itself', () => {
+  assert.deepEqual(engineWindowArguments(), [ENGINE_PORT_ARG]);
   const source = readFileSync(join(import.meta.dirname, '../../src/main/preload.ts'), 'utf8');
   assert.equal(source.match(/aplosEngine|aplos:engine-port|aplos:desktop/g), null);
   assert.match(source, /exposeEngineBridge\(\{ contextBridge, ipcRenderer \}, process\.argv\)/);
   const windows = readFileSync(join(import.meta.dirname, '../../src/main/windows.ts'), 'utf8');
-  assert.match(windows, /additionalArguments: engineWindowArguments\(realPath\)/);
+  assert.match(windows, /additionalArguments: engineWindowArguments\(\)/);
 });
 
 test('a failed desktop method rejects with the plain error body; a result passes; a refused caller gets no reason', async t => {

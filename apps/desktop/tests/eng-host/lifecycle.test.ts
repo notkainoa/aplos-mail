@@ -6,7 +6,6 @@ import {
   createQuitGate,
   closeThenRelease,
   drain,
-  pendingWork,
   quitWarning,
 } from '../../src/host/lifecycle';
 
@@ -29,31 +28,6 @@ test('three engine exits within 60 s park the app; a slow trickle does not', () 
   assert.equal(slow.noteEngineExit(30_000), false);
   assert.equal(slow.noteEngineExit(61_000), false);
   assert.equal(slow.state, 'starting');
-});
-
-test('pendingWork counts scheduled sends, reminders and unconfirmed sends from the state', () => {
-  const sample = {
-    drafts: [
-      { pendingSendAt: '2026-11-01T09:00:00.000Z' },
-      { pendingSendAt: '2026-11-01T08:00:00.000Z' },
-      { pendingSendAt: '2026-11-01T07:00:00.000Z', sendAttemptAt: '2026-11-01T06:59:00.000Z' },
-      {},
-    ],
-    threads: [
-      { reminderAt: '2026-11-02T09:00:00.000Z' },
-      { reminderAt: '2026-10-30T09:00:00.000Z', reminderFired: true },
-      {},
-    ],
-  };
-  const pending = pendingWork(sample);
-  assert.deepEqual(pending, {
-    scheduledSends: 2,
-    reminders: 1,
-    uncertain: 1,
-    nextAt: Date.parse('2026-11-01T08:00:00.000Z'),
-  });
-  assert.deepEqual(pendingWork(undefined), { scheduledSends: 0, reminders: 0, uncertain: 0 });
-  assert.equal(quitWarning(pendingWork({ drafts: [], threads: [] })), undefined);
 });
 
 test('the quit warning lists what will not happen', () => {
