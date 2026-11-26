@@ -22,7 +22,6 @@ import {
   sendWhenReady,
 } from './windows';
 import { updates, restartToUpdate, cancelInstall } from './updater';
-import { latestState } from './engine-host';
 import { cancelQuit } from './lifecycle';
 import { legacyDesktopMethods, type desktopMethods } from '@aplos/contract/allowlists';
 import { isTest, recordNotification } from './test-mode';
@@ -46,7 +45,7 @@ function notify(title: string, body: string, threadId?: string) {
   if (isTest) return recordNotification(title, body, threadId);
   if (!Notification.isSupported())
     throw new Error('Desktop notifications are unavailable on this system.');
-  const notification = new Notification({ title, body, silent: !latestState?.settings.sendSound });
+  const notification = new Notification({ title, body, silent: true });
   notification.on('click', () => {
     // The thread command goes to the window the activation answers with, once its page can take it;
     // an onboarding answer (first run) makes no mail window, and the command is dropped with it.

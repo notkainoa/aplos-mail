@@ -8,7 +8,6 @@ import {
   ENGINE_EXIT_AFTER_KILL_MS,
   ENGINE_QUIT_MS,
   createEngineSupervisor,
-  realEngineRequested,
   type EngineLink,
 } from '../../src/host/transports/port';
 import { fakeWindow, mainSide, T0, until } from './rig';
@@ -32,15 +31,6 @@ test('the real path keeps no state mirror in main', () => {
     ])
       assert.doesNotMatch(source, banned, `${path} has ${banned}`);
   }
-});
-
-test('the real engine runs in every build; only a development build honours APLOS_ENGINE=legacy', () => {
-  assert.equal(realEngineRequested({}, true), true);
-  assert.equal(realEngineRequested({}, false), true);
-  assert.equal(realEngineRequested({ APLOS_ENGINE: 'real' }, false), true);
-  assert.equal(realEngineRequested({ APLOS_ENGINE: 'legacy' }, false), false);
-  // A release build ignores the environment.
-  assert.equal(realEngineRequested({ APLOS_ENGINE: 'legacy' }, true), true);
 });
 
 test('real path: a window gets its own port and Session/get answers', async t => {
@@ -479,7 +469,7 @@ test('source shape: realEngine.close() sets closeRequested and rejects unless th
 
 test('source shape: finishQuit hands the REAL close to closeThenRelease, and start-up shows no error during a quit', () => {
   const source = sourceOf('../../src/main/lifecycle.ts');
-  assert.match(source, /realPath \? realEngine\.close\(\) : service\?\.close\(\)/);
+  assert.match(source, /const engineClosed = realEngine\.close\(\);/);
   assert.match(source, /closeThenRelease\(Promise\.resolve\(engineClosed\), QUIT_DRAIN_MS/);
   assert.match(source, /\.catch\(failedStart\)/, 'a start-up failure goes through failedStart');
   const failed = /function failedStart\(error: unknown\) \{([\s\S]*?)\n\}/.exec(source)?.[1] ?? '';

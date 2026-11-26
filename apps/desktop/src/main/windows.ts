@@ -4,7 +4,7 @@ import { DraftOwnership } from './desktop-policy';
 import type { AppState, Listener } from '@aplos/contract/legacy/types';
 import { rendererFile, devURL, trustedURL, external } from './security';
 import { handleLink, pendingLinks } from './protocol';
-import { latestState, realPath, realEngine, service } from './engine-host';
+import { realEngine } from './engine-host';
 import { closing, quitting, finishQuit, failedStart } from './lifecycle';
 import { isTest, dataDirOverride, testOnlyFlags, recordOauthReturn } from './test-mode';
 import {
@@ -45,20 +45,12 @@ function command(value: string) {
   win?.webContents.send('aplos:event', { type: 'command', payload: value });
 }
 /**
- * What `Session/get.hasAccounts` and `.setup` say: on the real-engine path main's control connection asks the engine
- * (the legacy mirror is empty there); today's path reads its state mirror. The last good answer serves a read that
+ * What `Session/get.hasAccounts` and `.setup` say: main's control connection asks the engine. The last good answer serves a read that
  * fails while the engine restarts, so a Dock click then can never reopen onboarding for a finished setup.
  */
 let lastFacts: SessionFacts | undefined;
 async function sessionFacts(): Promise<SessionFacts> {
-  if (realPath) {
-    lastFacts = await readSessionFacts(() => realEngine.session(), lastFacts);
-    return lastFacts;
-  }
-  lastFacts = {
-    hasAccounts: !!latestState?.accounts.length,
-    setup: latestState?.settings.onboardingDone ? { completedAt: 1 } : {},
-  };
+  lastFacts = await readSessionFacts(() => realEngine.session(), lastFacts);
   return lastFacts;
 }
 const describe = (error: unknown) => (error instanceof Error ? error.message : String(error));
@@ -88,25 +80,14 @@ function focusMain(): Promise<BrowserWindow | undefined> {
 }
 // Runs on every state change. Assigning themeSource, even to the same value, resets the macOS app appearance
 // and notifies theme observers, and the badge redraws the Dock tile, so only touch what actually changed.
-let activeBadge = -1,
-  activeTheme: AppState['settings']['theme'] | undefined,
+let activeTheme: AppState['settings']['theme'] | undefined,
   syncingTheme = false;
-// The one theme mirror on both engine paths: the legacy AppState feeds it through applyAppearance, the real engine
-// through its `appearance` host event (seeded at every engine start — main holds no settings copy there).
+// The one theme mirror: the engine feeds it through its `appearance` host event (seeded at every engine start — main
+// holds no settings copy).
 function hostTheme(theme: AppState['settings']['theme']) {
   if (activeTheme === theme) return;
   activeTheme = theme;
   syncTheme(true);
-}
-function applyAppearance(state: AppState) {
-  hostTheme(state.settings.theme);
-  const badge = state.settings.zen
-    ? 0
-    : state.threads.filter(thread => thread.unread && thread.status === 'new').length;
-  if (badge !== activeBadge && !isTest) {
-    app.setBadgeCount(badge);
-    activeBadge = badge;
-  }
 }
 // The macOS sidebar material can keep the appearance it was drawn with when a change slips past it,
 // leaving dark glass under light-theme text (or the reverse). When the setting or the system
@@ -142,7 +123,7 @@ const webPreferences = () => ({
   // answer to a quit could then take tens of seconds (plat-release, 2026-10-28 06:12).
   backgroundThrottling: !isTest,
   // Only the real engine path's windows get `window.aplosEngine` (preload checks this argument).
-  additionalArguments: engineWindowArguments(realPath),
+  additionalArguments: engineWindowArguments(),
 });
 /**
  * A subframe the app's own page points at a mail document (exactly `aplos-mail://m/<token>/`, html-5's strict form), or
@@ -307,7 +288,6 @@ function createWindow() {
       type: 'fullscreen',
       payload: { fullscreen: win.isFullScreen() },
     });
-    if (latestState) win.webContents.send('aplos:event', { type: 'state', payload: latestState });
     if (win === main)
       for (const link of pendingLinks.splice(0))
         win.webContents.send('aplos:event', { type: 'deep-link', payload: link });
@@ -346,8 +326,8 @@ function sendWhenReady(win: BrowserWindow, event: { type: string; payload?: unkn
 }
 
 // The welcome window (DESIGN 7.11) is the default first-run path. `APLOS_ONBOARDING_WINDOW=0` opts out for tests
-// and debugging, which keeps the legacy behaviour (the mail window shows its own zero-accounts intro).
-const onboardingEnabled = onboardingEnabledFor(process.env, realPath);
+// and debugging; the mail window then shows its own zero-accounts intro.
+const onboardingEnabled = onboardingEnabledFor(process.env);
 const welcome = { width: 640, height: 600, minHeight: 520 };
 function portOf(win: BrowserWindow): WindowPort {
   return {
@@ -388,9 +368,6 @@ function createWelcomeWindow(mode: OnboardingMode): WindowPort {
   });
   win.on('focus', () => syncTheme(false));
   lockNavigation(win);
-  win.webContents.on('did-finish-load', () => {
-    if (latestState) win.webContents.send('aplos:event', { type: 'state', payload: latestState });
-  });
   win.on('closed', () => {
     windows.delete(win);
     // After the welcome controller's own close handler, so its `Setup/end` reaches the engine before the quit closes it.
@@ -403,7 +380,7 @@ const onboarding = createOnboarding({
   createOnboarding: createWelcomeWindow,
   createMail: () => portOf(ensureMain()),
   currentMail: () => (main && !main.isDestroyed() ? portOf(main) : undefined),
-  endSetup: async () => service?.invoke('Setup/end', { reason: 'closed' }),
+  endSetup: async () => undefined,
   announceShown: port => {
     for (const win of windows) if (win.id === port.id) announceShown(win);
   },
@@ -440,7 +417,6 @@ export {
   emit,
   command,
   focusMain,
-  applyAppearance,
   hostTheme,
   syncTheme,
   createWindow,

@@ -19,8 +19,7 @@
     "./sync/governor": "./src/sync/governor.ts",
     "./sync/host": "./src/sync/host.ts",
     "./sync/lookup": "./src/sync/lookup.ts",
-    "./ports": "./src/ports.ts",
-    "./legacy/*": "./src/legacy/*.ts"
+    "./ports": "./src/ports.ts"
   },
   "scripts": {
     "typecheck": "tsc --noEmit",

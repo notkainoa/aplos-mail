@@ -19,10 +19,7 @@ const source = (file: string) => readFileSync(join(main, file), 'utf8');
 
 const hosts = [
   { file: 'preload.ts', set: 'allowed', list: 'legacyMethods' },
-  { file: 'engine-host.ts', set: 'methods', list: 'legacyEngineMethods' },
   { file: 'native-methods.ts', set: 'nativeMethods', list: 'legacyDesktopMethods' },
-  { file: 'server.ts', set: 'serviceMethods', list: 'legacyEngineMethods' },
-  { file: 'server.ts', set: 'webMethods', list: 'legacyDesktopMethods' },
 ] as const;
 
 test('every host derives its method set from the generated allowlists', () => {

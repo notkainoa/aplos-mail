@@ -22,9 +22,9 @@ import { MAX_WINDOW_NODES, messageBytes } from '@aplos/contract/measure';
 
 // ---- wire ---------------------------------------------------------------------------------------------------------
 
-/** The argument main passes the utility process to start the new engine instead of the legacy one. */
+/** The argument main passes the engine's utility process. */
 export const REAL_ENGINE_ARG = '--aplos-engine=real';
-/** The utility process's service name; the legacy engine's is `Aplos Mail Engine`, so their exits are counted apart. */
+/** The engine utility process's service name. */
 export const REAL_ENGINE_SERVICE = 'Aplos Mail Engine (new)';
 
 /** No engine-to-window message may be larger than this, except a blob route's reply (plan 10 E3 acceptance). */
@@ -59,21 +59,6 @@ export const portMethods: ReadonlySet<string> = new Set(
 
 /** True for a desktop method, which preload routes to main and never down the engine port. */
 export const isDesktopMethod = (method: string) => desktopSet.has(method);
-
-/**
- * Which engine runs (plan 10 4.1, the switch): the real engine, in every build. Aplos has no 0.2.x users (every 0.2.x
- * release stayed a draft; owner, 2026-11-18), so there is no importer and no hold for a folder with `aplos.db`: the new
- * engine starts its own `mail.db` beside it and leaves the old file untouched.
- *
- * `APLOS_ENGINE=legacy` brings the old engine back in a development or local build only, for the legacy verify scripts.
- * A release build ignores the environment, as it does `APLOS_TEST` and `APLOS_DATA_DIR`.
- */
-export function realEngineRequested(
-  env: Record<string, string | undefined>,
-  release: boolean,
-): boolean {
-  return release || env.APLOS_ENGINE !== 'legacy';
-}
 
 /** A window's call down its port (ARCH 9.1's envelope). */
 export interface PortCall {
@@ -858,8 +843,8 @@ export type PortClient = ReturnType<typeof createPortClient>;
  */
 export const ENGINE_PORT_ARG = '--aplos-engine-port';
 
-/** A window's `additionalArguments`: the engine bridge's flag on the real path, nothing otherwise. */
-export const engineWindowArguments = (real: boolean): string[] => (real ? [ENGINE_PORT_ARG] : []);
+/** A window's `additionalArguments`: the engine bridge's flag. */
+export const engineWindowArguments = (): string[] => [ENGINE_PORT_ARG];
 
 /** The parts of Electron's `contextBridge` and `ipcRenderer` the engine bridge uses (preload passes the real ones). */
 export interface PreloadElectron {

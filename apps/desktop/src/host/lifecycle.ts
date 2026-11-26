@@ -60,16 +60,9 @@ export function onboardingOptedOut(env: { APLOS_ONBOARDING_WINDOW?: string }): b
   return env.APLOS_ONBOARDING_WINDOW === '0';
 }
 
-/**
- * The small first-run window is the default only on the real-engine path: it needs the new renderer route and the
- * engine's `Setup/*`, and the legacy engine (every release build until the switch) would load today's whole mail app
- * into the 640 x 600 window. `APLOS_ONBOARDING_WINDOW=0` still opts out on the real path.
- */
-export function onboardingEnabledFor(
-  env: { APLOS_ONBOARDING_WINDOW?: string },
-  realPath: boolean,
-): boolean {
-  return realPath && !onboardingOptedOut(env);
+/** The small first-run window is the default; `APLOS_ONBOARDING_WINDOW=0` opts out. */
+export function onboardingEnabledFor(env: { APLOS_ONBOARDING_WINDOW?: string }): boolean {
+  return !onboardingOptedOut(env);
 }
 
 /**
@@ -462,40 +455,6 @@ export interface PendingWork {
   readonly reminders: number;
   readonly uncertain: number;
   readonly nextAt?: number;
-}
-
-/** The part of today's `AppState` the quit warning reads. */
-export interface PendingSource {
-  readonly drafts: ReadonlyArray<{ pendingSendAt?: string; sendAttemptAt?: string }>;
-  readonly threads: ReadonlyArray<{ reminderAt?: string; reminderFired?: boolean }>;
-}
-
-const timeOf = (iso: string | undefined) => (iso === undefined ? NaN : Date.parse(iso));
-
-/**
- * What will not happen while Aplos is quit, from today's `latestState`. Later `Outbox/pending` answers the same shape.
- * A draft with a send attempt that is still unsent is `uncertain` (never counted as scheduled as well).
- */
-export function pendingWork(state: PendingSource | undefined): PendingWork {
-  let scheduledSends = 0;
-  let reminders = 0;
-  let uncertain = 0;
-  const due: number[] = [];
-  for (const draft of state?.drafts ?? []) {
-    if (draft.sendAttemptAt) uncertain++;
-    else if (draft.pendingSendAt) {
-      scheduledSends++;
-      due.push(timeOf(draft.pendingSendAt));
-    }
-  }
-  for (const thread of state?.threads ?? []) {
-    if (!thread.reminderAt || thread.reminderFired) continue;
-    reminders++;
-    due.push(timeOf(thread.reminderAt));
-  }
-  const times = due.filter(Number.isFinite);
-  const nextAt = times.length ? Math.min(...times) : undefined;
-  return { scheduledSends, reminders, uncertain, ...(nextAt === undefined ? {} : { nextAt }) };
 }
 
 const plural = (count: number, one: string, many: string) => `${count} ${count === 1 ? one : many}`;

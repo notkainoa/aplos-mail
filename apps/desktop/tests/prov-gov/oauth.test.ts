@@ -56,18 +56,9 @@ test('every Google scope requested in the source tree is in the manifest', () =>
     );
 });
 
-test('the authorization scope parameter is the manifest, and the legacy request matches it', () => {
-  const legacy = readFileSync(join(src, 'main/google.ts'), 'utf8');
+test('the authorization scope parameter is the manifest', () => {
   const writeCovers = 'https://www.googleapis.com/auth/calendar.events';
-  const readOnly = `${writeCovers}.readonly`;
   const parts = googleScopeParam().split(' ');
-  for (const part of parts)
-    // The legacy sign-in writes events, so it correctly asks the broader calendar.events — which a
-    // held grant of already covers the read-only scope Aplos asks for now.
-    assert.ok(
-      legacy.includes(part) || (part === readOnly && legacy.includes(writeCovers)),
-      `${part} missing from google.ts`,
-    );
   // The deferred write entry is declared but never requested: not a token of the param, and not
   // counted in the manifest length the param carries.
   assert.ok(

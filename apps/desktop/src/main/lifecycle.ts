@@ -27,7 +27,7 @@ import { isOauthReturnLink } from '../host/providers/oauth/returns';
 import { handleLink } from './protocol';
 import { menus, startMenuBar, stopMenuBar } from './menu-bar';
 import { updates, installUpdate, startUpdates } from './updater';
-import { service, bootEngine, latestState, realPath, realEngine } from './engine-host';
+import { bootEngine, realEngine } from './engine-host';
 import {
   activationPolicy,
   applyWindowChoice,
@@ -35,7 +35,6 @@ import {
   createProcessState,
   createQuitGate,
   closeThenRelease,
-  pendingWork,
   quitWarning,
   quitWarningButtons,
   windowFallback,
@@ -112,16 +111,10 @@ const loopMonitor = createLoopMonitor({
   log: line => console.error(`Aplos Mail: ${line}`),
 });
 
-/**
- * Today the legacy engine syncs on `sync {auto: true}`; the new engine takes `engine.wake()` here instead.
- * The legacy engine has no pause of its own, so while paused (or parked) main simply does not forward the wake.
- */
+/** While paused (or parked) main does not forward the wake; the engine's host dedupes wakes (host/power.ts). */
 function wakeEngine() {
   if (pause.active() || processState.state === 'parked') return;
-  // The real engine (the default) gets the power event itself; its host dedupes wakes (host/power.ts).
-  if (realPath) return realEngine.wake();
-  if (!service) return;
-  void service.invoke('sync', { auto: true }).catch(() => {});
+  return realEngine.wake();
 }
 
 /** The engine's utility process stopped (any reason). The third stop within 60 s parks the app; returns true then. */
@@ -179,8 +172,8 @@ function watchWindowCount() {
 
 async function confirmQuit(): Promise<boolean> {
   if (installUpdate || skipQuitWarning || systemShutdown) return true;
-  // The real path asks the engine (`Outbox/pending`); a rejection counts as yes in the quit gate.
-  const pending = realPath ? await realEngine.pending() : pendingWork(latestState);
+  // Main asks the engine (`Outbox/pending`); a rejection counts as yes in the quit gate.
+  const pending = await realEngine.pending();
   const warning = quitWarning(pending);
   if (!warning) return true;
   // A test must be able to quit: it records the text and goes on (a dialog would also answer with its first button).
@@ -219,7 +212,7 @@ function finishQuit() {
     set: (run: () => void, ms: number) => setTimeout(run, ms),
     clear: (handle: unknown) => clearTimeout(handle as NodeJS.Timeout),
   };
-  const engineClosed = realPath ? realEngine.close() : service?.close();
+  const engineClosed = realEngine.close();
   // The data lock is let go only when the engine confirmed it closed: otherwise it stays held until this process is gone.
   void closeThenRelease(Promise.resolve(engineClosed), QUIT_DRAIN_MS, quitTimers, () =>
     lock?.release(),
@@ -243,23 +236,14 @@ function startResident() {
   powerMonitor.on('shutdown', () => {
     systemShutdown = true;
   });
-  app.on('child-process-gone', (_event, details) => {
-    if (details.type === 'Utility' && details.serviceName === 'Aplos Mail Engine') noteEngineExit();
-  });
   loopMonitor.start();
   if (isTest) return;
-  if (realPath) {
-    // `latestState` is a legacy-engine snapshot and never fills on this path; the menu would sit on "Starting…"
-    // for the whole session without this poll (the menu itself calls back every 2 s against the cache).
-    pollMenuSync();
-    timers.every(pollMenuSync, 2000).unref();
-  }
+  // Without this poll the menu would sit on "Starting…" for the whole session (it calls back every 2 s against the cache).
+  pollMenuSync();
+  timers.every(pollMenuSync, 2000).unref();
   startMenuBar({
     pause,
-    sync: () =>
-      realPath
-        ? menuSync
-        : latestState?.sync && { ...latestState.sync, accounts: latestState.accounts.length },
+    sync: () => menuSync,
     open: () => {
       app.focus({ steal: true });
       void focusMain();

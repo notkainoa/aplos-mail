@@ -82,7 +82,7 @@ async function bundleNeutral(
 test('the engine bundles for a platform without Node, so a mobile app can reuse it', async () => {
   const { files, code, forbidden } = await bundleNeutral(src);
   assert.ok(
-    files.some(f => f.includes(join('src', 'legacy', ''))),
+    files.some(f => f.includes(join('src', 'store', ''))),
     'the walk reaches subfolders',
   );
   assert.deepEqual(forbidden, [], 'no Node or Electron modules');
