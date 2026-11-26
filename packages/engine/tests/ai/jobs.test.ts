@@ -146,6 +146,27 @@ test('automated job signals and conflicts', () => {
   assert.equal(jobFor(value).confidence, 'unsure');
 });
 
+test('automated requests take precedence over logistics hints and wording', () => {
+  for (const text of [
+    'Please choose a delivery slot.',
+    'Book your appointment.',
+    'Schedule a reservation.',
+    'Sign the delivery authorization.',
+    'Complete the shipping instructions.',
+    'Visit the portal to schedule delivery.',
+  ]) {
+    const value = input(text);
+    value.message.from = { address: 'no-reply@sender.example' };
+    for (const kind of ['delivery', 'reservation'] as const) {
+      value.structured = [{ kind }];
+      assert.deepEqual(jobFor(value), { job: 'ask', confidence: 'unsure' });
+    }
+  }
+  const value = input('Delivery confirmed.');
+  value.message.from = { address: 'no-reply@sender.example' };
+  assert.deepEqual(jobFor(value), { job: 'update', confidence: 'sure' });
+});
+
 test('unknown nonautomated senders are new people even when asking a question', () => {
   const value = input('Could you tell me more?');
   assert.deepEqual(jobFor(value), { job: 'newPerson', confidence: 'sure' });

@@ -14,6 +14,8 @@ const REQUEST =
   /\?|\b(can|could|would|will) you\b|\bplease\b|\b(let me know|rsvp|action required)\b|\byour (approval|permission|signature|response) (is )?(needed|required)\b/i;
 const ACTION =
   /\b(deadline|payment due|pay by|permission form|due (on|by|today|tomorrow)|by (eod|tomorrow|tonight|today|monday|tuesday|wednesday|thursday|friday)|asap|urgent)\b/i;
+const IMPERATIVE =
+  /(?:^|[.!:;\n])\s*(book|schedule|sign|complete)\b|\b(you must|you should|you need to|to)\s+(book|schedule|sign|complete)\b/i;
 const CHANGE =
   /\b(refund|failed|declined|unusual|security|new (sign[- ]?in|device)|password|cancelled|canceled|rescheduled|delayed|shipped|shipping|delivered|delivery|tracking|in transit|appointment|reservation|check[- ]?in|change|changed|moved|returned|restored|locked|unavailable|available|ready|confirmed|scheduled|closed)\b/i;
 const RECORD =
@@ -69,7 +71,7 @@ function contentSignals(input: LaneInput) {
   const body = ownWords(input.text ?? message.snippet ?? '');
   const subject = /^\s*(re|fw|fwd):/i.test(message.subject ?? '') ? '' : message.subject;
   const words = `${subject ?? ''}\n${body}`;
-  const request = REQUEST.test(words) || ACTION.test(words);
+  const request = REQUEST.test(words) || ACTION.test(words) || IMPERATIVE.test(words);
   const changed = CHANGE.test(words);
   const record = RECORD.test(words);
   const reading = READING.test(words);
@@ -116,9 +118,9 @@ function automatedJob(
 ) {
   const { machine } = sender;
   const { changed, request, promo, reading, invite, dueBill, record } = s;
+  if (request || invite || dueBill) return result('ask');
   if (changed || s.logistics)
     return result('update', machine && !request && !promo && !reading && !record);
-  if (request || invite || dueBill) return result('ask');
   if ((record || s.finalBill) && machine) return result('record', !reading && !promo);
   if (reading && !promo && !record) return result('read', sender.editorial);
   const other = machine && (promo || sender.app || sender.social);
