@@ -18,7 +18,6 @@ import {
   main,
   emit,
   focusMain,
-  popout,
   onboarding,
   sendWhenReady,
 } from './windows';
@@ -164,17 +163,6 @@ async function invokeNative(event: IpcMainInvokeEvent, method: string, input: un
     // Test mode never opens a browser (it would take focus); the request is accepted and dropped.
     if (isTest) return true;
     await external(payload.url);
-    return true;
-  }
-  if (method === 'window.compose') {
-    const id = text(payload.draftId, 'draft ID', 200);
-    if (!latestState?.drafts.some(draft => draft.id === id))
-      throw new Error('Save this draft before opening a separate window.');
-    popout('draft', id, win.id);
-    return true;
-  }
-  if (method === 'window.thread') {
-    popout('thread', text(payload.threadId, 'thread ID', 200), win.id);
     return true;
   }
   if (method === 'window.claim') {

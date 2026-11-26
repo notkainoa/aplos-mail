@@ -2149,3 +2149,28 @@ From the owner's review of the UI council. A failed send ("Couldn’t send to Jo
 
 - **Why:** 42 rows in `budgets.json` were never given a first measurement, and `check:budgets` fails CI once a row's `dueBy` passes. From 2026-11-21 every CI run failed on the `slots` job, `main` included, for a date and not for any change. Most of these rows time screens and paths the rethink (`plans/RETHINK.md`) rebuilds, so measuring them now would time code that is about to go.
 - **What:** every row with no `lastMeasured` now has `dueBy` 2027-01-15. Measured rows and every limit are unchanged. Rows that still apply to the rebuilt app get measured before that date; rows for removed screens get deleted.
+
+## 2026-11-24: a conversation is sorted as one item
+
+- **Decision (owner):** sorting works per conversation, not per email. The conversation's newest email decides its job and section, and the short version covers only what is new since the owner last looked.
+- **Why:** one conversation never shows in two sections, and a reply moves the whole conversation to where it now belongs.
+- **Where:** `plans/RETHINK.md` Part 1 item 13; the question is removed from "Still open". Nothing is built yet.
+
+## 2026-11-24: Ask becomes the sidebar agent, Today moves to the calendar plug-in
+
+- **Decision (owner):** today's Ask panel becomes the sidebar agent from `plans/RETHINK.md` Part 4, the one agent that both answers questions and changes the app. Today's Today panel leaves the default version and moves into the calendar plug-in, with the full week and month view. The small peek at a day, shown when Aplos offers to add an event, stays in the default version.
+- **Why:** there is one agent rather than two, and everything calendar-shaped beyond the engine's calendar smarts lives in one optional plug-in.
+- **Where:** `plans/RETHINK.md` Part 2 "Other choices"; the question is removed from "Still open". Nothing is built yet.
+
+## 2026-11-24: the first milestone is the block system
+
+- **Decision (owner):** the block system comes first. The default version is then built from those blocks and the sorting is made good, and only after that is the door opened to coding agents. This confirms the order of work that `plans/RETHINK.md` had listed as an assumption.
+- **Rejected:** a Gmail-only new Home first (the owner using new screens on his own mailbox before the blocks exist), and sorting alone, measured on the test set, before any new screens.
+- **Where:** `plans/RETHINK.md` Part 3 item 10. The order-of-work assumption, the day-peek assumption (confirmed with Ask and Today above) and "The first milestone" are removed from their lists. Nothing is built yet.
+
+## 2026-11-25: two kinds of block, settings and code panels
+
+- **Decision (owner):** sections, treatments, rules, themes and keys are settings blocks: a description that runs no code, so anyone can make one by asking the agent. Only panels are code blocks, and they run walled off from the mailbox under the same permission rule as every extension.
+- **Rejected:** settings only (nobody could build a new panel), and code only (even a simple section would be a program, and every block would need the strictest checks).
+- **Why:** it matches the split already in `plans/RETHINK.md`: "make a section for my kid's soccer" works for anyone, and someone with a coding agent can redo a panel.
+- **Where:** `plans/RETHINK.md` Part 3 item 11. Still open: each kind's format, how a code panel is kept safe, how blocks are shared. Nothing is built yet.

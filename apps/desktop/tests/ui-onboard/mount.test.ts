@@ -20,14 +20,7 @@ describe('chooseRoute: window=onboarding routes to the onboarding app', () => {
     assert.equal(chooseRoute('?window=mail'), 'mail');
     assert.equal(chooseRoute('?window=popout'), 'mail');
     assert.equal(chooseRoute('?mode=review'), 'mail');
-  });
-
-  test('the legacy flag wins over the onboarding window, as today', () => {
-    assert.equal(chooseRoute('?legacy=1'), 'legacy');
-    assert.equal(chooseRoute('?legacy=1&window=onboarding'), 'legacy');
-    assert.equal(chooseRoute('?window=onboarding&legacy=1'), 'legacy');
-    // Only the exact flag counts: a stray legacy value does not block the route.
-    assert.equal(chooseRoute('?legacy=0&window=onboarding'), 'onboarding');
+    assert.equal(chooseRoute('?legacy=1'), 'mail');
   });
 });
 

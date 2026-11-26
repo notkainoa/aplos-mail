@@ -256,6 +256,64 @@ export function FatalHost({ kind }: { readonly kind: 'unreachable' | 'parked' })
   );
 }
 
+/** The members of `window.aplosEngine` the startup fatal screen uses: main answers both without the engine. */
+export interface StartupEngine {
+  call(method: string, args: unknown): unknown;
+}
+
+export interface StartupRecovery {
+  /** Asks main for `Engine/restart` when there is a bridge, then reloads the window either way. */
+  readonly restart: () => Promise<void>;
+  /** Asks main for `Diagnostics/copy`; absent without a bridge, since nothing could answer it. */
+  readonly diagnostics?: () => void;
+}
+
+export function startupRecovery(engine: StartupEngine | null, reload: () => void): StartupRecovery {
+  const restart = () =>
+    Promise.resolve()
+      .then(() => engine?.call('Engine/restart', {}))
+      .catch(() => undefined)
+      .then(reload);
+  if (!engine) return { restart };
+  const diagnostics = () => {
+    void Promise.resolve()
+      .then(() => engine.call('Diagnostics/copy', {}))
+      .catch(() => undefined);
+  };
+  return { restart, diagnostics };
+}
+
+/**
+ * The fatal screen when the window could not start (DESIGN 7.15): no data runtime and no toasts, so it renders with
+ * nothing connected. Its actions are `startupRecovery`'s.
+ */
+export function StartupFatalHost({
+  engine,
+  reload,
+}: {
+  readonly engine: StartupEngine | null;
+  readonly reload: () => void;
+}) {
+  const [restarting, setRestarting] = useState(false);
+  const recovery = startupRecovery(engine, reload);
+  const restart = () => {
+    setRestarting(true);
+    void recovery.restart();
+  };
+  return (
+    <div className="aplos-shell">
+      <Pane kind="main" label="Aplos">
+        <FatalScreen
+          kind="unreachable"
+          restarting={restarting}
+          onRestart={restart}
+          onDiagnostics={recovery.diagnostics}
+        />
+      </Pane>
+    </div>
+  );
+}
+
 type Recover = Awaited<ReturnType<typeof api.engine.recover>>;
 
 /**

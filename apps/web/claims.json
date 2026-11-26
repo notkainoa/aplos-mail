@@ -159,7 +159,7 @@
         },
         {
           "kind": "test",
-          "ref": "apps/desktop/tests/summary-text.test.ts",
+          "ref": "packages/engine/tests/ai/ingest.test.ts",
           "maxAgeDays": null
         }
       ],
@@ -239,7 +239,7 @@
         },
         {
           "kind": "fact",
-          "ref": "apps/desktop/src/renderer/legacy/components/Sidebar.tsx \"All accounts\" switcher",
+          "ref": "apps/desktop/src/renderer/shell/AccountMenu.tsx \"All accounts\" switcher",
           "maxAgeDays": null
         }
       ],
@@ -264,7 +264,7 @@
         },
         {
           "kind": "test",
-          "ref": "apps/desktop/tests/calendar.test.ts",
+          "ref": "apps/desktop/src/renderer/screens/calendar/calendar.test.ts",
           "maxAgeDays": null
         }
       ],

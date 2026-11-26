@@ -254,170 +254,6 @@
       "count": 1
     }
   },
-  "apps/desktop/src/renderer/legacy/App.tsx": {
-    "@typescript-eslint/no-unused-expressions": {
-      "count": 1
-    },
-    "@typescript-eslint/no-unused-vars": {
-      "count": 2
-    },
-    "complexity": {
-      "count": 4
-    },
-    "max-lines": {
-      "count": 1
-    },
-    "react-hooks/exhaustive-deps": {
-      "count": 12
-    }
-  },
-  "apps/desktop/src/renderer/legacy/Ask.tsx": {
-    "complexity": {
-      "count": 1
-    },
-    "max-lines": {
-      "count": 1
-    },
-    "react-hooks/exhaustive-deps": {
-      "count": 6
-    }
-  },
-  "apps/desktop/src/renderer/legacy/Calendar.tsx": {
-    "complexity": {
-      "count": 2
-    },
-    "max-lines": {
-      "count": 1
-    },
-    "react-hooks/exhaustive-deps": {
-      "count": 11
-    }
-  },
-  "apps/desktop/src/renderer/legacy/Compose.tsx": {
-    "aplos/no-dangerous-html": {
-      "count": 1
-    },
-    "complexity": {
-      "count": 2
-    },
-    "max-lines": {
-      "count": 1
-    },
-    "react-hooks/exhaustive-deps": {
-      "count": 6
-    }
-  },
-  "apps/desktop/src/renderer/legacy/Reader.tsx": {
-    "@typescript-eslint/no-unused-expressions": {
-      "count": 2
-    },
-    "@typescript-eslint/no-unused-vars": {
-      "count": 2
-    },
-    "aplos/no-dangerous-html": {
-      "count": 2
-    },
-    "complexity": {
-      "count": 1
-    },
-    "max-lines": {
-      "count": 1
-    },
-    "react-hooks/exhaustive-deps": {
-      "count": 6
-    }
-  },
-  "apps/desktop/src/renderer/legacy/Settings.tsx": {
-    "@typescript-eslint/no-unused-vars": {
-      "count": 3
-    }
-  },
-  "apps/desktop/src/renderer/legacy/components/AddAccount.tsx": {
-    "aplos/boundaries": {
-      "count": 2
-    },
-    "complexity": {
-      "count": 1
-    }
-  },
-  "apps/desktop/src/renderer/legacy/components/AiSettings.tsx": {
-    "complexity": {
-      "count": 2
-    },
-    "react-hooks/exhaustive-deps": {
-      "count": 1
-    }
-  },
-  "apps/desktop/src/renderer/legacy/components/ApiKey.tsx": {
-    "complexity": {
-      "count": 1
-    },
-    "react-hooks/exhaustive-deps": {
-      "count": 1
-    }
-  },
-  "apps/desktop/src/renderer/legacy/components/DomainCheck.tsx": {
-    "aplos/boundaries": {
-      "count": 1
-    }
-  },
-  "apps/desktop/src/renderer/legacy/components/MailList.tsx": {
-    "complexity": {
-      "count": 2
-    },
-    "max-lines": {
-      "count": 1
-    },
-    "react-hooks/exhaustive-deps": {
-      "count": 3
-    }
-  },
-  "apps/desktop/src/renderer/legacy/components/Overlays.tsx": {
-    "@typescript-eslint/no-unused-vars": {
-      "count": 1
-    },
-    "react-hooks/exhaustive-deps": {
-      "count": 2
-    }
-  },
-  "apps/desktop/src/renderer/legacy/icons.tsx": {
-    "@typescript-eslint/no-explicit-any": {
-      "count": 1
-    },
-    "@typescript-eslint/no-unused-vars": {
-      "count": 1
-    }
-  },
-  "apps/desktop/src/renderer/legacy/mailBody.ts": {
-    "complexity": {
-      "count": 1
-    }
-  },
-  "apps/desktop/src/renderer/legacy/summaryText.ts": {
-    "@typescript-eslint/no-unused-vars": {
-      "count": 1
-    }
-  },
-  "apps/desktop/src/renderer/legacy/ui/Popover.tsx": {
-    "react-hooks/exhaustive-deps": {
-      "count": 1
-    }
-  },
-  "apps/desktop/src/renderer/legacy/ui/Tabs.tsx": {
-    "react-hooks/exhaustive-deps": {
-      "count": 2
-    }
-  },
-  "apps/desktop/src/renderer/legacy/ui/Toast.tsx": {
-    "react-hooks/exhaustive-deps": {
-      "count": 1
-    }
-  },
-  "apps/desktop/src/renderer/legacy/ui/motion.ts": {
-    "@typescript-eslint/no-explicit-any": {
-      "count": 2
-    }
-  },
   "apps/desktop/src/renderer/onboarding/connect.ts": {
     "complexity": {
       "count": 1
@@ -488,26 +324,6 @@
       "count": 1
     },
     "max-lines": {
-      "count": 1
-    }
-  },
-  "apps/desktop/tests/calendar-motion.test.ts": {
-    "aplos/boundaries": {
-      "count": 3
-    }
-  },
-  "apps/desktop/tests/calendar-time.test.ts": {
-    "aplos/boundaries": {
-      "count": 1
-    }
-  },
-  "apps/desktop/tests/calendar.test.ts": {
-    "aplos/boundaries": {
-      "count": 2
-    }
-  },
-  "apps/desktop/tests/date-label.test.ts": {
-    "aplos/boundaries": {
       "count": 1
     }
   },
@@ -632,11 +448,6 @@
     }
   },
   "apps/desktop/tests/suggested-action.test.ts": {
-    "aplos/boundaries": {
-      "count": 2
-    }
-  },
-  "apps/desktop/tests/summary-text.test.ts": {
     "aplos/boundaries": {
       "count": 2
     }

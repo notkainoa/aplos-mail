@@ -55,6 +55,7 @@ Two things change from today's app:
 10. **The order the decider works in.** Your corrections first, then plain facts about the email (bulk markers, no-reply senders, whether you've written to them), then a decisions model, then a thinking model for the ones the first model was unsure of. The thinking model also settles which section.
 11. **Without any AI model**, sorting still works from the plain facts. Mail from people then all goes to Needs you, in full.
 12. **A newsletter is defined by its job**: recurring writing sent the same to everyone, where nothing in it is about you or needs you. A bulk email with a real date or ask in it is treated as an update or an ask.
+13. **A conversation is one item.** Its newest email decides its job and section, and its short version covers only what is new since you last looked. One conversation never shows in two sections, and a reply moves the whole conversation. (Owner, 2026-11-24.)
 
 ## Part 2: the default version
 
@@ -78,6 +79,7 @@ Two things change from today's app:
 
 - **Promos** are the user's choice. Onboarding asks; until then they sit in Everything else.
 - **Calendar:** the full week and month view leaves the default version and is planned as an official plug-in later. The calendar smarts stay in the engine: spotting a date in an email, checking you're free, offering to add it, adding it when you say yes. Invitations appear in Needs you with Yes, Maybe and No.
+- **Ask and Today (owner, 2026-11-24):** today's Ask panel becomes the sidebar agent (Part 4). Today's Today panel leaves the default version and moves into the calendar plug-in. The small peek at a day when Aplos offers to add an event stays.
 - **Onboarding** learns from your real mailbox. It shows real examples of your highest-volume kinds and asks what you want done with them, with good defaults for the rest.
 - **Everything is customisable.**
 
@@ -94,6 +96,8 @@ Two things change from today's app:
 7. **Other mail accounts come after** the default version works well on Gmail. To keep that easy: nothing Gmail-only leaks up into the blocks, and the old Outlook, iCloud and Fastmail code is kept until it is ported.
 8. **Permissions follow one rule.** Anything you can undo, an extension can just do. Anything you can't undo (sending, forwarding, permanent delete) asks first. You can switch the asking off for one extension, and back on. An agent can never grant itself that.
 9. **The engine core's size cap goes up.** The owner agreed on 2026-11-20; the new number will be proposed from a measurement of what the record needs.
+10. **The first milestone is the block system (owner, 2026-11-24).** Define the blocks first, then build the default version from them and get the sorting good, then open the door to coding agents.
+11. **Two kinds of block (owner, 2026-11-25).** Sections, treatments, rules, themes and keys are settings: a description that runs no code, so anyone can make one by asking the agent. Only panels are code, run walled off from your mail under the same permission rule.
 
 The jobs that can start now are in [next/README.md](next/README.md).
 
@@ -114,20 +118,15 @@ Please correct any of these.
 - The three shapes are called line, brief and full.
 - When even the thinking model is unsure, the email is shown in full and stays visible.
 - A model's stated confidence is checked against real corrections before we rely on it.
-- A small peek at that day is shown when Aplos offers to add an event.
-- Order of work: define the blocks, build the default version from them and get the sorting good, then open the door to coding agents.
 
 ## Still open
 
 - How Aplos should differ from Powermove.
-- What a block is technically: its format, how it is kept safe, how it is shared.
+- What a block is technically, beyond the two kinds in Part 3 item 11: each kind's format, how a code panel is kept safe, how blocks are shared.
 - Which kinds get a brief first (shipping, flights, bills and so on).
 - Which models the decider uses, and where the confidence line sits.
 - The exact onboarding questions.
-- Whether a conversation is treated as a whole or message by message.
 - How to tell a real cold email from mass outreach.
-- What becomes of today's Ask and Today panels.
-- The first milestone.
 
 ## To check before building
 
