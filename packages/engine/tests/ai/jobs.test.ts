@@ -167,6 +167,30 @@ test('automated requests take precedence over logistics hints and wording', () =
   assert.deepEqual(jobFor(value), { job: 'update', confidence: 'sure' });
 });
 
+test('consent and dated deadlines prevent confident personal or automated updates', () => {
+  for (const text of [
+    'Accept the terms.',
+    'You need to agree to our updated conditions.',
+    'Review and accept the agreement.',
+    'Submit the form by 12/1.',
+    'Respond by Dec 1.',
+    'Choose a session before 2026-12-01.',
+    'Respond by December 1.',
+    'The form is due on 2026-12-01.',
+    'Everything is ready.\nRespond by 12/1.',
+  ]) {
+    for (const automated of [false, true]) {
+      const value = input(text);
+      value.knownCorrespondent = !automated;
+      if (automated) value.message.from = { address: 'no-reply@sender.example' };
+      assert.deepEqual(jobFor(value), { job: 'ask', confidence: 'unsure' });
+    }
+  }
+  const value = input('Everything went well.\n> Accept the terms before 2026-12-01.');
+  value.knownCorrespondent = true;
+  assert.deepEqual(jobFor(value), { job: 'update', confidence: 'sure' });
+});
+
 test('unknown nonautomated senders are new people even when asking a question', () => {
   const value = input('Could you tell me more?');
   assert.deepEqual(jobFor(value), { job: 'newPerson', confidence: 'sure' });

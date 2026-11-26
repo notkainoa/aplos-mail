@@ -16,6 +16,10 @@ const ACTION =
   /\b(deadline|payment due|pay by|permission form|due (on|by|today|tomorrow)|by (eod|tomorrow|tonight|today|monday|tuesday|wednesday|thursday|friday)|asap|urgent)\b/i;
 const IMPERATIVE =
   /(?:^|[.!:;\n])\s*(book|schedule|sign|complete)\b|\b(you must|you should|you need to|to)\s+(book|schedule|sign|complete)\b/i;
+const CONSENT =
+  /\b(accept|agree to)\s+((the|our|these|updated|new)\s+)*(terms|conditions|agreement|policy)\b|\b(review|read) and (accept|agree|sign|complete|approve)\b/i;
+const DATED_DEADLINE =
+  /\b(by|before|due( on)?)\s+(\d{1,4}[-/]\d{1,2}([-/]\d{1,4})?|(jan(uary)?|feb(ruary)?|mar(ch)?|apr(il)?|may|jun(e)?|jul(y)?|aug(ust)?|sep(tember)?|oct(ober)?|nov(ember)?|dec(ember)?)\.?\s+\d{1,2})\b/i;
 const CHANGE =
   /\b(refund|failed|declined|unusual|security|new (sign[- ]?in|device)|password|cancelled|canceled|rescheduled|delayed|shipped|shipping|delivered|delivery|tracking|in transit|appointment|reservation|check[- ]?in|change|changed|moved|returned|restored|locked|unavailable|available|ready|confirmed|scheduled|closed)\b/i;
 const RECORD =
@@ -71,7 +75,9 @@ function contentSignals(input: LaneInput) {
   const body = ownWords(input.text ?? message.snippet ?? '');
   const subject = /^\s*(re|fw|fwd):/i.test(message.subject ?? '') ? '' : message.subject;
   const words = `${subject ?? ''}\n${body}`;
-  const request = REQUEST.test(words) || ACTION.test(words) || IMPERATIVE.test(words);
+  const request = [REQUEST, ACTION, IMPERATIVE, CONSENT, DATED_DEADLINE].some(cue =>
+    cue.test(words),
+  );
   const changed = CHANGE.test(words);
   const record = RECORD.test(words);
   const reading = READING.test(words);
