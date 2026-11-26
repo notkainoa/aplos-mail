@@ -2174,3 +2174,10 @@ From the owner's review of the UI council. A failed send ("Couldn’t send to Jo
 - **Rejected:** settings only (nobody could build a new panel), and code only (even a simple section would be a program, and every block would need the strictest checks).
 - **Why:** it matches the split already in `plans/RETHINK.md`: "make a section for my kid's soccer" works for anyone, and someone with a coding agent can redo a panel.
 - **Where:** `plans/RETHINK.md` Part 3 item 11. Still open: each kind's format, how a code panel is kept safe, how blocks are shared. Nothing is built yet.
+
+## 2026-11-25: a section chooses mail by fixed fields plus an optional topic
+
+- **Decision (owner):** a section block chooses mail by fixed fields (job, kind, sender, account, label, date, whether the owner has written to them) and, optionally, a topic in plain words ("my kid's soccer team"). The decider checks every email against each topic while it fills in the record, in the same model call, and the record keeps which topic sections the email matches. With AI off, a topic section falls back to its fixed fields. Uncertain topic matches show in "check my work".
+- **Rejected:** fixed fields only (a section for "my kid's soccer" works only if the owner can name every sender), and fixed fields the agent writes once from plain words (no model per email, but it misses every new sender, such as a new coach).
+- **Why:** it is the only option where "make a section for my kid's soccer" works the way people expect, it costs no extra model requests, and a section stays a settings block with no code.
+- **Where:** `plans/RETHINK.md` Part 3 item 12 and the Record row in "Words we use"; "Still open" narrowed. Affects Job 4 (the record in the core, brief not written yet): the record gains topic matches. Nothing is built yet.
