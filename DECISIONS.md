@@ -2174,3 +2174,31 @@ From the owner's review of the UI council. A failed send ("Couldn’t send to Jo
 - **Rejected:** settings only (nobody could build a new panel), and code only (even a simple section would be a program, and every block would need the strictest checks).
 - **Why:** it matches the split already in `plans/RETHINK.md`: "make a section for my kid's soccer" works for anyone, and someone with a coding agent can redo a panel.
 - **Where:** `plans/RETHINK.md` Part 3 item 11. Still open: each kind's format, how a code panel is kept safe, how blocks are shared. Nothing is built yet.
+
+## 2026-11-25: a section chooses mail by fixed fields plus an optional topic
+
+- **Decision (owner):** a section block chooses mail by fixed fields (job, kind, sender, account, label, date, whether the owner has written to them) and, optionally, a topic in plain words ("my kid's soccer team"). The decider checks every email against each topic while it fills in the record, in the same model call, and the record keeps which topic sections the email matches. With AI off, a topic section falls back to its fixed fields. Uncertain topic matches show in "check my work".
+- **Rejected:** fixed fields only (a section for "my kid's soccer" works only if the owner can name every sender), and fixed fields the agent writes once from plain words (no model per email, but it misses every new sender, such as a new coach).
+- **Why:** it is the only option where "make a section for my kid's soccer" works the way people expect, it costs no extra model requests, and a section stays a settings block with no code.
+- **Where:** `plans/RETHINK.md` Part 3 item 12 and the Record row in "Words we use"; "Still open" narrowed. Affects Job 4 (the record in the core, brief not written yet): the record gains topic matches. Nothing is built yet.
+
+## 2026-11-25: every code panel is walled off, ours included
+
+- **Decision (owner):** every code panel runs walled off from the mailbox, including our own Home and reader. A panel sees mail only through the core's API and only what its permissions allow, and email bodies always render in the core's safe frame, never inside a panel. Before any panel is built, one speed experiment checks that a walled-off panel still meets the `plans/DESIGN.md` §5 budgets (key to state 8 ms or less p95, key to next paint 16.7 ms or less p95). If it cannot, the decision is reopened before building.
+- **Rejected:** panels running inside the app, trusted once installed (one bad panel could read all mail and send, so the permission rule would be a promise, not a wall), and our panels inside with other people's walled off (two paths that drift, and our Home would get powers the public blocks lack, against `plans/RETHINK.md` Part 3 item 2).
+- **Why:** the permission rule is enforced rather than trusted, and the default version proves the public blocks are enough.
+- **Where:** `plans/RETHINK.md` Part 3 item 13; "Still open" narrowed. Job 6 (screen blocks) in `plans/next/README.md` now names the speed experiment it waits on. Nothing is built yet.
+
+## 2026-11-25: what a panel may see is two choices
+
+- **Decision (owner):** when a panel is added, the owner makes two choices. Which mail: all of it, or only named sections. How much: the record only (job, sender, subject, the short version), or the full text too. Our own Home asks for all mail and the record only, because email bodies render in the core's safe frame. What a panel may do is unchanged: the permission rule in `plans/RETHINK.md` Part 3 item 8.
+- **Rejected:** all or nothing (a soccer panel would see bank mail too), and one switch per field and action (people click through long lists, and agents writing panels would ask for everything).
+- **Why:** a niche panel stays inside its own mail, the choice is two questions a person can answer, and it works with topic sections.
+- **Where:** `plans/RETHINK.md` Part 3 item 14; "Still open" narrowed. Nothing is built yet.
+
+## 2026-11-25: a settings block is one text file, with every version kept
+
+- **Decision (owner):** each settings block (section, treatment, rule, theme, keys) is one small text file in Aplos's data folder. Aplos keeps every earlier version, so a block change is undoable and falls on the "can just do it" side of the permission rule. Each file is checked when it loads; a broken one is skipped and named in Settings, never breaking Home.
+- **Rejected:** rows in the mail database (a coding agent could change blocks only through Aplos's own API, and sharing needs an export step), and the database as the truth with file export and import (two copies of every block, and editing an exported file does nothing until it is imported).
+- **Why:** an outside coding agent and a person sharing a block both work with no extra step, and the version history covers undo.
+- **Where:** `plans/RETHINK.md` Part 3 item 15; "Still open" narrowed. Nothing is built yet.

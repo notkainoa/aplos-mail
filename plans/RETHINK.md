@@ -25,7 +25,7 @@ Two things change from today's app:
 | Treatment | How much of an email you see: line, brief, full, or not shown. |
 | Line | One sentence. Reading it finishes the email. |
 | Brief | The few facts that matter plus the one action. |
-| Record | What the core keeps for every email: its job, its section, its treatment, the short version and one sentence on why. |
+| Record | What the core keeps for every email: its job, its section, its treatment, the short version, one sentence on why, and which topic sections it matches. |
 | Decider | The block that fills in the record. Ours ships by default and can be swapped. |
 | Correction | You telling Aplos it got something wrong. Corrections always win. |
 
@@ -98,6 +98,10 @@ Two things change from today's app:
 9. **The engine core's size cap goes up.** The owner agreed on 2026-11-20; the new number will be proposed from a measurement of what the record needs.
 10. **The first milestone is the block system (owner, 2026-11-24).** Define the blocks first, then build the default version from them and get the sorting good, then open the door to coding agents.
 11. **Two kinds of block (owner, 2026-11-25).** Sections, treatments, rules, themes and keys are settings: a description that runs no code, so anyone can make one by asking the agent. Only panels are code, run walled off from your mail under the same permission rule.
+12. **A section chooses mail by fixed fields plus an optional topic (owner, 2026-11-25).** The fixed fields are job, kind, sender, account, label, date and whether you have written to them; our own Home sections use only these (Needs you is job "ask"). A topic is a few plain words, such as "my kid's soccer team". The decider checks each email against every topic while it fills in the record, in the same model call, so a topic adds no extra requests and catches senders the section has never seen. With AI off, a topic section falls back to its fixed fields. Topic matches can be wrong, so the uncertain ones show in "check my work", like the six jobs.
+13. **Every code panel is walled off, ours included (owner, 2026-11-25).** A panel sees mail only through the core's API, and only what its permissions allow. Email bodies always render in the core's safe frame, never inside the panel. Our own Home and reader are panels like any other, so the default version proves the public blocks are enough (item 2). Before any panel is built, one speed experiment checks that a walled-off panel still meets DESIGN.md §5's budgets (key to state 8 ms or less p95, key to next paint 16.7 ms or less p95). If it cannot, this decision is reopened before building.
+14. **What a panel may see is two choices made when you add it (owner, 2026-11-25).** Which mail: all of it, or only named sections. How much: the record only (job, sender, subject, the short version), or the full text too. Our own Home asks for all mail and the record only; email bodies render in the core's safe frame, so it never needs the full text. What a panel may do follows the permission rule in item 8.
+15. **A settings block is one small text file in Aplos's data folder (owner, 2026-11-25).** A coding agent such as Claude Code or Codex edits it like any other file, and sharing a block is sending its file. Aplos keeps every earlier version, so changing a block can be undone, and under item 8 an extension or the agent can just do it. Aplos checks each file when it loads it; a broken file is skipped and named in Settings, and Home never breaks because of it.
 
 The jobs that can start now are in [next/README.md](next/README.md).
 
@@ -122,7 +126,7 @@ Please correct any of these.
 ## Still open
 
 - How Aplos should differ from Powermove.
-- What a block is technically, beyond the two kinds in Part 3 item 11: each kind's format, how a code panel is kept safe, how blocks are shared.
+- What a block is technically, beyond Part 3 items 11 to 15: what goes inside the files for treatments, rules, themes and keys, and how blocks are shared beyond sending a file.
 - Which kinds get a brief first (shipping, flights, bills and so on).
 - Which models the decider uses, and where the confidence line sits.
 - The exact onboarding questions.
