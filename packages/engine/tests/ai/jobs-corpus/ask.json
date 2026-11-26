@@ -1,0 +1,1527 @@
+[
+  {
+    "id": "ask-01",
+    "job": "ask",
+    "hard": true,
+    "why": "This asks for an explicit approval rather than merely reporting progress.",
+    "input": {
+      "message": {
+        "from": {
+          "address": "wren.alder@courtyard.example",
+          "name": "Wren Alder"
+        },
+        "to": [
+          {
+            "address": "me@home.example"
+          }
+        ],
+        "cc": [],
+        "subject": "Approval for the courtyard sign",
+        "date": 1796083200000,
+        "list": {},
+        "flags": {
+          "seen": true,
+          "flagged": true,
+          "answered": true,
+          "draft": false,
+          "fromMe": false
+        },
+        "roles": ["inbox"],
+        "snippet": "Could you approve the blue lettering for the courtyard sign? The printer is waiting for your decision."
+      },
+      "self": ["me@home.example"],
+      "knownCorrespondent": true,
+      "userReplied": true,
+      "userEndedThread": true,
+      "text": "Could you approve the blue lettering for the courtyard sign? The printer is waiting for your decision."
+    }
+  },
+  {
+    "id": "ask-02",
+    "job": "ask",
+    "hard": true,
+    "why": "This bulk school message asks the recipient to sign a required form.",
+    "input": {
+      "message": {
+        "from": {
+          "address": "accounts@northfield-school.test"
+        },
+        "to": [
+          {
+            "address": "me@home.example"
+          }
+        ],
+        "cc": [],
+        "subject": "Trip permission due",
+        "date": 1796083260000,
+        "list": {
+          "precedence": "bulk",
+          "listId": "(present)",
+          "autoSubmitted": "auto-generated"
+        },
+        "flags": {
+          "seen": false,
+          "flagged": false,
+          "answered": false,
+          "draft": false,
+          "fromMe": false
+        },
+        "roles": ["inbox", "category.updates"]
+      },
+      "self": ["me@home.example"],
+      "knownCorrespondent": false,
+      "userReplied": false,
+      "userEndedThread": false,
+      "text": "Please sign the marsh walk permission form by 2026-12-03. We cannot reserve your child's seat without it."
+    }
+  },
+  {
+    "id": "ask-03",
+    "job": "ask",
+    "hard": true,
+    "why": "This automated notice requires a renewal decision.",
+    "input": {
+      "message": {
+        "from": {
+          "address": "hello@plotgate.example"
+        },
+        "to": [
+          {
+            "address": "me@home.example"
+          }
+        ],
+        "cc": [],
+        "subject": "Renewal choice required",
+        "date": 1796083320000,
+        "list": {
+          "precedence": "bulk",
+          "listId": "(present)",
+          "listUnsubscribe": "<mailto:leave@plotgate.example>, <https://plotgate.example/leave>",
+          "autoSubmitted": "auto-generated"
+        },
+        "flags": {
+          "seen": false,
+          "flagged": false,
+          "answered": false,
+          "draft": false,
+          "fromMe": false
+        },
+        "roles": ["inbox"]
+      },
+      "self": ["me@home.example"],
+      "knownCorrespondent": true,
+      "userReplied": false,
+      "userEndedThread": false,
+      "text": "Your plot lease needs a choice by 2026-12-05. Select renew or release at https://plots.example/choice."
+    }
+  },
+  {
+    "id": "ask-04",
+    "job": "ask",
+    "hard": true,
+    "why": "This tool-generated invitation asks for a response.",
+    "input": {
+      "message": {
+        "from": {
+          "address": "bookings@sessionloom.test"
+        },
+        "to": [
+          {
+            "address": "me@home.example"
+          }
+        ],
+        "cc": [],
+        "subject": "Invitation to the planning session",
+        "date": 1796083380000,
+        "list": {
+          "precedence": "bulk",
+          "listId": "(present)",
+          "listUnsubscribe": "<mailto:leave@sessionloom.test>, <https://sessionloom.test/leave>",
+          "autoSubmitted": "auto-generated"
+        },
+        "flags": {
+          "seen": true,
+          "flagged": false,
+          "answered": false,
+          "draft": false,
+          "fromMe": false
+        },
+        "roles": ["inbox", "category.promotions"]
+      },
+      "self": ["me@home.example"],
+      "knownCorrespondent": false,
+      "userReplied": false,
+      "userEndedThread": false,
+      "text": "Please accept or decline the planning session on 2026-12-06. Your response determines the room size.",
+      "structured": [
+        {
+          "kind": "invite",
+          "due": "2026-12-06"
+        }
+      ]
+    }
+  },
+  {
+    "id": "ask-05",
+    "job": "ask",
+    "hard": true,
+    "why": "This policy message asks for consent needed to keep a feature working.",
+    "input": {
+      "message": {
+        "from": {
+          "address": "orders@folioport.example"
+        },
+        "to": [
+          {
+            "address": "me@home.example"
+          }
+        ],
+        "cc": [],
+        "subject": "New terms need consent",
+        "date": 1796083440000,
+        "list": {
+          "precedence": "bulk",
+          "listId": "(present)",
+          "listUnsubscribe": "<mailto:leave@folioport.example>",
+          "autoSubmitted": "auto-generated"
+        },
+        "flags": {
+          "seen": false,
+          "flagged": false,
+          "answered": false,
+          "draft": false,
+          "fromMe": false
+        },
+        "roles": ["inbox", "category.personal"]
+      },
+      "self": ["me@home.example"],
+      "knownCorrespondent": false,
+      "userReplied": false,
+      "userEndedThread": false,
+      "text": "To keep exporting your files, accept the revised export terms by 2026-12-08. Existing saved files remain available."
+    }
+  },
+  {
+    "id": "ask-06",
+    "job": "ask",
+    "hard": true,
+    "why": "This bill asks for payment rather than serving as a paid receipt.",
+    "input": {
+      "message": {
+        "from": {
+          "address": "notices@ledgergrove.example"
+        },
+        "to": [
+          {
+            "address": "me@home.example"
+          }
+        ],
+        "cc": [],
+        "subject": "Invoice awaiting payment",
+        "date": 1796083500000,
+        "list": {
+          "precedence": "bulk",
+          "listId": "(present)",
+          "autoSubmitted": "auto-generated"
+        },
+        "flags": {
+          "seen": false,
+          "flagged": false,
+          "answered": false,
+          "draft": false,
+          "fromMe": false
+        },
+        "roles": ["inbox"],
+        "snippet": "The repair invoice for 28 credits is unpaid and due on 2026-12-09. Please arrange payment through your account"
+      },
+      "self": ["me@home.example"],
+      "knownCorrespondent": true,
+      "userReplied": false,
+      "userEndedThread": false,
+      "text": "The repair invoice for 28 credits is unpaid and due on 2026-12-09. Please arrange payment through your account.",
+      "structured": [
+        {
+          "kind": "bill",
+          "due": "2026-12-09"
+        }
+      ]
+    }
+  },
+  {
+    "id": "ask-07",
+    "job": "ask",
+    "hard": true,
+    "why": "This shop message asks the recipient to choose a time.",
+    "input": {
+      "message": {
+        "from": {
+          "address": "no-reply@lampdock.example"
+        },
+        "to": [
+          {
+            "address": "me@home.example"
+          }
+        ],
+        "cc": [],
+        "subject": "Please confirm the collection slot",
+        "date": 1796083560000,
+        "list": {
+          "precedence": "bulk",
+          "listId": "(present)",
+          "listUnsubscribe": "<mailto:leave@lampdock.example>, <https://lampdock.example/leave>",
+          "autoSubmitted": "auto-generated"
+        },
+        "flags": {
+          "seen": true,
+          "flagged": false,
+          "answered": false,
+          "draft": false,
+          "fromMe": false
+        },
+        "roles": ["inbox", "important"]
+      },
+      "self": ["me@home.example"],
+      "knownCorrespondent": true,
+      "userReplied": false,
+      "userEndedThread": false,
+      "text": "Choose a collection slot for your repaired lamp at https://lampdock.example/slots. We will hold it until 2026-12-10.",
+      "structured": [
+        {
+          "kind": "reservation",
+          "due": "2026-12-10"
+        }
+      ]
+    }
+  },
+  {
+    "id": "ask-08",
+    "job": "ask",
+    "hard": true,
+    "why": "This reopens a previously ended thread with a new approval request.",
+    "input": {
+      "message": {
+        "from": {
+          "address": "wren.alder@courtyard.example",
+          "name": "Wren Alder"
+        },
+        "to": [
+          {
+            "address": "me@home.example"
+          }
+        ],
+        "cc": [],
+        "subject": "Re: Completed review",
+        "date": 1796083620000,
+        "list": {},
+        "flags": {
+          "seen": false,
+          "flagged": false,
+          "answered": true,
+          "draft": false,
+          "fromMe": false
+        },
+        "roles": ["inbox", "category.forums"]
+      },
+      "self": ["me@home.example"],
+      "knownCorrespondent": true,
+      "userReplied": true,
+      "userEndedThread": true,
+      "text": "One last thing after your sign-off: please approve the revised cover. The old approval does not cover the new image."
+    }
+  },
+  {
+    "id": "ask-09",
+    "job": "ask",
+    "hard": true,
+    "why": "This list-distributed message asks for a concrete choice.",
+    "input": {
+      "message": {
+        "from": {
+          "address": "hello@loomhouse.test"
+        },
+        "to": [
+          {
+            "address": "me@home.example"
+          }
+        ],
+        "cc": [],
+        "subject": "Workshop location poll",
+        "date": 1796083680000,
+        "list": {
+          "precedence": "bulk",
+          "listId": "(present)",
+          "listUnsubscribe": "<mailto:leave@loomhouse.test>, <https://loomhouse.test/leave>",
+          "autoSubmitted": "auto-generated"
+        },
+        "flags": {
+          "seen": false,
+          "flagged": false,
+          "answered": false,
+          "draft": false,
+          "fromMe": false
+        },
+        "roles": ["inbox"]
+      },
+      "self": ["me@home.example"],
+      "knownCorrespondent": false,
+      "userReplied": false,
+      "userEndedThread": false,
+      "text": "Please choose the east or west workshop room in the poll. We need your answer before booking."
+    }
+  },
+  {
+    "id": "ask-10",
+    "job": "ask",
+    "hard": true,
+    "why": "This app notification requires an ownership decision.",
+    "input": {
+      "message": {
+        "from": {
+          "address": "bookings@folioport.example"
+        },
+        "to": [
+          {
+            "address": "me@home.example"
+          }
+        ],
+        "cc": [],
+        "subject": "Action on your shared folder",
+        "date": 1796083740000,
+        "list": {
+          "precedence": "bulk",
+          "listId": "(present)",
+          "autoSubmitted": "auto-generated"
+        },
+        "flags": {
+          "seen": true,
+          "flagged": false,
+          "answered": false,
+          "draft": false,
+          "fromMe": false
+        },
+        "roles": ["inbox", "category.updates"]
+      },
+      "self": ["me@home.example"],
+      "knownCorrespondent": false,
+      "userReplied": false,
+      "userEndedThread": false,
+      "text": "Please name a replacement owner for your shared folder before 2026-12-11. It cannot remain ownerless after you leave the group."
+    }
+  },
+  {
+    "id": "ask-11",
+    "job": "ask",
+    "hard": true,
+    "why": "This delivery message asks for a missing signature.",
+    "input": {
+      "message": {
+        "from": {
+          "address": "orders@parcel.example"
+        },
+        "to": [
+          {
+            "address": "me@home.example"
+          }
+        ],
+        "cc": [],
+        "subject": "Missing signature on delivery form",
+        "date": 1796083800000,
+        "list": {
+          "precedence": "bulk",
+          "listId": "(present)",
+          "listUnsubscribe": "<mailto:leave@parcel.example>, <https://parcel.example/leave>",
+          "autoSubmitted": "auto-generated"
+        },
+        "flags": {
+          "seen": false,
+          "flagged": false,
+          "answered": false,
+          "draft": false,
+          "fromMe": false
+        },
+        "roles": ["inbox"],
+        "snippet": "Your delivery form arrived without a signature. Please sign the marked box so we can release the parcel."
+      },
+      "self": ["me@home.example"],
+      "knownCorrespondent": true,
+      "userReplied": false,
+      "userEndedThread": false,
+      "text": "Your delivery form arrived without a signature. Please sign the marked box so we can release the parcel."
+    }
+  },
+  {
+    "id": "ask-12",
+    "job": "ask",
+    "hard": true,
+    "why": "Despite its FYI subject this message asks for approval.",
+    "input": {
+      "message": {
+        "from": {
+          "address": "wren.alder@courtyard.example",
+          "name": "Wren Alder"
+        },
+        "to": [
+          {
+            "address": "me@home.example"
+          }
+        ],
+        "cc": [],
+        "subject": "Re: For your information",
+        "date": 1796083860000,
+        "list": {},
+        "flags": {
+          "seen": false,
+          "flagged": true,
+          "answered": true,
+          "draft": false,
+          "fromMe": false
+        },
+        "roles": ["inbox", "category.promotions"]
+      },
+      "self": ["me@home.example"],
+      "knownCorrespondent": true,
+      "userReplied": true,
+      "userEndedThread": true,
+      "text": "The draft is attached for context, but I need you to approve the final paragraph. Can you reply with your decision?"
+    }
+  },
+  {
+    "id": "ask-13",
+    "job": "ask",
+    "hard": true,
+    "why": "This cc message directly asks the recipient for authorization.",
+    "input": {
+      "message": {
+        "from": {
+          "address": "sage.elm@courtyard.example",
+          "name": "Sage Elm"
+        },
+        "to": [
+          {
+            "address": "fern@people.test"
+          }
+        ],
+        "cc": [
+          {
+            "address": "me@home.example"
+          }
+        ],
+        "subject": "Budget review copied to you",
+        "date": 1796083920000,
+        "list": {},
+        "flags": {
+          "seen": true,
+          "flagged": false,
+          "answered": true,
+          "draft": false,
+          "fromMe": false
+        },
+        "roles": ["inbox", "category.personal"]
+      },
+      "self": ["me@home.example"],
+      "knownCorrespondent": true,
+      "userReplied": true,
+      "userEndedThread": false,
+      "text": "I have copied you because only you can authorize the extra 14 credits. Please reply with approval or a lower limit."
+    }
+  },
+  {
+    "id": "ask-14",
+    "job": "ask",
+    "hard": true,
+    "why": "This receipt-related email asks the recipient to provide missing information.",
+    "input": {
+      "message": {
+        "from": {
+          "address": "accounts@clayhaven.example"
+        },
+        "to": [
+          {
+            "address": "me@home.example"
+          }
+        ],
+        "cc": [],
+        "subject": "Receipt correction requested",
+        "date": 1796083980000,
+        "list": {
+          "precedence": "bulk",
+          "listId": "(present)",
+          "autoSubmitted": "auto-generated"
+        },
+        "flags": {
+          "seen": false,
+          "flagged": false,
+          "answered": false,
+          "draft": false,
+          "fromMe": false
+        },
+        "roles": ["inbox"]
+      },
+      "self": ["me@home.example"],
+      "knownCorrespondent": false,
+      "userReplied": false,
+      "userEndedThread": false,
+      "text": "Our receipt has the wrong workshop title. Please tell us which title should appear before we reissue it."
+    }
+  },
+  {
+    "id": "ask-15",
+    "job": "ask",
+    "hard": true,
+    "why": "This bulk message asks for information needed for the recipient's booking.",
+    "input": {
+      "message": {
+        "from": {
+          "address": "hello@northfield-school.test"
+        },
+        "to": [
+          {
+            "address": "me@home.example"
+          }
+        ],
+        "cc": [],
+        "subject": "Survey for registered exhibitors",
+        "date": 1796084040000,
+        "list": {
+          "precedence": "bulk",
+          "listId": "(present)",
+          "listUnsubscribe": "<mailto:leave@northfield-school.test>, <https://northfield-school.test/leave>",
+          "autoSubmitted": "auto-generated"
+        },
+        "flags": {
+          "seen": false,
+          "flagged": false,
+          "answered": false,
+          "draft": false,
+          "fromMe": false
+        },
+        "roles": ["inbox", "important"]
+      },
+      "self": ["me@home.example"],
+      "knownCorrespondent": false,
+      "userReplied": false,
+      "userEndedThread": false,
+      "text": "Please select your power socket requirement by 2026-12-12. We need an answer from every registered exhibitor to allocate sockets."
+    }
+  },
+  {
+    "id": "ask-16",
+    "job": "ask",
+    "hard": true,
+    "why": "This apparent thread closer contains a new concrete request.",
+    "input": {
+      "message": {
+        "from": {
+          "address": "wren.alder@courtyard.example",
+          "name": "Wren Alder"
+        },
+        "to": [
+          {
+            "address": "me@home.example"
+          }
+        ],
+        "cc": [],
+        "subject": "Thanks, and a new question",
+        "date": 1796084100000,
+        "list": {},
+        "flags": {
+          "seen": true,
+          "flagged": false,
+          "answered": true,
+          "draft": false,
+          "fromMe": false
+        },
+        "roles": ["inbox", "category.forums"],
+        "snippet": "Thanks for settling the room booking. Could you now choose who should collect the keys?"
+      },
+      "self": ["me@home.example"],
+      "knownCorrespondent": true,
+      "userReplied": true,
+      "userEndedThread": true,
+      "text": "Thanks for settling the room booking. Could you now choose who should collect the keys?"
+    }
+  },
+  {
+    "id": "ask-17",
+    "job": "ask",
+    "hard": false,
+    "why": "This asks the recipient to pick a time.",
+    "input": {
+      "message": {
+        "from": {
+          "address": "wren.alder@choralbank.test",
+          "name": "Wren Alder"
+        },
+        "to": [
+          {
+            "address": "me@home.example"
+          }
+        ],
+        "cc": [],
+        "subject": "Pick a rehearsal time",
+        "date": 1796084160000,
+        "list": {},
+        "flags": {
+          "seen": false,
+          "flagged": false,
+          "answered": false,
+          "draft": false,
+          "fromMe": false
+        },
+        "roles": ["inbox"]
+      },
+      "self": ["me@home.example"],
+      "knownCorrespondent": true,
+      "userReplied": false,
+      "userEndedThread": false,
+      "text": "Could you do the rehearsal at 10 or 14 on Thursday? Please let me know which works."
+    }
+  },
+  {
+    "id": "ask-18",
+    "job": "ask",
+    "hard": false,
+    "why": "This asks the recipient to review a specific document.",
+    "input": {
+      "message": {
+        "from": {
+          "address": "rowan.brook@greenframe.example",
+          "name": "Rowan Brook"
+        },
+        "to": [
+          {
+            "address": "me@home.example"
+          }
+        ],
+        "cc": [],
+        "subject": "Review the diagram",
+        "date": 1796084220000,
+        "list": {},
+        "flags": {
+          "seen": false,
+          "flagged": false,
+          "answered": true,
+          "draft": false,
+          "fromMe": false
+        },
+        "roles": ["inbox", "category.updates"]
+      },
+      "self": ["me@home.example"],
+      "knownCorrespondent": true,
+      "userReplied": true,
+      "userEndedThread": false,
+      "text": "Please check the attached irrigation diagram and mark any missing valves. I need your review before ordering parts."
+    }
+  },
+  {
+    "id": "ask-19",
+    "job": "ask",
+    "hard": false,
+    "why": "This asks for a concrete handover.",
+    "input": {
+      "message": {
+        "from": {
+          "address": "fern.vale@reedstudio.test",
+          "name": "Fern Vale"
+        },
+        "to": [
+          {
+            "address": "me@home.example"
+          }
+        ],
+        "cc": [],
+        "subject": "Return the spare key",
+        "date": 1796084280000,
+        "list": {},
+        "flags": {
+          "seen": true,
+          "flagged": false,
+          "answered": true,
+          "draft": false,
+          "fromMe": false
+        },
+        "roles": ["inbox"]
+      },
+      "self": ["me@home.example"],
+      "knownCorrespondent": true,
+      "userReplied": true,
+      "userEndedThread": false,
+      "text": "Could you leave the spare shed key in my locker tomorrow? I need it for the morning repair."
+    }
+  },
+  {
+    "id": "ask-20",
+    "job": "ask",
+    "hard": false,
+    "why": "This asks for a signature.",
+    "input": {
+      "message": {
+        "from": {
+          "address": "reed.moss@northfield-school.test",
+          "name": "Reed Moss"
+        },
+        "to": [
+          {
+            "address": "me@home.example"
+          }
+        ],
+        "cc": [],
+        "subject": "Sign the volunteer roster",
+        "date": 1796084340000,
+        "list": {},
+        "flags": {
+          "seen": false,
+          "flagged": false,
+          "answered": false,
+          "draft": false,
+          "fromMe": false
+        },
+        "roles": ["inbox", "category.promotions"]
+      },
+      "self": ["me@home.example"],
+      "knownCorrespondent": true,
+      "userReplied": false,
+      "userEndedThread": false,
+      "text": "Please sign the final volunteer roster. Your signature confirms the hours we discussed."
+    }
+  },
+  {
+    "id": "ask-21",
+    "job": "ask",
+    "hard": false,
+    "why": "This asks for a decision.",
+    "input": {
+      "message": {
+        "from": {
+          "address": "lark.birch@clayhaven.example",
+          "name": "Lark Birch"
+        },
+        "to": [
+          {
+            "address": "me@home.example"
+          }
+        ],
+        "cc": [],
+        "subject": "Which paint should we order",
+        "date": 1796084400000,
+        "list": {},
+        "flags": {
+          "seen": false,
+          "flagged": false,
+          "answered": true,
+          "draft": false,
+          "fromMe": false
+        },
+        "roles": ["inbox", "category.personal"],
+        "snippet": "Would you choose moss or clay paint for the reading nook? I will order after you reply."
+      },
+      "self": ["me@home.example"],
+      "knownCorrespondent": true,
+      "userReplied": true,
+      "userEndedThread": false,
+      "text": "Would you choose moss or clay paint for the reading nook? I will order after you reply."
+    }
+  },
+  {
+    "id": "ask-22",
+    "job": "ask",
+    "hard": false,
+    "why": "This asks for an attendance reply.",
+    "input": {
+      "message": {
+        "from": {
+          "address": "ash.clove@northfield-school.test",
+          "name": "Ash Clove"
+        },
+        "to": [
+          {
+            "address": "me@home.example"
+          }
+        ],
+        "cc": [],
+        "subject": "Confirm attendance",
+        "date": 1796084460000,
+        "list": {},
+        "flags": {
+          "seen": true,
+          "flagged": false,
+          "answered": true,
+          "draft": false,
+          "fromMe": false
+        },
+        "roles": ["inbox"]
+      },
+      "self": ["me@home.example"],
+      "knownCorrespondent": true,
+      "userReplied": true,
+      "userEndedThread": false,
+      "text": "Please confirm whether you are coming to the potluck. I need to know how many bowls to bring."
+    }
+  },
+  {
+    "id": "ask-23",
+    "job": "ask",
+    "hard": false,
+    "why": "This asks for specific measurements.",
+    "input": {
+      "message": {
+        "from": {
+          "address": "moss.hazel@reedstudio.test",
+          "name": "Moss Hazel"
+        },
+        "to": [
+          {
+            "address": "me@home.example"
+          }
+        ],
+        "cc": [],
+        "subject": "Send the measurements",
+        "date": 1796084520000,
+        "list": {},
+        "flags": {
+          "seen": false,
+          "flagged": true,
+          "answered": false,
+          "draft": false,
+          "fromMe": false
+        },
+        "roles": ["inbox", "important"]
+      },
+      "self": ["me@home.example"],
+      "knownCorrespondent": true,
+      "userReplied": false,
+      "userEndedThread": false,
+      "text": "Can you send the width and height of the shelf opening? I cannot finish the sketch without them."
+    }
+  },
+  {
+    "id": "ask-24",
+    "job": "ask",
+    "hard": false,
+    "why": "This asks for financial authorization.",
+    "input": {
+      "message": {
+        "from": {
+          "address": "elm.sage@ledgergrove.example",
+          "name": "Elm Sage"
+        },
+        "to": [
+          {
+            "address": "me@home.example"
+          }
+        ],
+        "cc": [],
+        "subject": "Approve the reimbursement",
+        "date": 1796084580000,
+        "list": {},
+        "flags": {
+          "seen": false,
+          "flagged": false,
+          "answered": true,
+          "draft": false,
+          "fromMe": false
+        },
+        "roles": ["inbox", "category.forums"]
+      },
+      "self": ["me@home.example"],
+      "knownCorrespondent": true,
+      "userReplied": true,
+      "userEndedThread": false,
+      "text": "Please authorize the 16-credit reimbursement for the shared seed order. The supporting note is attached."
+    }
+  },
+  {
+    "id": "ask-25",
+    "job": "ask",
+    "hard": false,
+    "why": "This asks for proofreading.",
+    "input": {
+      "message": {
+        "from": {
+          "address": "rue.linden@northfield-school.test",
+          "name": "Rue Linden"
+        },
+        "to": [
+          {
+            "address": "me@home.example"
+          }
+        ],
+        "cc": [],
+        "subject": "Proofread the flyer",
+        "date": 1796084640000,
+        "list": {},
+        "flags": {
+          "seen": true,
+          "flagged": false,
+          "answered": true,
+          "draft": false,
+          "fromMe": false
+        },
+        "roles": ["inbox"]
+      },
+      "self": ["me@home.example"],
+      "knownCorrespondent": true,
+      "userReplied": true,
+      "userEndedThread": false,
+      "text": "Could you proofread the garden flyer tonight? Please send any corrections before I print it."
+    }
+  },
+  {
+    "id": "ask-26",
+    "job": "ask",
+    "hard": false,
+    "why": "This asks the recipient to arrange coverage.",
+    "input": {
+      "message": {
+        "from": {
+          "address": "alder.fenn@plotgate.example",
+          "name": "Alder Fenn"
+        },
+        "to": [
+          {
+            "address": "me@home.example"
+          }
+        ],
+        "cc": [],
+        "subject": "Choose a substitute",
+        "date": 1796084700000,
+        "list": {},
+        "flags": {
+          "seen": false,
+          "flagged": false,
+          "answered": false,
+          "draft": false,
+          "fromMe": false
+        },
+        "roles": ["inbox", "category.updates"],
+        "snippet": "Please nominate someone to cover your gate shift. The current roster still has your name on it."
+      },
+      "self": ["me@home.example"],
+      "knownCorrespondent": true,
+      "userReplied": false,
+      "userEndedThread": false,
+      "text": "Please nominate someone to cover your gate shift. The current roster still has your name on it."
+    }
+  },
+  {
+    "id": "ask-27",
+    "job": "ask",
+    "hard": false,
+    "why": "This asks for required consent.",
+    "input": {
+      "message": {
+        "from": {
+          "address": "hazel.reed@smallstage.test",
+          "name": "Hazel Reed"
+        },
+        "to": [
+          {
+            "address": "me@home.example"
+          }
+        ],
+        "cc": [],
+        "subject": "Return the consent form",
+        "date": 1796084760000,
+        "list": {},
+        "flags": {
+          "seen": false,
+          "flagged": false,
+          "answered": true,
+          "draft": false,
+          "fromMe": false
+        },
+        "roles": ["inbox"]
+      },
+      "self": ["me@home.example"],
+      "knownCorrespondent": true,
+      "userReplied": true,
+      "userEndedThread": false,
+      "text": "Please return the signed recording consent form. We cannot include your reading without permission."
+    }
+  },
+  {
+    "id": "ask-28",
+    "job": "ask",
+    "hard": false,
+    "why": "This asks for clarification.",
+    "input": {
+      "message": {
+        "from": {
+          "address": "birch.fern@mapcabinet.example",
+          "name": "Birch Fern"
+        },
+        "to": [
+          {
+            "address": "me@home.example"
+          }
+        ],
+        "cc": [],
+        "subject": "Confirm the spelling",
+        "date": 1796084820000,
+        "list": {},
+        "flags": {
+          "seen": true,
+          "flagged": false,
+          "answered": true,
+          "draft": false,
+          "fromMe": false
+        },
+        "roles": ["inbox", "category.promotions"]
+      },
+      "self": ["me@home.example"],
+      "knownCorrespondent": true,
+      "userReplied": true,
+      "userEndedThread": false,
+      "text": "Can you confirm the spelling of the fictional village on your map? Two versions appear in the draft."
+    }
+  },
+  {
+    "id": "ask-29",
+    "job": "ask",
+    "hard": false,
+    "why": "This asks for payment of an outstanding balance.",
+    "input": {
+      "message": {
+        "from": {
+          "address": "orders@ledgergrove.example"
+        },
+        "to": [
+          {
+            "address": "me@home.example"
+          }
+        ],
+        "cc": [],
+        "subject": "Pay the club dues",
+        "date": 1796084880000,
+        "list": {
+          "autoSubmitted": "auto-generated",
+          "listUnsubscribe": "<mailto:leave@ledgergrove.example>"
+        },
+        "flags": {
+          "seen": false,
+          "flagged": false,
+          "answered": false,
+          "draft": false,
+          "fromMe": false
+        },
+        "roles": ["inbox", "category.personal"]
+      },
+      "self": ["me@home.example"],
+      "knownCorrespondent": true,
+      "userReplied": false,
+      "userEndedThread": false,
+      "text": "Your club dues of 8 credits are due on 2026-12-15. Please pay through the club desk.",
+      "structured": [
+        {
+          "kind": "bill",
+          "due": "2026-12-15"
+        }
+      ]
+    }
+  },
+  {
+    "id": "ask-30",
+    "job": "ask",
+    "hard": false,
+    "why": "This asks for an appointment booking.",
+    "input": {
+      "message": {
+        "from": {
+          "address": "notices@greenframe.example"
+        },
+        "to": [
+          {
+            "address": "me@home.example"
+          }
+        ],
+        "cc": [],
+        "subject": "Book your inspection",
+        "date": 1796084940000,
+        "list": {
+          "autoSubmitted": "auto-generated"
+        },
+        "flags": {
+          "seen": false,
+          "flagged": false,
+          "answered": false,
+          "draft": false,
+          "fromMe": false
+        },
+        "roles": ["inbox"]
+      },
+      "self": ["me@home.example"],
+      "knownCorrespondent": false,
+      "userReplied": false,
+      "userEndedThread": false,
+      "text": "Please book a greenhouse inspection before the permit expires. Available slots are at https://greenframe.example/book.",
+      "structured": [
+        {
+          "kind": "reservation"
+        }
+      ]
+    }
+  },
+  {
+    "id": "ask-31",
+    "job": "ask",
+    "hard": false,
+    "why": "This asks the recipient to remove their belongings.",
+    "input": {
+      "message": {
+        "from": {
+          "address": "vale.ash@reedstudio.test",
+          "name": "Vale Ash"
+        },
+        "to": [
+          {
+            "address": "me@home.example"
+          }
+        ],
+        "cc": [],
+        "subject": "Remove your stored boxes",
+        "date": 1796085000000,
+        "list": {},
+        "flags": {
+          "seen": true,
+          "flagged": false,
+          "answered": true,
+          "draft": false,
+          "fromMe": false
+        },
+        "roles": ["inbox", "important"],
+        "snippet": "Could you collect your boxes from the studio by Friday? We need that space for the new bench."
+      },
+      "self": ["me@home.example"],
+      "knownCorrespondent": true,
+      "userReplied": true,
+      "userEndedThread": false,
+      "text": "Could you collect your boxes from the studio by Friday? We need that space for the new bench."
+    }
+  },
+  {
+    "id": "ask-32",
+    "job": "ask",
+    "hard": false,
+    "why": "This asks for text from the recipient.",
+    "input": {
+      "message": {
+        "from": {
+          "address": "clove.rue@clayhaven.example",
+          "name": "Clove Rue"
+        },
+        "to": [
+          {
+            "address": "me@home.example"
+          }
+        ],
+        "cc": [],
+        "subject": "Send a short biography",
+        "date": 1796085060000,
+        "list": {},
+        "flags": {
+          "seen": false,
+          "flagged": false,
+          "answered": false,
+          "draft": false,
+          "fromMe": false
+        },
+        "roles": ["inbox", "category.forums"]
+      },
+      "self": ["me@home.example"],
+      "knownCorrespondent": true,
+      "userReplied": false,
+      "userEndedThread": false,
+      "text": "Please send two sentences about your pottery practice. We will use them beside your work at the exhibit."
+    }
+  },
+  {
+    "id": "ask-33",
+    "job": "ask",
+    "hard": false,
+    "why": "This asks for agreement to a room swap.",
+    "input": {
+      "message": {
+        "from": {
+          "address": "wren.alder@loomhouse.test",
+          "name": "Wren Alder"
+        },
+        "to": [
+          {
+            "address": "me@home.example"
+          }
+        ],
+        "cc": [],
+        "subject": "Approve the room swap",
+        "date": 1796085120000,
+        "list": {},
+        "flags": {
+          "seen": false,
+          "flagged": false,
+          "answered": true,
+          "draft": false,
+          "fromMe": false
+        },
+        "roles": ["inbox"]
+      },
+      "self": ["me@home.example"],
+      "knownCorrespondent": true,
+      "userReplied": true,
+      "userEndedThread": false,
+      "text": "Can we exchange our teaching rooms next week? Please confirm before I update the noticeboard."
+    }
+  },
+  {
+    "id": "ask-34",
+    "job": "ask",
+    "hard": false,
+    "why": "This asks for a meal choice.",
+    "input": {
+      "message": {
+        "from": {
+          "address": "rowan.brook@northfield-school.test",
+          "name": "Rowan Brook"
+        },
+        "to": [
+          {
+            "address": "me@home.example"
+          }
+        ],
+        "cc": [],
+        "subject": "Reply with a dietary choice",
+        "date": 1796085180000,
+        "list": {},
+        "flags": {
+          "seen": true,
+          "flagged": true,
+          "answered": true,
+          "draft": false,
+          "fromMe": false
+        },
+        "roles": ["inbox", "category.updates"]
+      },
+      "self": ["me@home.example"],
+      "knownCorrespondent": true,
+      "userReplied": true,
+      "userEndedThread": false,
+      "text": "Please tell me whether you want the bean or squash lunch. Both are available for the workshop."
+    }
+  },
+  {
+    "id": "ask-35",
+    "job": "ask",
+    "hard": false,
+    "why": "This asks for a calculation check.",
+    "input": {
+      "message": {
+        "from": {
+          "address": "fern.vale@courtyard.example",
+          "name": "Fern Vale"
+        },
+        "to": [
+          {
+            "address": "me@home.example"
+          }
+        ],
+        "cc": [],
+        "subject": "Check the final total",
+        "date": 1796085240000,
+        "list": {},
+        "flags": {
+          "seen": false,
+          "flagged": false,
+          "answered": false,
+          "draft": false,
+          "fromMe": false
+        },
+        "roles": ["inbox"]
+      },
+      "self": ["me@home.example"],
+      "knownCorrespondent": true,
+      "userReplied": false,
+      "userEndedThread": false,
+      "text": "Could you check my addition on the materials list? Please reply with the total you get."
+    }
+  },
+  {
+    "id": "ask-36",
+    "job": "ask",
+    "hard": false,
+    "why": "This asks for a required submission.",
+    "input": {
+      "message": {
+        "from": {
+          "address": "notices@mapcabinet.example"
+        },
+        "to": [
+          {
+            "address": "me@home.example"
+          }
+        ],
+        "cc": [],
+        "subject": "Submit your sketch",
+        "date": 1796085300000,
+        "list": {
+          "autoSubmitted": "auto-generated"
+        },
+        "flags": {
+          "seen": false,
+          "flagged": false,
+          "answered": false,
+          "draft": false,
+          "fromMe": false
+        },
+        "roles": ["inbox", "category.promotions"],
+        "snippet": "Please upload your bridge sketch by 2026-12-17. The panel needs it for your scheduled review."
+      },
+      "self": ["me@home.example"],
+      "knownCorrespondent": false,
+      "userReplied": false,
+      "userEndedThread": false,
+      "text": "Please upload your bridge sketch by 2026-12-17. The panel needs it for your scheduled review."
+    }
+  },
+  {
+    "id": "ask-37",
+    "job": "ask",
+    "hard": false,
+    "why": "This asks for confirmation before a cancellation.",
+    "input": {
+      "message": {
+        "from": {
+          "address": "lark.birch@sessionloom.test",
+          "name": "Lark Birch"
+        },
+        "to": [
+          {
+            "address": "me@home.example"
+          }
+        ],
+        "cc": [],
+        "subject": "Confirm cancellation",
+        "date": 1796085360000,
+        "list": {},
+        "flags": {
+          "seen": true,
+          "flagged": false,
+          "answered": true,
+          "draft": false,
+          "fromMe": false
+        },
+        "roles": ["inbox", "category.personal"]
+      },
+      "self": ["me@home.example"],
+      "knownCorrespondent": true,
+      "userReplied": true,
+      "userEndedThread": false,
+      "text": "Please confirm that you want to cancel the studio reservation. I will keep it active until you reply."
+    }
+  },
+  {
+    "id": "ask-38",
+    "job": "ask",
+    "hard": false,
+    "why": "This asks for a task assignment.",
+    "input": {
+      "message": {
+        "from": {
+          "address": "ash.clove@folioport.example",
+          "name": "Ash Clove"
+        },
+        "to": [
+          {
+            "address": "me@home.example"
+          }
+        ],
+        "cc": [],
+        "subject": "Assign a reviewer",
+        "date": 1796085420000,
+        "list": {},
+        "flags": {
+          "seen": false,
+          "flagged": false,
+          "answered": false,
+          "draft": false,
+          "fromMe": false
+        },
+        "roles": ["inbox"]
+      },
+      "self": ["me@home.example"],
+      "knownCorrespondent": true,
+      "userReplied": false,
+      "userEndedThread": false,
+      "text": "Can you assign a reviewer for the trail map draft? The review queue has no owner yet."
+    }
+  },
+  {
+    "id": "ask-39",
+    "job": "ask",
+    "hard": false,
+    "why": "This asks the recipient to pass on information.",
+    "input": {
+      "message": {
+        "from": {
+          "address": "moss.hazel@plotgate.example",
+          "name": "Moss Hazel"
+        },
+        "to": [
+          {
+            "address": "me@home.example"
+          }
+        ],
+        "cc": [],
+        "subject": "Forward the access note",
+        "date": 1796085480000,
+        "list": {},
+        "flags": {
+          "seen": false,
+          "flagged": false,
+          "answered": true,
+          "draft": false,
+          "fromMe": false
+        },
+        "roles": ["inbox", "important"]
+      },
+      "self": ["me@home.example"],
+      "knownCorrespondent": true,
+      "userReplied": true,
+      "userEndedThread": false,
+      "text": "Please forward the access instructions to our two helpers. They are joining your shift tomorrow."
+    }
+  },
+  {
+    "id": "ask-40",
+    "job": "ask",
+    "hard": false,
+    "why": "This asks for a decision before a refund can proceed.",
+    "input": {
+      "message": {
+        "from": {
+          "address": "elm.sage@clayhaven.example",
+          "name": "Elm Sage"
+        },
+        "to": [
+          {
+            "address": "me@home.example"
+          }
+        ],
+        "cc": [],
+        "subject": "Choose the refund method",
+        "date": 1796085540000,
+        "list": {},
+        "flags": {
+          "seen": true,
+          "flagged": false,
+          "answered": true,
+          "draft": false,
+          "fromMe": false
+        },
+        "roles": ["inbox", "category.forums"]
+      },
+      "self": ["me@home.example"],
+      "knownCorrespondent": true,
+      "userReplied": true,
+      "userEndedThread": false,
+      "text": "Please choose account credit or a return to your payment method. We need your choice to process the agreed refund."
+    }
+  }
+]
