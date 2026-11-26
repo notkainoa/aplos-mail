@@ -154,6 +154,8 @@ const lazyModules = [
   // The SQLite self-check has no caller yet (it is kept for the Diagnostics surface): no import path reaches it,
   // so like the recurrence edit writes above it does not belong to the startup bundle.
   join(src, 'selftest.ts'),
+  // The no-AI job sorter has no caller yet, like selftest.ts.
+  join(src, 'ai', 'jobs.ts'),
   // Body retention's pass loads a while after start (`import()` in host/module.ts); only its writers are core.
   join(src, 'store', 'retention.ts'),
 ];
