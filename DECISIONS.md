@@ -2216,3 +2216,10 @@ From the owner's review of the UI council. A failed send ("Couldn’t send to Jo
 - **Rejected:** irreversible actions that ask first unless the owner switches asking off (useful for "forward my receipts to my accountant", but once rule files are shared, a forwarding rule is the easiest way to steal mail; left for its own later decision, with the switch in the core, never in the file), and a plain-words instruction the agent carries out per email (a model call per email, unpredictable, hard to test).
 - **Why:** the first milestone needs no rules that send, and a shared rule file can never move mail out of the mailbox.
 - **Where:** `plans/RETHINK.md` Part 3 item 17; "Still open" narrowed. Nothing is built yet.
+
+## 2026-11-25: a theme file sets only Paper's named colour tokens
+
+- **Decision (owner):** a theme block sets only the named colour tokens in `plans/DESIGN.md` (such as `--shell`, `--ink`, `--accent`), for light and night. Layout, type, sizes, spacing, corners and motion cannot change. Aplos checks contrast when it loads the file (4.5:1 for text, 3:1 for non-text, both themes); a failing theme is skipped and named in Settings. Our own light and night themes are theme files.
+- **Rejected:** any Paper token, including type, sizes, spacing, corners and motion (a theme could cram rows, slow motion and break the screenshot checks, so the design rules become a suggestion), and raw CSS (it can load outside images and fonts, which tells a stranger you opened the app, and it can hide or move anything, so it is code in all but name, against `plans/RETHINK.md` Part 3 item 11).
+- **Why:** a theme stays a pure setting, contrast is checked automatically, and no theme can break Home or the key budgets.
+- **Where:** `plans/RETHINK.md` Part 3 item 18; "Still open" narrowed. Nothing is built yet.
