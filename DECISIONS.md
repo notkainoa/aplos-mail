@@ -2202,3 +2202,65 @@ From the owner's review of the UI council. A failed send ("Couldn’t send to Jo
 - **Rejected:** rows in the mail database (a coding agent could change blocks only through Aplos's own API, and sharing needs an export step), and the database as the truth with file export and import (two copies of every block, and editing an exported file does nothing until it is imported).
 - **Why:** an outside coding agent and a person sharing a block both work with no extra step, and the version history covers undo.
 - **Where:** `plans/RETHINK.md` Part 3 item 15; "Still open" narrowed. Nothing is built yet.
+
+## 2026-11-25: a treatment file is which mail, a shape, and a brief's facts
+
+- **Decision (owner):** a treatment block chooses mail with the same picker as a section (fixed fields plus an optional topic) and sets one shape: line, brief, full or not shown. A brief also lists, in plain words, the facts it must show ("arrival date, carrier, tracking number"). The decider fills those facts in the same call and copies them exactly; if one is missing, the email is not shortened.
+- **Rejected:** which mail plus a shape only (what a brief contains is left to the decider, so "show the arrival date and tracking number" cannot be said), and free plain-words instructions ("short, lead with the amount due"), which are hard to check, drift between models and weaken the exact-copy rule in `plans/RETHINK.md` Part 1 item 6.
+- **Why:** briefs become predictable and testable per kind, and the kinds that get a brief are files, not code.
+- **Where:** `plans/RETHINK.md` Part 3 item 16; "Still open" narrowed, and "Which kinds get a brief first" now notes each one is a treatment file. Affects Job 4 (the record, brief not written yet) and the decider: a brief's facts come from its treatment file. Nothing is built yet.
+
+## 2026-11-25: a rule file is which mail plus undoable actions only
+
+- **Decision (owner):** a rule block chooses mail with the same picker as a section and runs only actions that can be undone: archive, label, mark read, snooze, pin, notify. Under the permission rule these just happen, so a rule never asks. Sending, forwarding and deleting are not allowed in a rule.
+- **Rejected:** irreversible actions that ask first unless the owner switches asking off (useful for "forward my receipts to my accountant", but once rule files are shared, a forwarding rule is the easiest way to steal mail; left for its own later decision, with the switch in the core, never in the file), and a plain-words instruction the agent carries out per email (a model call per email, unpredictable, hard to test).
+- **Why:** the first milestone needs no rules that send, and a shared rule file can never move mail out of the mailbox.
+- **Where:** `plans/RETHINK.md` Part 3 item 17; "Still open" narrowed. Nothing is built yet.
+
+## 2026-11-25: a theme file sets only Paper's named colour tokens
+
+- **Decision (owner):** a theme block sets only the named colour tokens in `plans/DESIGN.md` (such as `--shell`, `--ink`, `--accent`), for light and night. Layout, type, sizes, spacing, corners and motion cannot change. Aplos checks contrast when it loads the file (4.5:1 for text, 3:1 for non-text, both themes); a failing theme is skipped and named in Settings. Our own light and night themes are theme files.
+- **Rejected:** any Paper token, including type, sizes, spacing, corners and motion (a theme could cram rows, slow motion and break the screenshot checks, so the design rules become a suggestion), and raw CSS (it can load outside images and fonts, which tells a stranger you opened the app, and it can hide or move anything, so it is code in all but name, against `plans/RETHINK.md` Part 3 item 11).
+- **Why:** a theme stays a pure setting, contrast is checked automatically, and no theme can break Home or the key budgets.
+- **Where:** `plans/RETHINK.md` Part 3 item 18; "Still open" narrowed. Nothing is built yet.
+
+## 2026-11-25: a keys file maps commands to keys, per context
+
+- **Decision (owner):** a keys block maps registry commands to keys, per context ("Done: E in Lists"). It can only name commands that exist: the core's, plus those a panel declares. One key runs one command. A key used twice in one context is skipped and named in Settings. Esc and ⌘K can never be unbound. The `plans/DESIGN.md` §8 keymap is the default keys file.
+- **Rejected:** one key running several commands in a row (breaks §8's one-meaning-per-context rule, one Z would have to undo several steps, and a list including Send blurs the "asks first" rule), and whole presets only (contradicts DESIGN's "every key can be remapped" and the accessibility rule behind it).
+- **Why:** one key stays one command, conflicts are caught automatically, and multi-step work belongs in a rule file or a panel.
+- **Where:** `plans/RETHINK.md` Part 3 item 19; "Still open" now only asks how blocks are shared beyond sending a file. Nothing is built yet.
+
+## 2026-11-25: for now, a block is shared only by sending its file
+
+- **Decision (owner):** blocks are shared by sending their file. Opening a block file shows, in plain words, what it does before Aplos adds it ("Archives mail from shop.example", "A panel that wants: the Soccer section, record only"). There is no server and no gallery.
+- **Rejected:** a public gallery Aplos hosts (needs a server, review of what is listed and a way to handle bad panels, all outside the first milestone), and installing from a link with updates (an update can quietly change what a block does, so widening a panel's access would have to ask again, and updates need checking). Either can be its own decision once people actually share blocks.
+- **Why:** sharing works the day blocks do, and the preview covers the safety need.
+- **Where:** `plans/RETHINK.md` Part 3 item 20; the block question is removed from "Still open", so the block design is settled. The Job 6 row in `plans/next/README.md` now waits only on the speed experiment. Nothing is built yet.
+
+## 2026-11-28: the decider's models are chosen by measurement, and its confidence line by a target error rate
+
+- **Decision (owner's rule):** the owner asked two independent reviewers (Devin in Ultra and in Fusion mode) to answer the open questions and to record only those where both picked the same answer with high confidence. Both did here. The plan names no models; the default pair is the cheapest decisions model and thinking model on Groq that meet the targets on Job 2's test set, measured again when models change. The confidence line is placed so that wrongly hidden mail stays at or below a set rate on the test set, and placed again when the model changes.
+- **Rejected:** naming models now (they would go stale and skip the measurement), one model only (Part 1 item 10 already uses two), and a fixed stated-confidence number such as 0.9 (stated confidence is not trusted until checked).
+- **Why:** hiding a real email is the costly mistake (Part 1 item 9), and only measurement says whether a model avoids it.
+- **Where:** `plans/RETHINK.md` Part 1 items 9 and 10. "Still open" now asks only for the rate itself and how big the test set must grow to measure it (240 emails cannot measure 1 in 200). This affects Job 2's test set size later. Nothing is built yet.
+
+## 2026-11-28: the three assumptions about shapes and confidence are confirmed
+
+- **Decision (owner's rule, both reviewers agreed with high confidence):** the shapes are called line, brief and full (plus not shown). When even the thinking model is unsure, the email is shown in full and stays visible. A model's stated confidence is checked against the test set and real corrections before Aplos relies on it.
+- **Why:** each follows from decisions already made: Part 1 items 6 and 9, Job 2's rule that unsure answers pick the visible side, and Part 3 item 16, which already uses the shape names.
+- **Where:** `plans/RETHINK.md` Part 1 item 9; "Things I assumed without a clear yes" is now empty. Nothing is built yet.
+
+## 2026-11-28: a real cold email is told from mass outreach by plain facts first, then the model
+
+- **Decision (owner):** bulk headers or a known outreach or marketing sending tool make an email mass outreach (Everything else), with no model. A tracking pixel or wrapped links alone are only a hint. The model judges the rest by asking whether one person wrote it to you specifically, about something specific to you. Unsure ones go to New people and show in "check my work".
+- **Rejected:** the model deciding every time (a call per email, and nothing with AI off), and sending every first-time sender without bulk headers to New people with no model (outreach would fill New people).
+- **Why:** it follows the decider's order (Part 1 item 10), works with AI off (item 11), and puts unsure mail on the visible side (item 9). Trackers are only a hint because people send with them too.
+- **Where:** `plans/RETHINK.md` Part 1 item 14; removed from "Still open". Job 2's brief (`plans/next/02-sorting-test-set.md`) gains a hard case (a real cold email with a tracker) and the rule that `jobFor` marks a first-time sender with no bulk facts `newPerson` and `unsure`. Nothing is built yet.
+
+## 2026-11-28: the first briefs are shipping, flights and travel, and bills
+
+- **Decision (owner):** the default version ships three brief treatment files: shipping and delivery, flights and travel, and bills and payments due. Sign-in codes are a line, since the code is the one fact. More kinds come later, chosen by how common they are on the test set.
+- **Rejected:** the kinds most common in the owner's own mailbox (the default version must fit people who are not him), and shipping only (flights and bills would wait for no real reason).
+- **Why:** each has fixed facts to copy exactly (Part 1 item 6) and one thing to do, and three kinds test the format on dates, amounts and codes.
+- **Where:** `plans/RETHINK.md` Part 2 "Other choices"; removed from "Still open". The exact facts listed for each are a starting point for the treatment files. Nothing is built yet.

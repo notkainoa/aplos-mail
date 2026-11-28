@@ -51,11 +51,12 @@ Two things change from today's app:
 6. **A short version must be trustworthy.** Numbers, dates, names and codes are copied exactly. It says when it left out something that could matter. If it can't be complete, the email is not shortened.
 7. **Two guards for mail from people.** A short email from a person is never shortened. When you reply, their actual words are in front of you.
 8. **Learning.** One press of "see full email" changes nothing. After about three for the same kind, Aplos asks once whether to always show them in full. It offers to shorten mail you keep clearing unread. It never changes treatment silently. A direct correction applies at once.
-9. **Catching mistakes.** Only mail the decider is confident about goes to Everything else. For the first few weeks a "check my work" line shows the few it was least sure about.
-10. **The order the decider works in.** Your corrections first, then plain facts about the email (bulk markers, no-reply senders, whether you've written to them), then a decisions model, then a thinking model for the ones the first model was unsure of. The thinking model also settles which section.
+9. **Catching mistakes.** Only mail the decider is confident about goes to Everything else. For the first few weeks a "check my work" line shows the few it was least sure about. A model's stated confidence is not trusted until it is checked against Job 2's test set and your real corrections. The confidence line is not a fixed number: it is placed so that wrongly hidden mail (a real email sent to Everything else) stays at or below a set rate on the test set, and it is placed again whenever the model changes. When even the thinking model is unsure, the email is shown in full and stays visible. (Decided 2026-11-28.)
+10. **The order the decider works in.** Your corrections first, then plain facts about the email (bulk markers, no-reply senders, whether you've written to them), then a decisions model, then a thinking model for the ones the first model was unsure of. The thinking model also settles which section. The plan names no models: the default pair is the cheapest decisions model and thinking model on the default provider (Groq) that meet the targets on Job 2's test set, measured again when models change. Anyone can pick other models (Part 4). (Decided 2026-11-28.)
 11. **Without any AI model**, sorting still works from the plain facts. Mail from people then all goes to Needs you, in full.
 12. **A newsletter is defined by its job**: recurring writing sent the same to everyone, where nothing in it is about you or needs you. A bulk email with a real date or ask in it is treated as an update or an ask.
 13. **A conversation is one item.** Its newest email decides its job and section, and its short version covers only what is new since you last looked. One conversation never shows in two sections, and a reply moves the whole conversation. (Owner, 2026-11-24.)
+14. **A real cold email versus mass outreach (owner, 2026-11-28).** Plain facts first: bulk headers (such as List-Unsubscribe or a bulk sending address) or a known outreach or marketing sending tool make it mass outreach, with no model. A tracking pixel or wrapped links alone are only a hint, because people send with trackers too. The model judges the rest by asking whether one person wrote it to you specifically, about something specific to you. Unsure ones go to New people and show in "check my work", so a real person is never hidden by a guess.
 
 ## Part 2: the default version
 
@@ -81,6 +82,7 @@ Two things change from today's app:
 - **Calendar:** the full week and month view leaves the default version and is planned as an official plug-in later. The calendar smarts stay in the engine: spotting a date in an email, checking you're free, offering to add it, adding it when you say yes. Invitations appear in Needs you with Yes, Maybe and No.
 - **Ask and Today (owner, 2026-11-24):** today's Ask panel becomes the sidebar agent (Part 4). Today's Today panel leaves the default version and moves into the calendar plug-in. The small peek at a day when Aplos offers to add an event stays.
 - **Onboarding** learns from your real mailbox. It shows real examples of your highest-volume kinds and asks what you want done with them, with good defaults for the rest.
+- **The first briefs (owner, 2026-11-28)** are three treatment files (Part 3 item 16): shipping and delivery (arrival date, carrier, tracking number), flights and travel (date, time, flight or booking number, place), and bills and payments due (amount, due date, who to pay). Each has fixed facts to copy exactly and one thing to do. Sign-in codes are a line, not a brief: the code itself is the one fact. More kinds come later, chosen by how common they are on the test set.
 - **Everything is customisable.**
 
 ## Part 3: how it is built
@@ -102,6 +104,11 @@ Two things change from today's app:
 13. **Every code panel is walled off, ours included (owner, 2026-11-25).** A panel sees mail only through the core's API, and only what its permissions allow. Email bodies always render in the core's safe frame, never inside the panel. Our own Home and reader are panels like any other, so the default version proves the public blocks are enough (item 2). Before any panel is built, one speed experiment checks that a walled-off panel still meets DESIGN.md §5's budgets (key to state 8 ms or less p95, key to next paint 16.7 ms or less p95). If it cannot, this decision is reopened before building.
 14. **What a panel may see is two choices made when you add it (owner, 2026-11-25).** Which mail: all of it, or only named sections. How much: the record only (job, sender, subject, the short version), or the full text too. Our own Home asks for all mail and the record only; email bodies render in the core's safe frame, so it never needs the full text. What a panel may do follows the permission rule in item 8.
 15. **A settings block is one small text file in Aplos's data folder (owner, 2026-11-25).** A coding agent such as Claude Code or Codex edits it like any other file, and sharing a block is sending its file. Aplos keeps every earlier version, so changing a block can be undone, and under item 8 an extension or the agent can just do it. Aplos checks each file when it loads it; a broken file is skipped and named in Settings, and Home never breaks because of it.
+16. **A treatment file is which mail, a shape, and for a brief the facts it must show (owner, 2026-11-25).** Which mail uses the same picker as a section (item 12). The shape is line, brief, full or not shown. A brief lists its facts in plain words, such as "arrival date, carrier, tracking number". The decider fills them in during the same call and copies them exactly (Part 1 item 6); if one is missing, the email is not shortened. So each brief is predictable and can be tested per kind.
+17. **A rule file is which mail plus undoable actions only (owner, 2026-11-25).** "When mail like this arrives, do this." It uses the same picker as a section (item 12). Its actions are only ones you can undo: archive, label, mark read, snooze, pin, notify me. Under item 8 these just happen, so a rule never asks. Sending, forwarding and deleting are not allowed in a rule; if that is ever added, it is its own decision, and the switch that turns off asking lives in the core, never in the file.
+18. **A theme file sets only Paper's named colour tokens, for light and night (owner, 2026-11-25).** Examples are `--shell`, `--ink` and `--accent` from DESIGN.md. Layout, type, sizes, spacing, corners and motion cannot change, so a theme cannot break Home or the key budgets. Aplos checks contrast when it loads the file (4.5:1 for text, 3:1 for non-text, in both light and night); a theme that fails is skipped and named in Settings, like any broken file (item 15). Our own light and night themes are theme files too.
+19. **A keys file maps commands to keys, per context (owner, 2026-11-25).** For example "Done: E in Lists". It can only name commands that exist in the registry (DESIGN.md §8): the core's, plus those a panel declares. One key runs one command. Aplos checks the file when it loads it; a key used twice in one context is skipped and named in Settings. Esc and ⌘K can never be unbound, so you cannot lock yourself out. Our DESIGN.md §8 keymap is the default keys file. Anything with several steps belongs in a rule file or a panel.
+20. **For now, a block is shared only by sending its file (owner, 2026-11-25).** When you open a block file, Aplos first shows what it does in plain words, such as "Archives mail from shop.example" or "A panel that wants: the Soccer section, record only", and adds it only if you say yes. There is no server and no gallery. A gallery, or installing from a link with updates, would be its own decision once people actually share blocks.
 
 The jobs that can start now are in [next/README.md](next/README.md).
 
@@ -117,20 +124,13 @@ The jobs that can start now are in [next/README.md](next/README.md).
 
 ## Things I assumed without a clear yes
 
-Please correct any of these.
-
-- The three shapes are called line, brief and full.
-- When even the thinking model is unsure, the email is shown in full and stays visible.
-- A model's stated confidence is checked against real corrections before we rely on it.
+Nothing right now. The last three (the shape names, unsure mail shown in full, confidence checked before we rely on it) were confirmed on 2026-11-28.
 
 ## Still open
 
 - How Aplos should differ from Powermove.
-- What a block is technically, beyond Part 3 items 11 to 15: what goes inside the files for treatments, rules, themes and keys, and how blocks are shared beyond sending a file.
-- Which kinds get a brief first (shipping, flights, bills and so on).
-- Which models the decider uses, and where the confidence line sits.
+- The rate the confidence line is set to (for example 1 wrongly hidden email in 200), and how big the test set must grow to measure it. 240 emails cannot measure 1 in 200.
 - The exact onboarding questions.
-- How to tell a real cold email from mass outreach.
 
 ## To check before building
 
