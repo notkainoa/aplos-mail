@@ -2202,3 +2202,38 @@ From the owner's review of the UI council. A failed send ("Couldn’t send to Jo
 - **Rejected:** rows in the mail database (a coding agent could change blocks only through Aplos's own API, and sharing needs an export step), and the database as the truth with file export and import (two copies of every block, and editing an exported file does nothing until it is imported).
 - **Why:** an outside coding agent and a person sharing a block both work with no extra step, and the version history covers undo.
 - **Where:** `plans/RETHINK.md` Part 3 item 15; "Still open" narrowed. Nothing is built yet.
+
+## 2026-11-25: a treatment file is which mail, a shape, and a brief's facts
+
+- **Decision (owner):** a treatment block chooses mail with the same picker as a section (fixed fields plus an optional topic) and sets one shape: line, brief, full or not shown. A brief also lists, in plain words, the facts it must show ("arrival date, carrier, tracking number"). The decider fills those facts in the same call and copies them exactly; if one is missing, the email is not shortened.
+- **Rejected:** which mail plus a shape only (what a brief contains is left to the decider, so "show the arrival date and tracking number" cannot be said), and free plain-words instructions ("short, lead with the amount due"), which are hard to check, drift between models and weaken the exact-copy rule in `plans/RETHINK.md` Part 1 item 6.
+- **Why:** briefs become predictable and testable per kind, and the kinds that get a brief are files, not code.
+- **Where:** `plans/RETHINK.md` Part 3 item 16; "Still open" narrowed, and "Which kinds get a brief first" now notes each one is a treatment file. Affects Job 4 (the record, brief not written yet) and the decider: a brief's facts come from its treatment file. Nothing is built yet.
+
+## 2026-11-25: a rule file is which mail plus undoable actions only
+
+- **Decision (owner):** a rule block chooses mail with the same picker as a section and runs only actions that can be undone: archive, label, mark read, snooze, pin, notify. Under the permission rule these just happen, so a rule never asks. Sending, forwarding and deleting are not allowed in a rule.
+- **Rejected:** irreversible actions that ask first unless the owner switches asking off (useful for "forward my receipts to my accountant", but once rule files are shared, a forwarding rule is the easiest way to steal mail; left for its own later decision, with the switch in the core, never in the file), and a plain-words instruction the agent carries out per email (a model call per email, unpredictable, hard to test).
+- **Why:** the first milestone needs no rules that send, and a shared rule file can never move mail out of the mailbox.
+- **Where:** `plans/RETHINK.md` Part 3 item 17; "Still open" narrowed. Nothing is built yet.
+
+## 2026-11-25: a theme file sets only Paper's named colour tokens
+
+- **Decision (owner):** a theme block sets only the named colour tokens in `plans/DESIGN.md` (such as `--shell`, `--ink`, `--accent`), for light and night. Layout, type, sizes, spacing, corners and motion cannot change. Aplos checks contrast when it loads the file (4.5:1 for text, 3:1 for non-text, both themes); a failing theme is skipped and named in Settings. Our own light and night themes are theme files.
+- **Rejected:** any Paper token, including type, sizes, spacing, corners and motion (a theme could cram rows, slow motion and break the screenshot checks, so the design rules become a suggestion), and raw CSS (it can load outside images and fonts, which tells a stranger you opened the app, and it can hide or move anything, so it is code in all but name, against `plans/RETHINK.md` Part 3 item 11).
+- **Why:** a theme stays a pure setting, contrast is checked automatically, and no theme can break Home or the key budgets.
+- **Where:** `plans/RETHINK.md` Part 3 item 18; "Still open" narrowed. Nothing is built yet.
+
+## 2026-11-25: a keys file maps commands to keys, per context
+
+- **Decision (owner):** a keys block maps registry commands to keys, per context ("Done: E in Lists"). It can only name commands that exist: the core's, plus those a panel declares. One key runs one command. A key used twice in one context is skipped and named in Settings. Esc and ⌘K can never be unbound. The `plans/DESIGN.md` §8 keymap is the default keys file.
+- **Rejected:** one key running several commands in a row (breaks §8's one-meaning-per-context rule, one Z would have to undo several steps, and a list including Send blurs the "asks first" rule), and whole presets only (contradicts DESIGN's "every key can be remapped" and the accessibility rule behind it).
+- **Why:** one key stays one command, conflicts are caught automatically, and multi-step work belongs in a rule file or a panel.
+- **Where:** `plans/RETHINK.md` Part 3 item 19; "Still open" now only asks how blocks are shared beyond sending a file. Nothing is built yet.
+
+## 2026-11-25: for now, a block is shared only by sending its file
+
+- **Decision (owner):** blocks are shared by sending their file. Opening a block file shows, in plain words, what it does before Aplos adds it ("Archives mail from shop.example", "A panel that wants: the Soccer section, record only"). There is no server and no gallery.
+- **Rejected:** a public gallery Aplos hosts (needs a server, review of what is listed and a way to handle bad panels, all outside the first milestone), and installing from a link with updates (an update can quietly change what a block does, so widening a panel's access would have to ask again, and updates need checking). Either can be its own decision once people actually share blocks.
+- **Why:** sharing works the day blocks do, and the preview covers the safety need.
+- **Where:** `plans/RETHINK.md` Part 3 item 20; the block question is removed from "Still open", so the block design is settled. The Job 6 row in `plans/next/README.md` now waits only on the speed experiment. Nothing is built yet.
