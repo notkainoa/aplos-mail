@@ -51,8 +51,8 @@ Two things change from today's app:
 6. **A short version must be trustworthy.** Numbers, dates, names and codes are copied exactly. It says when it left out something that could matter. If it can't be complete, the email is not shortened.
 7. **Two guards for mail from people.** A short email from a person is never shortened. When you reply, their actual words are in front of you.
 8. **Learning.** One press of "see full email" changes nothing. After about three for the same kind, Aplos asks once whether to always show them in full. It offers to shorten mail you keep clearing unread. It never changes treatment silently. A direct correction applies at once.
-9. **Catching mistakes.** Only mail the decider is confident about goes to Everything else. For the first few weeks a "check my work" line shows the few it was least sure about.
-10. **The order the decider works in.** Your corrections first, then plain facts about the email (bulk markers, no-reply senders, whether you've written to them), then a decisions model, then a thinking model for the ones the first model was unsure of. The thinking model also settles which section.
+9. **Catching mistakes.** Only mail the decider is confident about goes to Everything else. For the first few weeks a "check my work" line shows the few it was least sure about. A model's stated confidence is not trusted until it is checked against Job 2's test set and your real corrections. The confidence line is not a fixed number: it is placed so that wrongly hidden mail (a real email sent to Everything else) stays at or below a set rate on the test set, and it is placed again whenever the model changes. When even the thinking model is unsure, the email is shown in full and stays visible. (Decided 2026-11-28.)
+10. **The order the decider works in.** Your corrections first, then plain facts about the email (bulk markers, no-reply senders, whether you've written to them), then a decisions model, then a thinking model for the ones the first model was unsure of. The thinking model also settles which section. The plan names no models: the default pair is the cheapest decisions model and thinking model on the default provider (Groq) that meet the targets on Job 2's test set, measured again when models change. Anyone can pick other models (Part 4). (Decided 2026-11-28.)
 11. **Without any AI model**, sorting still works from the plain facts. Mail from people then all goes to Needs you, in full.
 12. **A newsletter is defined by its job**: recurring writing sent the same to everyone, where nothing in it is about you or needs you. A bulk email with a real date or ask in it is treated as an update or an ask.
 13. **A conversation is one item.** Its newest email decides its job and section, and its short version covers only what is new since you last looked. One conversation never shows in two sections, and a reply moves the whole conversation. (Owner, 2026-11-24.)
@@ -122,17 +122,13 @@ The jobs that can start now are in [next/README.md](next/README.md).
 
 ## Things I assumed without a clear yes
 
-Please correct any of these.
-
-- The three shapes are called line, brief and full.
-- When even the thinking model is unsure, the email is shown in full and stays visible.
-- A model's stated confidence is checked against real corrections before we rely on it.
+Nothing right now. The last three (the shape names, unsure mail shown in full, confidence checked before we rely on it) were confirmed on 2026-11-28.
 
 ## Still open
 
 - How Aplos should differ from Powermove.
 - Which kinds get a brief first (shipping, flights, bills and so on). Each one is a treatment file (Part 3 item 16).
-- Which models the decider uses, and where the confidence line sits.
+- The rate the confidence line is set to (for example 1 wrongly hidden email in 200), and how big the test set must grow to measure it. 240 emails cannot measure 1 in 200.
 - The exact onboarding questions.
 - How to tell a real cold email from mass outreach.
 

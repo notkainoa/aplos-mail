@@ -2237,3 +2237,16 @@ From the owner's review of the UI council. A failed send ("Couldn’t send to Jo
 - **Rejected:** a public gallery Aplos hosts (needs a server, review of what is listed and a way to handle bad panels, all outside the first milestone), and installing from a link with updates (an update can quietly change what a block does, so widening a panel's access would have to ask again, and updates need checking). Either can be its own decision once people actually share blocks.
 - **Why:** sharing works the day blocks do, and the preview covers the safety need.
 - **Where:** `plans/RETHINK.md` Part 3 item 20; the block question is removed from "Still open", so the block design is settled. The Job 6 row in `plans/next/README.md` now waits only on the speed experiment. Nothing is built yet.
+
+## 2026-11-28: the decider's models are chosen by measurement, and its confidence line by a target error rate
+
+- **Decision (owner's rule):** the owner asked two independent reviewers (Devin in Ultra and in Fusion mode) to answer the open questions and to record only those where both picked the same answer with high confidence. Both did here. The plan names no models; the default pair is the cheapest decisions model and thinking model on Groq that meet the targets on Job 2's test set, measured again when models change. The confidence line is placed so that wrongly hidden mail stays at or below a set rate on the test set, and placed again when the model changes.
+- **Rejected:** naming models now (they would go stale and skip the measurement), one model only (Part 1 item 10 already uses two), and a fixed stated-confidence number such as 0.9 (stated confidence is not trusted until checked).
+- **Why:** hiding a real email is the costly mistake (Part 1 item 9), and only measurement says whether a model avoids it.
+- **Where:** `plans/RETHINK.md` Part 1 items 9 and 10. "Still open" now asks only for the rate itself and how big the test set must grow to measure it (240 emails cannot measure 1 in 200). This affects Job 2's test set size later. Nothing is built yet.
+
+## 2026-11-28: the three assumptions about shapes and confidence are confirmed
+
+- **Decision (owner's rule, both reviewers agreed with high confidence):** the shapes are called line, brief and full (plus not shown). When even the thinking model is unsure, the email is shown in full and stays visible. A model's stated confidence is checked against the test set and real corrections before Aplos relies on it.
+- **Why:** each follows from decisions already made: Part 1 items 6 and 9, Job 2's rule that unsure answers pick the visible side, and Part 3 item 16, which already uses the shape names.
+- **Where:** `plans/RETHINK.md` Part 1 item 9; "Things I assumed without a clear yes" is now empty. Nothing is built yet.
