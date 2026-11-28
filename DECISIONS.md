@@ -2223,3 +2223,10 @@ From the owner's review of the UI council. A failed send ("Couldn’t send to Jo
 - **Rejected:** any Paper token, including type, sizes, spacing, corners and motion (a theme could cram rows, slow motion and break the screenshot checks, so the design rules become a suggestion), and raw CSS (it can load outside images and fonts, which tells a stranger you opened the app, and it can hide or move anything, so it is code in all but name, against `plans/RETHINK.md` Part 3 item 11).
 - **Why:** a theme stays a pure setting, contrast is checked automatically, and no theme can break Home or the key budgets.
 - **Where:** `plans/RETHINK.md` Part 3 item 18; "Still open" narrowed. Nothing is built yet.
+
+## 2026-11-25: a keys file maps commands to keys, per context
+
+- **Decision (owner):** a keys block maps registry commands to keys, per context ("Done: E in Lists"). It can only name commands that exist: the core's, plus those a panel declares. One key runs one command. A key used twice in one context is skipped and named in Settings. Esc and ⌘K can never be unbound. The `plans/DESIGN.md` §8 keymap is the default keys file.
+- **Rejected:** one key running several commands in a row (breaks §8's one-meaning-per-context rule, one Z would have to undo several steps, and a list including Send blurs the "asks first" rule), and whole presets only (contradicts DESIGN's "every key can be remapped" and the accessibility rule behind it).
+- **Why:** one key stays one command, conflicts are caught automatically, and multi-step work belongs in a rule file or a panel.
+- **Where:** `plans/RETHINK.md` Part 3 item 19; "Still open" now only asks how blocks are shared beyond sending a file. Nothing is built yet.
