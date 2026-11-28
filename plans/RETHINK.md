@@ -56,6 +56,7 @@ Two things change from today's app:
 11. **Without any AI model**, sorting still works from the plain facts. Mail from people then all goes to Needs you, in full.
 12. **A newsletter is defined by its job**: recurring writing sent the same to everyone, where nothing in it is about you or needs you. A bulk email with a real date or ask in it is treated as an update or an ask.
 13. **A conversation is one item.** Its newest email decides its job and section, and its short version covers only what is new since you last looked. One conversation never shows in two sections, and a reply moves the whole conversation. (Owner, 2026-11-24.)
+14. **A real cold email versus mass outreach (owner, 2026-11-28).** Plain facts first: bulk headers (such as List-Unsubscribe or a bulk sending address) or a known outreach or marketing sending tool make it mass outreach, with no model. A tracking pixel or wrapped links alone are only a hint, because people send with trackers too. The model judges the rest by asking whether one person wrote it to you specifically, about something specific to you. Unsure ones go to New people and show in "check my work", so a real person is never hidden by a guess.
 
 ## Part 2: the default version
 
@@ -130,7 +131,6 @@ Nothing right now. The last three (the shape names, unsure mail shown in full, c
 - Which kinds get a brief first (shipping, flights, bills and so on). Each one is a treatment file (Part 3 item 16).
 - The rate the confidence line is set to (for example 1 wrongly hidden email in 200), and how big the test set must grow to measure it. 240 emails cannot measure 1 in 200.
 - The exact onboarding questions.
-- How to tell a real cold email from mass outreach.
 
 ## To check before building
 

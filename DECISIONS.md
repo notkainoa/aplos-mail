@@ -2250,3 +2250,10 @@ From the owner's review of the UI council. A failed send ("Couldn’t send to Jo
 - **Decision (owner's rule, both reviewers agreed with high confidence):** the shapes are called line, brief and full (plus not shown). When even the thinking model is unsure, the email is shown in full and stays visible. A model's stated confidence is checked against the test set and real corrections before Aplos relies on it.
 - **Why:** each follows from decisions already made: Part 1 items 6 and 9, Job 2's rule that unsure answers pick the visible side, and Part 3 item 16, which already uses the shape names.
 - **Where:** `plans/RETHINK.md` Part 1 item 9; "Things I assumed without a clear yes" is now empty. Nothing is built yet.
+
+## 2026-11-28: a real cold email is told from mass outreach by plain facts first, then the model
+
+- **Decision (owner):** bulk headers or a known outreach or marketing sending tool make an email mass outreach (Everything else), with no model. A tracking pixel or wrapped links alone are only a hint. The model judges the rest by asking whether one person wrote it to you specifically, about something specific to you. Unsure ones go to New people and show in "check my work".
+- **Rejected:** the model deciding every time (a call per email, and nothing with AI off), and sending every first-time sender without bulk headers to New people with no model (outreach would fill New people).
+- **Why:** it follows the decider's order (Part 1 item 10), works with AI off (item 11), and puts unsure mail on the visible side (item 9). Trackers are only a hint because people send with them too.
+- **Where:** `plans/RETHINK.md` Part 1 item 14; removed from "Still open". Job 2's brief (`plans/next/02-sorting-test-set.md`) gains a hard case (a real cold email with a tracker) and the rule that `jobFor` marks a first-time sender with no bulk facts `newPerson` and `unsure`. Nothing is built yet.
