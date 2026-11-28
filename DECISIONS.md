@@ -2257,3 +2257,10 @@ From the owner's review of the UI council. A failed send ("Couldn’t send to Jo
 - **Rejected:** the model deciding every time (a call per email, and nothing with AI off), and sending every first-time sender without bulk headers to New people with no model (outreach would fill New people).
 - **Why:** it follows the decider's order (Part 1 item 10), works with AI off (item 11), and puts unsure mail on the visible side (item 9). Trackers are only a hint because people send with them too.
 - **Where:** `plans/RETHINK.md` Part 1 item 14; removed from "Still open". Job 2's brief (`plans/next/02-sorting-test-set.md`) gains a hard case (a real cold email with a tracker) and the rule that `jobFor` marks a first-time sender with no bulk facts `newPerson` and `unsure`. Nothing is built yet.
+
+## 2026-11-28: the first briefs are shipping, flights and travel, and bills
+
+- **Decision (owner):** the default version ships three brief treatment files: shipping and delivery, flights and travel, and bills and payments due. Sign-in codes are a line, since the code is the one fact. More kinds come later, chosen by how common they are on the test set.
+- **Rejected:** the kinds most common in the owner's own mailbox (the default version must fit people who are not him), and shipping only (flights and bills would wait for no real reason).
+- **Why:** each has fixed facts to copy exactly (Part 1 item 6) and one thing to do, and three kinds test the format on dates, amounts and codes.
+- **Where:** `plans/RETHINK.md` Part 2 "Other choices"; removed from "Still open". The exact facts listed for each are a starting point for the treatment files. Nothing is built yet.

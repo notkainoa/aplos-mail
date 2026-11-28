@@ -82,6 +82,7 @@ Two things change from today's app:
 - **Calendar:** the full week and month view leaves the default version and is planned as an official plug-in later. The calendar smarts stay in the engine: spotting a date in an email, checking you're free, offering to add it, adding it when you say yes. Invitations appear in Needs you with Yes, Maybe and No.
 - **Ask and Today (owner, 2026-11-24):** today's Ask panel becomes the sidebar agent (Part 4). Today's Today panel leaves the default version and moves into the calendar plug-in. The small peek at a day when Aplos offers to add an event stays.
 - **Onboarding** learns from your real mailbox. It shows real examples of your highest-volume kinds and asks what you want done with them, with good defaults for the rest.
+- **The first briefs (owner, 2026-11-28)** are three treatment files (Part 3 item 16): shipping and delivery (arrival date, carrier, tracking number), flights and travel (date, time, flight or booking number, place), and bills and payments due (amount, due date, who to pay). Each has fixed facts to copy exactly and one thing to do. Sign-in codes are a line, not a brief: the code itself is the one fact. More kinds come later, chosen by how common they are on the test set.
 - **Everything is customisable.**
 
 ## Part 3: how it is built
@@ -128,7 +129,6 @@ Nothing right now. The last three (the shape names, unsure mail shown in full, c
 ## Still open
 
 - How Aplos should differ from Powermove.
-- Which kinds get a brief first (shipping, flights, bills and so on). Each one is a treatment file (Part 3 item 16).
 - The rate the confidence line is set to (for example 1 wrongly hidden email in 200), and how big the test set must grow to measure it. 240 emails cannot measure 1 in 200.
 - The exact onboarding questions.
 
