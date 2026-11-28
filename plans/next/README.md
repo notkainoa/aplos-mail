@@ -13,7 +13,7 @@ Job 1 is done. Jobs 2 and 3 are ready, and both are judged by tests. Two more wa
 | 3 | Remove the old screens and the old engine | [03-remove-old-app.md](03-remove-old-app.md) | Ready |
 | 4 | The record and corrections in the core | not written | Waits for review time (the store's write path) |
 | 5 | Claude Code and Codex as model choices | not written | Waits for a terms check |
-| 6 | Screen blocks | not written | Waits for the block design and one speed experiment: a walled-off panel must meet DESIGN.md §5's key budgets (RETHINK.md Part 3 item 13) |
+| 6 | Screen blocks | not written | The block design is settled (RETHINK.md Part 3 items 11 to 20). Waits for one speed experiment: a walled-off panel must meet DESIGN.md §5's key budgets (item 13) |
 
 ## Rules for every job
 

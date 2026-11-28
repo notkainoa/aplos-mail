@@ -2230,3 +2230,10 @@ From the owner's review of the UI council. A failed send ("Couldn’t send to Jo
 - **Rejected:** one key running several commands in a row (breaks §8's one-meaning-per-context rule, one Z would have to undo several steps, and a list including Send blurs the "asks first" rule), and whole presets only (contradicts DESIGN's "every key can be remapped" and the accessibility rule behind it).
 - **Why:** one key stays one command, conflicts are caught automatically, and multi-step work belongs in a rule file or a panel.
 - **Where:** `plans/RETHINK.md` Part 3 item 19; "Still open" now only asks how blocks are shared beyond sending a file. Nothing is built yet.
+
+## 2026-11-25: for now, a block is shared only by sending its file
+
+- **Decision (owner):** blocks are shared by sending their file. Opening a block file shows, in plain words, what it does before Aplos adds it ("Archives mail from shop.example", "A panel that wants: the Soccer section, record only"). There is no server and no gallery.
+- **Rejected:** a public gallery Aplos hosts (needs a server, review of what is listed and a way to handle bad panels, all outside the first milestone), and installing from a link with updates (an update can quietly change what a block does, so widening a panel's access would have to ask again, and updates need checking). Either can be its own decision once people actually share blocks.
+- **Why:** sharing works the day blocks do, and the preview covers the safety need.
+- **Where:** `plans/RETHINK.md` Part 3 item 20; the block question is removed from "Still open", so the block design is settled. The Job 6 row in `plans/next/README.md` now waits only on the speed experiment. Nothing is built yet.
